@@ -3,6 +3,15 @@
 対象日は2026-11-28。以下は現在の実装に対応する準備手順であり、Windows実機での
 受け入れ完了記録ではない。PCは未定。M4 Proの実測からWindowsの速度を保証しない。
 
+## UI再設計後の最新確認
+
+`0e21166` の [Windows CI](https://github.com/0kam/echoroo-lite/actions/runs/34332806730)で全工程が成功した。
+新しい画面構成で、NSIS導入、日英起動と設定保持、録音・両モデル候補、保存検索・判定、
+24時間の報告図とセル選択、クイズの回答後表示、正常終了を確認。
+この実行の `windows-preview` が再設計後のEXE/MSI、`windows-startup` が画面記録にあたる。
+[取り込みレビュー記録](ui-redesign-review.md)にMacとブラウザの確認もまとめた。
+下記の過去CI記録は、解析基盤と配布構成の検証経過として残す。
+
 ## 配布物を作る
 
 `.github/workflows/desktop.yml` はWindows x64・Python 3.11で次を実行する。

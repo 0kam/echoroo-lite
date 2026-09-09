@@ -2,7 +2,7 @@
 
 対象: `apps/web`（SvelteKit + Svelte 5 runes、adapter-static、Tauri v2）。
 バックエンド（`apps/sidecar`）は変更しない。検証画面（validation-design.md）は今回の対象外。
-コード・コメント・UI 文言は英語、UI 文言は `src/lib/i18n.ts` のキー経由で日英両方を必ず用意する。
+コード・コメントは英語。UI 文言は `src/lib/i18n.ts` のキー経由で日英両方を必ず用意する。
 
 ## 1. 現状の問題
 
