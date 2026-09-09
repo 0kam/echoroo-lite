@@ -146,8 +146,9 @@ also pass. Setup now uses the record's official content API; model downloads and
 checks pass on Windows, and a fresh Mac download matches all 58 existing model/label files.
 The Windows frozen check now passes both classifiers, searches, reports and CSV/audio
 exports. The parent-stop watcher peeks for a stop byte or pipe closure on Windows, avoiding
-the inherited-stdin read that stalled BirdNET worker startup. The updated installer build
-is running. Installed desktop checks using the analysed audio are being added; full GUI
+the inherited-stdin read that stalled BirdNET worker startup. The updated EXE/MSI build,
+installation and Japanese startup/persistence checks also pass. Installed desktop checks
+using the analysed audio are running; full GUI
 acceptance, actual audio output and annual performance on Windows remain unverified.
 See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and

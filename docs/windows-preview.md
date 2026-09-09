@@ -35,7 +35,16 @@
 [CI](https://github.com/0kam/echoroo-lite/actions/runs/34316310190)で、30秒実音声の両モデル解析、
 埋め込み検索、複数参照検索、無作為抽出と判定保存、検出／検索報告、CSV／根拠音ZIP、
 26種クイズ、正常終了まで通過。通知なしの親パイプ切断でも正常終了した。
-この版のインストーラー作成と導入先の画面検査は実行中。
+両モデル解析22.73秒、参照登録・描画取得・類似検索9.55秒、保存検索・抽出・判定5.72秒、
+報告とCSV／根拠音ZIP1.30秒。EXE/MSI作成、NSIS導入、日英の画面起動、
+日本語設定の再起動後の保持まで通過し、CI全体が合格した。起動画像も取得して日本語表示を確認した。
+実解析データを使う追加の画面検査は `6f22ac4` の
+[CI](https://github.com/0kam/echoroo-lite/actions/runs/34317928504)で、両モデルの結果、
+保存検索、抽出した3区間と「不明」の保存済み判定まで画面表示を確認した。
+CIはその表示の照合で失敗。Windowsのアクセシビリティ情報が判定セルを
+`対象種 対象外 不明 保存済み` という一つの名前として返すため、`保存済み` 単独との一致にはならなかった。
+取得画像でも判定の復元を確認し、検査を実際のセル名との照合へ修正した。
+報告図とクイズの追加画面検査は、この修正後の実行で引き続き確認する。
 
 修正前の `fbef286` は `loading_birdnet` で240秒の制限に達し、毎分のスタックが
 `multiprocessing/popen_spawn_win32.py:72` のproducer起動を示していた。
@@ -56,14 +65,14 @@ Macでも空のフォルダから準備し、モデル・ラベル全58ファイ
 新規取得したモデルを使うMac凍結版では、30秒実音声の両モデル解析36.42秒、
 検索・報告・26種クイズ・正常終了まで通過した。
 
-配布成果物 `windows-preview` は284,352,155 bytes、GitHub記録のSHA-256は
-`cc2d298e17c17f34416bcf38f49f1ce76418214e5aef50b89e18911d29fd3026`。
-取得したインストーラーはローカルの `.local-data/windows-preview-f5db87e/installers/` にある。
+`ffacd4a` の配布成果物 `windows-preview` は284,350,171 bytes、GitHub記録のSHA-256は
+`beb40033126c3cda8c5d3eff09766da215d06a6eca6777b62a431bef0fc46e22`。
+取得したインストーラーはローカルの `.local-data/windows-preview-ffacd4a/installers/` にある。
 
 | ファイル | bytes | SHA-256 |
 |---|---:|---|
-| `nsis/Echoroo Lite_0.1.0_x64-setup.exe` | 141,897,881 | `1b54f22b620affed9aa8d7ac3055c666e47935b8fda9a8557c0196b13ce7d717` |
-| `msi/Echoroo Lite_0.1.0_x64_en-US.msi` | 142,630,912 | `6e4b5a9d6e50011ac9cb3a64b41cbb790deffe937068a65350eec8b7cb557c19` |
+| `nsis/Echoroo Lite_0.1.0_x64-setup.exe` | 141,895,157 | `057ed1a5602602067c32370a5a73998d2ffe3dcd53b49e4adf0f6ef42cec4f9e` |
+| `msi/Echoroo Lite_0.1.0_x64_en-US.msi` | 142,630,912 | `7c800d27aa2417c1cdfbce1dc54c1a6b9d89b18a6ff24c1cc7275f2386db13bb` |
 
 以前はモデル取得が504で失敗したため、インストーラー作成をモデル準備より先に検査した。`7824d89` の
 [CI](https://github.com/0kam/echoroo-lite/actions/runs/34305306420)は、幅1100px以下で接続状態を隠す

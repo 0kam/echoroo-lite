@@ -86,7 +86,7 @@ try {
         Select-FirstSaved '検索履歴'
         $window = Wait-ForDesktopText '類似度の分布と判定' 'echoroo-startup-search'
         Select-FirstSaved '判定する区間'
-        $window = Wait-ForDesktopText '保存済み' 'echoroo-startup-judgements'
+        $window = Wait-ForDesktopText '対象種 対象外 不明 保存済み' 'echoroo-startup-judgements'
 
         Press-DesktopButton '報告'
         $window = Wait-ForDesktopText '報告の履歴' 'echoroo-startup-report-history'
