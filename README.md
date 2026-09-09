@@ -135,21 +135,15 @@ data directory; the installer does not yet offer model setup.
 Model and label provenance, hashes, and unresolved distribution terms are recorded
 in [Model sources](docs/model-sources.md). BirdNET's model terms include a
 noncommercial condition; permission for the intended business use is not yet established.
-The Windows workflow builds an installer and checks the frozen sidecar's startup,
-session authorization, bundled species names and quizzes, SQLite extension and shutdown.
-It also provisions the pinned models and runs both classifiers, searches and report
-exports using a supplied call clip. Windows CI has passed eight API tests, EXE/MSI
-creation, NSIS installation, and the installed service's startup, quizzes and shutdown.
-The desktop startup check now passes on the runner's 1024px screen, including visible
-connection status and normal shutdown. Japanese switching and persistence after restart
-also pass. Setup now uses the record's official content API; model downloads and hash
-checks pass on Windows, and a fresh Mac download matches all 58 existing model/label files.
-The Windows frozen check now passes both classifiers, searches, reports and CSV/audio
-exports. The parent-stop watcher peeks for a stop byte or pipe closure on Windows, avoiding
-the inherited-stdin read that stalled BirdNET worker startup. The updated EXE/MSI build,
-installation and Japanese startup/persistence checks also pass. Installed desktop checks
-using the analysed audio are running; full GUI
-acceptance, actual audio output and annual performance on Windows remain unverified.
+Windows CI has passed all eight API tests, frozen BirdNET/Perch inference on supplied
+audio, searches, saved judgements, reports and CSV/audio exports, quizzes and clean shutdown.
+EXE/MSI creation, NSIS installation and English/Japanese desktop startup also pass,
+including Japanese persistence after restart on a 1024px screen. Installed desktop
+checks also pass restoration of both model results, saved searches and judgements,
+a 24-cell spiral report with cell selection, and quiz questions and feedback.
+Model hashes are pinned; the upstream download service can return
+HTTP 504, so prepare the exhibition's model cache in advance. Actual audio output,
+file pickers, full offline use and annual performance on the exhibition PC remain unverified.
 See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
 CSV/audio exports in 4 h 8 min 25 s; annual plots were then checked in the release app.
