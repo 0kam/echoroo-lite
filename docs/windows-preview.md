@@ -17,34 +17,32 @@
    BirdNET／Perch推論、埋め込み検索、保存検索、抽出・不明保存、報告CSV／根拠音ZIP、
    26種のクイズ、認証、正常終了を確認する。
 
-2026-09-09に作業ブランチをGitHubへ反映し、[PR #1](https://github.com/0kam/echoroo-lite/pull/1)で最初のCIを開始した。
-初回はテスト・画面ビルド・サービス凍結が通過したが、BirdNET配布元ZenodoのHTTP 504が
-5回の再試行でも解消せず停止した。Macからの同レコードAPI・ファイル取得も504だった。
-配布物作成をモデル準備より先に移動し、[再実行](https://github.com/0kam/echoroo-lite/actions/runs/34297836126)で
-Tauriのビルドと `windows-preview` 成果物の保存が通過した。全7件のPythonテスト、Svelteの
-エラー・警告0件、静的ビルド、サービス凍結も通過。成果物があっても実推論検査の成功とは扱わない。
-再実行でもZenodoの504が5回続き、モデル準備で失敗した。凍結版の実推論検査は未実施。
-この実行のCI全体は失敗であり、Windowsでのインストール・起動・音声出力・実推論の確認は残った。
-成果物は284,340,626 bytes、GitHub記録のSHA-256は
-`152106c5c2aaac62c00d32df8a87263f74587283468e322f5dfc8256574df3fe`。
-取得したインストーラーはローカルの `.local-data/windows-preview/installers/` にある。
+2026-09-09、[PR #1](https://github.com/0kam/echoroo-lite/pull/1)の `fc72332` を検査した
+[Windows CI](https://github.com/0kam/echoroo-lite/actions/runs/34306818881)で、次が通過した。
+
+- 全8件のPythonテスト、Svelteのエラー・警告0件、静的ビルド、PyInstaller凍結、EXE/MSI作成。
+- NSISのサイレントインストール。導入先サービスで認証・SQLite/vec・26種クイズ・
+  MP3取得・回答保存・正常終了。
+- 導入したデスクトップの起動、1024×768画面での `Local service connected` 表示、正常終了。
+  `windows-startup` の画像とアクセシビリティ記録を取得して確認した。
+
+**CI全体は失敗。** 続くBirdNETモデル取得がZenodo HTTP 504で5回とも失敗し、実推論検査は
+スキップされた。画面起動の合格をWindowsの推論・音声出力・全操作の合格とは扱わない。
+配布元の応答回復、または展示PCへの準備済みモデル配置後に実推論を確認する。
+
+配布成果物 `windows-preview` は284,353,142 bytes、GitHub記録のSHA-256は
+`1f7c1e1d63723400ff143509dc29094681c1a99efd105f8a13bc2aa3e5171885`。
+取得したインストーラーはローカルの `.local-data/windows-preview-fc72332/installers/` にある。
 
 | ファイル | bytes | SHA-256 |
 |---|---:|---|
-| `nsis/Echoroo Lite_0.1.0_x64-setup.exe` | 141,889,930 | `9db41de12193136a69643442768eaa8bc1557767f78c7e95821bc5cdbd2146ee` |
-| `msi/Echoroo Lite_0.1.0_x64_en-US.msi` | 142,626,816 | `5a5e2fb0d1ec0282f91ff185e321fc0bcc25deaf8bc68907f9365a8f31090979` |
+| `nsis/Echoroo Lite_0.1.0_x64-setup.exe` | 141,898,659 | `e9f4f9040fd466997c0fadee0a23a8cb54f2225d73dceee470d59f2083ce8f72` |
+| `msi/Echoroo Lite_0.1.0_x64_en-US.msi` | 142,630,912 | `fdc5df8aa45f80cf2237568cf6fc4d3ece7a365ccc97ade817a264cc78e4643d` |
 
-検索期間を追加した `7824d89` の [CI](https://github.com/0kam/echoroo-lite/actions/runs/34305306420)では、
-全8件のPythonテスト、画面検査・ビルド、サービス凍結、モデル不要の凍結サービス検査、
-EXE/MSI作成まで通過した。NSISのサイレントインストール後、インストール先のサービスでも
-認証・SQLite/vec・26種クイズ・MP3取得・回答保存・正常終了を確認した。
-デスクトップ画面も起動したが、幅1100px以下で接続状態を隠すCSSにより、
-1024pxのCI画面では `Local service connected` を確認できず起動検査が失敗した。
-画面とアクセシビリティの記録を `windows-startup` に保存済み。
-狭い画面でも接続状態を表示するよう修正し、再検査する。正常終了を含むGUI検査は未合格。
-この実行では以後のモデル準備・実推論はスキップされた。
-配布物 `windows-preview` は284,351,212 bytes、GitHub記録のSHA-256は
-`4a1cbc9b408ada63f0321a296d74c4a7538a4bd59da51ab143ab367b6efe99b0`。
+以前の [CI](https://github.com/0kam/echoroo-lite/actions/runs/34297836126)でもモデル取得が504で失敗したため、
+インストーラー作成をモデル準備より先に移した。続く `7824d89` の
+[CI](https://github.com/0kam/echoroo-lite/actions/runs/34305306420)は、幅1100px以下で接続状態を隠す
+CSSによって画面起動検査が失敗した。非表示指定を削除し、上記 `fc72332` で合格を確認した。
 
 依存49パッケージはWindows x64・Python 3.11のバイナリ配布だけで解決できたが、
 これはWindows上のインストール・DLL読み込み・推論成功の証明ではない。
@@ -111,7 +109,8 @@ XCを当日オンラインで紹介する場合は、APIキー設定後に実サ
 オフライン展示では取得済み音源を使う。XCキーは設定済みで、Mac配布版の実接続・取得・
 選択区間からの検索を確認済み。Windowsでも別途設定する。個別素材の出典情報は確認中。
 CIで通るAPI検査と、Windows実機の音声出力・ファイル選択・描画は分けて記録する。
-`scripts/check_windows_install.ps1` の導入・サービス検査は通過し、GUI検査は上記の表示修正後に再確認する。
+`scripts/check_windows_install.ps1` の導入・サービス・画面起動・接続表示・正常終了は通過済み。
+表示確認はCIの英語環境であり、展示PCでの日本語表示と全操作の確認は残る。
 
 ### Macで済ませた通信遮断の確認
 

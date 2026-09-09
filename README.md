@@ -140,13 +140,16 @@ session authorization, bundled species names and quizzes, SQLite extension and s
 It also provisions the pinned models and runs both classifiers, searches and report
 exports using a supplied call clip. Windows CI has passed eight API tests, EXE/MSI
 creation, NSIS installation, and the installed service's startup, quizzes and shutdown.
-The desktop startup check found that CSS hid connection status on the runner's 1024px
-screen; this is fixed and awaits a fresh CI check. Earlier attempts to download BirdNET
-failed with Zenodo HTTP 504. Frozen inference, GUI acceptance and annual performance on
+The desktop startup check now passes on the runner's 1024px screen, including visible
+connection status and normal shutdown. Model provisioning still fails with Zenodo
+HTTP 504 after five attempts. Frozen inference, full GUI acceptance and annual performance on
 Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
 CSV/audio exports in 4 h 8 min 25 s; annual plots were then checked in the release app.
 See [the annual benchmark and its limits](docs/annual-benchmark-2026-09.md).
+The Mac release app also processed all 24 supplied recordings (12 hours) in about
+nine minutes and exported both classifier reports and a full-data search report.
+See [the real-day preview record](docs/real-day-preview-2026-09.md).
 
 Optional real-audio checks (the supplied 30-minute recording):
 
