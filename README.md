@@ -144,12 +144,12 @@ The desktop startup check now passes on the runner's 1024px screen, including vi
 connection status and normal shutdown. Japanese switching and persistence after restart
 also pass. Setup now uses the record's official content API; model downloads and hash
 checks pass on Windows, and a fresh Mac download matches all 58 existing model/label files.
-The Windows inference check still fails at its 240-second limit when spawning BirdNET's
-producer, after regional prediction and Perch loading finish. Its stack traces point to
-process startup while the parent-stop watcher reads inherited stdin. The Windows watcher
-now peeks for the stop byte or pipe closure; that fix awaits a Windows run.
-Frozen inference, full GUI acceptance and annual performance on
-Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
+The Windows frozen check now passes both classifiers, searches, reports and CSV/audio
+exports. The parent-stop watcher peeks for a stop byte or pipe closure on Windows, avoiding
+the inherited-stdin read that stalled BirdNET worker startup. The updated installer build
+is running. Installed desktop checks using the analysed audio are being added; full GUI
+acceptance, actual audio output and annual performance on Windows remain unverified.
+See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
 CSV/audio exports in 4 h 8 min 25 s; annual plots were then checked in the release app.
 See [the annual benchmark and its limits](docs/annual-benchmark-2026-09.md).

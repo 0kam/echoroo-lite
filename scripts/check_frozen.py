@@ -2,6 +2,7 @@
 import json
 import argparse
 from collections import deque
+from contextlib import ExitStack
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("binary")
 parser.add_argument("--models", type=Path)
+parser.add_argument("--data", type=Path, help="Keep the check's data in a new directory for desktop UI checks")
 parser.add_argument("--diagnostics", action="store_true", help="Record periodic stack traces when a frozen check stalls")
 parser.add_argument("--parent-eof", action="store_true", help="Check shutdown when the parent closes its pipe without a stop byte")
 audio_input = parser.add_mutually_exclusive_group()
@@ -21,7 +23,13 @@ audio_input.add_argument("--recording", type=Path)
 audio_input.add_argument("--sample-audio", type=Path, help="Convert a supplied call clip into a dated mono WAV for the full ML check")
 args = parser.parse_args()
 
-with tempfile.TemporaryDirectory() as temp:
+with ExitStack() as stack:
+    if args.data:
+        args.data = args.data.resolve()
+        args.data.mkdir(parents=True, exist_ok=False)
+        temp = str(args.data)
+    else:
+        temp = stack.enter_context(tempfile.TemporaryDirectory())
     if args.sample_audio:
         import soundfile as sf
         samples, rate = sf.read(args.sample_audio, dtype='float32')
@@ -66,6 +74,7 @@ with tempfile.TemporaryDirectory() as temp:
         else:
             raise AssertionError("Unauthenticated request was accepted")
         if args.recording:
+            target = api('/species?q=Horornis%20diphone')[0]
             imported = api("/imports", dict(folder=str(args.recording.resolve().parent), site_name="Test", dataset_name="Freeze check",
                 timezone="Asia/Tokyo", latitude=35.49152777777778, longitude=138.20491666666666))
             records = api(f"/datasets/{imported['dataset_id']}/recordings")
@@ -100,7 +109,7 @@ with tempfile.TemporaryDirectory() as temp:
             print(f"Frozen reference registration, spectrogram and real similarity search passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
             runs = api('/search-runs', {'dataset_id': imported['dataset_id'], 'targets': [{
-                'species_id': species[0]['id'], 'clips': [
+                'species_id': target['id'], 'clips': [
                     {'source_kind': 'reference', 'source_id': reference['id'], 'start_s': 0, 'end_s': 3},
                     {'source_kind': 'reference', 'source_id': reference['id'], 'start_s': 5, 'end_s': 8}]}]})
             run = runs[0]
@@ -118,7 +127,7 @@ with tempfile.TemporaryDirectory() as temp:
             for engine in ('birdnet', 'perch'):
                 model = next(m for m in options['models'] if m['engine'] == engine)
                 report = api('/reports/detection', {**dates, 'dataset_id': imported['dataset_id'], 'engine': engine,
-                    'model_sha256': model['model_sha256'], 'threshold': .1, 'species_id': species[0]['id']})
+                    'model_sha256': model['model_sha256'], 'threshold': .1, 'species_id': target['id']})
                 assert report['window_s'] == 15 and report['quality'] == 'not_evaluated'
                 assert sum(c['recorded_seconds'] for c in report['cells']) > 0
             report = api('/reports/search', {**dates, 'run_id': run['id'], 'threshold': .5})
