@@ -1,4 +1,7 @@
 """Exact similarity search over the latest compatible embeddings in one dataset."""
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import numpy as np
 
 from analysis import load_perch
@@ -35,12 +38,23 @@ def compatible_analyses(db, dataset_id, model_sha):
         AND json_extract(a.metadata, '$.model_sha256')=?''', (dataset_id, model_sha)).fetchall()
 
 
-def rank_segments(root, dataset_id, vectors, model_sha, query_source, start, end, limit):
+def search_context(db, dataset_id, model_sha, first=None, last=None):
+    if first and last and first > last:
+        raise CatalogError('search_period')
+    records = db.execute('SELECT id,recorded_at,timezone FROM recordings WHERE dataset_id=?', (dataset_id,)).fetchall()
+    selected = set()
+    for row in records:
+        day = datetime.fromisoformat(row['recorded_at']).astimezone(ZoneInfo(row['timezone'])).date()
+        if (first is None or first <= day) and (last is None or day <= last):
+            selected.add(row['id'])
+    if not selected:
+        raise CatalogError('no_search_recordings')
+    return [r for r in compatible_analyses(db, dataset_id, model_sha) if r['id'] in selected], len(selected)
+
+
+def rank_segments(root, dataset_id, vectors, model_sha, query_source, start, end, limit, first=None, last=None):
     with connect(root) as db:
-        total = db.execute("SELECT COUNT(*) FROM recordings WHERE dataset_id=?", (dataset_id,)).fetchone()[0]
-        if not total:
-            raise CatalogError("no_audio")
-        compatible = compatible_analyses(db, dataset_id, model_sha)
+        compatible, total = search_context(db, dataset_id, model_sha, first, last)
         if not compatible:
             raise CatalogError("no_search_embeddings")
         # Verify sources before treating their stored embeddings as current evidence.
@@ -68,5 +82,6 @@ def search(root, models, body):
     row = source(root, body.source_kind, body.source_id)
     vectors, query = query_embeddings(models, row, body.start_s, body.end_s)
     hits, coverage = rank_segments(root, body.dataset_id, vectors, query["model_sha256"], row,
-                                   query["start_s"], query["end_s"], body.limit)
-    return {"source": row, "query": query, "hits": hits, **coverage}
+                                   query["start_s"], query["end_s"], body.limit, body.start_date, body.end_date)
+    return {"source": row, "query": query, "hits": hits, 'start_date': body.start_date,
+            'end_date': body.end_date, 'date_scope': 'recording_start_local', **coverage}

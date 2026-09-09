@@ -52,6 +52,9 @@
     <button disabled={busy} onclick={exportFiles}>{t(busy ? 'exportingReport' : 'exportReport')}</button></div>
   {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} /></label>{/if}
   <p class="muted">{report.start_date}–{report.end_date} · {report.site.timezone} · {t('threshold')}: {report.threshold?.toFixed(3) ?? t('noThreshold')} · {report.window_s} {t('seconds')}</p>
+  {#if report.search_snapshot?.start_date || report.search_snapshot?.end_date}
+    <p class="muted">{t('searchRecordingDates')}: {report.search_snapshot.start_date ?? t('noDateLimit')}–{report.search_snapshot.end_date ?? t('noDateLimit')}</p>
+  {/if}
   <p class="muted">{t('reportSnapshotHint')} {t('exportContents')}</p>
   {#if output}<p class="notice" role="status">{t('reportExported')}<br/><span class="path">{output}</span></p>{/if}
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}

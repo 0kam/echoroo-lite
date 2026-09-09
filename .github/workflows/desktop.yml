@@ -25,11 +25,24 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: python scripts/freeze_sidecar.py
+      - name: Check frozen startup and quiz without models
+        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe
       - run: npm run desktop:build
       - uses: actions/upload-artifact@v4
         with:
           name: windows-preview
           path: apps/desktop/target/release/bundle/
+      - name: Check installation and desktop startup without models
+        timeout-minutes: 5
+        run: scripts/check_windows_install.ps1 -Installer 'apps/desktop/target/release/bundle/nsis/Echoroo Lite_0.1.0_x64-setup.exe'
+      - name: Save desktop startup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-startup
+          path: |
+            ${{ runner.temp }}/echoroo-startup.png
+            ${{ runner.temp }}/echoroo-startup.txt
       - name: Provision the pinned models for real inference
         run: python scripts/setup_models.py
       - name: Check frozen inference, search, reports and quiz with supplied audio

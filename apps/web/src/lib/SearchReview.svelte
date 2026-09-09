@@ -3,12 +3,15 @@
   import { api } from './api';
   import { commonName, type Species } from './species';
   import { clipTime, type AudioSource } from './AudioRegion.svelte';
+  import SimilarityDistribution, { type Band } from './SimilarityDistribution.svelte';
   export type Hit = { segment_id: number; recording_id: number; path: string; seconds: number; recorded_at: string; timezone: string;
     start_s: number; end_s: number; similarity: number; reference_index: number; verdict: string | null; note: string | null };
   type RunSummary = { id: number; species: Species; created_at: string };
   type Sample = { id: number; low: number; high: number; population: number; count: number; seed: string };
   export type Run = { id: number; created_at: string; hit_count: number; hits: Hit[]; sample_id: number | null; samples: Sample[];
+    distribution: Band[];
     snapshot: { species: Species; searched_recordings: number; total_recordings: number; searched_segments: number; unsearched_recordings: number;
+      start_date?: string | null; end_date?: string | null;
       references: { source: AudioSource; query: { start_s: number; end_s: number } }[] } };
   let { datasetId, locale, t, onlisten }: { datasetId: number; locale: string; t: (key: string) => string; onlisten: (hit: Hit) => Promise<void> } = $props();
   let rows = $state<RunSummary[]>([]), run = $state<Run | null>(null), chosen = $state(''), sampleId = $state('');
@@ -46,11 +49,14 @@
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if run}
     <h3 class="target">{commonName(run.snapshot.species, locale)} · <i>{run.snapshot.species.scientific_name}</i></h3>
+    <p class="muted">{t('searchRecordingDates')}: {run.snapshot.start_date ?? t('noDateLimit')}–{run.snapshot.end_date ?? t('noDateLimit')}</p>
     <p class="muted">{t('searchCoverage')}: {run.snapshot.searched_recordings} / {run.snapshot.total_recordings} {t('files')} · {run.hit_count} {t('searchableSegments')}</p>
     {#if run.snapshot.unsearched_recordings}<p class="notice">{t('partialSearch')}</p>{/if}
     <details><summary>{t('savedReferences')} ({run.snapshot.references.length})</summary>
       {#each run.snapshot.references as ref, i}<p class="muted">{i + 1}. {name(ref.source.path)} · {clipTime(ref.query.start_s)}–{clipTime(ref.query.end_s)}</p>{/each}</details>
     <p class="muted">{t('similarityHint')}</p>
+    <details class="distribution" open><summary>{t('similarityDistribution')}</summary>
+      <SimilarityDistribution bands={run.distribution} {t}/></details>
     <form class="sampling" onsubmit={e => { e.preventDefault(); void action(draw); }}>
       <label>{t('similarityLow')}<input type="number" min="-1" max="1" step="any" required bind:value={low} /></label>
       <label>{t('similarityHigh')}<input type="number" min="-1" max="1" step="any" required bind:value={high} /></label>
@@ -81,4 +87,5 @@
   .hit-list { max-height: 420px; overflow: auto; margin-top: 12px; }
   .verdicts { display: flex; flex-wrap: wrap; gap: 4px; }
   details { font-size: 12px; margin: 10px 0; }
+  .distribution { max-height: 300px; overflow: auto; }
 </style>

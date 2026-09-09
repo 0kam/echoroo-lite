@@ -5,6 +5,7 @@
   import type { Report, ReportOptions } from './reports';
   import ReportView from './ReportView.svelte';
   import SpeciesPicker from './SpeciesPicker.svelte';
+  import SimilarityDistribution from './SimilarityDistribution.svelte';
   let { datasetId, locale, t }: { datasetId: number; locale: string; t: (key: string) => string } = $props();
   type History = {id: number; kind: string; species: Species | null; start_date: string; end_date: string};
   let options = $state<ReportOptions | null>(null), runs = $state<{ id: number; species: Species }[]>([]), history = $state<History[]>([]);
@@ -69,10 +70,8 @@
     if(historyId) restore(await api<Report>(`/reports/${historyId}`));
   })}><option value="">{t('chooseReport')}</option>{#each history as row}<option value={String(row.id)}>#{row.id} · {t(row.kind==='search'?'searchReport':'detectionReport')} · {row.species ? `${commonName(row.species,locale)} · ${row.species.scientific_name}` : t('reportAllSpecies')} · {row.start_date}–{row.end_date}</option>{/each}</select></label>{/if}
   {#if report?.kind==='search' && report.distribution}
-    <details class="distribution"><summary>{t('similarityDistribution')}</summary><p class="muted">{t('distributionHint')}</p>
-      <table><thead><tr><th>{t('similarity')}</th><th>{t('eligibleWindows')}</th><th>{t('verdict_target')}</th><th>{t('verdict_other')}</th><th>{t('verdict_unknown')}</th></tr></thead><tbody>
-        {#each report.distribution as band,i}<tr><td>{band.low.toFixed(1)}–{band.high.toFixed(1)}{i===19?'':' *'}</td><td>{band.count}</td><td>{band.target}</td><td>{band.other}</td><td>{band.unknown}</td></tr>{/each}
-      </tbody></table></details>
+    <details class="distribution"><summary>{t('similarityDistribution')}</summary>
+      <SimilarityDistribution bands={report.distribution} {t}/></details>
     {#if report.threshold_suggestion}<p class="muted">{t('suggestedDisplayThreshold')}: {report.threshold_suggestion.threshold.toFixed(3)} · {t('thresholdSuggestionHint')}</p>
       <button class="small" disabled={busy} onclick={() => action(async () => {
         similarity=report!.threshold_suggestion!.threshold; useThreshold=true; runId=String(report!.run_id); first=report!.start_date; last=report!.end_date; await create();

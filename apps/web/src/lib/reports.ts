@@ -12,6 +12,7 @@ export type Report = { id: number; kind: 'detection' | 'search'; created_at: str
     recorded_days: number; candidate_days: number | null; confirmed_windows?: number }[];
   cells: Cell[]; evidence: Evidence[]; evidence_count: number; total_evidence: number; missing_region?: number[];
   judgements?: { target: number; other: number; unknown: number; unreviewed: number };
+  search_snapshot?: { start_date?: string | null; end_date?: string | null };
   threshold_suggestion?: { threshold: number; positive_count: number; negative_count: number } | null;
   distribution?: { low: number; high: number; count: number; target: number; other: number; unknown: number }[] };
 export type ReportOptions = { first_date: string; last_date: string;

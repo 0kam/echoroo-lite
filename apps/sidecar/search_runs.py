@@ -7,7 +7,7 @@ import numpy as np
 
 from analysis import load_perch
 from audio import source
-from search import compatible_analyses, query_embeddings
+from search import search_context, query_embeddings
 from species import names_for
 from storage import CatalogError, checked_source, connect
 
@@ -19,8 +19,7 @@ def create_runs(root, models, body):
         if dataset is None:
             raise CatalogError('not_found')
         site = db.execute('SELECT * FROM sites WHERE id=?', (dataset['site_id'],)).fetchone()
-        total = db.execute('SELECT COUNT(*) FROM recordings WHERE dataset_id=?', (body.dataset_id,)).fetchone()[0]
-        compatible = compatible_analyses(db, body.dataset_id, loaded[1])
+        compatible, total = search_context(db, body.dataset_id, loaded[1], body.start_date, body.end_date)
         if not compatible:
             raise CatalogError('no_search_embeddings')
         for row in compatible:
@@ -46,6 +45,8 @@ def create_runs(root, models, body):
             queries = np.stack(vectors)
             queries /= np.linalg.norm(queries, axis=1, keepdims=True)
             snapshot = {'species': names_for(species), 'dataset': dict(dataset), 'site': dict(site),
+                        'start_date': body.start_date.isoformat() if body.start_date else None,
+                        'end_date': body.end_date.isoformat() if body.end_date else None, 'date_scope': 'recording_start_local',
                         'model_sha256': loaded[1], 'aggregation': 'maximum_cosine', 'references': references,
                         'analysis_ids': [r['analysis_id'] for r in compatible], **coverage}
             run_id = db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',
@@ -103,9 +104,17 @@ def get_run(root, run_id, sample_id=None, limit=30):
                 (SELECT segment_id FROM search_sample_items WHERE sample_id=?))
             ORDER BY h.similarity DESC,h.segment_id LIMIT ?''',
                           (run['species_id'], run_id, sample_id, sample_id, limit if sample_id is None else 200)).fetchall()
-        count = db.execute('SELECT COUNT(*) FROM search_hits WHERE run_id=?', (run_id,)).fetchone()[0]
+        distribution = [{'low': -1 + i / 10, 'high': -1 + (i + 1) / 10, 'count': 0, 'target': 0, 'other': 0, 'unknown': 0} for i in range(20)]
+        for band in db.execute('''SELECT min(19, max(0, CAST((h.similarity+1)*10 AS INTEGER))) AS band,
+            COUNT(*) AS count, COALESCE(SUM(j.verdict='target'),0) AS target,
+            COALESCE(SUM(j.verdict='other'),0) AS other, COALESCE(SUM(j.verdict='unknown'),0) AS unknown
+            FROM search_hits h LEFT JOIN search_judgements j ON j.id=(SELECT MAX(id) FROM search_judgements
+                WHERE species_id=? AND segment_id=h.segment_id)
+            WHERE h.run_id=? GROUP BY band''', (run['species_id'], run_id)):
+            distribution[band['band']].update({k: band[k] for k in ('count', 'target', 'other', 'unknown')})
+        count = sum(band['count'] for band in distribution)
         return {**dict(run), 'snapshot': json.loads(run['snapshot']), 'hits': [dict(h) for h in hits],
-                'hit_count': count, 'samples': samples, 'sample_id': sample_id}
+                'hit_count': count, 'samples': samples, 'sample_id': sample_id, 'distribution': distribution}
 
 
 def draw_sample(root, run_id, low, high, count):

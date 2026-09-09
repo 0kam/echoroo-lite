@@ -51,6 +51,8 @@ class ReferenceRequest(BaseModel):
 
 class SearchRequest(BaseModel):
     dataset_id: int
+    start_date: date | None = None
+    end_date: date | None = None
     source_kind: Literal["recording", "reference"]
     source_id: int
     start_s: float = Field(ge=0, allow_inf_nan=False)
@@ -72,6 +74,8 @@ class SearchTarget(BaseModel):
 
 class SearchRunRequest(BaseModel):
     dataset_id: int
+    start_date: date | None = None
+    end_date: date | None = None
     targets: list[SearchTarget] = Field(min_length=1, max_length=20)
 
 

@@ -14,6 +14,7 @@
     recorded_at: string; timezone: string; start_s: number; end_s: number; similarity: number };
   type SearchResult = { source: AudioSource; query: { start_s: number; end_s: number;
     windows: { start_s: number; end_s: number; padding_s: number }[] };
+    start_date: string | null; end_date: string | null;
     hits: Hit[]; total_recordings: number; searched_recordings: number; searched_segments: number; unsearched_recordings: number };
   type Reference = AudioSource & { attribution?: Attribution };
   type Target = { species: Species; clips: { source: Reference; start_s: number; end_s: number }[] };
@@ -23,6 +24,8 @@
   let start = $state(0), end = $state(untrack(() => Math.min(5, recording.seconds))), playerKey = $state(0);
   let preview = $state<Hit | null>(null), previewStart = $state(0), previewEnd = $state(5);
   let searching = $state(false), adding = $state(false), error = $state(''), result = $state<SearchResult | null>(null);
+  let first = $state(''), last = $state('');
+  const validPeriod = $derived(!first || !last || first <= last);
   let player = $state<{ play: () => Promise<void> }>(null!);
   const source: Reference = $derived(chosen === 'recording' ? { ...recording, kind: 'recording' as const } : references.find(r => r.id === Number(chosen))!);
   const name = (path: string) => path.split(/[\\/]/).pop();
@@ -35,6 +38,7 @@
     references = [row, ...references.filter(r => r.id !== row.id)]; chosen = String(row.id); changeSource();
   }
   function saveDraft() { localStorage.setItem(`echoroo-search-${datasetId}`, JSON.stringify(targets)); }
+  function savePeriod() { localStorage.setItem(`echoroo-search-period-${datasetId}`, JSON.stringify([first, last])); }
   function addClip() {
     if (!species || atLimit) return;
     let target = targets.find(row => row.species.id === species!.id);
@@ -60,14 +64,14 @@
     searching = true; error = ''; result = null;
     try {
       result = await api<SearchResult>('/search', { dataset_id: datasetId, source_kind: source.kind,
-        source_id: source.id, start_s: start, end_s: end, limit: 30 });
+        source_id: source.id, start_s: start, end_s: end, limit: 30, start_date: first || null, end_date: last || null });
     } catch (e) { error = e instanceof Error ? e.message : 'unknown_error'; }
     finally { searching = false; }
   }
   async function saveAndSearch() {
     searching = true; error = ''; result = null;
     try {
-      const runs = await api<Run[]>('/search-runs', { dataset_id: datasetId, targets: targets.map(target => ({
+      const runs = await api<Run[]>('/search-runs', { dataset_id: datasetId, start_date: first || null, end_date: last || null, targets: targets.map(target => ({
         species_id: target.species.id, clips: target.clips.map(c => ({ source_kind: c.source.kind, source_id: c.source.id, start_s: c.start_s, end_s: c.end_s })) })) });
       await review.showRuns(runs);
     } catch (e) { error = e instanceof Error ? e.message : 'unknown_error'; }
@@ -84,6 +88,7 @@
   onMount(() => {
     void api<Reference[]>('/references').then(rows => references = rows).catch(e => error = e.message);
     try { targets = JSON.parse(localStorage.getItem(`echoroo-search-${datasetId}`) || '[]'); } catch { targets = []; }
+    try { [first, last] = JSON.parse(localStorage.getItem(`echoroo-search-period-${datasetId}`) || '["", ""]'); } catch { first = ''; last = ''; }
   });
 </script>
 
@@ -104,8 +109,14 @@
     <AudioRegion source={{ id: preview.recording_id, kind: 'recording', path: preview.path, seconds: preview.seconds }} {t} bind:start={previewStart} bind:end={previewEnd} bind:this={player} />
   {:else}<AudioRegion {source} {t} bind:start bind:end bind:this={player} />{/if}
 {/key}
+<fieldset class="search-period"><legend>{t('searchRecordingDates')}</legend>
+  <div class="form-grid"><label>{t('searchStartDate')}<input type="date" bind:value={first} max={last || undefined} disabled={searching} onchange={savePeriod}/></label>
+    <label>{t('searchEndDate')}<input type="date" bind:value={last} min={first || undefined} disabled={searching} onchange={savePeriod}/></label></div>
+  <p class="muted">{t('searchPeriodHint')}</p>
+  {#if !validPeriod}<p class="error">{t('search_period')}</p>{/if}
+</fieldset>
 <div class="search-action"><button disabled={searching || !species || !validRange || preview !== null || atLimit} onclick={addClip}>{t('addQueryClip')}</button>
-  <button class="small" disabled={searching || active || !validRange || preview !== null} onclick={search}>{t(searching ? 'searchingAudio' : 'quickSearch')}</button>
+  <button class="small" disabled={searching || active || !validRange || !validPeriod || preview !== null} onclick={search}>{t(searching ? 'searchingAudio' : 'quickSearch')}</button>
   <span class="muted">{t('queryRangeHint')}</span></div>
 {#if targets.length}
   <div class="query-set"><h3>{t('querySet')}</h3><p class="muted">{t('querySetHint')}</p>
@@ -114,7 +125,7 @@
         <button class="small" disabled={searching} aria-label={`${t('removeReference')} ${ci + 1}`} onclick={() => {
           targets[ti].clips.splice(ci, 1); targets = targets.filter(row => row.clips.length); saveDraft();
         }}>{t('removeReference')}</button></div>{/each}</div>{/each}
-    <button class="primary" disabled={searching || active} onclick={saveAndSearch}>{t(searching ? 'searchingAudio' : 'saveAndSearch')}</button>
+    <button class="primary" disabled={searching || active || !validPeriod} onclick={saveAndSearch}>{t(searching ? 'searchingAudio' : 'saveAndSearch')}</button>
   </div>
 {/if}
 {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
@@ -124,6 +135,7 @@
   <section class="search-results" aria-label={t('similarSounds')}>
     <h3>{t('similarSounds')} ({result.hits.length})</h3>
     <p class="muted">{t('searchedReference')}: {name(result.source.path)} · {clipTime(result.query.start_s)}–{clipTime(result.query.end_s)}</p>
+    <p class="muted">{t('searchRecordingDates')}: {result.start_date ?? t('noDateLimit')}–{result.end_date ?? t('noDateLimit')}</p>
     <p class="muted">{t('searchCoverage')}: {result.searched_recordings} / {result.total_recordings} {t('files')} · {result.searched_segments} {t('analyzedSegments')}</p>
     {#if result.unsearched_recordings}<p class="notice">{t('partialSearch')}</p>{/if}
     <p class="muted">{t('similarityHint')}</p>
@@ -146,4 +158,5 @@
   details { font-size: 12px; }
   .query-set { border: 1px solid rgb(var(--stone-300)); padding: 14px; border-radius: 6px; margin: 12px 0; }
   .query-target { font-size: 12px; margin: 10px 0; }
+  .search-period { border: 1px solid rgb(var(--stone-300)); padding: 12px; margin: 12px 0; }
 </style>

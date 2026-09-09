@@ -5,7 +5,10 @@
   let element = $state<SVGSVGElement>(null!), zoom = $state(100), focusIndex = $state(0);
   const uid = $props.id();
   const days = $derived(Math.round((Date.parse(report.end_date) - Date.parse(report.start_date)) / 86400000) + 1);
-  const siteLines = $derived(Array.from(`${report.site.name} · ${report.dataset.name}`).join('').match(new RegExp(`.{1,${locale === 'ja' ? 48 : 90}}`, 'gu')) || []);
+  const searchPeriod = $derived(report.search_snapshot?.start_date || report.search_snapshot?.end_date
+    ? `${t('searchRecordingDates')}: ${report.search_snapshot.start_date ?? t('noDateLimit')}–${report.search_snapshot.end_date ?? t('noDateLimit')}` : '');
+  const siteLines = $derived([`${report.site.name} · ${report.dataset.name}`, ...(searchPeriod ? [searchPeriod] : [])]
+    .flatMap(line => Array.from(line).join('').match(new RegExp(`.{1,${locale === 'ja' ? 48 : 90}}`, 'gu')) || []));
   const header = $derived(132 + siteLines.length * 20);
   const cx = 480, outer = 330, inner = 60;
   const cy = $derived(header + 360), height = $derived(header + 870);
@@ -63,7 +66,7 @@
 <svg bind:this={element} xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 960 ${height}`} style:width={`${zoom}%`} style:max-width={`${720*zoom/100}px`}
   role="group" aria-label={t('spiralPlot')} font-family="system-ui, Yu Gothic, Hiragino Kaku Gothic ProN, sans-serif">
   <title>{t('spiralPlot')} · {report.species ? commonName(report.species, locale) : ''} · {metric}</title>
-  <desc>{t('spiralMeaning')} {report.site.timezone} · {condition} · {report.start_date}–{report.end_date}</desc>
+  <desc>{t('spiralMeaning')} {report.site.timezone} · {condition} · {report.start_date}–{report.end_date} · {searchPeriod}</desc>
   <defs><pattern id={`${uid}-missing`} width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="#fafafa"/><path d="M-2,2 L2,-2 M0,7 L7,0 M5,9 L9,5" stroke="#aeacb8" stroke-width="1"/></pattern>
     <pattern id={`${uid}-partial`} width="9" height="9" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1" fill="#494454"/></pattern>
     <linearGradient id={`${uid}-gradient`}><stop offset="0%" stop-color="#f8e0de"/><stop offset="100%" stop-color="#a0504c"/></linearGradient>

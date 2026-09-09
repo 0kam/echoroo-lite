@@ -381,6 +381,8 @@ def export_report(root, report_id, folder, svg=None, png=None, audio=()):
               'start_date': snapshot['start_date'], 'end_date': snapshot['end_date'], 'window_s': snapshot['window_s'],
               'threshold': snapshot['threshold'], 'model_sha256': snapshot['model_sha256'], 'search_run_id': snapshot.get('run_id'),
               'engine': snapshot.get('engine', 'perch'), 'quality': 'not_evaluated'}
+    if snapshot.get('search_snapshot', {}).get('date_scope'):
+        common.update({f'search_{key}': snapshot['search_snapshot'].get(key) for key in ('start_date', 'end_date', 'date_scope')})
     def taxon(species):
         return {'species_id': species['id'], 'scientific_name': species['scientific_name'],
                 'common_name_ja': species['common_names'].get('ja', ''), 'common_name_en': species['common_names'].get('en', '')} if species else {}
