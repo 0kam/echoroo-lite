@@ -1,0 +1,15 @@
+{
+  "name": "echoroo-lite",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["apps/web"],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "check": "npm run check --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "desktop": "cd apps/desktop && tauri dev",
+    "desktop:build": "cd apps/desktop && tauri build --config tauri.bundle.conf.json"
+  },
+  "devDependencies": {"@tauri-apps/cli": "2.11.4"}
+}

@@ -1,0 +1,11 @@
+fastapi==0.141.1
+uvicorn==0.52.4
+birdnet==1.1.1
+ai-edge-litert==2.2.0
+onnxruntime==1.29.0
+numpy==2.4.6
+scipy==1.17.1
+soundfile==0.14.0
+sqlite-vec==0.1.9
+tzdata==2026.2
+filelock==3.32.5

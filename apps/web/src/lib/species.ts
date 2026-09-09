@@ -1,0 +1,21 @@
+export type Species = {
+  id: string;
+  scientific_name: string;
+  common_names: Record<string, string>;
+  custom_names: Record<string, string>;
+};
+
+export type NamedCandidate = {
+  label: string;
+  species_id: string | null;
+  scientific_name: string | null;
+  common_names: Record<string, string>;
+};
+
+export function commonName(species: { common_names: Record<string, string> }, locale: string) {
+  return species.common_names[locale] || species.common_names.en || '';
+}
+
+export function candidateName(candidate: NamedCandidate, locale: string) {
+  return commonName(candidate, locale) || candidate.scientific_name || candidate.label.replaceAll('_', ' ');
+}

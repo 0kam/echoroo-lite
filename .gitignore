@@ -8,3 +8,12 @@ __pycache__/
 .DS_Store
 *.onnx
 *.tflite
+poc/models/
+poc/results/
+apps/web/.svelte-kit/
+apps/desktop/gen/
+apps/desktop/binaries/
+.local-data/
+*.spec
+.xeno-canto-key
+.xc-key-*

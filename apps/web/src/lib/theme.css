@@ -1,0 +1,55 @@
+/* Echoroo full 954457ac: shared Rose Pine Dawn/Main color roles. */
+:root {
+  --primary-100: 248 224 222;
+  --primary-200: 240 195 192;
+  --primary-500: 215 130 126;
+  --primary-600: 190 105 100;
+  --primary-700: 160 80 76;
+  --stone-50: 255 250 243;
+  --stone-100: 250 244 237;
+  --stone-200: 244 237 232;
+  --stone-300: 223 218 217;
+  --stone-500: 152 147 165;
+  --stone-600: 121 117 147;
+  --stone-700: 87 82 121;
+  --stone-800: 70 66 97;
+  --stone-900: 55 52 80;
+  --color-page-bg: 250 244 237;
+  --color-card-bg: 255 250 243;
+  --color-card-border: 223 218 217;
+  --color-nav-bg: 242 233 225;
+  --color-nav-border: 206 202 205;
+  --color-success: 40 105 131;
+  --color-success-light: 232 243 246;
+  --color-warning: 234 157 52;
+  --color-warning-light: 253 240 218;
+  --color-danger: 180 99 122;
+  --color-danger-light: 245 224 231;
+}
+.dark {
+  --primary-100: 245 225 224;
+  --primary-200: 240 210 208;
+  --primary-500: 235 188 186;
+  --primary-600: 200 150 146;
+  --primary-700: 170 115 110;
+  --stone-50: 25 23 36;
+  --stone-100: 31 29 46;
+  --stone-200: 38 35 58;
+  --stone-300: 64 61 81;
+  --stone-500: 144 140 170;
+  --stone-600: 170 167 200;
+  --stone-700: 196 193 216;
+  --stone-800: 210 208 230;
+  --stone-900: 224 222 244;
+  --color-page-bg: 25 23 36;
+  --color-card-bg: 31 29 46;
+  --color-card-border: 64 61 81;
+  --color-nav-bg: 31 29 46;
+  --color-nav-border: 64 61 81;
+  --color-success: 49 116 143;
+  --color-success-light: 30 40 50;
+  --color-warning: 246 193 119;
+  --color-warning-light: 50 42 30;
+  --color-danger: 235 111 146;
+  --color-danger-light: 50 28 38;
+}
