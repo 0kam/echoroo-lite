@@ -28,7 +28,11 @@
   $effect(() => {
     const id = datasetId, version = app.recordingsVersion;
     loading = true; loadError = '';
-    loadRecordings(id).then(rows => { if (id === datasetId && version === app.recordingsVersion) records = rows; })
+    loadRecordings(id).then(rows => {
+      if (id === datasetId && version === app.recordingsVersion) {
+        records = rows; start = 0; end = Math.min(5, rows.find(row => row.id === recordingId)?.seconds ?? 5);
+      }
+    })
       .catch(e => loadError = e instanceof Error ? e.message : 'unknown_error')
       .finally(() => loading = false);
   });

@@ -17,5 +17,6 @@
 <style>
   .count { position: relative; min-width: 120px; }
   .bar { position: absolute; left: 0; top: 15%; height: 70%; background: rgb(var(--primary-200)); }
+  :global(.dark) .bar { background: rgb(var(--primary-500) / .22); }
   .value { position: relative; }
 </style>
