@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
@@ -31,24 +32,24 @@
     await api('/jobs', { dataset_id: id, recording_id: null });
     await refreshCatalog(); notify('analysisStarted');
   }, { toast: true });
-  const openRecording = (record: Recording) => goto(`/datasets/${id}/recordings/${record.id}`);
+  const openRecording = (record: Recording) => goto(resolve(`/datasets/${id}/recordings/${record.id}`));
 </script>
 
 <div class="page">
   {#if app.connected && !dataset}
-    <div class="panel empty"><p>{t('datasetNotFound')}</p><Button href="/datasets">{t('navLibrary')}</Button></div>
+    <div class="panel empty"><p>{t('datasetNotFound')}</p><Button href={resolve('/datasets')}>{t('navLibrary')}</Button></div>
   {:else if dataset}
     <div class="page-header">
       <div>
-        <div class="crumbs"><a href="/datasets">{t('navLibrary')}</a><span>›</span><span>{site?.name}</span></div>
+        <div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span><span>{site?.name}</span></div>
         <h1>{dataset.name}</h1>
         <p>{dataset.folder}</p>
       </div>
       <div class="actions">
         <Button variant="primary" pending={analyzeAll.pending} disabled={!!job || !records.length}
           onclick={() => analyzeAll.run()}>{t(jobHere ? 'analysisInProgress' : 'analyzeAll')}</Button>
-        <Button href={`/datasets/${id}/search`}>{t('navSearch')}</Button>
-        <Button href={`/datasets/${id}/reports`}>{t('reports')}</Button>
+        <Button href={resolve(`/datasets/${id}/search`)}>{t('navSearch')}</Button>
+        <Button href={resolve(`/datasets/${id}/reports`)}>{t('reports')}</Button>
       </div>
     </div>
     <div class="two-col">
@@ -76,12 +77,12 @@
             </div>
           {/if}
           <div class="table-wrap recordings">
-            <table>
+            <table aria-label={t('datasetRecordings')}>
               <thead><tr><th>{t('recording')}</th><th>{t('time')}</th><th>{t('duration')}</th><th></th></tr></thead>
               <tbody>
                 {#each visible as record (record.id)}
                   <tr class="row-link" onclick={() => openRecording(record)}>
-                    <td><a href={`/datasets/${id}/recordings/${record.id}`} onclick={e => e.stopPropagation()}>{fileName(record.path)}</a></td>
+                    <td><a href={resolve(`/datasets/${id}/recordings/${record.id}`)} onclick={e => e.stopPropagation()}>{fileName(record.path)}</a></td>
                     <td class="mono">{siteTime(record)}</td><td class="mono">{duration(record.seconds)}</td>
                     <td class="right"><span class="button sm ghost">{t('play')} ›</span></td>
                   </tr>

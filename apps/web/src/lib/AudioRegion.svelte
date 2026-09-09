@@ -19,6 +19,8 @@
   let cursor = $state(0);
   let anchor: number | null = null, request = 0, stopAt: number | null = null;
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
+  let playbackVersion = 0;
+  let cancelMetadata: (() => void) | undefined;
   const viewEnd = $derived(Math.min(source.seconds, viewStart + span));
   const percent = (time: number) => Math.max(0, Math.min(100, (time - viewStart) / (viewEnd - viewStart) * 100));
 
@@ -60,11 +62,13 @@
     stopTimer = setTimeout(() => {
       // The media clock can lag behind wall time during buffering.
       if (stopAt !== null && audio.currentTime < stopAt - 0.01) { scheduleStop(); return; }
-      audio.pause(); stopAt = null;
+      stop();
     }, Math.max(20, (stopAt - audio.currentTime) / audio.playbackRate * 1000));
   }
   /** Plays the selected interval; `status` reports loading and playback so callers can show it. */
   export async function play(from = start, to = end) {
+    stop();
+    const version = playbackVersion;
     error = '';
     start = from; end = to;
     if (!(Number.isFinite(from) && Number.isFinite(to) && 0 <= from && from < to && to <= source.seconds)) {
@@ -77,17 +81,21 @@
         const done = () => { clean(); resolve(); };
         const fail = () => { clean(); reject(Error('unreadable_audio')); };
         const timer = setTimeout(fail, 10000);
-        function clean() { clearTimeout(timer); audio.removeEventListener('loadedmetadata', done); audio.removeEventListener('error', fail); }
+        function clean() { clearTimeout(timer); cancelMetadata = undefined; audio.removeEventListener('loadedmetadata', done); audio.removeEventListener('error', fail); }
+        cancelMetadata = done;
         audio.addEventListener('loadedmetadata', done); audio.addEventListener('error', fail);
       });
+      if (version !== playbackVersion) return;
       audio.currentTime = from; stopAt = to;
-      await audio.play(); scheduleStop();
-    } catch { error = 'unreadable_audio'; status = 'idle'; }
+      await audio.play(); if (version === playbackVersion) scheduleStop();
+    } catch { if (version === playbackVersion) { error = 'unreadable_audio'; status = 'idle'; } }
   }
-  export function stop() { audio.pause(); }
+  export function stop() {
+    playbackVersion++; cancelMetadata?.(); audio.pause(); clearTimeout(stopTimer); stopAt = null; status = 'idle';
+  }
   onMount(() => {
     navigate(Math.floor(start / span) * span);
-    return () => { request++; clearTimeout(stopTimer); audio.pause(); };
+    return () => { request++; stop(); };
   });
 </script>
 
@@ -102,7 +110,7 @@
   <div class="spectrogram-grid">
     <div class="frequencies"><span>12 kHz</span><span>6 kHz</span><span>0</span></div>
     <div class="spectrogram" role="group" aria-label={t('spectrogram')}
-      onpointerdown={event => { if (loading || error || event.button !== 0) return; audio.pause(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
+      onpointerdown={event => { if (loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
       onpointermove={select} onpointerup={event => { select(event); anchor = null; }} onpointercancel={() => anchor = null}>
       <canvas bind:this={canvas} aria-label={t('spectrogram')}></canvas>
       {#if !loading && !error}
@@ -114,8 +122,8 @@
     <div></div><div class="time-axis"><span>{clipTime(viewStart)}</span><span>{clipTime((viewStart + viewEnd) / 2)}</span><span>{clipTime(viewEnd)}</span></div>
   </div>
   <div class="region-controls">
-    <Button variant="primary" pending={status === 'loading'} onclick={() => status === 'playing' ? audio.pause() : play()}>
-      {status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t('playRange')}
+    <Button variant="primary" aria-busy={status === 'loading'} onclick={() => status !== 'idle' ? stop() : play()}>
+      {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t('playRange')}
     </Button>
     <label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} /></label>
     <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} /></label>
@@ -125,9 +133,9 @@
   <!-- Field recordings have no speech transcript. -->
   <!-- svelte-ignore a11y_media_has_caption -->
   <audio bind:this={audio} controls preload="metadata" src={sourceAudioURL(source.kind, source.id)} aria-label={t('audio')}
-    onerror={() => { error = 'unreadable_audio'; status = 'idle'; }} onplaying={() => { status = 'playing'; scheduleStop(); }}
+    onerror={() => { error = 'unreadable_audio'; status = 'idle'; }} onplaying={() => { if (!audio.paused) { status = 'playing'; scheduleStop(); } }}
     onwaiting={() => { if (status === 'playing') status = 'loading'; }}
-    onpause={() => { status = 'idle'; clearTimeout(stopTimer); }} onseeked={scheduleStop} onratechange={scheduleStop}
+    onpause={() => { if (audio.paused && (status !== 'loading' || stopAt !== null)) { status = 'idle'; clearTimeout(stopTimer); } }} onended={stop} onseeked={scheduleStop} onratechange={scheduleStop}
     ontimeupdate={() => cursor = audio.currentTime}></audio>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
 </div>

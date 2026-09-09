@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, tick, untrack } from 'svelte';
+  import { resolve } from '$app/paths';
+  import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { isTauri } from '@tauri-apps/api/core';
@@ -24,7 +25,7 @@
   const dataset = $derived(datasetOf(datasetId));
   let records = $state<Recording[]>([]), references = $state<Reference[]>([]), runs = $state<RunSummary[]>([]);
   let mode = $state<'recording' | 'reference'>('recording'), recordingDate = $state(''), recordingId = $state(''), referenceId = $state('');
-  let referencePath = $state('');
+  let referencePath = $state(''), loadError = $state('');
   let species = $state<Species | null>(null), targets = $state<Target[]>([]);
   let first = $state(''), last = $state('');
   let start = $state(0), end = $state(5), status = $state<PlayerStatus>('idle'), playerKey = $state(0);
@@ -75,7 +76,7 @@
       targets: targets.map(target => ({ species_id: target.species.id,
         clips: target.clips.map(c => ({ source_kind: c.source.kind, source_id: c.source.id, start_s: c.start_s, end_s: c.end_s })) })) });
     notify('searchSaved');
-    await goto(`/datasets/${datasetId}/search/${saved[0].id}`);
+    await goto(resolve(`/datasets/${datasetId}/search/${saved[0].id}`));
   });
   async function listen(hit: Hit) {
     if (activeHit === hit.segment_id && status !== 'idle') { player.stop(); return; }
@@ -83,26 +84,26 @@
     playerKey++; await tick(); await player.play(hit.start_s, hit.end_s);
   }
   onMount(() => {
-    void api<Reference[]>('/references').then(rows => references = rows).catch(() => {});
-    void api<RunSummary[]>(`/search-runs?dataset_id=${datasetId}`).then(rows => runs = rows).catch(() => {});
+
     try { targets = JSON.parse(localStorage.getItem(`echoroo-search-${datasetId}`) || '[]'); } catch { targets = []; }
     try { [first, last] = JSON.parse(localStorage.getItem(`echoroo-search-period-${datasetId}`) || '["", ""]'); } catch { first = ''; last = ''; }
-    void loadRecordings(datasetId).then(rows => {
-      records = rows;
-      const wanted = page.url.searchParams.get('recording');
+    void Promise.all([loadRecordings(datasetId), api<Reference[]>('/references'), api<RunSummary[]>(`/search-runs?dataset_id=${datasetId}`)]).then(([rows, refs, history]) => {
+      records = rows; references = refs; runs = history;
+      const wanted = new URL(page.url.hash.slice(1), page.url).searchParams.get('recording');
       const initial = rows.find(r => String(r.id) === wanted) ?? rows[0];
       if (initial) { recordingDate = initial.original_time.slice(0, 10); recordingId = String(initial.id); end = Math.min(5, initial.seconds); }
-    });
+    }).catch(e => loadError = e instanceof Error ? e.message : 'unknown_error');
   });
 </script>
 
 <div class="page">
   <div class="page-header">
     <div>
-      <div class="crumbs"><a href="/datasets">{t('navLibrary')}</a><span>›</span><a href={`/datasets/${datasetId}`}>{dataset?.name}</a><span>›</span></div>
+      <div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span><a href={resolve(`/datasets/${datasetId}`)}>{dataset?.name}</a><span>›</span></div>
       <h1>{t('navSearch')}</h1><p>{t('searchIntro')}</p>
     </div>
   </div>
+  {#if loadError}<p class="error" role="alert">{t(loadError)}</p>{/if}
   <div class="two-col">
     <div class="steps">
       <section class="panel step-card">
@@ -114,7 +115,7 @@
         <div class="source-tabs" role="tablist">
           <button type="button" class="button sm" class:active={mode === 'recording'} aria-pressed={mode === 'recording'} onclick={() => { mode = 'recording'; resetRange(); }}>{t('referenceFromDataset')}</button>
           <button type="button" class="button sm" class:active={mode === 'reference'} aria-pressed={mode === 'reference'} disabled={!references.length} onclick={() => { mode = 'reference'; if (!referenceId && references.length) referenceId = String(references[0].id); resetRange(); }}>{t('referenceAudio')} ({references.length})</button>
-          <Button size="sm" pending={addReference.pending} onclick={() => addReference.run()}>＋ {t('referenceFromFile')}</Button>
+          <Button size="sm" pending={addReference.pending} disabled={!isTauri() && !referencePath.trim()} onclick={() => addReference.run()}>＋ {t('referenceFromFile')}</Button>
         </div>
         {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} /></label>{/if}
         {#if mode === 'recording'}
@@ -139,7 +140,7 @@
               <AudioRegion {source} bind:start bind:end bind:status bind:this={player} />
             {/if}
           {/key}
-        {:else}<p class="muted"><Spinner size={12} /> {t('loading')}</p>{/if}
+        {:else if !loadError}<p class="muted"><Spinner size={12} /> {t('loading')}</p>{/if}
         <div class="actions clip-actions">
           <Button variant="primary" disabled={!species || !validRange || preview !== null || atLimit} onclick={addClip}>＋ {t('addQueryClip')}</Button>
           <Button pending={quick.pending} disabled={busyJob || !validRange || !validPeriod || preview !== null} onclick={() => quick.run()}>{t('quickSearch')}</Button>
@@ -206,7 +207,7 @@
           {#each runs as run (run.id)}
             <div class="list-item" role="listitem">
               <span>#{run.id} · <strong>{commonName(run.species, app.locale)}</strong> <i class="muted">{run.species.scientific_name}</i></span>
-              <Button size="sm" href={`/datasets/${datasetId}/search/${run.id}`}>{t('review')} ›</Button>
+              <Button size="sm" href={resolve(`/datasets/${datasetId}/search/${run.id}`)} aria-label={t('review')}>{t('review')} ›</Button>
             </div>
           {/each}
         </div>

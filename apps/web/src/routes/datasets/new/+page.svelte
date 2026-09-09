@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { isTauri } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { api } from '$lib/api.svelte';
-  import { app, t, fileName, refreshCatalog, rememberDataset } from '$lib/app.svelte';
+  import { app, t, fileName, siteTime, refreshCatalog, rememberDataset } from '$lib/app.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   import { notify } from '$lib/ui/toast.svelte';
@@ -19,7 +20,7 @@
     app.recordingsVersion++;
     await refreshCatalog(); rememberDataset(result.dataset_id);
     notify('importRegistered');
-    await goto(`/datasets/${result.dataset_id}`);
+    await goto(resolve(`/datasets/${result.dataset_id}`));
   });
   const browse = createTask(async () => {
     const picked = await open({ directory: true, multiple: false });
@@ -29,7 +30,7 @@
 
 <div class="page">
   <div class="page-header">
-    <div><div class="crumbs"><a href="/datasets">{t('navLibrary')}</a><span>›</span></div><h1>{t('addDataset')}</h1><p>{t('importHint')}</p></div>
+    <div><div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span></div><h1>{t('addDataset')}</h1><p>{t('importHint')}</p></div>
   </div>
   <form class="steps" onsubmit={e => { e.preventDefault(); inspect.run(); }} oninput={() => preview = null}>
     <section class="panel step-card">
@@ -63,7 +64,7 @@
           <div class="stat-row">
             <span><strong>{preview.count}</strong>{t('files')}</span>
             <span><strong>{Math.round(preview.seconds / 60)}</strong>{t('minutes')}</span>
-            {#if preview.first}<span>{t('firstRecording')}: {preview.first}</span>{/if}
+            {#if preview.first}<span>{t('firstRecording')}: {siteTime({ recorded_at: preview.first, timezone: app.sites.find(site => String(site.id) === siteId)?.timezone ?? zone })}</span>{/if}
           </div>
           {#if preview.skipped.length}<details><summary>{t('skipped')} ({preview.skipped.length})</summary>{#each preview.skipped as item}<p class="muted">{fileName(item.path)} — {t(item.code)}</p>{/each}</details>{/if}
           <div class="actions">

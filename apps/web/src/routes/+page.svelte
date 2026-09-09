@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { app, t } from '$lib/app.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -6,7 +7,7 @@
   $effect(() => {
     if (!app.connected) return;
     const known = app.datasets.some(d => d.id === app.datasetId);
-    goto(known ? `/datasets/${app.datasetId}` : '/datasets', { replaceState: true });
+    goto(resolve(known ? `/datasets/${app.datasetId}` : '/datasets'), { replaceState: true });
   });
 </script>
 

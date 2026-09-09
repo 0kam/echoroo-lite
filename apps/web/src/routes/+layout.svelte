@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { app, t, activeJob, datasetOf, siteOf, setLocale, setDark, rememberDataset, restorePreferences, startSession } from '$lib/app.svelte';
@@ -9,7 +10,7 @@
   const job = $derived(activeJob());
   const dataset = $derived(datasetOf(app.datasetId));
   const site = $derived(siteOf(dataset));
-  const base = $derived(app.datasetId === null ? null : `/datasets/${app.datasetId}`);
+  const base = $derived(app.datasetId === null ? null : resolve(`/datasets/${app.datasetId}`));
   const route = $derived(page.route.id ?? '');
   const current = (prefix: string, exact = false) => exact ? route === prefix : route.startsWith(prefix);
   // Visiting a dataset route makes it the working dataset for the sidebar links.
@@ -25,15 +26,15 @@
 <ActivityBar />
 <div class="shell">
   <header class="topbar">
-    <a class="brand" href="/"><img src="/echoroo.png" alt="" /> Echoroo <b>Lite</b></a>
+    <a class="brand" href={resolve('/')}><img src="/echoroo.png" alt="" /> Echoroo <b>Lite</b></a>
     {#if dataset}
       <span class="context"><span>{t('currentDataset')}:</span><strong>{site?.name} › {dataset.name}</strong>
-        <a href="/datasets" class="small-text">{t('switchDataset')}</a></span>
+        <a href={resolve('/datasets')} class="small-text">{t('switchDataset')}</a></span>
     {/if}
     <span class="spacer"></span>
     {#if job}
       {@const target = datasetOf(job.dataset_id)}
-      <a class="jobchip" href="/datasets"><span class="dot-pulse"></span>{t('analysisInProgress')}: {target?.name ?? `#${job.dataset_id}`} · {job.done} / {job.total}</a>
+      <a class="jobchip" href={resolve('/datasets')}><span class="dot-pulse"></span>{t('analysisInProgress')}: {target?.name ?? `#${job.dataset_id}`} · {job.done} / {job.total}</a>
     {/if}
     <span class="status" class:ok={app.connected && !app.connectionError} class:bad={!!app.connectionError}>
       <span class="dot"></span>{t(app.connectionError || (app.connected ? 'ready' : 'connecting'))}
@@ -45,23 +46,30 @@
   </header>
   <nav class="sidenav" aria-label={t('workflow')}>
     <div class="group">{t('workflow')}</div>
-    <a href="/datasets" class:current={current('/datasets', true) || current('/datasets/new')}><span class="step">1</span>{t('navLibrary')}</a>
+    <a href={resolve('/datasets')} class:current={current('/datasets', true) || current('/datasets/new')}><span class="step" aria-hidden="true">1</span>{t('navLibrary')}</a>
     {#if base}
-      <a href={base} class:current={current('/datasets/[id]', true) || current('/datasets/[id]/recordings')}><span class="step">2</span>{t('navRecordings')}</a>
-      <a href={`${base}/search`} class:current={current('/datasets/[id]/search')}><span class="step">3</span>{t('navSearch')}</a>
-      <a href={`${base}/reports`} class:current={current('/datasets/[id]/reports')}><span class="step">4</span>{t('reports')}</a>
+      <a href={base} class:current={current('/datasets/[id]', true) || current('/datasets/[id]/recordings')}><span class="step" aria-hidden="true">2</span>{t('navRecordings')}</a>
+      <a href={`${base}/search`} class:current={current('/datasets/[id]/search')}><span class="step" aria-hidden="true">3</span>{t('navSearch')}</a>
+      <a href={`${base}/reports`} class:current={current('/datasets/[id]/reports')}><span class="step" aria-hidden="true">4</span>{t('reports')}</a>
     {:else}
-      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step">2</span>{t('navRecordings')}</span>
-      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step">3</span>{t('navSearch')}</span>
-      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step">4</span>{t('reports')}</span>
+      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step" aria-hidden="true">2</span>{t('navRecordings')}</span>
+      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step" aria-hidden="true">3</span>{t('navSearch')}</span>
+      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step" aria-hidden="true">4</span>{t('reports')}</span>
     {/if}
     <div class="group">{t('tools')}</div>
-    <a href="/quiz" class:current={current('/quiz')}><span class="step">♪</span>{t('quiz')}</a>
-    <a href="/settings" class:current={current('/settings')}><span class="step">⚙</span>{t('navSettings')}</a>
+    <a href={resolve('/quiz')} class:current={current('/quiz')}><span class="step" aria-hidden="true">♪</span>{t('quiz')}</a>
+    <a href={resolve('/settings')} class:current={current('/settings')}><span class="step" aria-hidden="true">⚙</span>{t('navSettings')}</a>
     <div class="foot">{t('preview')}</div>
   </nav>
   <main class="main">
-    {@render children()}
+    {#if app.connected}
+      {#key page.url.hash}{@render children()}{/key}
+    {:else}
+      <div class="page"><div class="panel empty" role="status">
+        <p class:error={!!app.connectionError}>{t(app.connectionError || 'connecting')}</p>
+        {#if app.connectionError}<button class="button" onclick={() => location.reload()}>{t('retryConnection')}</button>{/if}
+      </div></div>
+    {/if}
   </main>
 </div>
 <Toasts />

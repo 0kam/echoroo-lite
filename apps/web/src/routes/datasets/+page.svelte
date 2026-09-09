@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { app, t } from '$lib/app.svelte';
   import Button from '$lib/ui/Button.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
@@ -7,12 +8,12 @@
 <div class="page">
   <div class="page-header">
     <div><h1>{t('navLibrary')}</h1><p>{t('libraryIntro')}</p></div>
-    <Button variant="primary" href="/datasets/new">＋ {t('addDataset')}</Button>
+    <Button variant="primary" href={resolve('/datasets/new')}>＋ {t('addDataset')}</Button>
   </div>
   {#if !app.sites.length}
     <div class="panel empty">
       <p>{t('noData')}</p>
-      <Button variant="primary" size="lg" href="/datasets/new">＋ {t('addDataset')}</Button>
+      <Button variant="primary" size="lg" href={resolve('/datasets/new')}>＋ {t('addDataset')}</Button>
     </div>
   {:else}
     <div class="two-col">
@@ -27,7 +28,7 @@
               {#each app.datasets.filter(d => d.site_id === site.id) as dataset (dataset.id)}
                 <div class="list-item">
                   <div class="text"><strong>{dataset.name}</strong><div class="muted">{dataset.folder}</div></div>
-                  <Button href={`/datasets/${dataset.id}`} size="sm" active={dataset.id === app.datasetId}>{t('open')}</Button>
+                  <Button href={resolve(`/datasets/${dataset.id}`)} size="sm" active={dataset.id === app.datasetId}>{t('open')}</Button>
                 </div>
               {/each}
             </div>

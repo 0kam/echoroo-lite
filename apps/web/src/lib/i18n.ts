@@ -308,7 +308,7 @@ export const en = {
   importDatasetHint: 'Name the dataset by year or recorder, e.g. “2026 fixed point”.',
   importPreviewHint: 'Nothing is copied or changed until you register.',
   importRegistered: 'Recordings registered', importNext: 'Next, analyse the dataset to get candidates from both models.',
-  firstRecording: 'First recording', no_audio: 'No readable audio in this folder.',
+  firstRecording: 'First recording',
   // Dataset and recording
   datasetRecordings: 'Recordings', datasetNotFound: 'Dataset not found', recordingNotFound: 'Recording not found',
   analyzeAllHint: 'Runs BirdNET and Perch on every recording. Only one analysis runs at a time; you can keep working meanwhile.',
@@ -644,7 +644,7 @@ export const ja: Record<Key, string> = {
   importDatasetHint: '年や録音機などで名前を付けます（例: 2026年定点録音）。',
   importPreviewHint: '登録するまで音源は変更・コピーされません。',
   importRegistered: '録音を登録しました', importNext: '次に録音群を解析すると、両モデルの候補が表示されます。',
-  firstRecording: '最初の録音', no_audio: 'このフォルダに読み取れる音源がありません。',
+  firstRecording: '最初の録音',
   // Dataset and recording
   datasetRecordings: '録音一覧', datasetNotFound: '録音群が見つかりません', recordingNotFound: '録音が見つかりません',
   analyzeAllHint: '全録音を BirdNET と Perch で解析します。解析は同時に1つだけで、実行中も他の操作を続けられます。',

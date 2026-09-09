@@ -1,14 +1,15 @@
 <script lang="ts">
   import { commonName } from './species';
   import { percent, type Cell, type Report } from './reports';
-  let { report, locale, t, onselect }: { report: Report; locale: string; t: (key: string) => string; onselect: (cell: Cell) => void } = $props();
+  import { app, t } from './app.svelte';
+  let { report, onselect }: { report: Report; onselect: (cell: Cell) => void } = $props();
   let element = $state<SVGSVGElement>(null!), zoom = $state(100), focusIndex = $state(0);
   const uid = $props.id();
   const days = $derived(Math.round((Date.parse(report.end_date) - Date.parse(report.start_date)) / 86400000) + 1);
   const searchPeriod = $derived(report.search_snapshot?.start_date || report.search_snapshot?.end_date
     ? `${t('searchRecordingDates')}: ${report.search_snapshot.start_date ?? t('noDateLimit')}–${report.search_snapshot.end_date ?? t('noDateLimit')}` : '');
   const siteLines = $derived([`${report.site.name} · ${report.dataset.name}`, ...(searchPeriod ? [searchPeriod] : [])]
-    .flatMap(line => Array.from(line).join('').match(new RegExp(`.{1,${locale === 'ja' ? 48 : 90}}`, 'gu')) || []));
+    .flatMap(line => Array.from(line).join('').match(new RegExp(`.{1,${app.locale === 'ja' ? 48 : 90}}`, 'gu')) || []));
   const header = $derived(132 + siteLines.length * 20);
   const cx = 480, outer = 330, inner = 60;
   const cy = $derived(header + 360), height = $derived(header + 870);
@@ -65,14 +66,14 @@
 <div class="plot-scroll">
 <svg bind:this={element} xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 960 ${height}`} style:width={`${zoom}%`} style:max-width={`${720*zoom/100}px`}
   role="group" aria-label={t('spiralPlot')} font-family="system-ui, Yu Gothic, Hiragino Kaku Gothic ProN, sans-serif">
-  <title>{t('spiralPlot')} · {report.species ? commonName(report.species, locale) : ''} · {metric}</title>
+  <title>{t('spiralPlot')} · {report.species ? commonName(report.species, app.locale) : ''} · {metric}</title>
   <desc>{t('spiralMeaning')} {report.site.timezone} · {condition} · {report.start_date}–{report.end_date} · {searchPeriod}</desc>
   <defs><pattern id={`${uid}-missing`} width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="#fafafa"/><path d="M-2,2 L2,-2 M0,7 L7,0 M5,9 L9,5" stroke="#aeacb8" stroke-width="1"/></pattern>
     <pattern id={`${uid}-partial`} width="9" height="9" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1" fill="#494454"/></pattern>
     <linearGradient id={`${uid}-gradient`}><stop offset="0%" stop-color="#f8e0de"/><stop offset="100%" stop-color="#a0504c"/></linearGradient>
   </defs>
   <rect width="960" height={height} fill="#fff"/>
-  <text x="36" y="38" font-size="26" font-weight="600" fill="#373450">{report.species ? commonName(report.species, locale) || t('commonNameMissing') : ''}</text>
+  <text x="36" y="38" font-size="26" font-weight="600" fill="#373450">{report.species ? commonName(report.species, app.locale) || t('commonNameMissing') : ''}</text>
   <text x="36" y="67" font-size="20" font-style="italic" fill="#575279">{report.species?.scientific_name}</text>
   {#each siteLines as line, i}<text x="36" y={96+i*20} font-size="16" fill="#575279">{line}</text>{/each}
   <text x="36" y={header-22} font-size="15" fill="#575279">{report.start_date}–{report.end_date} · {report.site.timezone} · {condition}</text>

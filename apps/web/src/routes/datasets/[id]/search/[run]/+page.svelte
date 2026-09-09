@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { resolve } from '$app/paths';
+  import { tick } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
   import { app, t, datasetOf, fileName, siteTime } from '$lib/app.svelte';
@@ -44,18 +45,23 @@
     clip = hit; start = hit.start_s; end = hit.end_s; playerKey++;
     await tick(); await player.play(hit.start_s, hit.end_s);
   }
-  onMount(() => { load().catch(e => loadError = e instanceof Error ? e.message : 'unknown_error'); });
+  $effect(() => {
+    const id = runId;
+    loadError = ''; run = null; sampleId = '';
+    api<Run>(`/search-runs/${id}`).then(value => { if (id === runId) run = value; })
+      .catch(e => { if (id === runId) loadError = e instanceof Error ? e.message : 'unknown_error'; });
+  });
 </script>
 
 <div class="page">
   <div class="page-header">
     <div>
-      <div class="crumbs"><a href="/datasets">{t('navLibrary')}</a><span>›</span><a href={`/datasets/${datasetId}`}>{dataset?.name}</a><span>›</span><a href={`/datasets/${datasetId}/search`}>{t('navSearch')}</a><span>›</span></div>
+      <div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span><a href={resolve(`/datasets/${datasetId}`)}>{dataset?.name}</a><span>›</span><a href={resolve(`/datasets/${datasetId}/search`)}>{t('navSearch')}</a><span>›</span></div>
       {#if run}<h1>#{run.id} · {commonName(run.snapshot.species, app.locale)} <i class="sci">{run.snapshot.species.scientific_name}</i></h1>
         <p>{t('searchRecordingDates')}: {run.snapshot.start_date ?? t('noDateLimit')}–{run.snapshot.end_date ?? t('noDateLimit')} · {t('searchCoverage')}: {run.snapshot.searched_recordings} / {run.snapshot.total_recordings} {t('files')} · {run.hit_count} {t('searchableSegments')}</p>
       {:else}<h1>{t('savedSearches')}</h1>{/if}
     </div>
-    <div class="actions"><Button href={`/datasets/${datasetId}/search`}>‹ {t('backToSearch')}</Button><Button href={`/datasets/${datasetId}/reports`}>{t('reports')} ›</Button></div>
+    <div class="actions"><Button href={resolve(`/datasets/${datasetId}/search`)}>‹ {t('backToSearch')}</Button><Button href={resolve(`/datasets/${datasetId}/reports`)}>{t('reports')} ›</Button></div>
   </div>
   {#if loadError}<div class="panel empty"><p class="error">{t(loadError === 'not_found' ? 'runNotFound' : loadError)}</p></div>
   {:else if !run}<p class="muted"><Spinner /> {t('loading')}</p>

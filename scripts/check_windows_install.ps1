@@ -22,10 +22,36 @@ function Find-DesktopControl([string]$Name, [System.Windows.Automation.ControlTy
     return $element
 }
 
-function Press-DesktopButton([string]$Name) {
-    $element = Find-DesktopControl $Name ([System.Windows.Automation.ControlType]::Button)
+function Find-DesktopAction([string]$Name) {
+    $window = [System.Windows.Automation.AutomationElement]::FromHandle($application.MainWindowHandle)
+    foreach ($type in @([System.Windows.Automation.ControlType]::Hyperlink, [System.Windows.Automation.ControlType]::Button)) {
+        $element = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+            [System.Windows.Automation.AndCondition]::new(
+                [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $Name),
+                [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $type)))
+        if ($null -ne $element) { return $element }
+    }
+    throw "The desktop action is not accessible: $Name"
+}
+
+function Press-DesktopAction([string]$Name) {
+    $element = Find-DesktopAction $Name
     $element.SetFocus()
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+}
+
+function Press-FirstTableAction([string]$Name) {
+    $table = Find-DesktopControl $Name ([System.Windows.Automation.ControlType]::Table)
+    foreach ($type in @([System.Windows.Automation.ControlType]::Hyperlink, [System.Windows.Automation.ControlType]::Button)) {
+        $element = $table.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $type))
+        if ($null -ne $element) {
+            $element.SetFocus()
+            [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+            return
+        }
+    }
+    throw "The table has no accessible action: $Name"
 }
 
 function Select-FirstSaved([string]$Name) {
@@ -81,16 +107,21 @@ try {
     $application = Start-Process "$installDirectory/echoroo-lite.exe" -PassThru
     $window = Wait-ForDesktopText 'ローカルで接続済み' 'echoroo-startup-ja-restarted'
     if ($Data) {
+        Press-DesktopAction '開く'
+        $window = Wait-ForDesktopText '録音一覧' 'echoroo-startup-recordings'
+        Press-FirstTableAction '録音一覧'
         $window = Wait-ForDesktopText 'Perch V2' 'echoroo-startup-results'
         $null = Find-DesktopControl 'BirdNET 2.4' ([System.Windows.Automation.ControlType]::Text)
-        Select-FirstSaved '検索履歴'
+        Press-DesktopAction 'この録音から類似検索'
+        $window = Wait-ForDesktopText '保存した検索と根拠' 'echoroo-startup-search-history'
+        Press-DesktopAction '判定する'
         $window = Wait-ForDesktopText '類似度の分布と判定' 'echoroo-startup-search'
         Select-FirstSaved '判定する区間'
         $window = Wait-ForDesktopText '対象種 対象外 不明 保存済み' 'echoroo-startup-judgements'
 
-        Press-DesktopButton '報告'
+        Press-DesktopAction '報告'
         $window = Wait-ForDesktopText '報告の履歴' 'echoroo-startup-report-history'
-        Select-FirstSaved '報告の履歴'
+        Press-DesktopAction '開く'
         $window = Wait-ForDesktopText 'Spiral plot' 'echoroo-startup-report'
         $plot = Find-DesktopControl 'Spiral plot' ([System.Windows.Automation.ControlType]::Group)
         $cells = $plot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
@@ -101,11 +132,11 @@ try {
         [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
         $window = Wait-ForDesktopText '2024-08-08 · 6:00 · 解析済み' 'echoroo-startup-report-cell'
 
-        Press-DesktopButton '鳴き声クイズ'
+        Press-DesktopAction '鳴き声クイズ'
         $window = Wait-ForDesktopText '学習を始める' 'echoroo-startup-quiz'
-        Press-DesktopButton '学習を始める'
+        Press-DesktopAction '学習を始める'
         $window = Wait-ForDesktopText '音源を聴いて、対象の種を選んでください。' 'echoroo-startup-quiz-question'
-        Press-DesktopButton 'わからない'
+        Press-DesktopAction 'わからない'
         $window = Wait-ForDesktopText '次の問題' 'echoroo-startup-quiz-feedback'
         Write-Output 'Installed Japanese desktop restored both model results, saved search/judgement, 24-cell spiral report and quiz feedback.'
     }

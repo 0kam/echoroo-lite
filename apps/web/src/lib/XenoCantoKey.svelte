@@ -4,10 +4,11 @@
   import { t } from './app.svelte';
   import Button from './ui/Button.svelte';
   import { createTask } from './ui/task.svelte';
+  import { notify } from './ui/toast.svelte';
   let configured = $state(false), key = $state(''), keySaved = $state(false);
   const save = createTask(async () => {
     configured = (await api<{ configured: boolean }>('/xeno-canto/key', { key: key.trim() })).configured;
-    key = ''; keySaved = true;
+    key = ''; keySaved = true; notify('xcKeySaved');
   });
   onMount(() => { void api<{ configured: boolean }>('/xeno-canto/key').then(r => configured = r.configured).catch(e => save.error = e.message); });
 </script>

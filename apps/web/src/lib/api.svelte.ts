@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { untrack } from 'svelte';
 export type Connection = { url: string; token: string };
 export let connection: Connection;
 /** Number of requests in flight; the activity bar reads it. */
@@ -19,7 +20,7 @@ export async function connect() {
   await api('/health');
 }
 export async function api<T>(path: string, body?: unknown): Promise<T> {
-  activity.count++;
+  untrack(() => activity.count++);
   try {
     let response: Response;
     try {
@@ -31,7 +32,7 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
     } catch { throw Error('disconnected'); }
     if (!response.ok) throw Error((await response.json()).detail || 'unknown_error');
     return response.json();
-  } finally { activity.count--; }
+  } finally { untrack(() => activity.count--); }
 }
 export function audioURL(id: number) {
   return `${connection.url}/recordings/${id}/audio?token=${encodeURIComponent(connection.token)}`;

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
+  import { untrack } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
   import { app, t, activeJob, datasetOf, fileName, duration, siteTime, loadRecordings, refreshCatalog, type Recording } from '$lib/app.svelte';
@@ -37,7 +39,7 @@
     finally { loadingResults = false; }
   }
   // Reload results when the recording changes and whenever an analysis job changes state.
-  $effect(() => { const id = recordingId; results = []; activeRow = ''; lastJobs = JSON.stringify(app.jobs); void loadResults(id); });
+  $effect(() => { const id = recordingId; results = []; activeRow = ''; lastJobs = untrack(() => JSON.stringify(app.jobs)); void loadResults(id); });
   $effect(() => {
     const state = JSON.stringify(app.jobs);
     if (state !== lastJobs) { lastJobs = state; void loadResults(recordingId); }
@@ -57,18 +59,18 @@
 <div class="page">
   {#if loading}<p class="muted"><Spinner /> {t('loading')}</p>
   {:else if !recording}
-    <div class="panel empty"><p>{t(loadError || 'recordingNotFound')}</p><Button href={`/datasets/${datasetId}`}>{t('navRecordings')}</Button></div>
+    <div class="panel empty"><p>{t(loadError || 'recordingNotFound')}</p><Button href={resolve(`/datasets/${datasetId}`)}>{t('navRecordings')}</Button></div>
   {:else}
     <div class="page-header">
       <div>
-        <div class="crumbs"><a href="/datasets">{t('navLibrary')}</a><span>›</span><a href={`/datasets/${datasetId}`}>{dataset?.name}</a><span>›</span></div>
+        <div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span><a href={resolve(`/datasets/${datasetId}`)}>{dataset?.name}</a><span>›</span></div>
         <h1>{fileName(recording.path)}</h1>
         <p class="mono">{siteTime(recording)} · {recording.timezone} · {duration(recording.seconds)}</p>
       </div>
       <div class="actions">
-        <Button size="sm" href={previous ? `/datasets/${datasetId}/recordings/${previous.id}` : undefined} disabled={!previous}>‹ {t('previousRecording')}</Button>
-        <Button size="sm" href={next ? `/datasets/${datasetId}/recordings/${next.id}` : undefined} disabled={!next}>{t('nextRecording')} ›</Button>
-        <Button href={`/datasets/${datasetId}/search?recording=${recordingId}`}>{t('searchFromRecording')}</Button>
+        <Button size="sm" href={previous ? resolve(`/datasets/${datasetId}/recordings/${previous.id}`) : undefined} disabled={!previous}>‹ {t('previousRecording')}</Button>
+        <Button size="sm" href={next ? resolve(`/datasets/${datasetId}/recordings/${next.id}`) : undefined} disabled={!next}>{t('nextRecording')} ›</Button>
+        <Button href={resolve(`/datasets/${datasetId}/search?recording=${recordingId}`)}>{t('searchFromRecording')}</Button>
         <Button variant="primary" pending={analyze.pending} disabled={!!job} onclick={() => analyze.run()}>{t(jobHere ? 'analysisInProgress' : 'analyze')}</Button>
       </div>
     </div>
