@@ -502,7 +502,11 @@ def main():
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--models", type=Path, required=True)
     parser.add_argument("--parent-stdin", action="store_true")
+    parser.add_argument("--diagnostics", action="store_true", help="Dump Python stacks every minute for stalled-process diagnosis")
     args = parser.parse_args()
+    if args.diagnostics:
+        import faulthandler
+        faulthandler.dump_traceback_later(60, repeat=True)
     from filelock import FileLock
     args.data.mkdir(parents=True, exist_ok=True)
     with FileLock(args.data / ".lock", timeout=0):

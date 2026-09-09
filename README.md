@@ -141,9 +141,12 @@ It also provisions the pinned models and runs both classifiers, searches and rep
 exports using a supplied call clip. Windows CI has passed eight API tests, EXE/MSI
 creation, NSIS installation, and the installed service's startup, quizzes and shutdown.
 The desktop startup check now passes on the runner's 1024px screen, including visible
-connection status and normal shutdown. Model provisioning failed with Zenodo HTTP 504
-after five attempts. Setup now uses the record's official content API and verifies
-BirdNET model/label hashes; a fresh Mac download matches all 58 existing model/label files.
+connection status and normal shutdown. Japanese switching and persistence after restart
+also pass. Setup now uses the record's official content API; model downloads and hash
+checks pass on Windows, and a fresh Mac download matches all 58 existing model/label files.
+The Windows inference check still fails at its 240-second limit during model loading.
+The checker now drains stdout and records finer progress and optional stack traces to
+diagnose the stall; the timeout remains unchanged.
 Frozen inference, full GUI acceptance and annual performance on
 Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and

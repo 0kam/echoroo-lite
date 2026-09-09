@@ -44,4 +44,4 @@ jobs:
       - name: Provision the pinned models for real inference
         run: python scripts/setup_models.py
       - name: Check frozen inference, search, reports and quiz with supplied audio
-        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3
+        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3 --diagnostics

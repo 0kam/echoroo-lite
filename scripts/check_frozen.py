@@ -1,9 +1,11 @@
 """Check the real frozen process handshake, auth, SQLite extension and clean exit."""
 import json
 import argparse
+from collections import deque
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -12,6 +14,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("binary")
 parser.add_argument("--models", type=Path)
+parser.add_argument("--diagnostics", action="store_true", help="Record periodic stack traces when a frozen check stalls")
 audio_input = parser.add_mutually_exclusive_group()
 audio_input.add_argument("--recording", type=Path)
 audio_input.add_argument("--sample-audio", type=Path, help="Convert a supplied call clip into a dated mono WAV for the full ML check")
@@ -28,10 +31,13 @@ with tempfile.TemporaryDirectory() as temp:
         folder.mkdir()
         args.recording = folder / 'SMOKE_20240808_060000.wav'
         sf.write(args.recording, samples[:rate * 30], rate, subtype='PCM_16')
-    child = subprocess.Popen([args.binary, "--data", temp, "--models", str(args.models or Path(temp) / "models"), "--parent-stdin"],
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    child = subprocess.Popen([args.binary, "--data", temp, "--models", str(args.models or Path(temp) / "models"), "--parent-stdin",
+                              *(['--diagnostics'] if args.diagnostics else [])],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, errors='replace')
     try:
         connection = json.loads(child.stdout.readline())
+        # Match the desktop launcher: library output must never fill the stdout pipe.
+        threading.Thread(target=deque, args=(child.stdout, 0), daemon=True).start()
         def api(path, body=None):
             request = urllib.request.Request(connection["url"] + path,
                 data=None if body is None else json.dumps(body).encode(),
@@ -65,8 +71,12 @@ with tempfile.TemporaryDirectory() as temp:
             record = next(r for r in records if Path(r["path"]) == args.recording.resolve())
             started = time.perf_counter()
             api("/jobs", {"dataset_id": imported["dataset_id"], "recording_id": record["id"]})
+            previous_stage = None
             while True:
                 job = api("/catalog")["jobs"][0]
+                if job['stage'] != previous_stage:
+                    print(f"Frozen analysis stage: {job['stage']} ({time.perf_counter() - started:.1f}s)", flush=True)
+                    previous_stage = job['stage']
                 if job["status"] not in {"running", "queued"}:
                     break
                 assert time.perf_counter() - started < 240, job

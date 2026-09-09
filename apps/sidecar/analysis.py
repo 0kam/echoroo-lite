@@ -75,6 +75,7 @@ def run(root, models, job, records, site, cancel):
         progress("loading_models", 0)
         acoustic = birdnet.load("acoustic", "2.4", "tf", library="litert")
         geo = birdnet.load("geo", "2.4", "tf", library="litert")
+        progress("loading_geo", 0)
         # ponytail: year-round geo until seasonal filtering is specified and checked.
         species = geo.predict(site["latitude"], site["longitude"], week=None,
                               min_confidence=0.03).to_structured_array()["species_name"].tolist()
@@ -86,6 +87,7 @@ def run(root, models, job, records, site, cancel):
                      "species": species, "score_type": "sigmoid_uncalibrated", "window_s": 3,
                      "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
                      "display_threshold": 0.1}
+        progress("loading_perch", 0)
         session, model_sha = load_perch(models)
         with labels_path.open(newline="", encoding="utf-8") as stream:
             labels = [r[0] for r in list(csv.reader(stream))[1:]]
@@ -96,6 +98,7 @@ def run(root, models, job, records, site, cancel):
                                      ("geo_sha256", "latitude", "longitude", "week", "geo_threshold", "species")},
                       "resampling": "scipy.resample_poly", "last_window": "zero_pad"}
         done = 0
+        progress("loading_birdnet", 0)
         # Reuse BirdNET's public session: one worker for the job, one file persisted per run.
         with acoustic.predict_session(n_workers=1, batch_size=1, top_k=None, max_n_files=1,
                                       default_confidence_threshold=0, custom_species_list=species) as bird_session:
