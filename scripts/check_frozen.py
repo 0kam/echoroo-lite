@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("binary")
 parser.add_argument("--models", type=Path)
 parser.add_argument("--diagnostics", action="store_true", help="Record periodic stack traces when a frozen check stalls")
+parser.add_argument("--parent-eof", action="store_true", help="Check shutdown when the parent closes its pipe without a stop byte")
 audio_input = parser.add_mutually_exclusive_group()
 audio_input.add_argument("--recording", type=Path)
 audio_input.add_argument("--sample-audio", type=Path, help="Convert a supplied call clip into a dated mono WAV for the full ML check")
@@ -130,8 +131,11 @@ with tempfile.TemporaryDirectory() as temp:
                 assert {'species.csv', 'hourly.csv', 'evidence.csv', 'quality.csv', 'report.json'} <= set(archive.namelist())
                 assert any(name.endswith('.wav') for name in archive.namelist())
             print(f"Frozen detection/search reports and CSV/audio export passed in {time.perf_counter() - started:.2f}s.")
-        child.stdin.write("\n")
-        child.stdin.flush()
+        if args.parent_eof:
+            child.stdin.close()
+        else:
+            child.stdin.write("\n")
+            child.stdin.flush()
         assert child.wait(timeout=30) == 0
         print("Frozen sidecar: handshake, authenticated API, bundled species names, SQLite/vec initialization and shutdown passed.")
     finally:

@@ -519,7 +519,20 @@ def main():
             print(json.dumps({"url": f"http://127.0.0.1:{sock.getsockname()[1]}", "token": token}), flush=True)
             if args.parent_stdin:
                 def watch_parent():
-                    sys.stdin.readline()
+                    if sys.platform == "win32":
+                        import _winapi
+                        import msvcrt
+                        import time
+                        # A pending ReadFile on inherited stdin can stall spawned Python
+                        # initialization (python/cpython#78961). Only peek for our stop byte.
+                        handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+                        try:
+                            while not _winapi.PeekNamedPipe(handle)[0]:
+                                time.sleep(0.1)
+                        except BrokenPipeError:
+                            pass  # The desktop exited without sending its stop byte.
+                    else:
+                        sys.stdin.readline()
                     server.should_exit = True
                 threading.Thread(target=watch_parent, daemon=True).start()
             server.run(sockets=[sock])

@@ -26,7 +26,11 @@ jobs:
       - run: npm run build
       - run: python scripts/freeze_sidecar.py
       - name: Check frozen startup and quiz without models
-        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe
+        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --parent-eof
+      - name: Provision the pinned models for real inference
+        run: python scripts/setup_models.py
+      - name: Check frozen inference, search, reports and quiz with supplied audio
+        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3 --diagnostics
       - run: npm run desktop:build
       - uses: actions/upload-artifact@v4
         with:
@@ -41,7 +45,3 @@ jobs:
         with:
           name: windows-startup
           path: ${{ runner.temp }}/echoroo-startup*
-      - name: Provision the pinned models for real inference
-        run: python scripts/setup_models.py
-      - name: Check frozen inference, search, reports and quiz with supplied audio
-        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3 --diagnostics

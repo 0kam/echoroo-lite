@@ -144,9 +144,10 @@ The desktop startup check now passes on the runner's 1024px screen, including vi
 connection status and normal shutdown. Japanese switching and persistence after restart
 also pass. Setup now uses the record's official content API; model downloads and hash
 checks pass on Windows, and a fresh Mac download matches all 58 existing model/label files.
-The Windows inference check still fails at its 240-second limit during model loading.
-The checker now drains stdout and records finer progress and optional stack traces to
-diagnose the stall; the timeout remains unchanged.
+The Windows inference check still fails at its 240-second limit when spawning BirdNET's
+producer, after regional prediction and Perch loading finish. Its stack traces point to
+process startup while the parent-stop watcher reads inherited stdin. The Windows watcher
+now peeks for the stop byte or pipe closure; that fix awaits a Windows run.
 Frozen inference, full GUI acceptance and annual performance on
 Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
