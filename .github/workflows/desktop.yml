@@ -40,9 +40,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-startup
-          path: |
-            ${{ runner.temp }}/echoroo-startup.png
-            ${{ runner.temp }}/echoroo-startup.txt
+          path: ${{ runner.temp }}/echoroo-startup*
       - name: Provision the pinned models for real inference
         run: python scripts/setup_models.py
       - name: Check frozen inference, search, reports and quiz with supplied audio

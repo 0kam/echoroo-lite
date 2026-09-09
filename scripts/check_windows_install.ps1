@@ -11,8 +11,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Installed sidecar check failed' }
 
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing, System.Windows.Forms
 $env:ECHOROO_DATA = Join-Path $env:RUNNER_TEMP 'echoroo-gui-data'
-$application = Start-Process "$installDirectory/echoroo-lite.exe" -PassThru
-try {
+
+function Wait-ForDesktopText([string]$Text, [string]$EvidenceName) {
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
     $names = @()
     do {
@@ -24,23 +24,46 @@ try {
             $elements = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
             $names = @($elements | ForEach-Object { $_.Current.Name })
         }
-    } until ($names -contains 'Local service connected' -or [DateTime]::UtcNow -ge $deadline)
-    $names | Out-File (Join-Path $env:RUNNER_TEMP 'echoroo-startup.txt') -Encoding utf8
+    } until ($names -contains $Text -or [DateTime]::UtcNow -ge $deadline)
+    $names | Out-File (Join-Path $env:RUNNER_TEMP "$EvidenceName.txt") -Encoding utf8
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bitmap = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     try {
         $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-        $bitmap.Save((Join-Path $env:RUNNER_TEMP 'echoroo-startup.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+        $bitmap.Save((Join-Path $env:RUNNER_TEMP "$EvidenceName.png"), [System.Drawing.Imaging.ImageFormat]::Png)
     } finally {
         $graphics.Dispose()
         $bitmap.Dispose()
     }
-    if ($names -notcontains 'Local service connected') { throw 'The desktop UI did not confirm its local service connection' }
+    if ($names -notcontains $Text) { throw "The desktop UI did not display: $Text" }
+    return $window
+}
+
+function Close-Desktop {
     if (-not $application.CloseMainWindow() -or -not $application.WaitForExit(30000)) {
         throw 'Installed desktop application did not close normally'
     }
-    Write-Output 'NSIS installation, installed sidecar API/quiz, desktop service connection and shutdown passed.'
+}
+
+$application = Start-Process "$installDirectory/echoroo-lite.exe" -PassThru
+try {
+    $window = Wait-ForDesktopText 'Local service connected' 'echoroo-startup'
+    $language = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.AndCondition]::new(
+            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Language'),
+            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ComboBox)))
+    if ($null -eq $language) { throw 'The language selector is not accessible' }
+    $language.SetFocus()
+    # Japanese is the first native select option; Home and Tab select and commit it.
+    [System.Windows.Forms.SendKeys]::SendWait('{HOME}{TAB}')
+    $window = Wait-ForDesktopText 'ローカルで接続済み' 'echoroo-startup-ja'
+    Close-Desktop
+
+    $application = Start-Process "$installDirectory/echoroo-lite.exe" -PassThru
+    $window = Wait-ForDesktopText 'ローカルで接続済み' 'echoroo-startup-ja-restarted'
+    Close-Desktop
+    Write-Output 'NSIS installation, installed sidecar API/quiz, English/Japanese desktop connection, locale persistence and shutdown passed.'
 } finally {
     if (-not $application.HasExited) { Stop-Process -Id $application.Id -Force }
 }
