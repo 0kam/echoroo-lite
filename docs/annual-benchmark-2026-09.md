@@ -68,4 +68,5 @@ SVGは8,760セルを保持する。再起動前後の `report.json` と集計CSV
 モデルのハッシュも `result.json` に記録している。
 
 単発の性能確認であり、検出品質・実際の季節性・Windowsの速度は示さない。
-Windows配布版のビルドと実機確認、Xeno-Canto実接続は引き続き未確認。
+Windows配布版とXeno-Canto実接続は本試験の対象外。
+別途の確認状況は [implementation-status.md](implementation-status.md) を参照。

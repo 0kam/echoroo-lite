@@ -19,7 +19,7 @@ The first slice registers Site > Dataset recordings in place, runs BirdNET and
 Perch, saves scores and embeddings, and searches by a spectrogram-selected audio
 interval. Saved searches support multiple references per species, random similarity-band
 sampling, and persistent judgements. Xeno-Canto key settings, search and selected
-downloads are implemented, with live-service verification pending a usable key.
+downloads are implemented and verified against the live service in the Mac release app.
 Detection and search reports provide species summaries, evidence audio, spiral plots
 and CSV/SVG/PNG/audio ZIP exports. A 26-species practice quiz supports custom sets,
 selected audio clips and saved first answers. Validation, relinking, and Windows
@@ -98,12 +98,14 @@ fall back to English, then the scientific name. Original predictions stay unchan
 The logo and light/dark palette come from Echoroo full. Details and provenance:
 [species and branding](docs/species-and-branding.md).
 
-To use Xeno-Canto, expand its panel, enter your API key in the local settings, select
+To use Xeno-Canto, open **Recordings and search → Reference audio → Find reference audio on Xeno-Canto**,
+expand the API key settings and save your key. Then select
 a target species, and search by country and exact A–E quality rating. Download only
 a recording you select, then choose its interval on the same spectrogram. XC ID,
 recordist, source URL and license are retained. Downloaded XC references work offline.
 The key is stored in the app's data directory and is never returned by the API;
-save an empty value to remove it. Live network access still needs verification.
+save an empty value to remove it. Live search, attributed download, spectrogram selection
+and similarity search were verified in the Mac release app on 2026-09-09.
 
 Data defaults to Tauri's app-data directory (`~/Library/Application Support/org.echoroo.lite`
 on macOS). `ECHOROO_DATA` overrides it for development. Models default to `poc/models`
@@ -135,7 +137,9 @@ noncommercial condition; permission for the intended business use is not yet est
 The Windows workflow builds an installer and checks the frozen sidecar's startup,
 session authorization, bundled species names and quizzes, SQLite extension and shutdown.
 It also provisions the pinned models and runs both classifiers, searches and report
-exports using a supplied call clip. This workflow has not yet run on Windows; GUI
+exports using a supplied call clip. The first Windows run passed tests and freezing,
+then failed on Zenodo HTTP 504 while downloading BirdNET. Installers are now built
+before the online model check; an uploaded artifact alone does not prove inference. GUI
 acceptance and annual performance on Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
 CSV/audio exports in 4 h 8 min 25 s; annual plots were then checked in the release app.
