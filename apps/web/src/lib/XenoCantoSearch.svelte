@@ -1,0 +1,70 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { api } from './api.svelte';
+  import { app, t } from './app.svelte';
+  import { commonName, type Species } from './species';
+  import type { AudioSource } from './AudioRegion.svelte';
+  import Button from './ui/Button.svelte';
+  import { createTask } from './ui/task.svelte';
+  export type Attribution = { id: number; scientific_name: string; common_name: string; recordist: string;
+    country: string; location: string; quality: string; length: string; type: string; date: string; license: string; url: string };
+  let { species, onselect }: { species: Species | null; onselect: (source: AudioSource & { attribution?: Attribution }) => void } = $props();
+  let configured = $state<boolean | null>(null), country = $state('Japan'), quality = $state('A');
+  let results = $state<{ recordings: Attribution[]; total_recordings: number; total_pages: number; page: number } | null>(null);
+  let lastQuery: { species_id: string; country: string; quality: string } | null = null;
+  let importing = $state<number | null>(null);
+  const search = createTask(async (page: number, fresh = false) => {
+    if (fresh && species) lastQuery = { species_id: species.id, country, quality };
+    if (!lastQuery) return;
+    results = await api(`/xeno-canto/search?${new URLSearchParams({ ...lastQuery, page: String(page) })}`);
+  });
+  const pick = createTask(async (row: Attribution) => {
+    importing = row.id;
+    try { onselect(await api(`/xeno-canto/${row.id}/import`, {})); } finally { importing = null; }
+  }, { toast: true });
+  onMount(() => { void api<{ configured: boolean }>('/xeno-canto/key').then(r => configured = r.configured).catch(() => configured = false); });
+</script>
+
+<div class="xc">
+  {#if configured === false}
+    <p class="muted">{t('xcNotConfigured')} · <a href="/settings">{t('navSettings')}</a></p>
+  {/if}
+  <p class="muted">{species ? `${commonName(species, app.locale)} · ${species.scientific_name}` : t('chooseTargetFirst')}</p>
+  <form class="query" onsubmit={e => { e.preventDefault(); search.run(1, true); }}>
+    <label>{t('xcCountry')}<input bind:value={country} maxlength="100" /></label>
+    <label>{t('xcQuality')}<select bind:value={quality}><option value="">{t('allQualities')}</option>{#each ['A','B','C','D','E'] as q}<option>{q}</option>{/each}</select></label>
+    <Button type="submit" pending={search.pending} disabled={!species || !configured}>{t('xcSearch')}</Button>
+  </form>
+  {#if search.error}<p class="error" role="alert">{t(search.error)}</p>{/if}
+  {#if results}
+    <p class="muted">{results.total_recordings} {t('files')} · {t('page')} {results.page} / {results.total_pages}</p>
+    <div class="xc-results">
+      {#each results.recordings as row (row.id)}
+        <article>
+          <div class="section-heading"><strong>XC{row.id} · {row.quality} · {row.length}</strong>
+            <Button size="sm" pending={importing === row.id} disabled={pick.pending} onclick={() => pick.run(row)}>{t('xcSelect')}</Button></div>
+          <p>{species?.scientific_name === row.scientific_name ? commonName(species, app.locale) : app.locale === 'en' ? row.common_name : t('commonNameMissing')} · <i>{row.scientific_name}</i></p>
+          <p class="muted">{row.recordist} · {row.country} / {row.location} · {row.type} · {row.date}</p>
+          <p class="muted">{row.license} · <a href={row.url} target="_blank" rel="noreferrer">XC{row.id}</a></p>
+        </article>
+      {:else}<p class="empty">{t('xcNoResults')}</p>{/each}
+    </div>
+    {#if results.total_pages > 1}
+      <div class="actions">
+        <Button size="sm" disabled={search.pending || results.page <= 1} onclick={() => search.run(results!.page - 1)}>‹ {t('previousView')}</Button>
+        <Button size="sm" disabled={search.pending || results.page >= results.total_pages} onclick={() => search.run(results!.page + 1)}>{t('nextView')} ›</Button>
+      </div>
+    {/if}
+  {/if}
+</div>
+
+<style>
+  .xc { display: flex; flex-direction: column; gap: 8px; }
+  .query { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+  .query label { flex: 1; min-width: 120px; }
+  .xc-results { max-height: 320px; overflow-y: auto; border: 1px solid rgb(var(--stone-300)); border-radius: 6px; }
+  article { padding: 10px 12px; border-bottom: 1px solid rgb(var(--stone-200)); font-size: 12px; }
+  article:last-child { border-bottom: 0; }
+  article p { margin-top: 2px; }
+  a { overflow-wrap: anywhere; }
+</style>

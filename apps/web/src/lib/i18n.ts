@@ -293,6 +293,45 @@ export const en = {
   no_search_embeddings: "No compatible Perch embeddings. Analyse recordings in this group first.",
   reference_format: "Use a WAV, FLAC or MP3 reference.",
   reference_channels: "Use non-empty mono or stereo reference audio.",
+  // Navigation and shell
+  navLibrary: 'Sites & datasets', navRecordings: 'Recordings & candidates', navSearch: 'Similar sounds',
+  navSettings: 'Settings', navNeedsDataset: 'Choose a dataset first', workflow: 'Workflow', tools: 'Learning and settings',
+  currentDataset: 'Current dataset', noDatasetSelected: 'No dataset selected', switchDataset: 'Switch',
+  close: 'Close', back: 'Back', loading: 'Loading…', open: 'Open', created: 'Created', retryConnection: 'Retry',
+  connectionStatus: 'Connection', percentDone: 'done',
+  // Library and import
+  libraryIntro: 'Each site holds datasets: folders of recordings from one recorder. Register a folder, then analyse it.',
+  addDataset: 'Add a dataset', datasetsCount: 'datasets', analysisStatus: 'Analysis', noJobs: 'No analysis has run yet.',
+  latestJob: 'Latest analysis', jobDataset: 'Dataset',
+  importStepSite: 'Site', importStepFolder: 'Dataset and folder', importStepConfirm: 'Check and register',
+  importSiteHint: 'Coordinates select the regional species list; the timezone interprets filename times.',
+  importDatasetHint: 'Name the dataset by year or recorder, e.g. “2026 fixed point”.',
+  importPreviewHint: 'Nothing is copied or changed until you register.',
+  importRegistered: 'Recordings registered', importNext: 'Next, analyse the dataset to get candidates from both models.',
+  firstRecording: 'First recording', no_audio: 'No readable audio in this folder.',
+  // Dataset and recording
+  datasetRecordings: 'Recordings', datasetNotFound: 'Dataset not found', recordingNotFound: 'Recording not found',
+  analyzeAllHint: 'Runs BirdNET and Perch on every recording. Only one analysis runs at a time; you can keep working meanwhile.',
+  analysisStarted: 'Analysis started', analysisInProgress: 'Analysing', cancelRequested: 'Stop requested',
+  noRecordingsForDate: 'No recordings on this date.', previousRecording: 'Previous recording', nextRecording: 'Next recording',
+  searchFromRecording: 'Search similar sounds', playing: 'Playing', loadingAudio: 'Loading audio…',
+  notAnalysed: 'This recording has not been analysed.', analysisPending: 'Analysis is running. Candidates appear when it finishes.',
+  candidateRowHint: 'Select a row to listen to that interval.', aboutScores: 'About these scores',
+  // Search
+  searchIntro: 'Choose a target species and reference sounds, then compare every analysed 5-second segment of this dataset.',
+  stepSpecies: 'Target species', stepReference: 'Reference sound and interval', stepPeriod: 'Recording dates', stepQuerySet: 'Reference set',
+  referenceFromDataset: 'Recording in this dataset', referenceFromFile: 'Audio file on this PC', chooseRecording: 'Choose a recording',
+  savedSearchesIntro: 'Saved searches keep their reference set, the similarity of every segment, and your judgements.',
+  noSavedSearches: 'No saved searches yet.', review: 'Review', searchSaved: 'Search saved', backToSearch: 'Back to search',
+  quickResults: 'Trial results', runNotFound: 'Saved search not found',
+  // Reports
+  reportsIntro: 'Reports fix the analysis version, threshold and judgements at creation time. Export them as SVG, PNG, CSV and evidence audio.',
+  newReport: 'New report', reportCreated: 'Report created', backToReports: 'Back to reports', noReports: 'No reports yet.',
+  reportNotFound: 'Report not found',
+  // Quiz and settings
+  quizIntro: 'Practise recognising bird calls. Start with the bundled 26 species, or add your own sounds.',
+  quizMaterials: 'Materials and sets', backToQuiz: 'Back to quiz', sessionNotFound: 'Session not found',
+  settingsIntro: 'Species names and external services. Language and theme are in the top bar.', xenoCanto: 'Xeno-Canto',
 };
 export type Key = keyof typeof en;
 export const ja: Record<Key, string> = {
@@ -590,4 +629,43 @@ export const ja: Record<Key, string> = {
   no_search_embeddings: "対応する Perch の埋め込みがありません。先にこの録音群の音源を解析してください。",
   reference_format: "参照音は WAV・FLAC・MP3 に対応しています。",
   reference_channels: "空でないモノラルまたはステレオの参照音を選んでください。",
+  // Navigation and shell
+  navLibrary: '地点と録音群', navRecordings: '録音と候補', navSearch: '類似検索',
+  navSettings: '設定', navNeedsDataset: '先に録音群を選んでください', workflow: '作業の流れ', tools: '学習と設定',
+  currentDataset: '選択中の録音群', noDatasetSelected: '録音群が未選択', switchDataset: '切り替え',
+  close: '閉じる', back: '戻る', loading: '読み込み中…', open: '開く', created: '作成日時', retryConnection: '再接続',
+  connectionStatus: '接続', percentDone: '完了',
+  // Library and import
+  libraryIntro: '地点ごとに録音群（1台の録音機のフォルダ）を登録し、解析します。',
+  addDataset: '録音群を追加', datasetsCount: '録音群', analysisStatus: '解析状況', noJobs: 'まだ解析していません。',
+  latestJob: '直近の解析', jobDataset: '録音群',
+  importStepSite: '地点', importStepFolder: '録音群とフォルダ', importStepConfirm: '確認して登録',
+  importSiteHint: '座標は地域の種リストの選択に、タイムゾーンはファイル名の日時の解釈に使います。',
+  importDatasetHint: '年や録音機などで名前を付けます（例: 2026年定点録音）。',
+  importPreviewHint: '登録するまで音源は変更・コピーされません。',
+  importRegistered: '録音を登録しました', importNext: '次に録音群を解析すると、両モデルの候補が表示されます。',
+  firstRecording: '最初の録音', no_audio: 'このフォルダに読み取れる音源がありません。',
+  // Dataset and recording
+  datasetRecordings: '録音一覧', datasetNotFound: '録音群が見つかりません', recordingNotFound: '録音が見つかりません',
+  analyzeAllHint: '全録音を BirdNET と Perch で解析します。解析は同時に1つだけで、実行中も他の操作を続けられます。',
+  analysisStarted: '解析を開始しました', analysisInProgress: '解析中', cancelRequested: '停止を受け付けました',
+  noRecordingsForDate: 'この日の録音はありません。', previousRecording: '前の録音', nextRecording: '次の録音',
+  searchFromRecording: 'この録音から類似検索', playing: '再生中', loadingAudio: '音源を読み込み中…',
+  notAnalysed: 'この録音は未解析です。', analysisPending: '解析中です。完了すると候補が表示されます。',
+  candidateRowHint: '行を選ぶとその区間を再生します。', aboutScores: 'スコアについて',
+  // Search
+  searchIntro: '対象種と参照音を決め、この録音群の解析済み全5秒区間と照合します。',
+  stepSpecies: '対象種', stepReference: '参照音と区間', stepPeriod: '検索する録音の日付', stepQuerySet: '参照音セット',
+  referenceFromDataset: 'この録音群の録音', referenceFromFile: 'PC上の音声ファイル', chooseRecording: '録音を選ぶ',
+  savedSearchesIntro: '保存した検索は参照音セット・全区間の類似度・判定を保持します。',
+  noSavedSearches: '保存した検索はまだありません。', review: '判定する', searchSaved: '検索を保存しました', backToSearch: '検索に戻る',
+  quickResults: '試し検索の結果', runNotFound: '保存した検索が見つかりません',
+  // Reports
+  reportsIntro: '報告は作成時点の解析版・閾値・判定を固定します。SVG・PNG・CSV・根拠音として書き出せます。',
+  newReport: '新しい報告', reportCreated: '報告を作成しました', backToReports: '報告一覧に戻る', noReports: '報告はまだありません。',
+  reportNotFound: '報告が見つかりません',
+  // Quiz and settings
+  quizIntro: '鳴き声の聞き分けを練習します。同梱の26種から始め、自分の音源も追加できます。',
+  quizMaterials: '素材と問題セット', backToQuiz: 'クイズに戻る', sessionNotFound: '学習記録が見つかりません',
+  settingsIntro: '種名と外部サービスの設定です。言語と配色は上部バーで切り替えます。', xenoCanto: 'Xeno-Canto',
 };
