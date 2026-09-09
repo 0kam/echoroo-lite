@@ -141,8 +141,10 @@ It also provisions the pinned models and runs both classifiers, searches and rep
 exports using a supplied call clip. Windows CI has passed eight API tests, EXE/MSI
 creation, NSIS installation, and the installed service's startup, quizzes and shutdown.
 The desktop startup check now passes on the runner's 1024px screen, including visible
-connection status and normal shutdown. Model provisioning still fails with Zenodo
-HTTP 504 after five attempts. Frozen inference, full GUI acceptance and annual performance on
+connection status and normal shutdown. Model provisioning failed with Zenodo HTTP 504
+after five attempts. Setup now uses the record's official content API and verifies
+BirdNET model/label hashes; a fresh Mac download matches all 58 existing model/label files.
+Frozen inference, full GUI acceptance and annual performance on
 Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
 CSV/audio exports in 4 h 8 min 25 s; annual plots were then checked in the release app.

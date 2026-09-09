@@ -41,6 +41,25 @@ for relative, url, expected in assets:
 
 os.environ["BIRDNET_APP_DATA"] = str(models / "birdnet")
 import birdnet
-for kind in ("acoustic", "geo"):
+from birdnet.acoustic.models.v2_4.tf import models as acoustic_downloads
+from birdnet.geo.models.v2_4.tf import GeoTFDownloaderV2_4
+
+# ponytail: adapt pinned birdnet 1.1.1 metadata; remove when upstream uses these API URLs.
+for info in (acoustic_downloads['fp32'], GeoTFDownloaderV2_4._model_info):
+    info.dl_url = info.dl_url.replace('/records/', '/api/records/') + '/content'
+
+for kind, expected in (
+    ('acoustic', '55f3e4055b1a13bfa9a2452731d0d34f6a02d6b775a334362665892794165e4c'),
+    ('geo', '33aea6d21cc887d2414e9596d2531a480a3e5f4770c22aa257f217fb757d4653'),
+):
     birdnet.load(kind, "2.4", "tf", library="litert")
+    root = models / 'birdnet' / f'{kind}-models/v2.4/tf'
+    for relative, checksum in (
+        ('model-fp32.tflite', expected),
+        ('labels/en_us.txt', 'b50b77b7c3dfe40cd637e8cccdca0173a0a4ddee8867b830ff3c1a566f477f16'),
+        ('labels/ja.txt', '158c5360676d7fc154b95ed7f161cf845be9ca219a67960901463ddd870b6362'),
+    ):
+        if digest(root / relative) != checksum:
+            raise RuntimeError(f'BirdNET checksum mismatch: {kind}/{relative}')
+    print(f'Verified BirdNET 2.4 {kind} and English/Japanese labels')
 print(f"Models ready: {models}")

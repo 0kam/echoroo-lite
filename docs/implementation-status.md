@@ -122,7 +122,7 @@ ONNX Runtime 1.29 の `HttpResponseDecoder` → `LogManagerImpl` → `recursive_
 ## 次に進めるところ
 
 1. 同梱クイズ素材の出典情報を補い、Windows配布版の表示・音声を確認する。
-2. BirdNET配布元の回復、または準備済みモデルを配置したWindows実機で両モデル推論を確認する。
+2. BirdNETの取得先を公式APIへ修正したWindows CIで両モデル推論を確認する。
    展示PCで日本語を含む全操作・音声出力・通信遮断時の動作・年間規模を確認する。
 3. BirdNETの非商用条件と企業での利用条件を確認し、配布物の帰属表示を整える。
    モデル・日英種名の出典とハッシュ、配布元間のライセンス表記差は
@@ -140,6 +140,8 @@ XC1148086の取得・区間表示・選択区間からの類似検索を確認�
 Windows CIを開始した（2026-09-09）。`fc72332` の
 [実行](https://github.com/0kam/echoroo-lite/actions/runs/34306818881)では導入・画面起動・正常終了まで通過した。
 BirdNET取得のHTTP 504が5回続き、CI全体は失敗。凍結版の実推論検査は未実施。
+公式APIのファイル本体URLへセットアップを修正し、Macでモデルを新規取得できた。
+全58ファイルのSHA-256が既存キャッシュと一致。Windowsでの結果は別途確認する。
 実行結果とWindows GUIでの受け入れは分けて記録する。
 Mac の開発用 `.app` はこのリポジトリの Python 環境を参照する。完成した配布版とは区別する。
 Macの `target/release/bundle/macos/Echoroo Lite.app` は凍結サービスを同梱した配布ビルドとして
