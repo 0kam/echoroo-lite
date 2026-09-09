@@ -1,14 +1,19 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { api } from './api.svelte';
   import { app, t } from './app.svelte';
   import { commonName, type Species } from './species';
   import Spinner from './ui/Spinner.svelte';
   let { value = $bindable(null), disabled = false, label }: { value: Species | null; disabled?: boolean; label?: string } = $props();
   let query = $state(''), rows = $state<Species[]>([]), busy = $state(false), error = $state(''), searched = $state(false);
+  let scientific=$state(''),common=$state(''),adding=$state(false);
+  onDestroy(()=>{clearTimeout(timer);version++;});
+  async function add(){adding=true;error='';try{choose(await api<Species>('/species',{scientific_name:scientific,[app.locale]:common||query}));}catch(e){error=e instanceof Error?e.message:'unknown_error';}finally{adding=false;}}
   let timer: ReturnType<typeof setTimeout> | undefined, version = 0;
   function schedule() {
     clearTimeout(timer);
     if (!query.trim()) { rows = []; searched = false; version++; busy = false; return; }
+    version++;busy=false;searched=false;rows=[];
     timer = setTimeout(search, 250); // Search as you type, after a short pause.
   }
   async function search() {
@@ -35,7 +40,7 @@
   {#if searched}
     <div class="name-matches">
       {#each rows as row (row.id)}<button type="button" {disabled} onclick={() => choose(row)}>{commonName(row, app.locale) || t('commonNameMissing')} <i>{row.scientific_name}</i></button>
-      {:else}<p class="muted pad">{t('chooseSpeciesMissing')}</p>{/each}
+      {:else}<p class="muted pad">{t('noSpeciesMatch')}</p><details><summary>{t('wAddUnlisted')}</summary><div class="stack"><label>{t('scientificName')}<input bind:value={scientific} required maxlength="200" disabled={adding}/></label><label>{t('wCommonName')}<input bind:value={common} placeholder={query} maxlength="200" disabled={adding}/></label><button type="button" onclick={add} disabled={adding||disabled||!scientific.trim()}>{t('addSpecies')}</button></div></details>{/each}
     </div>
   {/if}
 {/if}

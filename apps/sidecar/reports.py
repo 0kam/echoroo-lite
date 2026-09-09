@@ -30,7 +30,7 @@ def options(root, dataset_id):
     with connect(root) as db:
         dataset, site, records = dataset_context(db, dataset_id)
         models = [dict(r) for r in db.execute('''SELECT a.engine, json_extract(a.metadata,'$.model_sha256') AS model_sha256,
-            json_extract(a.metadata,'$.model') AS name, COUNT(*) AS recordings FROM analyses a
+            json_extract(a.metadata,'$.model') AS name, MAX(a.id) AS latest_analysis_id, COUNT(*) AS recordings FROM analyses a
             JOIN recordings r ON r.id=a.recording_id WHERE r.dataset_id=? AND a.id IN
             (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) GROUP BY a.engine,model_sha256 ORDER BY a.engine''', (dataset_id,))]
     zone = ZoneInfo(site['timezone'])
@@ -161,7 +161,7 @@ def save_report(db, dataset_id, kind, snapshot):
                       (dataset_id, kind, json.dumps(snapshot, ensure_ascii=False, allow_nan=False))).lastrowid
 
 
-def detection(root, body):
+def detection(root, body, *, persist=True):
     with connect(root) as db:
         dataset, site, records = dataset_context(db, body.dataset_id)
         selected = db.execute('SELECT * FROM species WHERE id=?', (body.species_id,)).fetchone() if body.species_id else None
@@ -209,7 +209,8 @@ def detection(root, body):
                 key, local = window_key(record, float(start), zone)
                 if key not in cells:
                     continue
-                for j, label in enumerate(labels):
+                selected_labels = enumerate(labels) if wanted is None or persist else ([] if selected_index is None else [(selected_index, wanted)])
+                for j, label in selected_labels:
                     item = stats.setdefault(str(label), {'eligible_windows': 0, 'candidate_windows': 0, 'days': set(), 'candidate_days': set()})
                     item['eligible_windows'] += 1
                     item['days'].add(key[0])
@@ -247,11 +248,13 @@ def detection(root, body):
                     'quality': 'not_evaluated', 'complete_windows_only': True}
         snapshot['recording_ids'] = [r['id'] for r in records]
         snapshot['base_report_id'] = body.base_report_id
+        if not persist:
+            return snapshot
         report_id = save_report(db, body.dataset_id, 'detection', snapshot)
     return get_report(root, report_id)
 
 
-def search_report(root, body):
+def search_report(root, body, *, persist=True):
     with connect(root) as db:
         run = db.execute('SELECT * FROM search_runs WHERE id=?', (body.run_id,)).fetchone()
         if run is None:
@@ -332,6 +335,8 @@ def search_report(root, body):
                         'candidate_days': len(candidate_days) if body.threshold is not None else None,
                         'confirmed_windows': counts['target'], 'quality': 'not_evaluated'}]}
         snapshot['recording_ids'] = [r['id'] for r in records]
+        if not persist:
+            return snapshot
         report_id = save_report(db, run['dataset_id'], 'search', snapshot)
     return get_report(root, report_id)
 
@@ -342,19 +347,22 @@ def get_report(root, report_id, cell_date=None, hour=None):
         if row is None:
             raise CatalogError('not_found')
         snapshot = json.loads(row['snapshot'])
-        evidence = snapshot.pop('evidence')
-        filtered = [e for e in evidence if (cell_date is None or e['date'] == cell_date) and (hour is None or e['hour'] == hour)]
-        filtered.sort(key=lambda e: (e['status'] != 'target', -e['score'], e['recording_id'], e['start_s']))
-        selected = []
-        records = {}
-        for e in filtered[:100]:
-            rid = e['recording_id']
-            if rid not in records:
-                records[rid] = dict(db.execute('SELECT * FROM recordings WHERE id=?', (rid,)).fetchone())
-            selected.append({**records[rid], **e})
-        return {**snapshot, 'id': row['id'], 'created_at': row['created_at'], 'evidence': selected,
-                'evidence_count': len(filtered), 'total_evidence': len(evidence)}
+        return snapshot_view(db, snapshot, row['id'], row['created_at'], cell_date, hour)
 
+
+def snapshot_view(db, snapshot, report_id=0, created_at='', cell_date=None, hour=None):
+    evidence = snapshot['evidence']
+    filtered = [e for e in evidence if (cell_date is None or e['date'] == cell_date) and (hour is None or e['hour'] == hour)]
+    filtered.sort(key=lambda e: (e['status'] != 'target', -e['score'], e['recording_id'], e['start_s']))
+    selected = []
+    records = {}
+    for e in filtered[:100]:
+        rid = e['recording_id']
+        if rid not in records:
+            records[rid] = dict(db.execute('SELECT * FROM recordings WHERE id=?', (rid,)).fetchone())
+        selected.append({**records[rid], **e})
+    return {**snapshot, 'id': report_id, 'created_at': created_at, 'evidence': selected,
+            'evidence_count': len(filtered), 'total_evidence': len(evidence)}
 
 def csv_bytes(rows, fields):
     output = io.StringIO(newline='')

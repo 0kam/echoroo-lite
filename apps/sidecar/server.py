@@ -113,6 +113,18 @@ class SearchReportRequest(BaseModel):
     threshold: float | None = Field(default=None, ge=-1, le=1, allow_inf_nan=False)
 
 
+class ValidationRequest(BaseModel):
+    dataset_id: int
+    species_id: str
+    start_date: date
+    end_date: date
+
+
+class ValidationAnswer(BaseModel):
+    item_id: int
+    verdict: Literal['target', 'other', 'unknown']
+
+
 class EvidenceSelection(BaseModel):
     recording_id: int
     start_s: float = Field(ge=0, allow_inf_nan=False)
@@ -124,6 +136,25 @@ class ReportExportRequest(BaseModel):
     svg: str | None = Field(default=None, max_length=10_000_000)
     png: str | None = Field(default=None, max_length=24_000_000)
     audio: list[EvidenceSelection] = Field(default_factory=list, max_length=200)
+
+
+class WorkflowFigure(BaseModel):
+    species_id: str
+    engine: Literal['birdnet','perch','search']
+    run_id: int | None = None
+    svg: str = Field(default='',max_length=10_000_000)
+    png: str = Field(default='',max_length=24_000_000)
+
+
+class WorkflowExportRequest(BaseModel):
+    dataset_id: int
+    start_date: date
+    end_date: date
+    revision: str
+    species_ids: list[str] = Field(min_length=1,max_length=1000)
+    figures: list[WorkflowFigure] = Field(max_length=4000)
+    folder: str
+    locale: Literal['ja','en'] = 'en'
 
 
 class QuizSelection(BaseModel):
@@ -200,6 +231,47 @@ def create_app(root, models, token):
     def health():
         return {"status": "ok", "data_folder": str(root)}
 
+    @app.get('/datasets/{dataset_id}/overview')
+    def dataset_overview(dataset_id: int, start_date: date | None = None, end_date: date | None = None):
+        from results_workflow import overview
+        return overview(root,dataset_id,start_date.isoformat() if start_date else None,end_date.isoformat() if end_date else None)
+
+    @app.get('/datasets/{dataset_id}/species/{species_id}')
+    def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
+                         engine: Literal['birdnet','perch'] = 'birdnet', run_id: int | None = None,
+                         cell_date: date | None = None, hour: int | None = Query(default=None,ge=0,le=23)):
+        from results_workflow import species_result
+        return species_result(root,dataset_id,species_id,start_date.isoformat() if start_date else None,
+            end_date.isoformat() if end_date else None,engine,run_id,cell_date.isoformat() if cell_date else None,hour)
+
+    @app.get('/datasets/{dataset_id}/exports')
+    def workflow_exports(dataset_id: int):
+        with connect(root) as db:
+            return [{'id':r['id'],'path':r['path'],'created_at':r['created_at'],'results':json.loads(r['snapshot'])['results']} for r in db.execute('SELECT id,path,created_at,snapshot FROM workflow_exports WHERE dataset_id=? ORDER BY id DESC',(dataset_id,))]
+
+    @app.post('/workflow-exports')
+    def workflow_export(body: WorkflowExportRequest):
+        from workflow_export import export
+        with lock:
+            return export(root,body)
+
+    @app.post('/validations')
+    def validation_start(body: ValidationRequest):
+        from validation import start_session
+        with lock:
+            return start_session(root,body)
+
+    @app.get('/validations/{session_id}')
+    def validation_view(session_id: int):
+        from validation import view_session
+        return view_session(root,session_id)
+
+    @app.post('/validations/{session_id}/answers')
+    def validation_answer(session_id: int,body: ValidationAnswer):
+        from validation import answer
+        with lock:
+            return answer(root,session_id,body.item_id,body.verdict)
+
     @app.get("/catalog")
     def catalog():
         with connect(root) as db:
@@ -210,6 +282,15 @@ def create_app(root, models, token):
     @app.get("/species")
     def species(q: str = ""):
         return list_species(root, q)
+
+    @app.get('/species/{species_id}')
+    def get_species(species_id: str):
+        from species import names_for
+        with connect(root) as db:
+            row=db.execute('SELECT * FROM species WHERE id=?',(species_id,)).fetchone()
+            if row is None:
+                raise CatalogError('not_found')
+            return names_for(row)
 
     @app.post("/species")
     def update_species(body: SpeciesRequest):

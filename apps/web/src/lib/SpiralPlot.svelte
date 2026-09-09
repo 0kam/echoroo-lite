@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { interval } from './workflow';
   import { commonName } from './species';
   import { percent, type Cell, type Report } from './reports';
   import { app, t } from './app.svelte';
@@ -12,7 +13,8 @@
     .flatMap(line => Array.from(line).join('').match(new RegExp(`.{1,${app.locale === 'ja' ? 48 : 90}}`, 'gu')) || []));
   const header = $derived(132 + siteLines.length * 20);
   const cx = 480, outer = 330, inner = 60;
-  const cy = $derived(header + 360), height = $derived(header + 870);
+  const quality = $derived(report.kind==='detection' && report.validation?.applicable && report.validation.stage==='complete' ? report.validation.results[report.engine??''] : null);
+  const cy = $derived(header + 360), height = $derived(header + 900);
   const ring = $derived((outer - inner) / days);
   const dateTicks = $derived([...new Set([0,1,2,3].map(i => Math.round((days-1)*i/3)))]);
   const metric = $derived(t(report.kind === 'search' ? 'maximumSimilarity' : 'candidateRate'));
@@ -77,7 +79,7 @@
   <text x="36" y="67" font-size="20" font-style="italic" fill="#575279">{report.species?.scientific_name}</text>
   {#each siteLines as line, i}<text x="36" y={96+i*20} font-size="16" fill="#575279">{line}</text>{/each}
   <text x="36" y={header-22} font-size="15" fill="#575279">{report.start_date}–{report.end_date} · {report.site.timezone} · {condition}</text>
-  <text x="36" y={header} font-size="15" fill="#575279">{metric} · {t('threshold')}: {report.threshold?.toFixed(3) ?? t('noThreshold')} · {report.window_s} {t('seconds')} · #{report.id}</text>
+  <text x="36" y={header} font-size="15" fill="#575279">{metric} · {t('threshold')}: {report.threshold?.toFixed(3) ?? t('noThreshold')} · {report.window_s} {t('seconds')} {report.id ? ` · #${report.id}` : ''}</text>
   <circle {cx} {cy} r={outer} fill="#f1f0f2"/><circle {cx} {cy} r={inner} fill="#fff"/>
   {#each report.cells as cell, index}
     <path d={wedge(Math.floor(index/24),cell.hour)} fill={color(cell)} role="button" tabindex={focusIndex===index ? 0 : -1} data-cell={index}
@@ -106,7 +108,8 @@
     <rect x="70" y={cy+450} width="20" height="16" fill="#e0dfe4"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t('belowThreshold')}</text>
     <circle cx="363" cy={cy+458} r="4" fill="#222"/><text x="382" y={cy+463} font-size="14" fill="#575279">{t('confirmedEvidence')}</text>
   {/if}
-  <text x="70" y={cy+494} font-size="14" fill="#575279">{t(report.kind==='search' ? 'searchFigureCaution' : 'detectionFigureCaution')}</text>
+  <text x="70" y={cy+494} font-size="14" fill="#575279">{t(report.kind==='search' ? 'searchFigureCaution' : quality ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
+{#if quality}<text x="70" y={cy+523} font-size="14" fill="#575279">{t('wFigureQuality')} #{report.validation?.id} · precision {percent(quality.precision.value)} [{interval(quality.precision)}] · recall {percent(quality.recall.value)} [{interval(quality.recall)}]</text>{/if}
 </svg>
 </div>
 

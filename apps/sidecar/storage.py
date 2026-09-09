@@ -99,6 +99,27 @@ def initialize(root):
                 id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
                 kind TEXT NOT NULL CHECK(kind IN ('detection','search')),
                 snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS workflow_cache (
+                cache_key TEXT PRIMARY KEY, snapshot BLOB NOT NULL);
+            CREATE TABLE IF NOT EXISTS validation_sessions (
+                id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
+                species_id TEXT NOT NULL REFERENCES species, fingerprint TEXT NOT NULL,
+                snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS validation_items (
+                id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES validation_sessions,
+                phase TEXT NOT NULL CHECK(phase IN ('calibration','evaluation')),
+                position INTEGER NOT NULL, recording_id INTEGER NOT NULL REFERENCES recordings,
+                start_s REAL NOT NULL, stratum TEXT NOT NULL, scores TEXT NOT NULL,
+                UNIQUE(session_id,phase,position), UNIQUE(session_id,recording_id,start_s));
+            CREATE TABLE IF NOT EXISTS validation_answers (
+                id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL REFERENCES validation_items,
+                verdict TEXT NOT NULL CHECK(verdict IN ('target','other','unknown')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            CREATE INDEX IF NOT EXISTS validation_answer_item ON validation_answers(item_id,id DESC);
+            CREATE TABLE IF NOT EXISTS workflow_exports (
+                id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
+                snapshot TEXT NOT NULL, path TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS quiz_clips (
                 id INTEGER PRIMARY KEY, species_id TEXT NOT NULL REFERENCES species,
                 reference_id INTEGER NOT NULL REFERENCES audio_references,

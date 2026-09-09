@@ -5,6 +5,12 @@
   intensity unless the user changes it. Read the installed skill at the start of
   work; prefer existing code, the standard library, and native platform features.
   Preserve correctness, data safety, accessibility, and explicit requirements.
+- Prioritize simple UI and a clear path to biodiversity reports linking search,
+  detection, and validation-based reliability assessment. Keep only features
+  needed for that outcome. Do not add rarely used options "just in case" or
+  retain unnecessary options behind advanced settings. Prefer sensible defaults
+  when users do not need to make a meaningful choice. Preserve evidence,
+  uncertainty, and reproducibility while simplifying the interface.
 - Code and code comments are English. UI text must use locale-keyed message
   resources from the first implementation. Ship Japanese and English UI in the
   first preview for the domestic event; Japanese environments default to Japanese.

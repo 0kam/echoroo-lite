@@ -1,5 +1,10 @@
 # 実装状況（2026-09-09）
 
+> 2026-09-09 種中心の本番フローを実装し、Mac配布物で確認。以下のWindows CIの成功は旧UIの記録であり、
+> 今回の変更をWindowsで確認したことを意味しない。ユーザー指定によりMac完成の報告を先に行う。
+> 新フローの実装・確認範囲は [mac-workflow-2026-09.md](mac-workflow-2026-09.md)。
+
+
 初期範囲と出力案を了承いただき、`codex/desktop-m0` で実装を開始した。
 Ponytail full を維持し、既存の実音源 PoC と標準的な Tauri / SvelteKit /
 FastAPI / SQLite の構成を使う。確定済みの初回機能を実装し、Mac配布版とWindows CIで検証した。

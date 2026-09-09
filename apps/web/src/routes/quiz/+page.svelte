@@ -1,6 +1,9 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
+  import AudioRegion from '$lib/AudioRegion.svelte';
+  import { quizContext } from '$lib/quiz';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.svelte';
   import { app, t } from '$lib/app.svelte';
@@ -12,7 +15,11 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   import { notify } from '$lib/ui/toast.svelte';
+  const context = quizContext(page.url);
+  const returnUrl = context.returnPath ? `${resolve('/datasets')}${context.returnPath.slice('/datasets'.length)}` : '';
+  const continuation = context.query ? `?${context.query}` : '';
   let library = $state<QuizLibrary | null>(null), selected = $state<number[]>([]), setId = $state(''), setName = $state('');
+  const focused = $derived(library?.clips.find(clip => clip.enabled && clip.species_id === context.species));
   let filter = $state(''), count = $state(10), includeDisabled = $state(false), loadError = $state('');
   let showEditor = $state(false), editing = $state<QuizClip | null>(null), editorKey = $state(0), toggling = $state<number | null>(null);
   const visible = $derived((library?.clips ?? []).filter(clip => (clip.enabled || includeDisabled) &&
@@ -31,7 +38,7 @@
   const start = createTask(async () => {
     const session = await api<QuizSession>('/quiz/sessions', { clip_ids: selected, count });
     await refresh();
-    await goto(resolve(`/quiz/${session.id}`));
+    await goto(`${resolve(`/quiz/${session.id}`)}${continuation}`);
   }, { toast: true });
   const toggle = createTask(async (clip: QuizClip) => {
     toggling = clip.id;
@@ -47,17 +54,18 @@
     notify('quizClipAdded');
   }
   onMount(() => { void (async () => {
-    try { await refresh(); if (library?.sets.length) { setId = String(library.sets[0].id); chooseSet(); } }
+    try { await refresh(); if (library?.sets.length) { setId = String(library.sets[0].id); chooseSet(); } if(context.species){const target=library?.clips.find(c=>c.enabled&&c.species_id===context.species);if(target){const others=(library?.clips??[]).filter(c=>c.enabled&&c.species_id!==context.species);selected=[target.id,...others.filter((c,i)=>others.findIndex(x=>x.species_id===c.species_id)===i).slice(0,3).map(c=>c.id)];setId='';}} }
     catch (e) { loadError = e instanceof Error ? e.message : 'unknown_error'; }
   })(); });
 </script>
 
 <div class="page">
-  <div class="page-header"><div><h1>{t('quiz')}</h1><p>{t('quizIntro')}</p></div></div>
+  <div class="page-header"><div><h1>{t('quiz')}</h1><p>{t('quizIntro')}</p></div>{#if returnUrl}<Button href={returnUrl}>‹ {t('wReturn')}</Button>{/if}</div>
   <p class="notice">{t('quizPracticeHint')}</p>
   {#if loadError}<div class="panel"><p class="error" role="alert">{t(loadError)}</p></div>
   {:else if !library}<p class="muted"><Spinner /> {t('quizLoading')}</p>
   {:else}
+    {#if context.species}{#if focused}<section class="panel"><h2>{commonName(focused.species,app.locale)} <i>{focused.species.scientific_name}</i></h2><AudioRegion source={focused.source} start={0} end={focused.seconds} fixedRange /></section>{:else}<p class="notice">{t('wPracticeMissing')}</p>{/if}{/if}
     <div class="two-col">
       <div class="stack">
         <section class="panel">
@@ -65,7 +73,6 @@
           <div class="form-grid">
             <label>{t('quizSet')}<select bind:value={setId} disabled={start.pending} onchange={chooseSet}><option value="">{t('quizAllClips')}</option>
               {#each library.sets as set}<option value={String(set.id)}>{set.bundled_key ? t('quizSampleSet') : set.name}</option>{/each}</select></label>
-            <label>{t('quizCount')}<input type="number" min="1" max="50" step="1" bind:value={count} disabled={start.pending} /></label>
           </div>
           <p class="muted selection">{t('quizSelection')}: {selected.length} {t('quizClips')} · {speciesCount} {t('quizSpecies')} · {t('quizSamplingHint')}</p>
           <div class="actions"><Button variant="primary" size="lg" pending={start.pending} disabled={speciesCount < 2 || !Number.isInteger(count) || count < 1 || count > 50} onclick={() => start.run()}>{t('quizStart')}</Button>
@@ -98,7 +105,7 @@
         {#if !library.sessions.length}<p class="empty">{t('quizChooseSession')}</p>{/if}
         <div class="list" role="list">
           {#each library.sessions as session (session.id)}<div class="list-item" role="listitem"><span>#{session.id} · {session.answered}/{session.count} · {t(session.answered === session.count ? 'quizCompleted' : 'quizResume')}</span>
-            <Button size="sm" href={resolve(`/quiz/${session.id}`)}>{t(session.answered === session.count ? 'open' : 'quizResume')} ›</Button></div>{/each}
+            <Button size="sm" href={`${resolve(`/quiz/${session.id}`)}${continuation}`}>{t(session.answered === session.count ? 'open' : 'quizResume')} ›</Button></div>{/each}
         </div>
       </aside>
     </div>

@@ -1,116 +1,61 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { untrack } from 'svelte';
+  import { goto } from '$app/navigation';
   import { api } from '$lib/api.svelte';
-  import { app, t, activeJob, datasetOf, siteOf, fileName, duration, siteTime, loadRecordings, refreshCatalog, type Recording } from '$lib/app.svelte';
+  import { app,t,activeJob,refreshCatalog } from '$lib/app.svelte';
+  import { commonName } from '$lib/species';
+  import { qualityStatus,rangeQuery,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  import { notify } from '$lib/ui/toast.svelte';
-  const id = $derived(Number(page.params.id));
-  const dataset = $derived(datasetOf(id)), site = $derived(siteOf(dataset));
-  const job = $derived(activeJob());
-  const jobHere = $derived(job?.dataset_id === id ? job : null);
-  const history = $derived(app.jobs.filter(j => j.dataset_id === id && j !== jobHere).slice(0, 3));
-  let records = $state<Recording[]>([]), loading = $state(true), loadError = $state('');
-  let recordingDate = $state(''), pageIndex = $state(0);
-  const PAGE = 100;
-  const filtered = $derived(records.filter(r => !recordingDate || r.original_time.startsWith(recordingDate)));
-  const pages = $derived(Math.max(1, Math.ceil(filtered.length / PAGE)));
-  const visible = $derived(filtered.slice(pageIndex * PAGE, (pageIndex + 1) * PAGE));
-  const hours = $derived(records.reduce((sum, r) => sum + r.seconds, 0) / 3600);
-  $effect(() => {
-    const dataset = id, version = app.recordingsVersion;
-    loading = true; loadError = '';
-    loadRecordings(dataset).then(rows => { if (dataset === id && version === app.recordingsVersion) { records = rows; pageIndex = 0; } })
-      .catch(e => loadError = e instanceof Error ? e.message : 'unknown_error')
-      .finally(() => loading = false);
-  });
-  const analyzeAll = createTask(async () => {
-    await api('/jobs', { dataset_id: id, recording_id: null });
-    await refreshCatalog(); notify('analysisStarted');
-  }, { toast: true });
-  const openRecording = (record: Recording) => goto(resolve(`/datasets/${id}/recordings/${record.id}`));
+  const id=$derived(Number(page.params.id));
+  const job=$derived(activeJob());
+  const jobSignature=$derived(app.jobs.filter(j=>j.dataset_id===id).map(j=>`${j.id}:${j.status}`).join(','));
+  let result=$state<Overview|null>(null),first=$state(''),last=$state(''),loading=$state(true),error=$state('');
+  let request=0;
+  async function load(from='',to='') {
+    const version=++request;loading=true;error='';
+    try {const data=await api<Overview>(`/datasets/${id}/overview${from&&to?`?${rangeQuery(from,to)}`:''}`);
+      if(version===request){result=data;first=data.start_date;last=data.end_date;}}
+    catch(e){if(version===request)error=e instanceof Error?e.message:'unknown_error';}
+    finally{if(version===request)loading=false;}
+  }
+  $effect(()=>{const current=id, signature=jobSignature, hash=page.url.hash;void current;void signature;const query=new URL(hash.slice(1)||page.url.pathname+page.url.search,page.url).searchParams;untrack(()=>void load(query.get('start_date')??'',query.get('end_date')??''));});
+  const analyze=createTask(async()=>{await api('/jobs',{dataset_id:id,recording_id:null});await refreshCatalog();},{toast:true});
+  const range=$derived(result?`?${rangeQuery(result.start_date,result.end_date)}`:'');
 </script>
-
 <div class="page">
-  {#if app.connected && !dataset}
-    <div class="panel empty"><p>{t('datasetNotFound')}</p><Button href={resolve('/datasets')}>{t('navLibrary')}</Button></div>
-  {:else if dataset}
-    <div class="page-header">
-      <div>
-        <div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span><span>{site?.name}</span></div>
-        <h1>{dataset.name}</h1>
-        <p>{dataset.folder}</p>
-      </div>
-      <div class="actions">
-        <Button variant="primary" pending={analyzeAll.pending} disabled={!!job || !records.length}
-          onclick={() => analyzeAll.run()}>{t(jobHere ? 'analysisInProgress' : 'analyzeAll')}</Button>
-        <Button href={resolve(`/datasets/${id}/search`)}>{t('navSearch')}</Button>
-        <Button href={resolve(`/datasets/${id}/reports`)}>{t('reports')}</Button>
-      </div>
-    </div>
-    <div class="two-col">
-      <section class="panel">
-        <div class="section-heading">
-          <h2>{t('datasetRecordings')}</h2>
-          <div class="stat-row">
-            <span><strong>{records.length}</strong>{t('files')}</span>
-            <span><strong>{hours.toFixed(1)}</strong>h</span>
-            <span>{t('localTime')}</span>
-          </div>
-        </div>
-        {#if loading}<p class="muted"><Spinner /> {t('loading')}</p>
-        {:else if loadError}<p class="error" role="alert">{t(loadError)}</p>
-        {:else}
-          {#if records.length > 48}
-            <div class="filter">
-              <label>{t('recordingDate')}<input type="date" bind:value={recordingDate} onchange={() => pageIndex = 0} /></label>
-              <Button size="sm" disabled={!recordingDate} onclick={() => { recordingDate = ''; pageIndex = 0; }}>{t('clearRecordingDate')}</Button>
-              {#if pages > 1}
-                <span class="muted" role="status">{filtered.length} {t('files')} · {t('recordingPage')} {pageIndex + 1} / {pages}</span>
-                <Button size="sm" disabled={pageIndex === 0} onclick={() => pageIndex--}>{t('previousRecordingPage')}</Button>
-                <Button size="sm" disabled={pageIndex + 1 >= pages} onclick={() => pageIndex++}>{t('nextRecordingPage')}</Button>
-              {/if}
-            </div>
-          {/if}
-          <div class="table-wrap recordings">
-            <table aria-label={t('datasetRecordings')}>
-              <thead><tr><th>{t('recording')}</th><th>{t('time')}</th><th>{t('duration')}</th><th></th></tr></thead>
-              <tbody>
-                {#each visible as record (record.id)}
-                  <tr class="row-link" onclick={() => openRecording(record)}>
-                    <td><a href={resolve(`/datasets/${id}/recordings/${record.id}`)} onclick={e => e.stopPropagation()}>{fileName(record.path)}</a></td>
-                    <td class="mono">{siteTime(record)}</td><td class="mono">{duration(record.seconds)}</td>
-                    <td class="right"><span class="button sm ghost">{t('play')} ›</span></td>
-                  </tr>
-                {:else}<tr><td colspan="4" class="muted">{t(recordingDate ? 'noRecordingsForDate' : 'noData')}</td></tr>{/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      </section>
-      <aside class="stack">
-        <section class="panel">
-          <h2>{t('analysisStatus')}</h2>
-          <p class="muted hint">{t('analyzeAllHint')}</p>
-          {#if jobHere}<JobStatus job={jobHere} />
-          {:else if job}<p class="notice">{t('job_busy')}</p>{/if}
-          {#each history as past (past.id)}<JobStatus job={past} />{/each}
-          {#if !jobHere && !history.length}<p class="muted">{t('noJobs')}</p>{/if}
-        </section>
-      </aside>
-    </div>
-  {/if}
+  <div class="page-header"><div><div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span>{result?.site.name}</div>
+    <h1>{result?.dataset.name??t('wResults')}</h1><p>{result?.site.timezone}</p></div>
+    <Button href={`${resolve(`/datasets/${id}/reports`)}${range}`} variant="primary" disabled={!result?.species.length}>{t('wExport')}</Button></div>
+  {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
+  {#if result}
+    <section class="panel"><div class="section-heading"><div class="stat-row"><span><strong>{result.analysed_recordings} / {result.records}</strong> {t('files')}</span>
+      <span><strong>{(result.recorded_seconds/3600).toFixed(1)} h</strong></span>
+      <span>{t(result.analysed_recordings===result.records?'wComplete':'wPartial')}</span></div>
+      <div class="actions"><Button href={resolve(`/datasets/${id}/recordings`)}>{t('wViewRecordings')}</Button>
+        {#if result.mixed_models||result.analysed_recordings<result.records}<Button pending={analyze.pending} disabled={!!job} onclick={()=>analyze.run()}>{t('analyzeAll')}</Button>{/if}</div></div>
+      {#if result.mixed_models}<p class="notice">{t('wModelVersions')}</p>{/if}
+      {#if job?.dataset_id===id}<JobStatus {job}/>{/if}
+      <form class="actions" onsubmit={e=>{e.preventDefault();goto(`${resolve(`/datasets/${id}`)}?${rangeQuery(first,last)}`);}}>
+        <label>{t('reportFrom')}<input type="date" bind:value={first} max={last} required/></label>
+        <label>{t('reportTo')}<input type="date" bind:value={last} min={first} required/></label>
+        <Button type="submit" pending={loading}>{t('wApply')}</Button>
+      </form>
+    </section>
+    <section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('wMissing')}</Button></div>
+      <p class="muted">{t('wOverviewHint')}</p>
+      {#if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
+      <div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wConfirmed')}</th><th>{t('wQuality')}</th></tr></thead><tbody>
+        {#each result.species as row (row.species.id)}<tr><td><a href={`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}`}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
+          <td>{#each row.models as model}<div>{model.engine==='birdnet'?'BirdNET':'Perch'}: {model.candidate_days} {t('wDays')}</div>{:else}—{/each}</td>
+          <td>{row.confirmed||t('wNoConfirmed')}</td><td>{t(qualityStatus(row.validation))}</td></tr>
+        {:else}<tr><td colspan="4">{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</td></tr>{/each}
+      </tbody></table></div>
+    </section>
+  {:else if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-
-<style>
-  .filter { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-bottom: 12px; }
-  .filter label { width: 180px; }
-  .recordings { max-height: calc(100vh - 300px); }
-  .recordings a { color: inherit; text-decoration: none; font-weight: 500; }
-  .right { text-align: right; }
-  .hint { margin-bottom: 10px; }
-</style>
+<style>form{margin-top:16px;align-items:flex-end}td a{text-decoration:none;color:inherit}.table-wrap{margin-top:16px}td{vertical-align:middle}</style>

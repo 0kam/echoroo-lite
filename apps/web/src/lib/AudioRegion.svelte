@@ -12,8 +12,8 @@
   import { api, sourceAudioURL } from './api.svelte';
   import { t } from './app.svelte';
   import Button from './ui/Button.svelte';
-  let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false }:
-    { source: AudioSource; start?: number; end?: number; status?: PlayerStatus; compact?: boolean } = $props();
+  let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false }:
+    { source: AudioSource; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean } = $props();
   let canvas: HTMLCanvasElement, audio: HTMLAudioElement;
   let viewStart = $state(0), span = $state(30), loading = $state(true), error = $state('');
   let cursor = $state(0);
@@ -110,7 +110,7 @@
   <div class="spectrogram-grid">
     <div class="frequencies"><span>12 kHz</span><span>6 kHz</span><span>0</span></div>
     <div class="spectrogram" role="group" aria-label={t('spectrogram')}
-      onpointerdown={event => { if (loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
+      onpointerdown={event => { if (fixedRange || loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
       onpointermove={select} onpointerup={event => { select(event); anchor = null; }} onpointercancel={() => anchor = null}>
       <canvas bind:this={canvas} aria-label={t('spectrogram')}></canvas>
       {#if !loading && !error}
@@ -125,10 +125,10 @@
     <Button variant="primary" aria-busy={status === 'loading'} onclick={() => status !== 'idle' ? stop() : play()}>
       {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t('playRange')}
     </Button>
-    <label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} /></label>
-    <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} /></label>
+    <label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} readonly={fixedRange} /></label>
+    <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} readonly={fixedRange} /></label>
     <Button size="sm" onclick={() => navigate(start)}>{t('showRange')}</Button>
-    <span class="muted range-hint">{t('rangeHint')}</span>
+    {#if !fixedRange}<span class="muted range-hint">{t('rangeHint')}</span>{/if}
   </div>
   <!-- Field recordings have no speech transcript. -->
   <!-- svelte-ignore a11y_media_has_caption -->

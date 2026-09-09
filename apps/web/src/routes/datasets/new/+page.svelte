@@ -2,7 +2,7 @@
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { isTauri } from '@tauri-apps/api/core';
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { chooseDirectory } from '$lib/files';
   import { api } from '$lib/api.svelte';
   import { app, t, fileName, siteTime, refreshCatalog, rememberDataset } from '$lib/app.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -23,7 +23,7 @@
     await goto(resolve(`/datasets/${result.dataset_id}`));
   });
   const browse = createTask(async () => {
-    const picked = await open({ directory: true, multiple: false });
+    const picked = await chooseDirectory();
     if (picked) { folder = picked; preview = null; }
   });
 </script>

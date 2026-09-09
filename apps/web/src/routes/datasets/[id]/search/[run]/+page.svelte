@@ -57,11 +57,11 @@
   <div class="page-header">
     <div>
       <div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span><a href={resolve(`/datasets/${datasetId}`)}>{dataset?.name}</a><span>›</span><a href={resolve(`/datasets/${datasetId}/search`)}>{t('navSearch')}</a><span>›</span></div>
-      {#if run}<h1>#{run.id} · {commonName(run.snapshot.species, app.locale)} <i class="sci">{run.snapshot.species.scientific_name}</i></h1>
+      {#if run}<h1>{commonName(run.snapshot.species, app.locale)} <i class="sci">{run.snapshot.species.scientific_name}</i></h1>
         <p>{t('searchRecordingDates')}: {run.snapshot.start_date ?? t('noDateLimit')}–{run.snapshot.end_date ?? t('noDateLimit')} · {t('searchCoverage')}: {run.snapshot.searched_recordings} / {run.snapshot.total_recordings} {t('files')} · {run.hit_count} {t('searchableSegments')}</p>
       {:else}<h1>{t('savedSearches')}</h1>{/if}
     </div>
-    <div class="actions"><Button href={resolve(`/datasets/${datasetId}/search`)}>‹ {t('backToSearch')}</Button><Button href={resolve(`/datasets/${datasetId}/reports`)}>{t('reports')} ›</Button></div>
+    <div class="actions"><Button href={resolve(`/datasets/${datasetId}/search`)}>‹ {t('backToSearch')}</Button>{#if run}<Button href={`${resolve(`/datasets/${datasetId}/species/${run.snapshot.species.id}`)}${run.snapshot.start_date&&run.snapshot.end_date?`?start_date=${run.snapshot.start_date}&end_date=${run.snapshot.end_date}`:''}`}>{t('wBackSpecies')}</Button>{/if}</div>
   </div>
   {#if loadError}<div class="panel empty"><p class="error">{t(loadError === 'not_found' ? 'runNotFound' : loadError)}</p></div>
   {:else if !run}<p class="muted"><Spinner /> {t('loading')}</p>
@@ -70,11 +70,11 @@
     <div class="two-col">
       <div class="stack">
         <section class="panel">
-          <h2>{t('similarityDistribution')}</h2>
+          <h2>{t('wSearchResult')}</h2>
           <details><summary>{t('savedReferences')} ({run.snapshot.references.length})</summary>
             {#each run.snapshot.references as ref, i}<p class="muted">{i + 1}. {fileName(ref.source.path)} · {clipTime(ref.query.start_s)}–{clipTime(ref.query.end_s)}</p>{/each}</details>
           <p class="muted">{t('similarityHint')}</p>
-          <SimilarityDistribution bands={run.distribution} hint={t('reviewDistributionHint')} />
+          <details><summary>{t('similarityDistribution')}</summary><SimilarityDistribution bands={run.distribution} hint={t('reviewDistributionHint')} /></details>
         </section>
         <section class="panel">
           <h2>{t('drawSample')}</h2>

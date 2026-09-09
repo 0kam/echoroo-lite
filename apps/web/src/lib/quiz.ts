@@ -11,3 +11,14 @@ export type QuizFeedback = {position: number; status: string; clip: QuizClip; an
 export type QuizSession = {id: number; count: number; answered: number; complete: boolean; correct: number; unknown: number;
   question: {position: number; seconds: number; choices: Species[]; feedback: QuizFeedback | null} | null;
   review: QuizFeedback[]; per_species: {species: Species; correct: number; incorrect: number; unknown: number; total: number}[]};
+
+export function quizContext(url: URL) {
+  const params = new URL(url.hash.slice(1) || url.pathname + url.search, url).searchParams;
+  const candidate = params.get('return') ?? '';
+  const returnPath = /^\/datasets\/\d+\/(species\/[a-zA-Z0-9-]+|validation\/\d+)(\?[^#]*)?$/.test(candidate) ? candidate : '';
+  const species = params.get('species') ?? '';
+  const query = new URLSearchParams();
+  if (returnPath) query.set('return', returnPath);
+  if (species) query.set('species', species);
+  return { returnPath, species, query: query.toString() };
+}

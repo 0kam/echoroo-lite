@@ -48,13 +48,7 @@
     <div class="group">{t('workflow')}</div>
     <a href={resolve('/datasets')} class:current={current('/datasets', true) || current('/datasets/new')}><span class="step" aria-hidden="true">1</span>{t('navLibrary')}</a>
     {#if base}
-      <a href={base} class:current={current('/datasets/[id]', true) || current('/datasets/[id]/recordings')}><span class="step" aria-hidden="true">2</span>{t('navRecordings')}</a>
-      <a href={`${base}/search`} class:current={current('/datasets/[id]/search')}><span class="step" aria-hidden="true">3</span>{t('navSearch')}</a>
-      <a href={`${base}/reports`} class:current={current('/datasets/[id]/reports')}><span class="step" aria-hidden="true">4</span>{t('reports')}</a>
-    {:else}
-      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step" aria-hidden="true">2</span>{t('navRecordings')}</span>
-      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step" aria-hidden="true">3</span>{t('navSearch')}</span>
-      <span class="disabled-link" title={t('navNeedsDataset')}><span class="step" aria-hidden="true">4</span>{t('reports')}</span>
+      <a href={base} class:current={current('/datasets/[id]')}><span class="step" aria-hidden="true">2</span>{t('wResults')}</a>
     {/if}
     <div class="group">{t('tools')}</div>
     <a href={resolve('/quiz')} class:current={current('/quiz')}><span class="step" aria-hidden="true">♪</span>{t('quiz')}</a>

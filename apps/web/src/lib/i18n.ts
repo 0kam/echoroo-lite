@@ -1,4 +1,6 @@
+import { workflowEn, workflowJa } from './workflow-messages';
 export const en = {
+  ...workflowEn,
   recordingDate: 'Recording date (site time)',
   clearRecordingDate: 'Show all dates',
   recordingPage: 'Page',
@@ -335,6 +337,7 @@ export const en = {
 };
 export type Key = keyof typeof en;
 export const ja: Record<Key, string> = {
+  ...workflowJa,
   recordingDate: '録音日（地点の時刻）',
   clearRecordingDate: 'すべての日を表示',
   recordingPage: 'ページ',

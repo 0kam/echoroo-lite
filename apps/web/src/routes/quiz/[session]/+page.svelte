@@ -5,11 +5,15 @@
   import { api, mediaURL } from '$lib/api.svelte';
   import { app, t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
+  import { quizContext } from '$lib/quiz';
   import type { QuizSession } from '$lib/quiz';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
+  const context = quizContext(page.url);
+  const quizUrl = `${resolve('/quiz')}${context.query ? `?${context.query}` : ''}`;
+  const returnUrl = context.returnPath ? `${resolve('/datasets')}${context.returnPath.slice('/datasets'.length)}` : '';
   const sessionId = $derived(Number(page.params.session));
   let session = $state<QuizSession | null>(null), loadError = $state(''), inspect = $state(false);
   let reviewPosition = $state<number | null>(null), questionAudio = $state<HTMLAudioElement>();
@@ -37,8 +41,8 @@
 </script>
 
 <div class="page">
-  <div class="page-header"><div><div class="crumbs"><a href={resolve('/quiz')}>{t('quiz')}</a><span>›</span></div><h1>{t('quizSession')} #{sessionId}</h1></div>
-    <Button href={resolve('/quiz')}>‹ {t('backToQuiz')}</Button></div>
+  <div class="page-header"><div><div class="crumbs"><a href={quizUrl}>{t('quiz')}</a><span>›</span></div><h1>{t('quizSession')} #{sessionId}</h1></div>
+    <div class="actions"><Button href={quizUrl}>‹ {t('backToQuiz')}</Button>{#if returnUrl}<Button href={returnUrl}>{t('wReturn')}</Button>{/if}</div></div>
   {#if loadError}<div class="panel empty"><p class="error">{t(loadError === 'not_found' ? 'sessionNotFound' : loadError)}</p></div>
   {:else if !session}<p class="muted"><Spinner /> {t('loading')}</p>
   {:else}

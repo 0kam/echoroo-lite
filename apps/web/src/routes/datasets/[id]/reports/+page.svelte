@@ -1,113 +1,61 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { onMount,tick } from 'svelte';
   import { page } from '$app/state';
+  import { isTauri } from '@tauri-apps/api/core';
+  import { chooseDirectory } from '$lib/files';
   import { api } from '$lib/api.svelte';
-  import { app, t, datasetOf } from '$lib/app.svelte';
-  import { commonName, type Species } from '$lib/species';
-  import type { Report, ReportOptions } from '$lib/reports';
-  import SpeciesPicker from '$lib/SpeciesPicker.svelte';
+  import { app,t } from '$lib/app.svelte';
+  import { commonName } from '$lib/species';
+  import { qualityStatus,rangeQuery,type Overview,type SpeciesResult } from '$lib/workflow';
+  import type { Report } from '$lib/reports';
+  import SpiralPlot from '$lib/SpiralPlot.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  import { notify } from '$lib/ui/toast.svelte';
-  type History = { id: number; kind: 'detection' | 'search'; species: Species | null; start_date: string; end_date: string };
-  type RunSummary = { id: number; species: Species };
-  const datasetId = $derived(Number(page.params.id));
-  const dataset = $derived(datasetOf(datasetId));
-  let options = $state<ReportOptions | null>(null), runs = $state<RunSummary[]>([]), history = $state<History[]>([]);
-  let kind = $state<'detection' | 'search'>('detection'), model = $state(''), runId = $state('');
-  let first = $state(''), last = $state(''), threshold = $state(.1), similarity = $state(.5), useThreshold = $state(false);
-  let species = $state<Species | null>(null), loadError = $state('');
-  const create = createTask(async (taxon: Species | null = species) => {
-    let report: Report;
-    if (kind === 'detection') {
-      const [engine, model_sha256] = model.split(':');
-      report = await api<Report>('/reports/detection', { dataset_id: datasetId, engine, model_sha256, threshold,
-        start_date: first, end_date: last, species_id: taxon?.id ?? null, base_report_id: null });
-    } else {
-      report = await api<Report>('/reports/search', { run_id: Number(runId), start_date: first, end_date: last,
-        threshold: useThreshold ? similarity : null });
+  const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
+  let overview=$state<Overview|null>(null),selected=$state<string[]>([]),error=$state(''),folder=$state(''),output=$state(''),progress=$state('');
+  let history=$state<{id:number;path:string;created_at:string;results:{report_id:number;scientific_name:string;common_name_ja:string;common_name_en:string;engine:string}[]}[]>([]),figure=$state<Report|null>(null);
+  let legacy=$state<{id:number;created_at:string;kind:string;species:{scientific_name:string}|null}[]>([]);
+  let plot=$state<{images:()=>Promise<{svg:string;png:string}>}>(null!);
+  onMount(()=>{void(async()=>{try{overview=await api<Overview>(`/datasets/${id}/overview?${query}`);selected=overview.species.map(row=>row.species.id);
+    history=await api(`/datasets/${id}/exports`);const saved=new Set(history.flatMap(item=>item.results.map(r=>r.report_id)));legacy=(await api<typeof legacy>(`/reports?dataset_id=${id}`)).filter(item=>!saved.has(item.id));}catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
+  const exportFiles=createTask(async()=>{
+    if(!overview)return;output='';
+    if(isTauri()){const path=await chooseDirectory();if(!path)return;folder=path;}
+    const figures=[];
+    for(let index=0;index<selected.length;index++){
+      const sid=selected[index],row=overview.species.find(r=>r.species.id===sid)!;progress=`${index+1} / ${selected.length} · ${commonName(row.species,app.locale)}`;
+      const targets=[...overview.models.map(model=>({engine:model.engine,run_id:null as number|null})),...row.searches.map(run=>({engine:'search',run_id:run.id}))];
+      for(const target of targets){
+        const params=new URLSearchParams({start_date:overview.start_date,end_date:overview.end_date});
+        if(target.run_id)params.set('run_id',String(target.run_id));else params.set('engine',target.engine);
+        const result=await api<SpeciesResult>(`/datasets/${id}/species/${sid}?${params}`);
+        if(result.revision!==overview.revision)throw Error('workflow_changed');
+        if(!result.report)continue;figure=result.report;await tick();
+        const images=figure.cells.length?await plot.images():{svg:'',png:''};
+        figures.push({species_id:sid,...target,...images});
+      }
     }
-    notify('reportCreated');
-    await goto(resolve(`/datasets/${datasetId}/reports/${report.id}`));
-  }, { toast: true });
-  onMount(() => { void (async () => {
-    try {
-      const [loaded, searches, saved] = await Promise.all([
-        api<ReportOptions>(`/reports/options?dataset_id=${datasetId}`),
-        api<RunSummary[]>(`/search-runs?dataset_id=${datasetId}`),
-        api<History[]>(`/reports?dataset_id=${datasetId}`),
-      ]);
-      options = loaded; runs = searches; history = saved; last = loaded.last_date;
-      first = [loaded.first_date, new Date(Date.parse(last) - 365 * 86400000).toISOString().slice(0, 10)].sort().at(-1)!;
-      if (loaded.models.length) model = `${loaded.models[0].engine}:${loaded.models[0].model_sha256}`;
-      if (searches.length) runId = String(searches[0].id);
-    } catch (e) { loadError = e instanceof Error ? e.message : 'unknown_error'; }
-  })(); });
+    const result=await api<{path:string}>('/workflow-exports',{dataset_id:id,start_date:overview.start_date,end_date:overview.end_date,revision:overview.revision,
+      species_ids:selected,figures,folder,locale:app.locale});output=result.path;figure=null;progress='';history=await api(`/datasets/${id}/exports`);
+  });
 </script>
-
-<div class="page">
-  <div class="page-header">
-    <div><div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span><a href={resolve(`/datasets/${datasetId}`)}>{dataset?.name}</a><span>›</span></div>
-      <h1>{t('reports')}</h1><p>{t('reportsIntro')}</p></div>
-  </div>
-  {#if loadError}<div class="panel"><p class="error" role="alert">{t(loadError)}</p></div>
-  {:else if !options}<p class="muted"><Spinner /> {t('loading')}</p>
-  {:else}
-    <div class="two-col">
-      <section class="panel">
-        <h2>{t('newReport')}</h2>
-        <div class="report-tabs">
-          <Button active={kind === 'detection'} aria-pressed={kind === 'detection'} disabled={create.pending} onclick={() => kind = 'detection'}>{t('detectionReport')}</Button>
-          <Button active={kind === 'search'} aria-pressed={kind === 'search'} disabled={create.pending} onclick={() => kind = 'search'}>{t('searchReport')}</Button>
-        </div>
-        <p class="muted purpose">{t(kind === 'detection' ? 'detectionReportPurpose' : 'searchReportPurpose')}</p>
-        <form onsubmit={event => { event.preventDefault(); create.run(); }}>
-          <div class="form-grid">
-            <label>{t('reportFrom')}<input type="date" bind:value={first} required disabled={create.pending} /></label>
-            <label>{t('reportTo')}<input type="date" bind:value={last} required disabled={create.pending} /></label>
-            {#if kind === 'detection'}
-              <label>{t('model')}<select bind:value={model} disabled={create.pending}>{#each options.models as item}<option value={`${item.engine}:${item.model_sha256}`}>{item.engine === 'birdnet' ? 'BirdNET' : 'Perch'} · {item.model_sha256.slice(0, 12)} · {item.recordings} {t('files')}</option>{/each}</select></label>
-              <label>{t('threshold')}<input type="number" min="0" max="1" step="any" required bind:value={threshold} disabled={create.pending} /></label>
-            {:else}
-              <label>{t('searchHistory')}<select bind:value={runId} disabled={create.pending}>{#each runs as run}<option value={String(run.id)}>#{run.id} · {commonName(run.species, app.locale)} · {run.species.scientific_name}</option>{/each}</select></label>
-              <label>{t('threshold')}<input type="number" min="-1" max="1" step="any" required={useThreshold} bind:value={similarity} disabled={create.pending || !useThreshold} /></label>
-            {/if}
-          </div>
-          {#if kind === 'search'}<label class="checkbox option"><input type="checkbox" bind:checked={useThreshold} disabled={create.pending} />{t('applyDisplayThreshold')}</label>{/if}
-          <Button type="submit" variant="primary" pending={create.pending} disabled={kind === 'detection' ? !model : !runId}>{t('createReport')}</Button>
-        </form>
-        {#if kind === 'detection'}
-          <details class="specific-species"><summary>{t('specifyReportSpecies')}</summary>
-            <SpeciesPicker bind:value={species} disabled={create.pending} />
-            <div class="actions"><Button size="sm" pending={create.pending} disabled={!species || !model} onclick={() => create.run(species)}>{t('reportThisSpecies')}</Button>
-              {#if species}<Button size="sm" disabled={create.pending} onclick={() => create.run(null)}>{t('reportAllSpecies')}</Button>{/if}</div>
-          </details>
-        {/if}
-        {#if create.pending}<p class="muted" role="status">{t('reportProgress')}</p>{/if}
-        {#if create.error}<p class="error" role="alert">{t(create.error)}</p>{/if}
-      </section>
-      <aside class="panel">
-        <h2>{t('reportHistory')}</h2>
-        {#if !history.length}<p class="empty">{t('noReports')}</p>{/if}
-        <div class="list" role="list">
-          {#each history as row (row.id)}
-            <div class="list-item" role="listitem"><span>#{row.id} · <strong>{t(row.kind === 'search' ? 'searchReport' : 'detectionReport')}</strong>
-              <span class="muted report-meta">{row.species ? `${commonName(row.species, app.locale)} · ${row.species.scientific_name}` : t('reportAllSpecies')} · {row.start_date}–{row.end_date}</span></span>
-              <Button size="sm" href={resolve(`/datasets/${datasetId}/reports/${row.id}`)} aria-label={t('open')}>{t('open')} ›</Button></div>
-          {/each}
-        </div>
-      </aside>
-    </div>
-  {/if}
+<div class="page"><div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('wResults')}</a></div><h1>{t('wExport')}</h1><p>{t('wExportIntro')}</p>
+  {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
+  {#if overview}<p>{overview.dataset.name} · {overview.start_date}–{overview.end_date} · {overview.site.timezone}</p>
+    <div class="two-col"><section class="panel"><h2>{t('wIncludeSpecies')}</h2>{#each overview.species as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending}/>
+      <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i></span><small>{t(qualityStatus(row.validation))}</small></label>{/each}</section>
+    <section class="panel"><p>{t('wExportContents')}</p>
+      {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder}/></label>{/if}
+      <Button variant="primary" pending={exportFiles.pending} disabled={!selected.length||(!isTauri()&&!folder)} onclick={()=>exportFiles.run()}>{t('wExport')}</Button>
+      {#if progress&&exportFiles.pending}<p role="status"><Spinner/> {progress}</p>{/if}
+      {#if exportFiles.error}<p class="error" role="alert">{t(exportFiles.error)}</p>{/if}
+      {#if output}<p class="notice" role="status">{t('reportExported')}<br>{output}</p>{/if}
+    </section></div>
+    {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<details><summary>{item.created_at}</summary><p class="muted path">{item.path}</p>{#each item.results as saved}<p><a href={resolve(`/datasets/${id}/reports/${saved.report_id}`)}>{(app.locale==='ja'?saved.common_name_ja:saved.common_name_en)||saved.scientific_name} · <i>{saved.scientific_name}</i> · {saved.engine}</a></p>{/each}</details>{/each}</section>{/if}
+    {#if legacy.length}<details><summary>{t('wEarlierReports')}</summary>{#each legacy as item}<p><a href={resolve(`/datasets/${id}/reports/${item.id}`)}>#{item.id} · {item.created_at} · {item.species?.scientific_name??t('species')}</a></p>{/each}</details>{/if}
+  {:else if !error}<p><Spinner/> {t('loading')}</p>{/if}
+  {#if figure}<div class="export-render" aria-hidden="true"><SpiralPlot report={figure} onselect={()=>{}} bind:this={plot}/></div>{/if}
 </div>
-
-<style>
-  .report-tabs, .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .purpose, form, .specific-species { margin-top: 14px; }
-  .option { margin: 14px 0; }
-  .specific-species :global(.picked), .specific-species :global(label) { margin-top: 10px; }
-  .report-meta { display: block; overflow-wrap: anywhere; }
-</style>
+<style>h1{margin-top:16px}p{margin:16px 0}.export-species{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid rgb(var(--stone-300))}.export-species small{margin-left:auto}.export-species input{width:18px}.export-render{position:fixed;left:-10000px;top:0;width:960px;pointer-events:none}.path{overflow-wrap:anywhere}</style>
