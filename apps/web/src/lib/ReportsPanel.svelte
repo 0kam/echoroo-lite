@@ -71,7 +71,7 @@
   })}><option value="">{t('chooseReport')}</option>{#each history as row}<option value={String(row.id)}>#{row.id} · {t(row.kind==='search'?'searchReport':'detectionReport')} · {row.species ? `${commonName(row.species,locale)} · ${row.species.scientific_name}` : t('reportAllSpecies')} · {row.start_date}–{row.end_date}</option>{/each}</select></label>{/if}
   {#if report?.kind==='search' && report.distribution}
     <details class="distribution"><summary>{t('similarityDistribution')}</summary>
-      <SimilarityDistribution bands={report.distribution} {t}/></details>
+      <SimilarityDistribution bands={report.distribution} {t} hint={t('distributionHint')}/></details>
     {#if report.threshold_suggestion}<p class="muted">{t('suggestedDisplayThreshold')}: {report.threshold_suggestion.threshold.toFixed(3)} · {t('thresholdSuggestionHint')}</p>
       <button class="small" disabled={busy} onclick={() => action(async () => {
         similarity=report!.threshold_suggestion!.threshold; useThreshold=true; runId=String(report!.run_id); first=report!.start_date; last=report!.end_date; await create();

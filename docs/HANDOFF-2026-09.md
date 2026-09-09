@@ -1,5 +1,10 @@
 # Echoroo Lite 開発ハンドアウト(2026-09-08 版)
 
+> 2026-09-09更新: 年間相当の実音声反復負荷はM4 Proで検索・報告出力まで4時間8分25秒。
+> Windowsはサービス凍結・EXE/MSI作成、モデル不要のサービス起動・26種クイズをCIで確認済み。
+> 実推論はBirdNET取得元の504で未確認。以下の9月8日時点の記述と区別し、
+> [実装状況](implementation-status.md) と [Windows検証結果](windows-preview.md) を参照する。
+
 > 2026-09-08 Mac 側レビュー追記: 初期範囲を合意し、実装に着手した。
 > まず [implementation-status.md](implementation-status.md) の実装済み範囲と残作業を読む。
 > 以下の「設計ロック済み」は従来の状態を示す。Perch の約12秒/30分は合成音声の

@@ -56,7 +56,7 @@
       {#each run.snapshot.references as ref, i}<p class="muted">{i + 1}. {name(ref.source.path)} · {clipTime(ref.query.start_s)}–{clipTime(ref.query.end_s)}</p>{/each}</details>
     <p class="muted">{t('similarityHint')}</p>
     <details class="distribution" open><summary>{t('similarityDistribution')}</summary>
-      <SimilarityDistribution bands={run.distribution} {t}/></details>
+      <SimilarityDistribution bands={run.distribution} {t} hint={t('reviewDistributionHint')}/></details>
     <form class="sampling" onsubmit={e => { e.preventDefault(); void action(draw); }}>
       <label>{t('similarityLow')}<input type="number" min="-1" max="1" step="any" required bind:value={low} /></label>
       <label>{t('similarityHigh')}<input type="number" min="-1" max="1" step="any" required bind:value={high} /></label>

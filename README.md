@@ -17,8 +17,9 @@ source; Lite never merges back.
 
 The first slice registers Site > Dataset recordings in place, runs BirdNET and
 Perch, saves scores and embeddings, and searches by a spectrogram-selected audio
-interval. Saved searches support multiple references per species, random similarity-band
-sampling, and persistent judgements. Xeno-Canto key settings, search and selected
+interval. Searches can be scoped by the recording's start date in its site timezone.
+Saved searches support multiple references per species, a distribution of all matches,
+random similarity-band sampling, and persistent judgements. Xeno-Canto key settings, search and selected
 downloads are implemented and verified against the live service in the Mac release app.
 Detection and search reports provide species summaries, evidence audio, spiral plots
 and CSV/SVG/PNG/audio ZIP exports. A 26-species practice quiz supports custom sets,
@@ -137,11 +138,12 @@ noncommercial condition; permission for the intended business use is not yet est
 The Windows workflow builds an installer and checks the frozen sidecar's startup,
 session authorization, bundled species names and quizzes, SQLite extension and shutdown.
 It also provisions the pinned models and runs both classifiers, searches and report
-exports using a supplied call clip. The first Windows run passed tests and freezing,
-then failed on Zenodo HTTP 504 while downloading BirdNET. A second run produced
-EXE/MSI installers before hitting the same download failure. An uploaded artifact alone
-does not prove frozen inference, which remains untested on Windows. GUI
-acceptance and annual performance on Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
+exports using a supplied call clip. Windows CI has passed eight API tests, EXE/MSI
+creation, NSIS installation, and the installed service's startup, quizzes and shutdown.
+The desktop startup check found that CSS hid connection status on the runner's 1024px
+screen; this is fixed and awaits a fresh CI check. Earlier attempts to download BirdNET
+failed with Zenodo HTTP 504. Frozen inference, GUI acceptance and annual performance on
+Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
 CSV/audio exports in 4 h 8 min 25 s; annual plots were then checked in the release app.
 See [the annual benchmark and its limits](docs/annual-benchmark-2026-09.md).

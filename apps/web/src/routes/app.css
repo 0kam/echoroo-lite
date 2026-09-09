@@ -123,7 +123,6 @@ audio { width: 100%; margin: 4px 0 22px; height: 42px; }
   .content { padding: 22px 20px; }
   .model-grid { grid-template-columns: 1fr; }
   .intro { display: block; }
-  .connection { display: none; }
 }
 @media (max-width: 720px) {
   header { padding: 0 12px; gap: 8px; }
