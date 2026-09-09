@@ -17,7 +17,20 @@
 2026-09-09に作業ブランチをGitHubへ反映し、[PR #1](https://github.com/0kam/echoroo-lite/pull/1)で最初のCIを開始した。
 初回はテスト・画面ビルド・サービス凍結が通過したが、BirdNET配布元ZenodoのHTTP 504が
 5回の再試行でも解消せず停止した。Macからの同レコードAPI・ファイル取得も504だった。
-配布物作成をモデル準備より先に移動し、再実行する。成果物があっても実推論検査の成功とは扱わない。
+配布物作成をモデル準備より先に移動し、[再実行](https://github.com/0kam/echoroo-lite/actions/runs/34297836126)で
+Tauriのビルドと `windows-preview` 成果物の保存が通過した。全7件のPythonテスト、Svelteの
+エラー・警告0件、静的ビルド、サービス凍結も通過。成果物があっても実推論検査の成功とは扱わない。
+再実行でもZenodoの504が5回続き、モデル準備で失敗した。凍結版の実推論検査は未実施。
+CI全体は失敗であり、Windowsでのインストール・起動・音声出力・実推論の確認は残っている。
+成果物は284,340,626 bytes、GitHub記録のSHA-256は
+`152106c5c2aaac62c00d32df8a87263f74587283468e322f5dfc8256574df3fe`。
+取得したインストーラーはローカルの `.local-data/windows-preview/installers/` にある。
+
+| ファイル | bytes | SHA-256 |
+|---|---:|---|
+| `nsis/Echoroo Lite_0.1.0_x64-setup.exe` | 141,889,930 | `9db41de12193136a69643442768eaa8bc1557767f78c7e95821bc5cdbd2146ee` |
+| `msi/Echoroo Lite_0.1.0_x64_en-US.msi` | 142,626,816 | `5a5e2fb0d1ec0282f91ff185e321fc0bcc25deaf8bc68907f9365a8f31090979` |
+
 依存49パッケージはWindows x64・Python 3.11のバイナリ配布だけで解決できたが、
 これはWindows上のインストール・DLL読み込み・推論成功の証明ではない。
 上の4に使う `--sample-audio` 経路はMac凍結版で実際に通した。
@@ -41,6 +54,13 @@ BirdNETの非商用条件と企業での実務利用については確認中で�
 
 アプリを一度起動し、終了してから、準備済みの `poc/models` の中身を
 `%APPDATA%\org.echoroo.lite\models` へコピーする。必要な構造は次のとおり。
+
+2026-09-09には、Macで使用したモデル・ラベル58ファイルだけをまとめた
+`.local-data/windows-preview/echoroo-models-2026-09-09.zip`（462,812,532 bytes）も用意した。
+ローカルの準備物でありGitHubには含めない。中の `models` を上記へ配置する。
+全ファイルを元データのSHA-256と照合済み。ZIPのSHA-256は
+`b3574c2e52d2aa7d4ad66df51a962dda9958e9b27a43f65a284cec06cf7d7797`。
+取得元・利用条件の記録と、ファイルごとのハッシュ一覧を同梱する。
 
 ```text
 org.echoroo.lite/

@@ -138,8 +138,9 @@ The Windows workflow builds an installer and checks the frozen sidecar's startup
 session authorization, bundled species names and quizzes, SQLite extension and shutdown.
 It also provisions the pinned models and runs both classifiers, searches and report
 exports using a supplied call clip. The first Windows run passed tests and freezing,
-then failed on Zenodo HTTP 504 while downloading BirdNET. Installers are now built
-before the online model check; an uploaded artifact alone does not prove inference. GUI
+then failed on Zenodo HTTP 504 while downloading BirdNET. A second run produced
+EXE/MSI installers before hitting the same download failure. An uploaded artifact alone
+does not prove frozen inference, which remains untested on Windows. GUI
 acceptance and annual performance on Windows remain unverified. See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
 CSV/audio exports in 4 h 8 min 25 s; annual plots were then checked in the release app.
