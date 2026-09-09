@@ -1,19 +1,32 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount } from 'svelte';
+  import { onMount,tick } from 'svelte';
+  import { beforeNavigate,afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
-  import { app, t, activeJob, datasetOf, siteOf, setLocale, setDark, rememberDataset, restorePreferences, startSession } from '$lib/app.svelte';
+  import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession } from '$lib/app.svelte';
   import ActivityBar from '$lib/ui/ActivityBar.svelte';
   import Toasts from '$lib/ui/Toasts.svelte';
   import './app.css';
   let { children } = $props();
+  const scrollPositions=new Map<string,number>();
+  const scrollKey=()=>page.url.hash.split('?')[0];
+  let stopRestore=()=>{};
+  beforeNavigate(()=>{stopRestore();scrollPositions.set(scrollKey(),document.querySelector('main')?.scrollTop??0);});
+  afterNavigate(async()=>{
+    await tick();const main=document.querySelector('main');if(!main)return;
+    const target=scrollPositions.get(scrollKey())??0;
+    const restore=()=>{main.scrollTop=target;if(main.scrollHeight-main.clientHeight>=target)stopRestore();};
+    // Results arrive after navigation; restore once the list has its full height.
+    const observer=new MutationObserver(restore);
+    const events=['wheel','touchstart','keydown','pointerdown'];
+    stopRestore=()=>{observer.disconnect();events.forEach(event=>main.removeEventListener(event,stopRestore));};
+    events.forEach(event=>main.addEventListener(event,stopRestore,{once:true}));
+    observer.observe(main,{childList:true,subtree:true});restore();
+  });
   const job = $derived(activeJob());
-  const dataset = $derived(datasetOf(app.datasetId));
-  const site = $derived(siteOf(dataset));
-  const base = $derived(app.datasetId === null ? null : resolve(`/datasets/${app.datasetId}`));
   const route = $derived(page.route.id ?? '');
   const current = (prefix: string, exact = false) => exact ? route === prefix : route.startsWith(prefix);
-  // Visiting a dataset route makes it the working dataset for the sidebar links.
+  // Visiting a dataset route makes it the working dataset for subsequent navigation.
   $effect(() => {
     const id = Number(page.params.id);
     if (route.startsWith('/datasets/[id]') && Number.isInteger(id) && id !== app.datasetId) rememberDataset(id);
@@ -27,34 +40,22 @@
 <div class="shell">
   <header class="topbar">
     <a class="brand" href={resolve('/')}><img src="/echoroo.png" alt="" /> Echoroo <b>Lite</b></a>
-    {#if dataset}
-      <span class="context"><span>{t('currentDataset')}:</span><strong>{site?.name} › {dataset.name}</strong>
-        <a href={resolve('/datasets')} class="small-text">{t('switchDataset')}</a></span>
-    {/if}
+    <nav class="main-nav" aria-label={t('workflow')}>
+      <a href={resolve('/datasets')} class:current={current('/datasets')}>{t('navLibrary')}</a>
+      <a href={resolve('/quiz')} class:current={current('/quiz')}>{t('quiz')}</a>
+      <a href={resolve('/settings')} class:current={current('/settings')}>{t('navSettings')}</a>
+    </nav>
     <span class="spacer"></span>
     {#if job}
       {@const target = datasetOf(job.dataset_id)}
-      <a class="jobchip" href={resolve('/datasets')}><span class="dot-pulse"></span>{t('analysisInProgress')}: {target?.name ?? `#${job.dataset_id}`} · {job.done} / {job.total}</a>
+      <a class="jobchip" href={resolve('/datasets')}><span class="dot-pulse"></span>{t('analysisInProgress')}: {siteOf(target)?.name ?? ''} · {job.done} / {job.total}</a>
     {/if}
-    <span class="status" class:ok={app.connected && !app.connectionError} class:bad={!!app.connectionError}>
-      <span class="dot"></span>{t(app.connectionError || (app.connected ? 'ready' : 'connecting'))}
-    </span>
+    {#if app.connectionError}<span role="alert">{t(app.connectionError)}</span>{/if}
     <select aria-label={t('language')} value={app.locale} onchange={e => setLocale(e.currentTarget.value as 'ja' | 'en')}>
       <option value="ja">日本語</option><option value="en">English</option>
     </select>
-    <button class="button ghost sm" onclick={() => setDark(!app.dark)}>{t(app.dark ? 'lightTheme' : 'darkTheme')}</button>
+
   </header>
-  <nav class="sidenav" aria-label={t('workflow')}>
-    <div class="group">{t('workflow')}</div>
-    <a href={resolve('/datasets')} class:current={current('/datasets', true) || current('/datasets/new')}><span class="step" aria-hidden="true">1</span>{t('navLibrary')}</a>
-    {#if base}
-      <a href={base} class:current={current('/datasets/[id]')}><span class="step" aria-hidden="true">2</span>{t('wResults')}</a>
-    {/if}
-    <div class="group">{t('tools')}</div>
-    <a href={resolve('/quiz')} class:current={current('/quiz')}><span class="step" aria-hidden="true">♪</span>{t('quiz')}</a>
-    <a href={resolve('/settings')} class:current={current('/settings')}><span class="step" aria-hidden="true">⚙</span>{t('navSettings')}</a>
-    <div class="foot">{t('preview')}</div>
-  </nav>
   <main class="main">
     {#if app.connected}
       {#key page.url.hash}{@render children()}{/key}

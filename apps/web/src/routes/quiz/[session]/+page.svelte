@@ -41,7 +41,7 @@
 </script>
 
 <div class="page">
-  <div class="page-header"><div><div class="crumbs"><a href={quizUrl}>{t('quiz')}</a><span>›</span></div><h1>{t('quizSession')} #{sessionId}</h1></div>
+  <div class="page-header"><div><div class="crumbs"><a href={quizUrl}>{t('quiz')}</a><span>›</span></div><h1>{t('quizSession')}</h1></div>
     <div class="actions"><Button href={quizUrl}>‹ {t('backToQuiz')}</Button>{#if returnUrl}<Button href={returnUrl}>{t('wReturn')}</Button>{/if}</div></div>
   {#if loadError}<div class="panel empty"><p class="error">{t(loadError === 'not_found' ? 'sessionNotFound' : loadError)}</p></div>
   {:else if !session}<p class="muted"><Spinner /> {t('loading')}</p>
@@ -78,7 +78,7 @@
             {#if feedback.clip.metadata.image_file}<p class="muted">{t('quizPhotoCredit')}: {feedback.clip.metadata.credit.photographer || t('quizCreditMissing')} · {feedback.clip.metadata.credit.image_license || t('quizLicenseMissing')}</p>{/if}
             {#if feedback.clip.metadata.xeno_canto}<p class="muted">XC{feedback.clip.metadata.xeno_canto.id} · {feedback.clip.metadata.xeno_canto.recordist} · {feedback.clip.metadata.xeno_canto.license}</p>{/if}
             <Button size="sm" onclick={() => inspect = !inspect}>{t('quizInspectAudio')}</Button>
-            {#if inspect}<AudioRegion source={feedback.clip.source} start={0} end={feedback.clip.seconds} />{/if}
+            {#if inspect}<AudioRegion source={feedback.clip.source} start={0} end={feedback.clip.seconds} fixedRange />{/if}
           </div>
           <Button class="next" variant="primary" pending={advance.pending} onclick={() => advance.run()}>{t(session.complete ? 'quizShowResults' : 'quizNext')}</Button>
         {/if}

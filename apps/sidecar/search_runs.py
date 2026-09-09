@@ -31,6 +31,7 @@ def create_runs(root, models, body):
                     'unsearched_recordings': total - len(compatible),
                     'searched_segments': db.execute('SELECT COUNT(*) FROM segments WHERE analysis_id IN target_analyses').fetchone()[0]}
         ids = []
+        group = secrets.token_hex(16)
         for target in body.targets:
             species = db.execute('SELECT * FROM species WHERE id=?', (target.species_id,)).fetchone()
             if species is None:
@@ -44,7 +45,7 @@ def create_runs(root, models, body):
                 owners.extend((index, window) for window in range(len(embedded)))
             queries = np.stack(vectors)
             queries /= np.linalg.norm(queries, axis=1, keepdims=True)
-            snapshot = {'species': names_for(species), 'dataset': dict(dataset), 'site': dict(site),
+            snapshot = {'group':group, 'species': names_for(species), 'dataset': dict(dataset), 'site': dict(site),
                         'start_date': body.start_date.isoformat() if body.start_date else None,
                         'end_date': body.end_date.isoformat() if body.end_date else None, 'date_scope': 'recording_start_local',
                         'model_sha256': loaded[1], 'aggregation': 'maximum_cosine', 'references': references,
@@ -80,7 +81,7 @@ def create_runs(root, models, body):
 
 def list_runs(root, dataset_id):
     with connect(root) as db:
-        rows = db.execute('SELECT id,species_id,created_at FROM search_runs WHERE dataset_id=? ORDER BY id DESC', (dataset_id,)).fetchall()
+        rows = db.execute('SELECT id,species_id,created_at FROM search_runs WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC', (dataset_id,)).fetchall()
         return [{**dict(r), 'species': names_for(db.execute('SELECT * FROM species WHERE id=?', (r['species_id'],)).fetchone())} for r in rows]
 
 
@@ -113,7 +114,9 @@ def get_run(root, run_id, sample_id=None, limit=30):
             WHERE h.run_id=? GROUP BY band''', (run['species_id'], run_id)):
             distribution[band['band']].update({k: band[k] for k in ('count', 'target', 'other', 'unknown')})
         count = sum(band['count'] for band in distribution)
-        return {**dict(run), 'snapshot': json.loads(run['snapshot']), 'hits': [dict(h) for h in hits],
+        snapshot=json.loads(run['snapshot'])
+        related=[{'id':r['id'],'species':names_for(db.execute('SELECT * FROM species WHERE id=?',(r['species_id'],)).fetchone())} for r in db.execute("SELECT id,species_id FROM search_runs WHERE dataset_id=? AND json_extract(snapshot,'$.group')=? ORDER BY id",(run['dataset_id'],snapshot.get('group')))]
+        return {**dict(run), 'snapshot': snapshot, 'related':related, 'hits': [dict(h) for h in hits],
                 'hit_count': count, 'samples': samples, 'sample_id': sample_id, 'distribution': distribution}
 
 

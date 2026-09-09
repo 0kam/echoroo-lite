@@ -1,22 +1,17 @@
 <script lang="ts">
   import { t } from './app.svelte';
   export type Band = { low: number; high: number; count: number; target: number; other: number; unknown: number };
-  let { bands, hint }: { bands: Band[]; hint: string } = $props();
+  let { bands }: { bands: Band[]; hint?: string } = $props();
   const maximum = $derived(Math.max(1, ...bands.map(band => band.count)));
 </script>
 
-<p class="muted">{hint}</p>
-<div class="table-wrap">
-<table><thead><tr><th>{t('similarity')}</th><th>{t('eligibleWindows')}</th><th>{t('verdict_target')}</th><th>{t('verdict_other')}</th><th>{t('verdict_unknown')}</th></tr></thead><tbody>
-  {#each bands as band, i}<tr><td class="mono">{band.low.toFixed(1)}–{band.high.toFixed(1)}{i === bands.length - 1 ? '' : ' *'}</td>
-    <td class="count mono"><span class="bar" style:width={`${band.count / maximum * 100}%`} aria-hidden="true"></span><span class="value">{band.count}</span></td>
-    <td class="mono">{band.target}</td><td class="mono">{band.other}</td><td class="mono">{band.unknown}</td></tr>{/each}
-</tbody></table>
+<div class="histogram" role="img" aria-label={bands.map(b=>`${b.low.toFixed(1)}–${b.high.toFixed(1)}: ${b.count}`).join(', ')}>
+  {#each bands as band}<div class="bin" title={`${band.low.toFixed(1)}–${band.high.toFixed(1)}: ${band.count}`}><span style:height={`${band.count/maximum*100}%`}></span></div>{/each}
 </div>
-
+<div class="axis"><span>−1</span><span>0</span><span>1</span></div>
+<p>{t('uSimilarityHint')}</p>
 <style>
-  .count { position: relative; min-width: 120px; }
-  .bar { position: absolute; left: 0; top: 15%; height: 70%; background: rgb(var(--primary-200)); }
-  :global(.dark) .bar { background: rgb(var(--primary-500) / .22); }
-  .value { position: relative; }
+  .histogram{height:130px;display:flex;gap:3px;border-bottom:1px solid rgb(var(--stone-500))}
+  .bin{flex:1;display:flex;align-items:flex-end}.bin span{display:block;width:100%;background:rgb(var(--primary-700))}
+  .axis{display:flex;justify-content:space-between;font-size:14px}p{margin:12px 0}
 </style>

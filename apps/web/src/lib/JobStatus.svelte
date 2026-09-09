@@ -11,7 +11,7 @@
 
 <div class="job" class:active>
   <div class="section-heading">
-    <strong>#{job.id} · {t(job.status)}{#if showDataset} · {datasetOf(job.dataset_id)?.name ?? ''}{/if}</strong>
+    <strong>{t(job.status)}{#if showDataset} · {datasetOf(job.dataset_id)?.name ?? ''}{/if}</strong>
     {#if active}<Button size="sm" pending={cancel.pending} onclick={() => cancel.run()}>{t('cancel')}</Button>{/if}
   </div>
   <p class="muted">{t(job.stage)} · {job.done} / {job.total}{#if job.total} · {Math.round(job.done / job.total * 100)}% {t('percentDone')}{/if}</p>

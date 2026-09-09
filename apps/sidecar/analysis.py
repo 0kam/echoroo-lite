@@ -49,6 +49,12 @@ def save(root, job, recording, engine, meta, scores, candidates, embeddings=None
                 db.execute("INSERT INTO vectors(rowid,embedding) VALUES(?,?)",
                            (sid, vector.astype("<f4").tobytes()))
 
+    # Build shared display windows before analysis is reported as complete.
+    from reports import classification_windows
+    allowed = meta.get('species') if engine == 'birdnet' else (meta.get('geo_filter') or {}).get('species')
+    if allowed is not None:
+        classification_windows({'scores_path':str(path),'engine':engine},recording['seconds'],allowed)
+
 
 def run(root, models, job, records, site, cancel):
     def progress(stage, done):

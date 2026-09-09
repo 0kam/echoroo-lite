@@ -134,6 +134,7 @@ class EvidenceCheck(unittest.TestCase):
                 refreshed = client.get(f"/search-runs/1?sample_id={sample['sample_id']}").json()
                 self.assertEqual(next(h for h in refreshed['hits'] if h['segment_id'] == hit['segment_id'])['verdict'], 'target')
                 self.assertTrue(all(h['verdict'] is None for h in client.get('/search-runs/2').json()['hits']))
+                self.assertEqual([r['id'] for r in client.get('/search-runs/1').json()['related']],[1,2])
                 # Reanalysis does not rewrite old hit IDs, judgements, or source/model snapshots.
                 with connect(root) as db:
                     db.execute("INSERT INTO jobs(id,dataset_id,status,total) VALUES(2,1,'complete',1)")

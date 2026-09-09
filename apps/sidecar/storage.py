@@ -46,6 +46,10 @@ def initialize(root):
                 timezone TEXT NOT NULL, recorded_at TEXT NOT NULL,
                 seconds REAL NOT NULL, sample_rate INTEGER NOT NULL,
                 size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL);
+            CREATE VIEW IF NOT EXISTS site_recordings AS
+                SELECT anchor.id AS scope_id, r.* FROM datasets anchor
+                JOIN datasets member ON member.site_id=anchor.site_id
+                JOIN recordings r ON r.dataset_id=member.id;
             CREATE TABLE IF NOT EXISTS jobs (
                 id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
                 status TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0,
@@ -135,6 +139,9 @@ def initialize(root):
             CREATE TABLE IF NOT EXISTS segments (
                 id INTEGER PRIMARY KEY, analysis_id INTEGER NOT NULL REFERENCES analyses,
                 start_s REAL NOT NULL, end_s REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS recordings_dataset ON recordings(dataset_id,recorded_at);
+            CREATE INDEX IF NOT EXISTS datasets_site ON datasets(site_id);
+            CREATE INDEX IF NOT EXISTS analyses_recording ON analyses(recording_id,engine,id);
             CREATE INDEX IF NOT EXISTS segment_analysis ON segments(analysis_id);
             CREATE VIRTUAL TABLE IF NOT EXISTS vectors USING vec0(
                 embedding float[1536] distance_metric=cosine);

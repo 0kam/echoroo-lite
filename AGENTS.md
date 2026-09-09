@@ -11,6 +11,11 @@
   retain unnecessary options behind advanced settings. Prefer sensible defaults
   when users do not need to make a meaningful choice. Preserve evidence,
   uncertainty, and reproducibility while simplifying the interface.
+- UI copy must be understandable to a first-year university student without
+  specialist training. Keep one clear main task per page, readable controls,
+  explicit return paths, and preserved work on back navigation. Evaluate the
+  complete flow using `docs/ux-checklist-2026-09.md`; passing builds alone is
+  not evidence of usability. See `docs/ux-direction-2026-09.md`.
 - Code and code comments are English. UI text must use locale-keyed message
   resources from the first implementation. Ship Japanese and English UI in the
   first preview for the domestic event; Japanese environments default to Japanese.

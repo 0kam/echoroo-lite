@@ -28,10 +28,6 @@
       .catch(e => loadError = e instanceof Error ? e.message : 'unknown_error')
       .finally(() => loading = false);
   });
-  const analyzeAll = createTask(async () => {
-    await api('/jobs', { dataset_id: id, recording_id: null });
-    await refreshCatalog(); notify('analysisStarted');
-  }, { toast: true });
   const openRecording = (record: Recording) => goto(resolve(`/datasets/${id}/recordings/${record.id}`));
 </script>
 
@@ -41,17 +37,12 @@
   {:else if dataset}
     <div class="page-header">
       <div>
-        <div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span><span>{site?.name}</span></div>
-        <h1>{dataset.name}</h1>
-        <p>{dataset.folder}</p>
+        <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
+        <h1>{site?.name} · {t('wViewRecordings')}</h1>
       </div>
-      <div class="actions">
-        <Button variant="primary" pending={analyzeAll.pending} disabled={!!job || !records.length}
-          onclick={() => analyzeAll.run()}>{t(jobHere ? 'analysisInProgress' : 'analyzeAll')}</Button>
-        <Button href={resolve(`/datasets/${id}`)}>{t('wResults')}</Button>
-      </div>
+
     </div>
-    <div class="two-col">
+    <div>
       <section class="panel">
         <div class="section-heading">
           <h2>{t('datasetRecordings')}</h2>
@@ -91,16 +82,7 @@
           </div>
         {/if}
       </section>
-      <aside class="stack">
-        <section class="panel">
-          <h2>{t('analysisStatus')}</h2>
-          <p class="muted hint">{t('analyzeAllHint')}</p>
-          {#if jobHere}<JobStatus job={jobHere} />
-          {:else if job}<p class="notice">{t('job_busy')}</p>{/if}
-          {#each history as past (past.id)}<JobStatus job={past} />{/each}
-          {#if !jobHere && !history.length}<p class="muted">{t('noJobs')}</p>{/if}
-        </section>
-      </aside>
+
     </div>
   {/if}
 </div>
@@ -111,5 +93,4 @@
   .recordings { max-height: calc(100vh - 300px); }
   .recordings a { color: inherit; text-decoration: none; font-weight: 500; }
   .right { text-align: right; }
-  .hint { margin-bottom: 10px; }
 </style>

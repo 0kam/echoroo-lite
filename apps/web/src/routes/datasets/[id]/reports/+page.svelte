@@ -41,9 +41,9 @@
       species_ids:selected,figures,folder,locale:app.locale});output=result.path;figure=null;progress='';history=await api(`/datasets/${id}/exports`);
   });
 </script>
-<div class="page"><div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('wResults')}</a></div><h1>{t('wExport')}</h1><p>{t('wExportIntro')}</p>
+<div class="page"><div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a><span>{overview?.site.name}</span></div><h1>{t('wExport')}</h1><p>{t('wExportIntro')}</p>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
-  {#if overview}<p>{overview.dataset.name} · {overview.start_date}–{overview.end_date} · {overview.site.timezone}</p>
+  {#if overview}<p>{overview.site.name} · {overview.start_date}–{overview.end_date} · {overview.site.timezone}</p>
     <div class="two-col"><section class="panel"><h2>{t('wIncludeSpecies')}</h2>{#each overview.species as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending}/>
       <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i></span><small>{t(qualityStatus(row.validation))}</small></label>{/each}</section>
     <section class="panel"><p>{t('wExportContents')}</p>

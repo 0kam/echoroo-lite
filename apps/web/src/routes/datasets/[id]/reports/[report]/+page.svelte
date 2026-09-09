@@ -18,11 +18,11 @@
   });
 </script>
 <div class="page">
-  <div class="crumbs"><a href={resolve(`/datasets/${datasetId}/reports`)}>{t('wExportHistory')}</a></div>
-  <h1>{t('reportResult')} #{reportId}</h1><p>{t('reportSnapshotHint')}</p>
+  <div class="crumbs"><a href={resolve(`/datasets/${datasetId}/reports`)}>{t('wExportHistory')}</a><span>{report?.site.name}</span></div>
+  <h1>{report?.species?commonName(report.species,app.locale):t('wExportHistory')}<i class="sci">{report?.species?.scientific_name}</i></h1><p>{t('reportSnapshotHint')}</p>
   {#if error}<p class="error" role="alert">{t(error)}</p>
   {:else if report}
-    <div class="two-col"><section class="panel">{#if !report.species}<table><thead><tr><th>{t('species')}</th><th>{t('candidateRate')}</th></tr></thead><tbody>{#each report.summaries as row}<tr><td>{commonName(row.species,app.locale)} <i>{row.species.scientific_name}</i></td><td>{percent(row.candidate_rate)}</td></tr>{/each}</tbody></table>{/if}{#key report.id}<ReportView {report}/>{/key}</section>
-      <aside class="panel"><QualityPanel validation={report.validation??null}/></aside></div>
+    <section class="panel">{#if !report.species}<table><thead><tr><th>{t('species')}</th><th>{t('candidateRate')}</th></tr></thead><tbody>{#each report.summaries as row}<tr><td>{commonName(row.species,app.locale)} <i>{row.species.scientific_name}</i></td><td>{percent(row.candidate_rate)}</td></tr>{/each}</tbody></table>{/if}{#key report.id}<ReportView {report}/>{/key}</section>
+      <section class="panel"><QualityPanel validation={report.validation??null}/></section>
   {:else}<p><Spinner/> {t('loading')}</p>{/if}
 </div>

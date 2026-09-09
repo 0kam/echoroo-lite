@@ -33,15 +33,15 @@ def query_embeddings(models, row, start, end, loaded=None):
 
 
 def compatible_analyses(db, dataset_id, model_sha):
-    return db.execute('''SELECT a.id AS analysis_id, r.* FROM analyses a JOIN recordings r ON r.id=a.recording_id
-        WHERE r.dataset_id=? AND a.id IN (SELECT MAX(id) FROM analyses WHERE engine='perch' GROUP BY recording_id)
+    return db.execute('''SELECT a.id AS analysis_id, r.* FROM analyses a JOIN site_recordings r ON r.id=a.recording_id
+        WHERE r.scope_id=? AND a.id IN (SELECT MAX(id) FROM analyses WHERE engine='perch' GROUP BY recording_id)
         AND json_extract(a.metadata, '$.model_sha256')=?''', (dataset_id, model_sha)).fetchall()
 
 
 def search_context(db, dataset_id, model_sha, first=None, last=None):
     if first and last and first > last:
         raise CatalogError('search_period')
-    records = db.execute('SELECT id,recorded_at,timezone FROM recordings WHERE dataset_id=?', (dataset_id,)).fetchall()
+    records = db.execute('SELECT id,recorded_at,timezone FROM site_recordings WHERE scope_id=?', (dataset_id,)).fetchall()
     selected = set()
     for row in records:
         day = datetime.fromisoformat(row['recorded_at']).astimezone(ZoneInfo(row['timezone'])).date()

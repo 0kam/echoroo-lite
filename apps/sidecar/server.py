@@ -238,7 +238,7 @@ def create_app(root, models, token):
 
     @app.get('/datasets/{dataset_id}/species/{species_id}')
     def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
-                         engine: Literal['birdnet','perch'] = 'birdnet', run_id: int | None = None,
+                         engine: Literal['birdnet','perch','auto'] = 'auto', run_id: int | None = None,
                          cell_date: date | None = None, hour: int | None = Query(default=None,ge=0,le=23)):
         from results_workflow import species_result
         return species_result(root,dataset_id,species_id,start_date.isoformat() if start_date else None,
@@ -247,7 +247,7 @@ def create_app(root, models, token):
     @app.get('/datasets/{dataset_id}/exports')
     def workflow_exports(dataset_id: int):
         with connect(root) as db:
-            return [{'id':r['id'],'path':r['path'],'created_at':r['created_at'],'results':json.loads(r['snapshot'])['results']} for r in db.execute('SELECT id,path,created_at,snapshot FROM workflow_exports WHERE dataset_id=? ORDER BY id DESC',(dataset_id,))]
+            return [{'id':r['id'],'path':r['path'],'created_at':r['created_at'],'results':json.loads(r['snapshot'])['results']} for r in db.execute('SELECT id,path,created_at,snapshot FROM workflow_exports WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC',(dataset_id,))]
 
     @app.post('/workflow-exports')
     def workflow_export(body: WorkflowExportRequest):
@@ -501,7 +501,7 @@ def create_app(root, models, token):
     @app.get("/datasets/{dataset}/recordings")
     def recordings(dataset: int):
         with connect(root) as db:
-            return [dict(r) for r in db.execute("SELECT * FROM recordings WHERE dataset_id=? ORDER BY recorded_at", (dataset,))]
+            return [dict(r) for r in db.execute("SELECT * FROM site_recordings WHERE scope_id=? ORDER BY recorded_at", (dataset,))]
 
     @app.get("/recordings/{recording}/audio")
     def audio(recording: int):
@@ -550,8 +550,15 @@ def create_app(root, models, token):
                 site = db.execute("SELECT s.* FROM sites s JOIN datasets d ON s.id=d.site_id WHERE d.id=?",
                                   (body.dataset_id,)).fetchone()
                 records = [dict(r) for r in db.execute(
-                    "SELECT * FROM recordings WHERE dataset_id=? AND (? IS NULL OR id=?) ORDER BY recorded_at",
+                    "SELECT * FROM site_recordings WHERE scope_id=? AND (? IS NULL OR id=?) ORDER BY recorded_at",
                     (body.dataset_id, body.recording_id, body.recording_id))]
+                if body.recording_id is None and records:
+                    versions=db.execute("""SELECT a.engine,COUNT(DISTINCT json_extract(a.metadata,'$.model_sha256')) AS versions
+                        FROM analyses a JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=?
+                        AND a.id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) GROUP BY a.engine""",(body.dataset_id,)).fetchall()
+                    if not any(row['versions']>1 for row in versions):
+                        completed={row[0] for row in db.execute("SELECT recording_id FROM analyses GROUP BY recording_id HAVING COUNT(DISTINCT engine)=2")}
+                        records=[record for record in records if record['id'] not in completed]
                 if not site or not records:
                     raise CatalogError("no_audio")
                 job = db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(?,'queued',?)",

@@ -12,7 +12,6 @@ from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 import numpy as np
-from scipy.stats import hypergeom
 
 from reports import classification_windows, regional_list, window_key
 from species import names_for
@@ -30,7 +29,7 @@ def population(root,ctx,species_id):
         if taxon is None:
             raise CatalogError('not_found')
         rows=db.execute('''SELECT a.*,r.seconds,r.path,r.size,r.mtime_ns,r.recorded_at,r.timezone FROM analyses a
-            JOIN recordings r ON r.id=a.recording_id WHERE r.dataset_id=? AND a.id IN
+            JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND a.id IN
             (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) ORDER BY a.id''',(ctx['dataset']['id'],)).fetchall()
         windows={};models={};analyses=[]
         zone=ZoneInfo(ctx['site']['timezone'])
@@ -164,6 +163,7 @@ def exact_count_interval(N,n,k,alpha):
         return 0,N
     if n==N:
         return k,k
+    from scipy.stats import hypergeom
     left,right=k,N-n+k
     lo,hi=left,right
     while lo<hi:

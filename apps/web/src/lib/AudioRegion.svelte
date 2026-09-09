@@ -94,19 +94,18 @@
     playbackVersion++; cancelMetadata?.(); audio.pause(); clearTimeout(stopTimer); stopAt = null; status = 'idle';
   }
   onMount(() => {
-    navigate(Math.floor(start / span) * span);
+    if(fixedRange)span=Math.max(5,Math.min(60,end-start));
+    navigate(fixedRange?start:Math.floor(start / span) * span);
     return () => { request++; stop(); };
   });
 </script>
 
 <div class="region" class:compact>
-  <div class="region-controls">
-    <Button size="sm" disabled={viewStart <= 0} onclick={() => navigate(viewStart - span)}>‹ {t('previousView')}</Button>
-    <label>{t('viewStart')}<input type="number" min="0" max={source.seconds} step="any" value={viewStart} onchange={e => navigate(e.currentTarget.valueAsNumber)} /></label>
-    <label>{t('viewSpan')}<select bind:value={span} onchange={() => navigate(viewStart)}>{#each [5, 15, 30, 60] as seconds}<option value={seconds}>{seconds} {t('seconds')}</option>{/each}</select></label>
-    <Button size="sm" disabled={viewEnd >= source.seconds} onclick={() => navigate(viewStart + span)}>{t('nextView')} ›</Button>
-    <span class="muted axis-note">{clipTime(viewStart)} – {clipTime(viewEnd)} / {clipTime(source.seconds)}</span>
-  </div>
+  {#if !fixedRange && source.seconds>span}<div class="region-controls">
+    <Button disabled={viewStart<=0} onclick={()=>navigate(viewStart-span)}>‹ {t('previousView')}</Button>
+    <label class="position">{t('viewStart')}<input type="range" min="0" max={Math.max(0,source.seconds-span)} step="1" value={viewStart} oninput={e=>navigate(e.currentTarget.valueAsNumber)}/></label>
+    <Button disabled={viewEnd>=source.seconds} onclick={()=>navigate(viewStart+span)}>{t('nextView')} ›</Button>
+  </div>{/if}
   <div class="spectrogram-grid">
     <div class="frequencies"><span>12 kHz</span><span>6 kHz</span><span>0</span></div>
     <div class="spectrogram" role="group" aria-label={t('spectrogram')}
@@ -123,16 +122,15 @@
   </div>
   <div class="region-controls">
     <Button variant="primary" aria-busy={status === 'loading'} onclick={() => status !== 'idle' ? stop() : play()}>
-      {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t('playRange')}
+      {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(fixedRange?'uListen':'playRange')}
     </Button>
-    <label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} readonly={fixedRange} /></label>
+    {#if !fixedRange}<label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} readonly={fixedRange} /></label>
     <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} readonly={fixedRange} /></label>
-    <Button size="sm" onclick={() => navigate(start)}>{t('showRange')}</Button>
-    {#if !fixedRange}<span class="muted range-hint">{t('rangeHint')}</span>{/if}
+    <span class="muted range-hint">{t('rangeHint')}</span>{/if}
   </div>
   <!-- Field recordings have no speech transcript. -->
   <!-- svelte-ignore a11y_media_has_caption -->
-  <audio bind:this={audio} controls preload="metadata" src={sourceAudioURL(source.kind, source.id)} aria-label={t('audio')}
+  <audio bind:this={audio} preload="metadata" src={sourceAudioURL(source.kind, source.id)} aria-label={t('audio')}
     onerror={() => { error = 'unreadable_audio'; status = 'idle'; }} onplaying={() => { if (!audio.paused) { status = 'playing'; scheduleStop(); } }}
     onwaiting={() => { if (status === 'playing') status = 'loading'; }}
     onpause={() => { if (audio.paused && (status !== 'loading' || stopAt !== null)) { status = 'idle'; clearTimeout(stopTimer); } }} onended={stop} onseeked={scheduleStop} onratechange={scheduleStop}
@@ -144,7 +142,8 @@
   .region { display: flex; flex-direction: column; gap: 10px; }
   .region-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
   .region-controls label { width: 110px; }
-  .axis-note, .range-hint { align-self: center; }
+  .range-hint { align-self: center; }
+  .region-controls .position {flex:1;min-width:140px}
   .range-hint { flex-basis: 100%; }
   .spectrogram-grid { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 8px; }
   .frequencies { display: flex; flex-direction: column; justify-content: space-between; text-align: right; font-size: 10px; color: rgb(var(--stone-600)); }

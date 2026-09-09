@@ -63,7 +63,8 @@ class SearchCheck(unittest.TestCase):
                     self.assertEqual(len(query_embeddings(root, ref, 1, 1.2)[0]), 1)
                 record = source(root, 'recording', 1)
                 with connect(root) as db:
-                    db.execute("INSERT INTO datasets VALUES(2,1,'Other','/other')")
+                    db.execute("INSERT INTO sites VALUES(2,'Other site','Asia/Tokyo',35,138)")
+                    db.execute("INSERT INTO datasets VALUES(2,2,'Other','/other')")
                     for rid, dataset in [(2, 2), (3, 1), (4, 1)]:
                         path = root / f'{rid}.wav'
                         sf.write(path, tone, 24000)
@@ -79,6 +80,11 @@ class SearchCheck(unittest.TestCase):
                         (4, 2, 10, e0 * .8 + e1 * .6), (5, 2, 15, -e0), (6, 3, 0, e0), (7, 4, 0, e0), (8, 5, 0, e0)]:
                         db.execute('INSERT INTO segments VALUES(?,?,?,?)', (sid, aid, start, start + 5))
                         db.execute('INSERT INTO vectors(rowid,embedding) VALUES(?,?)', (sid, vector.tobytes()))
+                with connect(root) as db: db.execute('UPDATE datasets SET site_id=1 WHERE id=2')
+                site_hits, site_coverage = rank_segments(root, 1, [e0], 'model', record, 0, 5, 30)
+                self.assertIn(6, [h['segment_id'] for h in site_hits])
+                self.assertEqual(site_coverage['total_recordings'], 4)
+                with connect(root) as db: db.execute('UPDATE datasets SET site_id=2 WHERE id=2')
                 # Reference registration of the same path must still exclude its overlapping window.
                 same = client.post('/references', json={'path': str(mono)}).json()
                 hits, coverage = rank_segments(root, 1, [e0], 'model', same, 0, 5, 30)

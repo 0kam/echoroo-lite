@@ -18,6 +18,24 @@ from scipy.stats import hypergeom
 
 
 class WorkflowCheck(unittest.TestCase):
+    def test_analysis_prepares_shared_display_windows(self):
+        from analysis import save
+        from reports import cached_windows, classification_windows
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
+                with connect(root) as db:
+                    record=dict(db.execute('SELECT * FROM recordings').fetchone())
+                    job=db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(1,'running',2)").lastrowid
+                label='Horornis diphone_Japanese Bush Warbler'
+                save(root,job,record,'birdnet',{'species':[label]},dict(labels=np.repeat(label,5),start_s=np.arange(5)*3,end_s=np.arange(1,6)*3,scores=np.array([.1,.8,.2,.3,.4])),[])
+                with connect(root) as db:analysis=dict(db.execute('SELECT * FROM analyses').fetchone())
+                cached_windows.cache_clear()
+                with patch('reports.read_classification_windows',side_effect=AssertionError('display was not prepared')):
+                    labels,starts,scores,evidence=classification_windows(analysis,15,[label])
+                    self.assertEqual((starts.tolist(),scores.tolist(),evidence.tolist()),([0],[[.8]],[[3]]))
+
     def test_independent_validation_and_frozen_export(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
@@ -41,9 +59,21 @@ class WorkflowCheck(unittest.TestCase):
                         for engine,path in [('birdnet',bird),('perch',perch)]:
                             meta={'model_sha256':engine,'model':engine,'species':[label],'geo_filter':{'species':[label]}}
                             db.execute('INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,?,?,?)',(job,rid,engine,json.dumps(meta),str(path)))
+                with connect(root) as db:
+                    db.execute("INSERT INTO datasets VALUES(2,1,'Second collection','/second')")
+                    db.execute('UPDATE recordings SET dataset_id=2 WHERE id=2')
+                # Both collections belong to one site, including validation and export.
                 overview=client.get('/datasets/1/overview')
                 self.assertEqual(overview.status_code,200,overview.text)
                 self.assertEqual(overview.json()['species'][0]['models'][0]['candidate_windows'],40)
+                self.assertEqual(overview.json()['records'],2)
+                self.assertEqual(client.get('/datasets/2/overview').json()['fingerprint'],overview.json()['fingerprint'])
+                from reports import cached_windows
+                cached_windows.cache_clear()
+                with patch('reports.read_classification_windows',side_effect=AssertionError('score archive reread')):
+                    detail=client.get(f'/datasets/1/species/{taxon["id"]}?engine=auto')
+                    self.assertEqual(detail.status_code,200,detail.text)
+                    self.assertGreater(detail.json()['report']['evidence_count'],0)
                 again=client.get('/datasets/1/overview').json()
                 self.assertEqual(again['revision'],overview.json()['revision'])
                 with connect(root) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM reports').fetchone()[0],0)

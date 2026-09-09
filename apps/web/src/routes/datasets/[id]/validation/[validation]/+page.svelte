@@ -12,8 +12,8 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),sid=Number(page.params.validation);
-  let validation=$state<Validation|null>(null),error=$state(''),start=$state(0),end=$state(15),paused=$state(false),started=$state(false),batch=$state(0);
-  function show(value:Validation){validation=value;start=value.question?.start_s??0;end=value.question?.end_s??15;}
+  let validation=$state<Validation|null>(null),error=$state(''),paused=$state(false),started=$state(false),batch=$state(0);
+  function show(value:Validation){validation=value;}
   onMount(()=>{api<Validation>(`/validations/${sid}`).then(value=>{show(value);started=value.counts[value.stage]?.answered>0;}).catch(e=>error=e.message);});
   const answer=createTask(async(verdict:string)=>{if(!validation?.question)return;const phase=validation.stage;
     show(await api<Validation>(`/validations/${sid}/answers`,{item_id:validation.question.id,verdict}));batch++;
@@ -29,16 +29,16 @@
     <p>{validation.start_date}–{validation.end_date}</p>
     {#if !validation.applicable}<p class="notice">{t('wScopeChanged')}</p>{/if}
     {#if validation.stage==='complete'}<section class="panel"><QualityPanel {validation}/><Button href={back}>{t('wBackSpecies')}</Button></section>
-    {:else if !started}<section class="panel"><h2>{t('wEvaluate')}</h2><p>{t('wValidationIntro')}</p><p>{t('wValidationPlan')}</p>
-      <p>{t('wCalibration')}: {validation.counts.calibration.total} {t('quizClips')}</p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>
+    {:else if !started}<section class="panel"><h2>{t('wEvaluate')}</h2><p>{t('wValidationPlan')}</p>
+      <p>{t('uReviewCount')}: {validation.counts.calibration.total}</p><p>{t('uSavedAlways')}</p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>
     {:else}
-      <section class="panel"><h2>{t(validation.stage==='calibration'?'wCalibration':'wEvaluation')}</h2>
+      <section class="panel"><h2>{t(validation.stage==='calibration'?'uProgressAdjust':'uProgressEvaluate')}</h2>
         <p>{validation.counts[validation.stage].answered} / {validation.counts[validation.stage].total} · {t('wAnswered')}</p>
         <progress max={validation.counts[validation.stage].total} value={validation.counts[validation.stage].answered}></progress>
         {#if paused}<p class="notice">{t(validation.stage==='evaluation'&&validation.counts.evaluation.answered===0?'wCalibrationDone':'wBatchDone')}</p>
           <Button variant="primary" onclick={()=>paused=false}>{t('wNextBatch')}</Button>
         {:else if validation.question}
-          <h3>{t('wQuestion')}</h3>{#key validation.question.id}<AudioRegion source={validation.question.source} fixedRange bind:start bind:end/>{/key}
+          <h3>{t('wQuestion')}</h3>{#key validation.question.id}<AudioRegion source={validation.question.source} fixedRange start={validation.question.start_s} end={validation.question.end_s}/>{/key}
           <div class="actions answers">{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
             <Button variant={verdict==='target'?'primary':'default'} pending={answer.pending} onclick={()=>answer.run(verdict)}>{t(label)}</Button>{/each}</div>
         {/if}

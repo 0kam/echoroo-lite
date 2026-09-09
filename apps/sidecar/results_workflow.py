@@ -15,14 +15,14 @@ def fingerprint(root, dataset_id):
         dataset = db.execute('SELECT d.*,s.timezone,s.latitude,s.longitude FROM datasets d JOIN sites s ON s.id=d.site_id WHERE d.id=?', (dataset_id,)).fetchone()
         if dataset is None:
             raise CatalogError('not_found')
-        record_rows=db.execute('SELECT * FROM recordings WHERE dataset_id=? ORDER BY id',(dataset_id,)).fetchall()
+        record_rows=db.execute('SELECT * FROM site_recordings WHERE scope_id=? ORDER BY id',(dataset_id,)).fetchall()
         for record in record_rows:
             checked_source(record)
-        records=[tuple(r) for r in record_rows]
+        records=[{k:r[k] for k in r.keys() if k!='scope_id'} for r in record_rows]
         analyses = [tuple(r) for r in db.execute('''SELECT a.id,a.recording_id,a.engine,a.metadata FROM analyses a
-            JOIN recordings r ON r.id=a.recording_id WHERE r.dataset_id=? AND a.id IN
+            JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND a.id IN
             (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) ORDER BY a.id''', (dataset_id,))]
-    return hashlib.sha256(json.dumps([dict(dataset), records, analyses], sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(json.dumps([{k:dataset[k] for k in ('site_id','timezone','latitude','longitude')}, records, analyses], sort_keys=True).encode()).hexdigest()
 
 
 def context(root, dataset_id, first=None, last=None):
@@ -36,7 +36,7 @@ def context(root, dataset_id, first=None, last=None):
     if (date.fromisoformat(result['end_date']) - date.fromisoformat(result['start_date'])).days >= 366:
         if first or last:
             raise CatalogError('report_range')
-        result['start_date'] = date.fromordinal(date.fromisoformat(result['end_date']).toordinal() - 365).isoformat()
+        result['start_date'] = date(date.fromisoformat(result['end_date']).year,1,1).isoformat()
     result['fingerprint'] = fingerprint(root, dataset_id)
     with connect(root) as db:
         revision=[db.execute(f'SELECT COALESCE(MAX(id),0) FROM {table}').fetchone()[0] for table in
@@ -65,12 +65,12 @@ def detection_snapshot(root, ctx, model, species_id=None, threshold=.1):
     body = SimpleNamespace(dataset_id=ctx['dataset']['id'], engine=model['engine'], model_sha256=model['model_sha256'],
         threshold=threshold, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']),
         species_id=species_id, base_report_id=None)
-    return cached(root, ['detection-v2', ctx['fingerprint'], ctx['names_revision'], vars(body)], lambda: detection(root, body, persist=False))
+    return cached(root, ['detection-site-v3', ctx['fingerprint'], ctx['names_revision'], vars(body)], lambda: detection(root, body, persist=False))
 
 
 def searches(root, dataset_id, species_id=None):
     with connect(root) as db:
-        rows = db.execute('''SELECT r.id,r.species_id,r.created_at FROM search_runs r WHERE r.dataset_id=?
+        rows = db.execute('''SELECT r.id,r.species_id,r.created_at FROM search_runs r WHERE r.dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?))
             AND (? IS NULL OR r.species_id=?) ORDER BY r.id DESC''', (dataset_id,species_id,species_id)).fetchall()
         return [{**dict(r), 'species': names_for(db.execute('SELECT * FROM species WHERE id=?',(r['species_id'],)).fetchone())} for r in rows]
 
@@ -78,7 +78,7 @@ def searches(root, dataset_id, species_id=None):
 def search_snapshot(root, ctx, run_id):
     with connect(root) as db:
         run = db.execute('SELECT dataset_id FROM search_runs WHERE id=?',(run_id,)).fetchone()
-        if not run or run[0] != ctx['dataset']['id']:
+        if not run or not db.execute('SELECT 1 FROM datasets WHERE id=? AND site_id=?',(run[0],ctx['site']['id'])).fetchone():
             raise CatalogError('not_found')
         cutoff = db.execute('SELECT COALESCE(MAX(id),0) FROM search_judgements').fetchone()[0]
     def build():
@@ -88,13 +88,13 @@ def search_snapshot(root, ctx, run_id):
             body.threshold = result['threshold_suggestion']['threshold']
             result = search_report(root, body, persist=False)
         return result
-    return cached(root, ['search-v2',ctx['fingerprint'],ctx['names_revision'],run_id,ctx['start_date'],ctx['end_date'],cutoff], build)
+    return cached(root, ['search-site-v3',ctx['fingerprint'],ctx['names_revision'],run_id,ctx['start_date'],ctx['end_date'],cutoff], build)
 
 
 def current_validations(root, ctx):
     from validation import view_session
     with connect(root) as db:
-        rows = db.execute('SELECT id,species_id,snapshot,fingerprint FROM validation_sessions WHERE dataset_id=? ORDER BY id DESC', (ctx['dataset']['id'],)).fetchall()
+        rows = db.execute('SELECT id,species_id,snapshot,fingerprint FROM validation_sessions WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC', (ctx['dataset']['id'],)).fetchall()
     chosen={}
     for row in rows:
         sid=row['species_id']
@@ -119,10 +119,10 @@ def overview(root, dataset_id, first=None, last=None):
     ctx = context(root,dataset_id,first,last)
     quality = current_validations(root,ctx)
     with connect(root) as db:
-        records = [dict(r) for r in db.execute('SELECT * FROM recordings WHERE dataset_id=?',(dataset_id,))]
+        records = [dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?',(dataset_id,))]
         named = {r['id']: names_for(r) for r in db.execute('SELECT * FROM species')}
-        complete = db.execute('''SELECT COUNT(*) FROM (SELECT a.recording_id FROM analyses a JOIN recordings r ON r.id=a.recording_id
-            WHERE r.dataset_id=? GROUP BY a.recording_id HAVING COUNT(DISTINCT a.engine)=2)''',(dataset_id,)).fetchone()[0]
+        complete = db.execute('''SELECT COUNT(*) FROM (SELECT a.recording_id FROM analyses a JOIN site_recordings r ON r.id=a.recording_id
+            WHERE r.scope_id=? GROUP BY a.recording_id HAVING COUNT(DISTINCT a.engine)=2)''',(dataset_id,)).fetchone()[0]
     rows = {}
     def add(taxon):
         sid = taxon['id']
@@ -155,7 +155,7 @@ def overview(root, dataset_id, first=None, last=None):
             'species': sorted(rows.values(),key=lambda r:(-r['confirmed'],-max([m['candidate_days'] for m in r['models']] or [0]),r['species']['scientific_name']))}
 
 
-def species_result(root,dataset_id,species_id,first=None,last=None,engine='birdnet',run_id=None,cell_date=None,hour=None):
+def species_result(root,dataset_id,species_id,first=None,last=None,engine='auto',run_id=None,cell_date=None,hour=None):
     ctx=context(root,dataset_id,first,last)
     with connect(root) as db:
         row=db.execute('SELECT * FROM species WHERE id=?',(species_id,)).fetchone()
@@ -164,6 +164,10 @@ def species_result(root,dataset_id,species_id,first=None,last=None,engine='birdn
         taxon=names_for(row)
     quality=current_validations(root,ctx).get(species_id)
     runs=searches(root,dataset_id,species_id)
+    if engine == 'auto':
+        engine = next((m['engine'] for m in ctx['models'] if any(
+            row['species']['id'] == species_id and row['candidate_windows'] > 0
+            for row in detection_snapshot(root,ctx,m)['summaries'])), 'birdnet')
     model=next((m for m in ctx['models'] if m['engine']==engine),None)
     snap=None
     if run_id is not None:

@@ -1,84 +1,56 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { isTauri } from '@tauri-apps/api/core';
   import { chooseDirectory } from '$lib/files';
   import { api } from '$lib/api.svelte';
-  import { app, t, fileName, siteTime, refreshCatalog, rememberDataset } from '$lib/app.svelte';
+  import { app,t,fileName,duration,refreshCatalog,rememberDataset } from '$lib/app.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  import { notify } from '$lib/ui/toast.svelte';
-  type Preview = { count: number; seconds: number; first: string | null; skipped: { path: string; code: string }[] };
-  let siteId = $state(''), siteName = $state(''), datasetName = $state(''), folder = $state('');
-  let zone = $state('Asia/Tokyo'), latitude = $state<number | null>(null), longitude = $state<number | null>(null);
-  let preview = $state<Preview | null>(null);
-  const body = () => ({ folder, site_id: siteId ? Number(siteId) : null, site_name: siteName || '—',
-    dataset_name: datasetName, timezone: zone, latitude: latitude ?? 0, longitude: longitude ?? 0 });
-  const inspect = createTask(async () => { preview = await api<Preview>('/imports/preview', body()); });
-  const register = createTask(async () => {
-    const result = await api<{ dataset_id: number; count: number }>('/imports', body());
-    app.recordingsVersion++;
-    await refreshCatalog(); rememberDataset(result.dataset_id);
-    notify('importRegistered');
-    await goto(resolve(`/datasets/${result.dataset_id}`));
-  });
-  const browse = createTask(async () => {
-    const picked = await chooseDirectory();
-    if (picked) { folder = picked; preview = null; }
+  const query=new URL(page.url.hash.slice(1),page.url).searchParams;
+  let siteId=$state(query.get('site')||''),siteName=$state(''),folder=$state('');
+  let zone=$state('Asia/Tokyo'),latitude=$state<number|null>(null),longitude=$state<number|null>(null);
+  let preview=$state<{count:number;seconds:number;skipped:{path:string;code:string}[]}|null>(null);
+  const draftKey=`echoroo-import-${query.get('site')||'new'}`;
+  let restored=$state(false);
+  onMount(()=>{try{const draft=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(draft){({siteId,siteName,folder,zone,latitude,longitude}=draft);}}catch{}restored=true;});
+  $effect(()=>{if(restored)sessionStorage.setItem(draftKey,JSON.stringify({siteId,siteName,folder,zone,latitude,longitude}));});
+  const selected=$derived(app.sites.find(s=>String(s.id)===siteId));
+  const body=()=>({site_id:siteId?Number(siteId):null,site_name:selected?.name??siteName,timezone:selected?.timezone??zone,latitude:selected?.latitude??latitude??0,longitude:selected?.longitude??longitude??0,folder,dataset_name:fileName(folder)||siteName});
+  const inspect=createTask(async()=>{preview=await api('/imports/preview',body());});
+  const browse=createTask(async()=>{const picked=await chooseDirectory();if(picked){folder=picked;preview=null;}});
+  const register=createTask(async()=>{
+    const added=await api<{dataset_id:number}>('/imports',body());await refreshCatalog();
+    const site=app.datasets.find(d=>d.id===added.dataset_id)!.site_id;
+    const id=Math.min(...app.datasets.filter(d=>d.site_id===site).map(d=>d.id));rememberDataset(id);
+    restored=false;sessionStorage.removeItem(draftKey);
+    await goto(resolve(`/datasets/${id}`));
   });
 </script>
-
-<div class="page">
-  <div class="page-header">
-    <div><div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span></div><h1>{t('addDataset')}</h1><p>{t('importHint')}</p></div>
-  </div>
-  <form class="steps" onsubmit={e => { e.preventDefault(); inspect.run(); }} oninput={() => preview = null}>
-    <section class="panel step-card">
-      <h2>{t('importStepSite')}</h2><p class="muted">{t('importSiteHint')}</p>
-      <div class="form-grid">
-        <label>{t('site')}<select bind:value={siteId}><option value="">{t('newSite')}</option>{#each app.sites as site}<option value={String(site.id)}>{site.name}</option>{/each}</select></label>
-        {#if !siteId}
-          <label>{t('siteName')}<input bind:value={siteName} required maxlength="200" /></label>
-          <label>{t('timezone')}<input bind:value={zone} required /></label>
-          <label>{t('latitude')}<input type="number" step="any" min="-90" max="90" bind:value={latitude} required placeholder="35.49" /></label>
-          <label>{t('longitude')}<input type="number" step="any" min="-180" max="180" bind:value={longitude} required placeholder="138.20" /></label>
-        {/if}
-      </div>
-    </section>
-    <section class="panel step-card">
-      <h2>{t('importStepFolder')}</h2><p class="muted">{t('importDatasetHint')}</p>
-      <div class="form-grid">
-        <label>{t('datasetName')}<input bind:value={datasetName} required maxlength="200" /></label>
-        <label>{t('folder')}<div class="inline"><input bind:value={folder} required />
-          {#if isTauri()}<Button pending={browse.pending} onclick={() => browse.run()}>{t('browse')}</Button>{/if}</div></label>
-      </div>
-    </section>
-    <section class="panel step-card">
-      <h2>{t('importStepConfirm')}</h2><p class="muted">{t('importPreviewHint')}</p>
-      <div class="actions">
-        <Button type="submit" pending={inspect.pending} disabled={!app.connected}>{t('inspect')}</Button>
-      </div>
+<div class="page import-page">
+  <div class="crumbs"><a href={resolve('/datasets')}>{t('uSites')}</a></div>
+  <h1>{selected?`${selected.name} · ${t('uAddRecordings')}`:t('uNewSite')}</h1>
+  <form class="stack" onsubmit={e=>{e.preventDefault();inspect.run();}} oninput={()=>preview=null}>
+    {#if !selected}<section class="panel">
+      <h2>{t('uSiteDetails')}</h2><p>{t('uSiteOnce')}</p>
+        <label>{t('siteName')}<input bind:value={siteName} required maxlength="200" placeholder={t('uSiteExample')}/></label>
+        <div class="form-grid"><label>{t('latitude')}<input type="number" step="any" min="-90" max="90" bind:value={latitude} required/></label><label>{t('longitude')}<input type="number" step="any" min="-180" max="180" bind:value={longitude} required/></label></div>
+        <label>{t('uTimeZone')}<input bind:value={zone} required/></label>
+    </section>{/if}
+    <section class="panel"><h2>{t('uChooseFolder')}</h2><p>{t('uFolderHint')}</p>
+      {#if isTauri()}<Button pending={browse.pending} onclick={()=>browse.run()}>{t('browse')}</Button>{#if folder}<p>{fileName(folder)}</p>{/if}
+      {:else}<label>{t('folder')}<input bind:value={folder} required/></label>{/if}
+      {#if browse.error}<p class="error" role="alert">{t(browse.error)}</p>{/if}
+      {#if !preview}<Button type="submit" variant="primary" pending={inspect.pending} disabled={!folder}>{t('uCheckFiles')}</Button>{/if}
       {#if inspect.error}<p class="error" role="alert">{t(inspect.error)}</p>{/if}
-      {#if preview}
-        <div class="preview">
-          <div class="stat-row">
-            <span><strong>{preview.count}</strong>{t('files')}</span>
-            <span><strong>{Math.round(preview.seconds / 60)}</strong>{t('minutes')}</span>
-            {#if preview.first}<span>{t('firstRecording')}: {siteTime({ recorded_at: preview.first, timezone: app.sites.find(site => String(site.id) === siteId)?.timezone ?? zone })}</span>{/if}
-          </div>
-          {#if preview.skipped.length}<details><summary>{t('skipped')} ({preview.skipped.length})</summary>{#each preview.skipped as item}<p class="muted">{fileName(item.path)} — {t(item.code)}</p>{/each}</details>{/if}
-          <div class="actions">
-            <Button variant="primary" size="lg" pending={register.pending} disabled={!preview.count} onclick={() => register.run()}>{t('import')}</Button>
-            <span class="muted">{t('importNext')}</span>
-          </div>
-          {#if register.error}<p class="error" role="alert">{t(register.error)}</p>{/if}
-        </div>
+      {#if preview}<p><strong>{preview.count} {t('uRecordingsToAdd')}</strong> · {duration(preview.seconds)}</p>
+        {#if preview.skipped.length}<details><summary>{preview.skipped.length} {t('uSkippedFiles')}</summary>{#each preview.skipped as item}<p>{fileName(item.path)} — {t(item.code)}</p>{/each}</details>{/if}
+        <Button variant="primary" pending={register.pending} disabled={!preview.count} onclick={()=>register.run()}>{t('uAddTheseFiles')}</Button>
+        {#if register.error}<p class="error" role="alert">{t(register.error)}</p>{/if}
       {/if}
     </section>
   </form>
 </div>
-
-<style>
-  .preview { display: flex; flex-direction: column; gap: 12px; background: rgb(var(--color-success-light)); padding: 14px; margin-top: 14px; border-radius: 6px; }
-  .inline :global(.button) { margin-top: 5px; }
-</style>
+<style>.import-page{max-width:760px!important}label,p{margin:16px 0}.panel>:global(.button){margin-right:12px}</style>

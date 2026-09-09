@@ -35,7 +35,7 @@ def export(root,body):
     path=folder/f'echoroo-{body.dataset_id}-{uuid4().hex[:10]}.zip'
     index=[];species_rows=[];hourly=[];evidence_rows=[];quality_rows=[]
     with connect(root) as db:
-        records={r['id']:dict(r) for r in db.execute('SELECT * FROM recordings WHERE dataset_id=?',(body.dataset_id,))}
+        records={r['id']:dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?',(body.dataset_id,))}
         for record in records.values():checked_source(record)
         with path.open('xb') as stream:
             try:

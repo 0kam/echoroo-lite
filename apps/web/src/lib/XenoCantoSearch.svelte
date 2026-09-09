@@ -13,7 +13,10 @@
   let configured = $state<boolean | null>(null), country = $state('Japan'), quality = $state('A');
   let results = $state<{ recordings: Attribution[]; total_recordings: number; total_pages: number; page: number } | null>(null);
   let lastQuery: { species_id: string; country: string; quality: string } | null = null;
-  let importing = $state<number | null>(null);
+  let importing = $state<number | null>(null), restored=$state(false);
+  onMount(()=>{try{const saved=JSON.parse(sessionStorage.getItem(`echoroo-xc-${species?.id}`)||'null');if(saved){country=saved.country;quality=saved.quality;results=saved.results;lastQuery=saved.lastQuery;}}catch{}restored=true;});
+  $effect(()=>{if(restored)sessionStorage.setItem(`echoroo-xc-${species?.id}`,JSON.stringify({country,quality,results,lastQuery}));});
+  const licenseName=(value:string)=>{const match=value.match(/creativecommons\.org\/licenses\/([^/]+)\/([^/]+)/);return match?`CC ${match[1].toUpperCase()} ${match[2]}`:value;};
   const search = createTask(async (page: number, fresh = false) => {
     if (fresh && species) lastQuery = { species_id: species.id, country, quality };
     if (!lastQuery) return;
@@ -45,8 +48,8 @@
           <div class="section-heading"><strong>XC{row.id} · {row.quality} · {row.length}</strong>
             <Button size="sm" pending={importing === row.id} disabled={pick.pending} onclick={() => pick.run(row)}>{t('xcSelect')}</Button></div>
           <p>{species?.scientific_name === row.scientific_name ? commonName(species, app.locale) : app.locale === 'en' ? row.common_name : t('commonNameMissing')} · <i>{row.scientific_name}</i></p>
-          <p class="muted">{row.recordist} · {row.country} / {row.location} · {row.type} · {row.date}</p>
-          <p class="muted">{row.license} · <a href={row.url} target="_blank" rel="noreferrer">XC{row.id}</a></p>
+          <p class="muted">{row.recordist} · {row.country} / {row.location} · {row.type}</p>
+          <p class="muted"><a href={row.license} target="_blank" rel="noreferrer">{licenseName(row.license)}</a> · <a href={row.url} target="_blank" rel="noreferrer">XC{row.id}</a></p>
         </article>
       {:else}<p class="empty">{t('xcNoResults')}</p>{/each}
     </div>
@@ -63,8 +66,8 @@
   .xc { display: flex; flex-direction: column; gap: 8px; }
   .query { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
   .query label { flex: 1; min-width: 120px; }
-  .xc-results { max-height: 320px; overflow-y: auto; border: 1px solid rgb(var(--stone-300)); border-radius: 6px; }
-  article { padding: 10px 12px; border-bottom: 1px solid rgb(var(--stone-200)); font-size: 12px; }
+  .xc-results { max-height: 480px; overflow-y: auto; border: 1px solid rgb(var(--stone-300)); border-radius: 6px; }
+  article { padding: 18px; border-bottom: 1px solid rgb(var(--stone-200)); font-size: 15px; }
   article:last-child { border-bottom: 0; }
   article p { margin-top: 2px; }
   a { overflow-wrap: anywhere; }

@@ -1,5 +1,7 @@
 """Reproducible reports from complete saved outputs, independent of candidate display limits."""
 import base64
+import hashlib
+from functools import lru_cache
 import csv
 import io
 import json
@@ -20,7 +22,7 @@ def dataset_context(db, dataset_id):
     if dataset is None:
         raise CatalogError('not_found')
     site = db.execute('SELECT * FROM sites WHERE id=?', (dataset['site_id'],)).fetchone()
-    records = [dict(r) for r in db.execute('SELECT * FROM recordings WHERE dataset_id=? ORDER BY recorded_at', (dataset_id,))]
+    records = [dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=? ORDER BY recorded_at', (dataset_id,))]
     if not records:
         raise CatalogError('no_audio')
     return dict(dataset), dict(site), records
@@ -31,12 +33,13 @@ def options(root, dataset_id):
         dataset, site, records = dataset_context(db, dataset_id)
         models = [dict(r) for r in db.execute('''SELECT a.engine, json_extract(a.metadata,'$.model_sha256') AS model_sha256,
             json_extract(a.metadata,'$.model') AS name, MAX(a.id) AS latest_analysis_id, COUNT(*) AS recordings FROM analyses a
-            JOIN recordings r ON r.id=a.recording_id WHERE r.dataset_id=? AND a.id IN
+            JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND a.id IN
             (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) GROUP BY a.engine,model_sha256 ORDER BY a.engine''', (dataset_id,))]
     zone = ZoneInfo(site['timezone'])
     first = min(datetime.fromisoformat(r['recorded_at']).astimezone(zone).date() for r in records)
     last = max((datetime.fromisoformat(r['recorded_at']) + timedelta(seconds=r['seconds'] - 1e-6)).astimezone(zone).date() for r in records)
-    return {'dataset': dataset, 'site': site, 'models': models, 'first_date': first.isoformat(), 'last_date': last.isoformat()}
+    return {'dataset': dataset, 'site': site, 'models': models, 'first_date': first.isoformat(), 'last_date': last.isoformat(),
+            'years': sorted({datetime.fromisoformat(r['recorded_at']).astimezone(zone).year for r in records})}
 
 
 def list_reports(root, dataset_id):
@@ -44,7 +47,7 @@ def list_reports(root, dataset_id):
         return [{**dict(r), 'species': json.loads(r['species']) if r['species'] else None} for r in db.execute('''
             SELECT id,kind,created_at,json_extract(snapshot,'$.species') AS species,
             json_extract(snapshot,'$.start_date') AS start_date,json_extract(snapshot,'$.end_date') AS end_date
-            FROM reports WHERE dataset_id=? ORDER BY id DESC''', (dataset_id,))]
+            FROM reports WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC''', (dataset_id,))]
 
 
 def calendar_cells(records, zone, first, last):
@@ -104,11 +107,39 @@ def regional_list(db, analysis):
 
 
 def classification_windows(analysis, seconds, allowed):
+    path = Path(analysis['scores_path'])
+    stat = path.stat()
+    return cached_windows(str(path), stat.st_size, stat.st_mtime_ns, analysis['engine'], float(seconds), tuple(sorted(allowed)))
+
+
+@lru_cache(maxsize=8)
+def cached_windows(path, size, mtime, engine, seconds, allowed):
+    # The derived arrays are shared by all species, reports and validation.
+    key = hashlib.sha256(json.dumps([size, mtime, engine, seconds, allowed, 1]).encode()).hexdigest()[:20]
+    cached = Path(path).with_name(Path(path).name + '.' + key + '.windows.npz')
+    fields = ('labels', 'starts', 'scores', 'best_starts')
+    if cached.exists():
+        try:
+            with np.load(cached, allow_pickle=False) as saved:
+                return tuple(saved[field] for field in fields)
+        except (OSError, ValueError, KeyError):
+            pass
+    result = read_classification_windows({'scores_path': path, 'engine': engine}, seconds, allowed)
+    temporary = cached.with_name(cached.name + '.' + uuid4().hex + '.tmp')
+    try:
+        with temporary.open('wb') as stream:
+            np.savez_compressed(stream, **dict(zip(fields, result)))
+        temporary.replace(cached)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return result
+
+
+def read_classification_windows(analysis, seconds, allowed):
     """Return full 15-second windows and strongest native-window evidence per species."""
     from scipy.special import softmax
     native = 3 if analysis['engine'] == 'birdnet' else 5
     slots, per_common = int(seconds // native), 15 // native
-    # ponytail: one score archive per recording; cache derived windows if annual report refreshes are slow.
     with np.load(analysis['scores_path'], allow_pickle=False) as saved:
         if analysis['engine'] == 'perch':
             labels, logits = saved['labels'], saved['logits']
@@ -119,14 +150,15 @@ def classification_windows(analysis, seconds, allowed):
             scores = softmax(logits.astype(np.float64), axis=1)[:slots, included]
             present = np.ones(len(scores), dtype=bool)
         else:
-            labels = np.array(sorted({str(s) for s in saved['labels']} & set(allowed)))
+            raw_labels = saved['labels']
+            labels = np.array(sorted({str(s) for s in raw_labels} & set(allowed)))
             scores = np.full((slots, len(labels)), -np.inf)
             lookup = {label: i for i, label in enumerate(labels)}
             starts, ends, values = saved['start_s'], saved['end_s'], saved['scores']
-            if not (len(starts) == len(ends) == len(values) == len(saved['labels'])) or not np.isfinite(values).all():
+            if not (len(starts) == len(ends) == len(values) == len(raw_labels)) or not np.isfinite(values).all():
                 raise CatalogError('invalid_scores')
             present = np.zeros(slots, dtype=bool)
-            for start, end, label, score in zip(starts, ends, saved['labels'], values):
+            for start, end, label, score in zip(starts, ends, raw_labels, values):
                 index = round(float(start) / native)
                 if index < 0 or index >= slots or abs(float(start) - index * native) > 1e-5 or abs(float(end - start) - native) > 1e-5:
                     continue
@@ -169,8 +201,8 @@ def detection(root, body, *, persist=True):
             raise CatalogError('not_found')
         wanted = selected['scientific_name'] if selected else None
         species_rows = {r['scientific_name']: names_for(r) for r in db.execute('SELECT * FROM species')}
-        analyses = db.execute('''SELECT a.* FROM analyses a JOIN recordings r ON r.id=a.recording_id
-            WHERE r.dataset_id=? AND a.engine=? AND json_extract(a.metadata,'$.model_sha256')=? AND a.id IN
+        analyses = db.execute('''SELECT a.* FROM analyses a JOIN site_recordings r ON r.id=a.recording_id
+            WHERE r.scope_id=? AND a.engine=? AND json_extract(a.metadata,'$.model_sha256')=? AND a.id IN
             (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) ORDER BY a.recording_id''',
                               (body.dataset_id, body.engine, body.model_sha256)).fetchall()
         if body.base_report_id is not None:
@@ -380,7 +412,7 @@ def export_report(root, report_id, folder, svg=None, png=None, audio=()):
         if row is None:
             raise CatalogError('not_found')
         snapshot = json.loads(row['snapshot'])
-        records = {r['id']: dict(r) for r in db.execute('SELECT * FROM recordings WHERE dataset_id=?', (row['dataset_id'],))}
+        records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (row['dataset_id'],))}
     destination = Path(folder).expanduser().resolve()
     if not destination.is_dir():
         raise CatalogError('folder_missing')
