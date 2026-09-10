@@ -7,10 +7,11 @@
 <h2>{t('wQuality')}</h2><p><strong>{t(qualityStatus(validation))}</strong></p>
 {#if validation&&!validation.applicable}<p class="notice">{t('wScopeChanged')}</p>{/if}
 {#if validation?.stage==='complete'}
-  {#each Object.entries(validation.results) as [engine,result]}<p><strong>{engine==='birdnet'?'BirdNET':'Perch'}</strong> · {t(result.goal_met?'wGoalMet':'wGoalNotMet')}</p>{/each}
-  <details><summary>{t('uMoreQuality')}</summary>
+  {#if validation.applicable}{#each Object.entries(validation.results) as [engine,result]}<p><strong>{engine==='birdnet'?'BirdNET':'Perch'}</strong> · {t(result.goal_met?'wGoalMet':'wGoalNotMet')}</p>{/each}{/if}
+  <details><summary>{t(validation.applicable?'uMoreQuality':'wPreviousQuality')}</summary>
   {#each Object.entries(validation.results) as [engine,result]}
     <section class="quality-model"><h3>{engine==='birdnet'?'BirdNET':'Perch'}</h3>
+      {#if !validation.applicable}<p>{t(result.goal_met?'wGoalMet':'wGoalNotMet')}</p>{/if}
       {#each [['wPrecision',result.precision],['wRecall',result.recall],['wRate',result.estimated_window_rate]] as [label,metric]}
         {@const value=metric as typeof result.precision}
         <div class="metric"><strong>{t(label as string)}</strong><span>{percent(value.value)}</span><small>{t('wInterval')}: {interval(value)}</small>
@@ -21,5 +22,5 @@
   {/each}
   <p class="muted">{validation.start_date}–{validation.end_date} · {t('wQualityScope')}</p>
   </details>
-{:else}<p class="muted">{t('wQualityHint')}</p>{/if}
+{:else if !validation||validation.applicable}<p class="muted">{t('wQualityHint')}</p>{/if}
 <style>.quality-model{padding:12px 0;border-top:1px solid rgb(var(--stone-300))}.metric{display:grid;grid-template-columns:1fr auto;gap:4px 10px;margin:12px 0}.metric small{grid-column:1/-1;color:rgb(var(--stone-700))}p{margin:10px 0}</style>

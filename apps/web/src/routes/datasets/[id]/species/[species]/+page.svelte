@@ -49,7 +49,7 @@
       {:else}<p class="empty">{t('wNoModel')}</p>{/if}
     </section>
     <section class="panel"><QualityPanel validation={result.validation}/>
-      <div class="actions"><Button variant="primary" pending={validate.pending} onclick={()=>validate.run()}>{t(result.validation?.stage==='complete'?'wValidationDone':result.validation?.applicable?'wContinue':'wEvaluate')}</Button>
+      <div class="actions"><Button variant="primary" pending={validate.pending} onclick={()=>validate.run()}>{t(result.validation&&!result.validation.applicable?'wCheckAgain':result.validation?.stage==='complete'?'wValidationDone':result.validation?.applicable?'wContinue':'wEvaluate')}</Button>
       <Button href={practice}>{t('wPractice')}</Button></div>
     </section>
     {#if result.searches.length}<section class="panel"><h2>{t('wConfirmed')}</h2>
