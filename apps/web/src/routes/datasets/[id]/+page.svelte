@@ -34,6 +34,7 @@
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}
     {#if (Date.parse(result.last_date)-Date.parse(result.first_date))/86400000>=366}<label class="year">{t('uYear')}<select value={first.slice(0,4)} onchange={e=>goto(`${resolve(`/datasets/${id}`)}?${rangeQuery(e.currentTarget.value+'-01-01',e.currentTarget.value+'-12-31')}`)}>{#each result.years as year}<option value={String(year)}>{year}</option>{/each}</select></label>{/if}
+    {#if result.location_stale}<p class="notice" role="status">{t('location_reanalysis')}</p>{/if}
     <section class="panel"><div class="section-heading"><div class="stat-row"><span><strong>{result.analysed_recordings} / {result.records}</strong> {t('files')}</span>
       <span><strong>{result.recorded_seconds<3600?duration(result.recorded_seconds):(result.recorded_seconds/3600).toFixed(1)+' h'}</strong></span>
       <span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span></div>

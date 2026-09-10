@@ -12,6 +12,7 @@
     <section class="panel section-heading"><h2>{site.name}</h2><div class="actions">
       <Button href={`${resolve('/datasets/new')}?site=${site.id}`}>{t('uAddRecordings')}</Button>
       {#if datasets.length}<Button variant="primary" href={resolve(`/datasets/${datasets[0].id}`)}>{t('uSeeResults')}</Button>{/if}
+      <a href={resolve(`/sites/${site.id}/manage`)}>{t('mManage')}</a>
     </div></section>
   {/each}
 </div>

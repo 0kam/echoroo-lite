@@ -41,6 +41,7 @@
     <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('wFurther')}</Button></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}
+    {#if result.location_stale}<p class="notice" role="status">{t('location_reanalysis')}</p>{/if}
     <section class="panel">
       <div class="actions model-tabs">{#each result.models as model}<Button active={!run&&engine===model.engine} aria-pressed={!run&&engine===model.engine} disabled={loading} onclick={()=>{engine=model.engine;run='';load();}}>{model.engine==='birdnet'?'BirdNET':'Perch'}</Button>{/each}
         {#if result.searches.length}<Button active={!!run} disabled={loading} onclick={()=>{run=String(result!.searches[0].id);load();}}>{t('wConfirmed')}</Button>{/if}</div>

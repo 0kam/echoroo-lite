@@ -39,7 +39,15 @@ def build_fingerprint(root, dataset_id):
 
 @lru_cache(maxsize=8)
 def cached_options(root, dataset_id, revision):
-    return cached(root, ['options-v1', dataset_id, revision], lambda: options(root, dataset_id))
+    def build():
+        from management import location_status
+        result = options(root, dataset_id)
+        with connect(root) as db:
+            site = dict(result['site'])
+            site['location_changed'] = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?',(site['id'],)).fetchone())
+            complete, stale = location_status(db, site)
+        return {**result, 'analysed_recordings':len(complete), 'location_stale':stale}
+    return cached(root, ['options-v2', dataset_id, revision], build)
 
 
 def context(root, dataset_id, first=None, last=None):
@@ -84,7 +92,7 @@ def detection_snapshot(root, ctx, model, species_id=None, threshold=.1):
     body = SimpleNamespace(dataset_id=ctx['dataset']['id'], engine=model['engine'], model_sha256=model['model_sha256'],
         threshold=threshold, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']),
         species_id=species_id, base_report_id=None)
-    return cached(root, ['detection-site-v3', ctx['fingerprint'], ctx['names_revision'], vars(body)], lambda: detection(root, body, persist=False))
+    return cached(root, ['detection-site-v3', ctx['fingerprint'], ctx['names_revision'], ctx['site']['name'], ctx['dataset']['name'], vars(body)], lambda: detection(root, body, persist=False))
 
 
 def searches(root, dataset_id, species_id=None):
@@ -120,7 +128,7 @@ def current_validations(root, ctx):
         if sid in chosen and chosen[sid]['applicable']:
             continue
         snap=json.loads(row['snapshot'])
-        applicable=row['fingerprint']==ctx['fingerprint'] and (snap['start_date'],snap['end_date'])==(ctx['start_date'],ctx['end_date'])
+        applicable=not ctx.get('location_stale') and row['fingerprint']==ctx['fingerprint'] and (snap['start_date'],snap['end_date'])==(ctx['start_date'],ctx['end_date'])
         if sid not in chosen or applicable:
             chosen[sid]=view_session(root,row['id'],ctx=ctx,include_items=False)
     return chosen
@@ -145,8 +153,6 @@ def build_overview(root, dataset_id, ctx):
     with connect(root) as db:
         records = [dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?',(dataset_id,))]
         named = {r['id']: names_for(r) for r in db.execute('SELECT * FROM species')}
-        complete = db.execute('''SELECT COUNT(*) FROM (SELECT a.recording_id FROM analyses a JOIN site_recordings r ON r.id=a.recording_id
-            WHERE r.scope_id=? GROUP BY a.recording_id HAVING COUNT(DISTINCT a.engine)=2)''',(dataset_id,)).fetchone()[0]
     rows = {}
     def add(taxon):
         sid = taxon['id']
@@ -175,7 +181,7 @@ def build_overview(root, dataset_id, ctx):
     for sid in quality:
         if sid in named:
             add(named[sid])
-    return {**ctx,'records':len(records),'recorded_seconds':sum(r['seconds'] for r in records),'analysed_recordings':complete,
+    return {**ctx,'records':len(records),'recorded_seconds':sum(r['seconds'] for r in records),
             'species': sorted(rows.values(),key=lambda r:(-max([m['candidate_windows'] for m in r['models']] or [0]),-r['confirmed'],r['species']['scientific_name']))}
 
 

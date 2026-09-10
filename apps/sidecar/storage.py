@@ -146,6 +146,7 @@ def initialize(root):
             CREATE VIRTUAL TABLE IF NOT EXISTS vectors USING vec0(
                 embedding float[1536] distance_metric=cosine);
         """)
+        db.execute('CREATE TABLE IF NOT EXISTS changed_locations (site_id INTEGER PRIMARY KEY REFERENCES sites)')
         db.execute('CREATE TABLE IF NOT EXISTS result_revision (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)')
         db.execute('INSERT OR IGNORE INTO result_revision VALUES(1,0)')
         for table in ('sites', 'datasets', 'recordings', 'analyses'):
@@ -153,6 +154,34 @@ def initialize(root):
                 db.execute(f'''CREATE TRIGGER IF NOT EXISTS result_{table}_{operation} AFTER {operation} ON {table}
                     BEGIN UPDATE result_revision SET version=version+1 WHERE id=1; END''')
         db.execute("UPDATE jobs SET status='interrupted' WHERE status IN ('queued', 'running')")
+    monotonic_ids(root)
+
+
+def monotonic_ids(root):
+    """Upgrade ordinary row IDs once so deleted links can never target a later import."""
+    tables = ('sites', 'datasets', 'recordings', 'jobs', 'analyses', 'candidates', 'segments',
+              'search_runs', 'search_samples', 'search_judgements', 'reports',
+              'validation_sessions', 'validation_items', 'validation_answers', 'workflow_exports')
+    with connect(root) as db:
+        pending = [(table, db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]) for table in tables]
+        pending = [(table, sql) for table, sql in pending if 'AUTOINCREMENT' not in sql]
+        if not pending:
+            return
+        db.execute('PRAGMA foreign_keys=OFF')
+        db.execute('PRAGMA legacy_alter_table=ON')
+        db.execute('BEGIN IMMEDIATE')
+        for table, sql in pending:
+            extras = [r[0] for r in db.execute("SELECT sql FROM sqlite_master WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL", (table,))]
+            temporary = table + '_monotonic'
+            definition = sql[sql.index('('):].replace('id INTEGER PRIMARY KEY', 'id INTEGER PRIMARY KEY AUTOINCREMENT', 1)
+            db.execute(f'CREATE TABLE {temporary} {definition}')
+            db.execute(f'INSERT INTO {temporary} SELECT * FROM {table}')
+            db.execute(f'DROP TABLE {table}')
+            db.execute(f'ALTER TABLE {temporary} RENAME TO {table}')
+            for statement in extras:
+                db.execute(statement)
+        if db.execute('PRAGMA foreign_key_check').fetchone():
+            raise CatalogError('catalog_migration_failed')
 
 
 def recording_time(path, zone_name):

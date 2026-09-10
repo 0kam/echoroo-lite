@@ -7,7 +7,7 @@ import socket
 import sys
 import threading
 from datetime import date
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +20,23 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from storage import CatalogError, checked_source, connect, initialize, preview_folder
 from species import decorate_candidates, initialize_species, list_species, save_species
+
+
+class SiteEdit(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=200)
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
+class DatasetEdit(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=200)
+
+
+class DeleteRequest(BaseModel):
+    dataset_id: int | None = None
+    revision: str = Field(min_length=64, max_length=64)
 
 
 class ImportRequest(BaseModel):
@@ -195,6 +212,34 @@ def create_app(root, models, token):
     cancel = threading.Event()
     lock = threading.Lock()
     worker = None
+    gate = threading.Condition()
+    requests = 0
+    managing = False
+
+    def request_lease():
+        nonlocal requests
+        with gate:
+            gate.wait_for(lambda: not managing)
+            requests += 1
+        try:
+            yield
+        finally:
+            with gate:
+                requests -= 1
+
+    @contextmanager
+    def management_change():
+        nonlocal managing
+        with gate:
+            if requests != 1 or (worker and worker.is_alive()):
+                raise CatalogError('management_busy')
+            managing = True
+        try:
+            yield
+        finally:
+            with gate:
+                managing = False
+                gate.notify_all()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -212,7 +257,7 @@ def create_app(root, models, token):
         if not secrets.compare_digest(supplied, token):
             raise HTTPException(401, "unauthorized")
 
-    app = FastAPI(lifespan=lifespan, dependencies=[Depends(authorize)],
+    app = FastAPI(lifespan=lifespan, dependencies=[Depends(authorize), Depends(request_lease)],
                   docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(CORSMiddleware,
                        allow_origins=["http://localhost:1420", "http://127.0.0.1:1420",
@@ -278,6 +323,34 @@ def create_app(root, models, token):
             return {"sites": [dict(r) for r in db.execute("SELECT * FROM sites")],
                     "datasets": [dict(r) for r in db.execute("SELECT * FROM datasets ORDER BY id DESC")],
                     "jobs": [dict(r) for r in db.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT 20")]}
+
+    @app.get('/sites/{site_id}/management')
+    def site_management(site_id: int):
+        from management import site_details
+        return site_details(root, site_id)
+
+    @app.post('/sites/{site_id}/edit')
+    def site_edit(site_id: int, body: SiteEdit):
+        from management import edit_site
+        with management_change():
+            return edit_site(root, site_id, body)
+
+    @app.post('/sites/{site_id}/datasets/{dataset_id}/edit')
+    def dataset_edit(site_id: int, dataset_id: int, body: DatasetEdit):
+        from management import edit_dataset
+        with management_change():
+            return edit_dataset(root, site_id, dataset_id, body.name)
+
+    @app.get('/sites/{site_id}/delete-preview')
+    def delete_preview(site_id: int, dataset_id: int | None = None):
+        from management import preview_delete
+        return preview_delete(root, site_id, dataset_id)
+
+    @app.post('/sites/{site_id}/delete')
+    def delete_site_data(site_id: int, body: DeleteRequest):
+        from management import delete
+        with management_change():
+            return delete(root, site_id, body.dataset_id, body.revision)
 
     @app.get("/species")
     def species(q: str = ""):
@@ -565,7 +638,10 @@ def create_app(root, models, token):
                         FROM analyses a JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=?
                         AND a.id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) GROUP BY a.engine""",(body.dataset_id,)).fetchall()
                     if not any(row['versions']>1 for row in versions):
-                        completed={row[0] for row in db.execute("SELECT recording_id FROM analyses GROUP BY recording_id HAVING COUNT(DISTINCT engine)=2")}
+                        from management import location_status
+                        current_site = dict(site)
+                        current_site['location_changed'] = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?',(site['id'],)).fetchone())
+                        completed, _ = location_status(db, current_site)
                         records=[record for record in records if record['id'] not in completed]
                 if not site or not records:
                     raise CatalogError("no_audio")

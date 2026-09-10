@@ -8,6 +8,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,fileName,duration,refreshCatalog,rememberDataset } from '$lib/app.svelte';
   import Button from '$lib/ui/Button.svelte';
+  import SiteMap from '$lib/SiteMap.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const query=new URL(page.url.hash.slice(1),page.url).searchParams;
   let siteId=$state(query.get('site')||''),siteName=$state(''),folder=$state('');
@@ -36,6 +37,7 @@
     {#if !selected}<section class="panel">
       <h2>{t('uSiteDetails')}</h2><p>{t('uSiteOnce')}</p>
         <label>{t('siteName')}<input bind:value={siteName} required maxlength="200" placeholder={t('uSiteExample')}/></label>
+        <SiteMap bind:latitude bind:longitude editable/>
         <div class="form-grid"><label>{t('latitude')}<input type="number" step="any" min="-90" max="90" bind:value={latitude} required/></label><label>{t('longitude')}<input type="number" step="any" min="-180" max="180" bind:value={longitude} required/></label></div>
         <label>{t('uTimeZone')}<input bind:value={zone} required/></label>
     </section>{/if}

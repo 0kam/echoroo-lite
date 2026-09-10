@@ -9,7 +9,7 @@ export type Validation = { id: number; dataset_id: number; species: Species; sta
   question: {id:number;position:number;source:AudioSource;start_s:number;end_s:number} | null;
   start_date:string;end_date:string;target_precision:number;window_s:number;population:number;applicable:boolean;created_at:string };
 export type SearchRun = {id:number;species_id:string;species:Species;created_at:string};
-export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;
+export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;
   start_date:string;end_date:string;records:number;recorded_seconds:number;analysed_recordings:number;
   species:{species:Species;models:{engine:string;model_sha256:string;candidate_days:number;candidate_windows:number;eligible_windows:number;candidate_rate:number;threshold:number}[];
     searches:SearchRun[];confirmed:number;validation:Validation|null}[]};

@@ -10,10 +10,27 @@
     "frontendDist": "../web/build"
   },
   "app": {
-    "windows": [{"title": "Echoroo Lite", "url": "/", "width": 1280, "height": 900, "minWidth": 800, "minHeight": 600}],
+    "windows": [
+      {
+        "title": "Echoroo Lite",
+        "url": "/",
+        "width": 1280,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600,
+        "userAgent": "EchorooLite/0.1 (desktop map viewer)"
+      }
+    ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost http://127.0.0.1:*; media-src http://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost http://127.0.0.1:*; media-src http://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:* https://tile.openstreetmap.org"
     }
   },
-  "bundle": {"active": false, "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"]}
+  "bundle": {
+    "active": false,
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
 }

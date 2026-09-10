@@ -13,6 +13,8 @@ from results_workflow import context,current_validations,detection_snapshot,sear
 
 def export(root,body):
     ctx=context(root,body.dataset_id,body.start_date.isoformat(),body.end_date.isoformat())
+    if ctx.get('location_stale'):
+        raise CatalogError('location_reanalysis')
     if ctx['revision']!=body.revision:
         raise CatalogError('workflow_changed')
     folder=Path(body.folder).expanduser().resolve()

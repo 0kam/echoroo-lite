@@ -87,6 +87,8 @@ def add_items(db,session_id,phase,groups,rng,limit):
 def start_session(root,body):
     from results_workflow import context
     ctx=context(root,body.dataset_id,body.start_date.isoformat(),body.end_date.isoformat())
+    if ctx.get('location_stale'):
+        raise CatalogError('location_reanalysis')
     with connect(root) as db:
         existing=db.execute('SELECT id,snapshot FROM validation_sessions WHERE dataset_id=? AND species_id=? AND fingerprint=? ORDER BY id DESC',
             (body.dataset_id,body.species_id,ctx['fingerprint'])).fetchall()
@@ -277,5 +279,5 @@ def view_session(root,sid,ctx=None,include_items=True):
         'start_date':snap['start_date'],'end_date':snap['end_date'],'target_precision':snap['target_precision'],
         'window_s':15,'population':len(snap['population']),'evaluation_population':snap.get('evaluation_population'),
         'method':snap['method'],'evaluation_scope':snap['evaluation_scope'],'reference':snap['reference'],
-        'applicable':row['fingerprint']==ctx['fingerprint'] and (snap['start_date'],snap['end_date'])==(ctx['start_date'],ctx['end_date']),
+        'applicable':not ctx.get('location_stale') and row['fingerprint']==ctx['fingerprint'] and (snap['start_date'],snap['end_date'])==(ctx['start_date'],ctx['end_date']),
         'created_at':row['created_at']}
