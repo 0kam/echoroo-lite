@@ -48,7 +48,7 @@ def resample(audio, rate):
     return resample_poly(audio, 32000 // gcd, rate // gcd)
 
 
-def read_interval(row, start, end, maximum=60):
+def read_interval(row, start, end, maximum=60, *, native_rate=False):
     if not (math.isfinite(start) and math.isfinite(end) and 0 <= start < end <= row["seconds"]
             and end - start <= maximum + 1e-9):
         raise CatalogError("invalid_interval")
@@ -61,19 +61,26 @@ def read_interval(row, start, end, maximum=60):
     if not len(samples) or not np.isfinite(samples).all():
         raise CatalogError("unreadable_audio")
     checked_source(row)
-    return resample(samples.mean(axis=1), rate), {
+    mono = samples.mean(axis=1)
+    return (mono if native_rate else resample(mono, rate)), {
         "requested_start_s": start, "requested_end_s": end,
         "start_s": first / rate, "end_s": (first + len(samples)) / rate,
-        "source_sample_rate": rate, "source_channels": samples.shape[1], "sample_rate": 32000}
+        "source_sample_rate": rate, "source_channels": samples.shape[1], "sample_rate": rate if native_rate else 32000}
 
 
 def spectrogram(row, start, end):
-    from scipy.signal import stft
-    samples, interval = read_interval(row, start, end)
-    if len(samples) < 1024:
-        samples = np.pad(samples, (0, 1024 - len(samples)))
-    frequencies, times, spectrum = stft(samples, fs=32000, nperseg=1024, noverlap=768, boundary="zeros")
-    power = np.abs(spectrum[frequencies <= 12000, :][:, times < end - start]) ** 2
+    # Display at the native rate: no resampling or scientific-library cold import.
+    samples, interval = read_interval(row, start, end, native_rate=True)
+    rate = interval['sample_rate']
+    size, hop = max(4, round(rate * .032)), max(1, round(rate * .008))
+    window = np.hanning(size + 1)[:-1].astype(np.float32)
+    frequencies = np.fft.rfftfreq(size, 1 / rate)
+    included = frequencies <= 12000
+    frames = np.lib.stride_tricks.sliding_window_view(np.pad(samples, (size // 2, size)), size)[::hop]
+    frames = frames[:math.ceil((end - start) * rate / hop)]
+    # Bound FFT working memory even for high-rate field recordings.
+    power = np.concatenate([np.abs(np.fft.rfft(chunk * window, axis=1)[:, included] / window.sum()) ** 2
+                            for chunk in np.array_split(frames, max(1, math.ceil(len(frames) / 256)))], axis=0).T
     # Pool into evenly spaced display columns; do not decode an entire field recording.
     width = min(1000, power.shape[1])
     edges = np.linspace(0, power.shape[1], width + 1).astype(int)
@@ -82,5 +89,5 @@ def spectrogram(row, start, end):
     ceiling = max(-80.0, float(db.max()))
     pixels = (np.clip((db - (ceiling - 70)) / 70, 0, 1) * 255).astype(np.uint8)[::-1]
     return {**interval, "width": width, "height": len(frequencies[frequencies <= 12000]),
-            "frequency_max_hz": 12000, "db_min": ceiling - 70, "db_max": ceiling,
+            "frequency_max_hz": float(frequencies[included][-1]), "db_min": ceiling - 70, "db_max": ceiling,
             "pixels": base64.b64encode(pixels.tobytes()).decode("ascii")}

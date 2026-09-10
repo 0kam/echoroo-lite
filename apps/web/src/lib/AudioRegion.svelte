@@ -18,6 +18,7 @@
   let canvas: HTMLCanvasElement, audio: HTMLAudioElement;
   let viewStart = $state(0), span = $state(30), loading = $state(true), error = $state('');
   let cursor = $state(0);
+  let frequencyMax = $state(12000);
   let anchor: number | null = null, request = 0, stopAt: number | null = null;
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
   let playbackVersion = 0;
@@ -29,16 +30,19 @@
     const version = ++request;
     loading = true; error = '';
     try {
-      const data = await api<{ width: number; height: number; pixels: string }>(
+      const data = await api<{ width: number; height: number; pixels: string; frequency_max_hz: number }>(
         `${mediaPath}/spectrogram?start_s=${viewStart}&end_s=${viewEnd}`);
       if (version !== request) return;
+      frequencyMax = data.frequency_max_hz;
       canvas.width = data.width; canvas.height = data.height;
       const pixels = atob(data.pixels), frame = new ImageData(data.width, data.height);
       // Warm, high-contrast intensity map; relative level within the displayed interval.
       for (let i = 0; i < pixels.length; i++) {
         const level = pixels.charCodeAt(i) / 255;
-        frame.data.set([Math.min(255, 18 + level * 340), Math.max(0, level * 330 - 60),
-          Math.max(0, level * 400 - 170), 255], i * 4);
+        frame.data[i * 4] = Math.min(255, 18 + level * 340);
+        frame.data[i * 4 + 1] = Math.max(0, level * 330 - 60);
+        frame.data[i * 4 + 2] = Math.max(0, level * 400 - 170);
+        frame.data[i * 4 + 3] = 255;
       }
       canvas.getContext('2d')!.putImageData(frame, 0, 0);
     } catch (e) { if (version === request) error = e instanceof Error ? e.message : 'unknown_error'; }
@@ -69,6 +73,8 @@
   /** Plays the selected interval; `status` reports loading and playback so callers can show it. */
   export async function play(from = start, to = end) {
     stop();
+    const player = audio;
+    if (!player) return;
     const version = playbackVersion;
     error = '';
     start = from; end = to;
@@ -82,7 +88,7 @@
         const done = () => { clean(); resolve(); };
         const fail = () => { clean(); reject(Error('unreadable_audio')); };
         const timer = setTimeout(fail, 10000);
-        function clean() { clearTimeout(timer); cancelMetadata = undefined; audio.removeEventListener('loadedmetadata', done); audio.removeEventListener('error', fail); }
+        function clean() { clearTimeout(timer); cancelMetadata = undefined; player.removeEventListener('loadedmetadata', done); player.removeEventListener('error', fail); }
         cancelMetadata = done;
         audio.addEventListener('loadedmetadata', done); audio.addEventListener('error', fail);
       });
@@ -92,7 +98,7 @@
     } catch { if (version === playbackVersion) { error = 'unreadable_audio'; status = 'idle'; } }
   }
   export function stop() {
-    playbackVersion++; cancelMetadata?.(); audio.pause(); clearTimeout(stopTimer); stopAt = null; status = 'idle';
+    playbackVersion++; cancelMetadata?.(); audio?.pause(); clearTimeout(stopTimer); stopAt = null; status = 'idle';
   }
   onMount(() => {
     if(fixedRange)span=Math.max(5,Math.min(60,end-start));
@@ -108,7 +114,7 @@
     <Button disabled={viewEnd>=source.seconds} onclick={()=>navigate(viewStart+span)}>{t('nextView')} ›</Button>
   </div>{/if}
   <div class="spectrogram-grid">
-    <div class="frequencies"><span>12 kHz</span><span>6 kHz</span><span>0</span></div>
+    <div class="frequencies"><span>{+(frequencyMax / 1000).toFixed(2)} kHz</span><span>{+(frequencyMax / 2000).toFixed(2)} kHz</span><span>0</span></div>
     <div class="spectrogram" role="group" aria-label={t('spectrogram')}
       onpointerdown={event => { if (fixedRange || loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
       onpointermove={select} onpointerup={event => { select(event); anchor = null; }} onpointercancel={() => anchor = null}>

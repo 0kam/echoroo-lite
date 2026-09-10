@@ -148,6 +148,8 @@ See [Windows preview preparation](docs/windows-preview.md).
 On the M4 Pro, the 17,520-file real-audio replay completed both models, searches and
 CSV/audio exports in 4 h 8 min 25 s; annual plots were then checked in the release app.
 See [the annual benchmark and its limits](docs/annual-benchmark-2026-09.md).
+For quiz navigation, cold spectrograms, validation completion and annual result-view
+latency, see [the Mac performance measurements](docs/performance-2026-09.md).
 The Mac release app also processed all 24 supplied recordings (12 hours) in about
 nine minutes and exported both classifier reports and a full-data search report.
 See [the real-day preview record](docs/real-day-preview-2026-09.md).

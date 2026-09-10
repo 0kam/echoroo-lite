@@ -35,7 +35,7 @@
     questionPlayer?.stop(); reviewPosition = position; await tick();
     try { await questionPlayer?.play(); } catch { throw Error('unreadable_audio'); }
   }, { toast: true });
-  onMount(() => { load().catch(e => loadError = e instanceof Error ? e.message : 'unknown_error'); return () => questionPlayer?.stop(); });
+  onMount(() => { load().catch(e => loadError = e instanceof Error ? e.message : 'unknown_error');  });
 </script>
 
 <div class="page">

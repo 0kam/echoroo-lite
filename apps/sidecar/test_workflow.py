@@ -145,6 +145,17 @@ class WorkflowCheck(unittest.TestCase):
                 self.assertEqual(client.post('/workflow-exports',json=export_body).json()['detail'],'workflow_changed')
 
     def test_finite_bounds_and_unknowns(self):
+        from scipy.stats import hypergeom
+        for N,n in [(5,2),(10,1),(10,6),(1000,60),(70080,60),(10000000,60)]:
+            for alpha in (.05,.0125,.005):
+                for k in sorted({0,1,n//2,n-1,n}):
+                    low,high=exact_count_interval(N,n,k,alpha)
+                    self.assertGreaterEqual(hypergeom.sf(k-1,N,low,n),alpha/2)
+                    self.assertGreaterEqual(hypergeom.cdf(k,N,high,n),alpha/2)
+                    if low>k:
+                        self.assertLess(hypergeom.sf(k-1,N,low-1,n),alpha/2)
+                    if high<N-n+k:
+                        self.assertLess(hypergeom.cdf(k,N,high+1,n),alpha/2)
         for N in (8,15):
             for n in range(1,N+1):
                 limits=[exact_count_interval(N,n,k,.05) for k in range(n+1)]

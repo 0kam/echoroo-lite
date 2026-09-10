@@ -155,6 +155,12 @@ def run(root, models, job, records, site, cancel):
                      {"logits": np.array(logits), "labels": np.array(labels)}, [], vectors)
                 done += 1
                 progress("perch", done)
+        if not cancel.is_set():
+            progress('preparing_results', done)
+            with connect(root) as db:
+                dataset_id = db.execute('SELECT dataset_id FROM jobs WHERE id=?', (job,)).fetchone()[0]
+            from results_workflow import overview
+            overview(root, dataset_id)
         with connect(root) as db:
             db.execute("UPDATE jobs SET status=?,stage='finished' WHERE id=?",
                        ("cancelled" if cancel.is_set() else "complete", job))

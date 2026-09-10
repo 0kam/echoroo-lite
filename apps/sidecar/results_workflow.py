@@ -3,6 +3,7 @@ import hashlib
 import json
 import zlib
 from datetime import date
+from functools import lru_cache
 from types import SimpleNamespace
 
 from reports import detection, options, search_report, snapshot_view
@@ -12,12 +13,23 @@ from storage import CatalogError, checked_source, connect
 
 def fingerprint(root, dataset_id):
     with connect(root) as db:
+        for record in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,)):
+            checked_source(record)
+        revision = db.execute('SELECT version FROM result_revision WHERE id=1').fetchone()[0]
+    return cached_fingerprint(root, dataset_id, revision)
+
+
+@lru_cache(maxsize=8)
+def cached_fingerprint(root, dataset_id, revision):
+    return cached(root, ['fingerprint-v1', dataset_id, revision], lambda: build_fingerprint(root, dataset_id))
+
+
+def build_fingerprint(root, dataset_id):
+    with connect(root) as db:
         dataset = db.execute('SELECT d.*,s.timezone,s.latitude,s.longitude FROM datasets d JOIN sites s ON s.id=d.site_id WHERE d.id=?', (dataset_id,)).fetchone()
         if dataset is None:
             raise CatalogError('not_found')
         record_rows=db.execute('SELECT * FROM site_recordings WHERE scope_id=? ORDER BY id',(dataset_id,)).fetchall()
-        for record in record_rows:
-            checked_source(record)
         records=[{k:r[k] for k in r.keys() if k!='scope_id'} for r in record_rows]
         analyses = [tuple(r) for r in db.execute('''SELECT a.id,a.recording_id,a.engine,a.metadata FROM analyses a
             JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND a.id IN
@@ -25,8 +37,16 @@ def fingerprint(root, dataset_id):
     return hashlib.sha256(json.dumps([{k:dataset[k] for k in ('site_id','timezone','latitude','longitude')}, records, analyses], sort_keys=True).encode()).hexdigest()
 
 
+@lru_cache(maxsize=8)
+def cached_options(root, dataset_id, revision):
+    return cached(root, ['options-v1', dataset_id, revision], lambda: options(root, dataset_id))
+
+
 def context(root, dataset_id, first=None, last=None):
-    result = options(root, dataset_id)
+    signature = fingerprint(root, dataset_id)
+    with connect(root) as db:
+        data_revision = db.execute('SELECT version FROM result_revision WHERE id=1').fetchone()[0]
+    result = dict(cached_options(root, dataset_id, data_revision))
     result['mixed_models']=len(result['models'])>len({m['engine'] for m in result['models']})
     result['models']=list({m['engine']:m for m in sorted(result['models'],key=lambda m:m['latest_analysis_id'])}.values())
     result['start_date'] = first or result['first_date']
@@ -37,13 +57,13 @@ def context(root, dataset_id, first=None, last=None):
         if first or last:
             raise CatalogError('report_range')
         result['start_date'] = date(date.fromisoformat(result['end_date']).year,1,1).isoformat()
-    result['fingerprint'] = fingerprint(root, dataset_id)
+    result['fingerprint'] = signature
     with connect(root) as db:
         revision=[db.execute(f'SELECT COALESCE(MAX(id),0) FROM {table}').fetchone()[0] for table in
                   ('search_runs','search_judgements','validation_answers','validation_sessions')]
         revision.append([tuple(r) for r in db.execute('SELECT id,names FROM species ORDER BY id')])
     result['names_revision']=hashlib.sha256(json.dumps(revision[-1]).encode()).hexdigest()
-    result['revision']=hashlib.sha256(json.dumps([result['fingerprint'],revision]).encode()).hexdigest()
+    result['revision']=hashlib.sha256(json.dumps([result['fingerprint'],data_revision,revision]).encode()).hexdigest()
     return result
 
 
@@ -61,7 +81,6 @@ def cached(root, key, build):
 
 
 def detection_snapshot(root, ctx, model, species_id=None, threshold=.1):
-    # ponytail: cache per species; consolidate saved window matrices if annual first-view latency dominates.
     body = SimpleNamespace(dataset_id=ctx['dataset']['id'], engine=model['engine'], model_sha256=model['model_sha256'],
         threshold=threshold, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']),
         species_id=species_id, base_report_id=None)
@@ -117,6 +136,11 @@ def threshold_for(quality, model):
 
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root,dataset_id,first,last)
+    return cached(root, ['overview-v1', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
+                  lambda: build_overview(root, dataset_id, ctx))
+
+
+def build_overview(root, dataset_id, ctx):
     quality = current_validations(root,ctx)
     with connect(root) as db:
         records = [dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?',(dataset_id,))]

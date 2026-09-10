@@ -5,15 +5,17 @@ known finite populations, and exact hypergeometric limits. Unknown answers are
 retained as unresolved outcomes, never silently converted into negatives.
 """
 import json
+from math import comb
 import random
 import secrets
 from collections import defaultdict
 from functools import lru_cache
+from itertools import chain
 from zoneinfo import ZoneInfo
 
 import numpy as np
 
-from reports import classification_windows, regional_list, window_key
+from reports import analysis_metadata, classification_batches, window_key
 from species import names_for
 from storage import CatalogError, checked_source, connect
 
@@ -30,19 +32,21 @@ def population(root,ctx,species_id):
             raise CatalogError('not_found')
         rows=db.execute('''SELECT a.*,r.seconds,r.path,r.size,r.mtime_ns,r.recorded_at,r.timezone FROM analyses a
             JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND a.id IN
-            (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) ORDER BY a.id''',(ctx['dataset']['id'],)).fetchall()
+            (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) ORDER BY a.engine,a.recording_id''',(ctx['dataset']['id'],)).fetchall()
         windows={};models={};analyses=[]
         zone=ZoneInfo(ctx['site']['timezone'])
-        for row in rows:
+        records = {row['recording_id']: row for row in rows}
+        batches = (classification_batches(root, db, [row for row in rows if row['engine']==engine], records)
+                   for engine in sorted({row['engine'] for row in rows}))
+        for row, allowed, arrays in chain.from_iterable(batches):
             checked_source(row)
-            allowed=regional_list(db,row)
             if allowed is None:
                 continue
-            labels,starts,scores,_=classification_windows(row,row['seconds'],allowed)
+            labels,starts,scores,_=arrays
             matches=np.flatnonzero(labels==taxon['scientific_name'])
             if not len(matches):
                 continue
-            sha=json.loads(row['metadata'])['model_sha256']
+            sha=analysis_metadata(row['metadata'])['model_sha256']
             if row['engine'] in models and models[row['engine']]!=sha:
                 raise CatalogError('validation_mixed_models')
             models[row['engine']]=sha;analyses.append(row['id'])
@@ -163,12 +167,17 @@ def exact_count_interval(N,n,k,alpha):
         return 0,N
     if n==N:
         return k,k
-    from scipy.stats import hypergeom
+    # Each stratum samples at most 60 windows. Sum exact combination counts
+    # directly, avoiding a large scientific-library import on the final answer.
+    denominator = comb(N,n)
+    def tail(first,last,positive):
+        return sum(comb(positive,x)*comb(N-positive,n-x)
+                   for x in range(max(0,n-N+positive,first),min(n,positive,last)+1))/denominator
     left,right=k,N-n+k
     lo,hi=left,right
     while lo<hi:
         mid=(lo+hi)//2
-        if hypergeom.sf(k-1,N,mid,n)>=alpha/2:
+        if tail(k,n,mid)>=alpha/2:
             hi=mid
         else:
             lo=mid+1
@@ -176,7 +185,7 @@ def exact_count_interval(N,n,k,alpha):
     lo,hi=left,right
     while lo<hi:
         mid=(lo+hi+1)//2
-        if hypergeom.cdf(k,N,mid,n)>=alpha/2:
+        if tail(0,k,mid)>=alpha/2:
             lo=mid
         else:
             hi=mid-1

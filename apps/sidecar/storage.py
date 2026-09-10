@@ -146,6 +146,12 @@ def initialize(root):
             CREATE VIRTUAL TABLE IF NOT EXISTS vectors USING vec0(
                 embedding float[1536] distance_metric=cosine);
         """)
+        db.execute('CREATE TABLE IF NOT EXISTS result_revision (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)')
+        db.execute('INSERT OR IGNORE INTO result_revision VALUES(1,0)')
+        for table in ('sites', 'datasets', 'recordings', 'analyses'):
+            for operation in ('INSERT', 'UPDATE', 'DELETE'):
+                db.execute(f'''CREATE TRIGGER IF NOT EXISTS result_{table}_{operation} AFTER {operation} ON {table}
+                    BEGIN UPDATE result_revision SET version=version+1 WHERE id=1; END''')
         db.execute("UPDATE jobs SET status='interrupted' WHERE status IN ('queued', 'running')")
 
 

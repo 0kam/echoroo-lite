@@ -96,20 +96,73 @@ def finalize_cells(cells, threshold):
     return output
 
 
+@lru_cache(maxsize=128)
+def analysis_metadata(raw):
+    return json.loads(raw)
+
+
 def regional_list(db, analysis):
-    meta = json.loads(analysis['metadata'])
+    meta = analysis_metadata(analysis['metadata'])
     if analysis['engine'] == 'birdnet':
         return meta.get('species')
     if meta.get('geo_filter') is not None:
         return meta['geo_filter'].get('species')
     bird = db.execute("SELECT metadata FROM analyses WHERE job_id=? AND recording_id=? AND engine='birdnet'", (analysis['job_id'], analysis['recording_id'])).fetchone()
-    return json.loads(bird[0]).get('species') if bird else None
+    return analysis_metadata(bird[0]).get('species') if bird else None
 
 
 def classification_windows(analysis, seconds, allowed):
     path = Path(analysis['scores_path'])
     stat = path.stat()
     return cached_windows(str(path), stat.st_size, stat.st_mtime_ns, analysis['engine'], float(seconds), tuple(sorted(allowed)))
+
+
+def classification_batches(root, db, analyses, records):
+    """Read annual outputs in bounded batches instead of reopening thousands of ZIPs per species."""
+    for offset in range(0, len(analyses), 256):
+        batch = analyses[offset:offset + 256]
+        allowed = [regional_list(db, a) for a in batch]
+        if len(analyses) <= 256 or any(region is None for region in allowed):
+            for a, region in zip(batch, allowed):
+                yield a, region, classification_windows(a, records[a['recording_id']]['seconds'], region) if region is not None else None
+            continue
+        signatures, regions = [], {}
+        for a, region in zip(batch, allowed):
+            stat = Path(a['scores_path']).stat()
+            region_key = tuple(sorted(region))
+            region_id = regions.setdefault(region_key, len(regions))
+            signatures.append([a['id'], a['scores_path'], stat.st_size, stat.st_mtime_ns, a['engine'],
+                               records[a['recording_id']]['seconds'], region_id])
+        key = hashlib.sha256(json.dumps([signatures, list(regions)]).encode()).hexdigest()
+        folder = Path(root) / 'window-batches'; folder.mkdir(exist_ok=True)
+        path = folder / (key + '.npz')
+        fields = ('labels', 'codes', 'sizes', 'starts', 'scores', 'best')
+        packed = None
+        if path.exists():
+            try:
+                with np.load(path, allow_pickle=False) as saved:
+                    packed = [saved[field] for field in fields]
+            except (OSError, ValueError, KeyError):
+                pass
+        if packed is None:
+            arrays = [classification_windows(a, records[a['recording_id']]['seconds'], region) for a, region in zip(batch, allowed)]
+            labels, codes = np.unique(np.concatenate([a[0] for a in arrays]), return_inverse=True)
+            packed = [labels, codes, np.array([(len(a[0]), len(a[1])) for a in arrays]),
+                      *[np.concatenate([a[i].ravel() for a in arrays]) for i in (1, 2, 3)]]
+            temporary = path.with_suffix('.' + uuid4().hex + '.tmp')
+            try:
+                with temporary.open('wb') as stream:
+                    np.savez(stream, **dict(zip(fields, packed)))
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        labels, codes, sizes, starts, scores, best = packed
+        li = wi = si = 0
+        for a, region, (columns, windows) in zip(batch, allowed, sizes):
+            count = columns * windows
+            yield a, region, (labels[codes[li:li + columns]], starts[wi:wi + windows],
+                              scores[si:si + count].reshape(windows, columns), best[si:si + count].reshape(windows, columns))
+            li += columns; wi += windows; si += count
 
 
 @lru_cache(maxsize=8)
@@ -222,17 +275,16 @@ def detection(root, body, *, persist=True):
         cells = calendar_cells(records, zone, body.start_date, body.end_date)
         indexed = {r['id']: r for r in records}
         stats, evidence, analysis_ids, missing_region = {}, [], [], []
-        for analysis in analyses:
+        portions_by_record = {r['id']: [(key, duration) for key, duration in effort(r, zone) if key in cells] for r in records}
+        analyses = [a for a in analyses if portions_by_record[a['recording_id']]]
+        for analysis, allowed, arrays in classification_batches(root, db, analyses, indexed):
             record = indexed[analysis['recording_id']]
-            portions = [(key, duration) for key, duration in effort(record, zone) if key in cells]
-            if not portions:
-                continue
+            portions = portions_by_record[record['id']]
             checked_source(record)
-            allowed = regional_list(db, analysis)
             if allowed is None:
                 missing_region.append(analysis['id'])
                 continue
-            labels, starts, scores, best_starts = classification_windows(analysis, record['seconds'], allowed)
+            labels, starts, scores, best_starts = arrays
             analysis_ids.append(analysis['id'])
             for key, duration in portions:
                 cells[key]['analysed_seconds'] += duration
