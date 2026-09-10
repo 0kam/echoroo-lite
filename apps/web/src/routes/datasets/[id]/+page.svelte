@@ -44,11 +44,11 @@
 
     </section>
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('wMissing')}</Button></div>
-      <p class="muted">{t('wOverviewHint')}</p>
+      <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>
       {#if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
       <div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wConfirmed')}</th><th>{t('wQuality')}</th></tr></thead><tbody>
         {#each result.species as row (row.species.id)}<tr><td><a href={`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=${row.models.find(m=>m.candidate_windows>0)?.engine??'auto'}`}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
-          <td>{#each row.models as model}<div>{model.engine==='birdnet'?'BirdNET':'Perch'}: {model.candidate_days} {t('wDays')}</div>{:else}—{/each}</td>
+          <td>{#each row.models as model}<div>{model.engine==='birdnet'?'BirdNET':'Perch'}: {model.candidate_windows.toLocaleString(app.locale)} {t('wDetectedWindows')} · {model.candidate_days} {t('wDays')}</div>{:else}—{/each}</td>
           <td>{row.confirmed||t('wNoConfirmed')}</td><td>{t(qualityStatus(row.validation))}</td></tr>
         {:else}<tr><td colspan="4">{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</td></tr>{/each}
       </tbody></table></div>

@@ -152,7 +152,7 @@ def overview(root, dataset_id, first=None, last=None):
         if sid in named:
             add(named[sid])
     return {**ctx,'records':len(records),'recorded_seconds':sum(r['seconds'] for r in records),'analysed_recordings':complete,
-            'species': sorted(rows.values(),key=lambda r:(-r['confirmed'],-max([m['candidate_days'] for m in r['models']] or [0]),r['species']['scientific_name']))}
+            'species': sorted(rows.values(),key=lambda r:(-max([m['candidate_windows'] for m in r['models']] or [0]),-r['confirmed'],r['species']['scientific_name']))}
 
 
 def species_result(root,dataset_id,species_id,first=None,last=None,engine='auto',run_id=None,cell_date=None,hour=None):

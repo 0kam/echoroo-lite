@@ -18,6 +18,30 @@ from scipy.stats import hypergeom
 
 
 class WorkflowCheck(unittest.TestCase):
+    def test_overview_orders_by_detection_intervals_not_days_or_model_sum(self):
+        from analysis import save
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(60000),1000)
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
+                with connect(root) as db:
+                    record=dict(db.execute('SELECT * FROM recordings').fetchone())
+                    job=db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(1,'done',2)").lastrowid
+                labels=['Horornis diphone_Japanese Bush Warbler','Parus minor_Japanese Tit','Accipiter gentilis_Northern Goshawk']
+                bird=np.repeat([[.2,.2,.1],[.099,.2,.099],[.099,.2,.099],[.099,.099,.099]],5,axis=0)
+                save(root,job,record,'birdnet',{'model_sha256':'birdnet','species':labels},dict(
+                    labels=np.tile(labels,20),scores=bird.ravel(),start_s=np.repeat(np.arange(20)*3,3),end_s=np.repeat(np.arange(1,21)*3,3)),[])
+                probs=np.repeat([[.2,.2,.01],[.2,.2,.01],[.2,.2,.01],[.2,.05,.01]],3,axis=0)
+                save(root,job,record,'perch',{'model_sha256':'perch','geo_filter':{'species':labels}},dict(
+                    labels=[s.partition('_')[0] for s in labels]+['Other'],logits=np.log(np.column_stack([probs,1-probs.sum(axis=1)]))),[])
+                response=client.get('/datasets/1/overview')
+                self.assertEqual(response.status_code,200,response.text)
+                rows=response.json()['species']
+                self.assertEqual([r['species']['scientific_name'] for r in rows],['Horornis diphone','Parus minor','Accipiter gentilis'])
+                self.assertEqual([{m['engine']:m['candidate_windows'] for m in r['models']} for r in rows],
+                                 [{'birdnet':1,'perch':4},{'birdnet':3,'perch':3},{'birdnet':1}])
+                self.assertTrue(all(m['candidate_days']==1 for r in rows for m in r['models']))
+
     def test_analysis_prepares_shared_display_windows(self):
         from analysis import save
         from reports import cached_windows, classification_windows
