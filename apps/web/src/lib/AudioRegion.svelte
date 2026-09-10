@@ -12,6 +12,7 @@
   import { api, mediaURL } from './api.svelte';
   import { t } from './app.svelte';
   import Button from './ui/Button.svelte';
+  import { roseus } from './roseus';
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean } = $props();
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
@@ -36,12 +37,12 @@
       frequencyMax = data.frequency_max_hz;
       canvas.width = data.width; canvas.height = data.height;
       const pixels = atob(data.pixels), frame = new ImageData(data.width, data.height);
-      // Warm, high-contrast intensity map; relative level within the displayed interval.
+      // Audacity-style Roseus palette; relative level within the displayed interval.
       for (let i = 0; i < pixels.length; i++) {
-        const level = pixels.charCodeAt(i) / 255;
-        frame.data[i * 4] = Math.min(255, 18 + level * 340);
-        frame.data[i * 4 + 1] = Math.max(0, level * 330 - 60);
-        frame.data[i * 4 + 2] = Math.max(0, level * 400 - 170);
+        const color = pixels.charCodeAt(i) * 3;
+        frame.data[i * 4] = roseus[color];
+        frame.data[i * 4 + 1] = roseus[color + 1];
+        frame.data[i * 4 + 2] = roseus[color + 2];
         frame.data[i * 4 + 3] = 255;
       }
       canvas.getContext('2d')!.putImageData(frame, 0, 0);
@@ -101,7 +102,7 @@
     playbackVersion++; cancelMetadata?.(); audio?.pause(); clearTimeout(stopTimer); stopAt = null; status = 'idle';
   }
   onMount(() => {
-    if(fixedRange)span=Math.max(5,Math.min(60,end-start));
+    if(fixedRange)span=Math.min(60,end-start);
     navigate(fixedRange?start:Math.floor(start / span) * span);
     return () => { request++; stop(); };
   });
@@ -115,12 +116,12 @@
   </div>{/if}
   <div class="spectrogram-grid">
     <div class="frequencies"><span>{+(frequencyMax / 1000).toFixed(2)} kHz</span><span>{+(frequencyMax / 2000).toFixed(2)} kHz</span><span>0</span></div>
-    <div class="spectrogram" role="group" aria-label={t('spectrogram')}
+    <div class="spectrogram" class:fixed={fixedRange} role="group" aria-label={t('spectrogram')}
       onpointerdown={event => { if (fixedRange || loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
       onpointermove={select} onpointerup={event => { select(event); anchor = null; }} onpointercancel={() => anchor = null}>
       <canvas bind:this={canvas} aria-label={t('spectrogram')}></canvas>
       {#if !loading && !error}
-        <div class="selection" style:left={`${percent(start)}%`} style:width={`${Math.max(0, percent(end) - percent(start))}%`}></div>
+        {#if !fixedRange}<div class="selection" style:left={`${percent(start)}%`} style:width={`${Math.max(0, percent(end) - percent(start))}%`}></div>{/if}
         {#if cursor >= viewStart && cursor <= viewEnd}<div class="playhead" style:left={`${percent(cursor)}%`}></div>{/if}
       {/if}
       {#if loading || error}<div class="spectrogram-state" role="status">{t(error || 'loadingSpectrogram')}</div>{/if}
@@ -154,11 +155,12 @@
   .range-hint { flex-basis: 100%; }
   .spectrogram-grid { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 8px; }
   .frequencies { display: flex; flex-direction: column; justify-content: space-between; text-align: right; font-size: 10px; color: rgb(var(--stone-600)); }
-  .spectrogram { position: relative; height: 210px; background: #120000; touch-action: none; cursor: crosshair; overflow: hidden; border-radius: 4px; }
+  .spectrogram { position: relative; height: 210px; background: #010101; touch-action: none; cursor: crosshair; overflow: hidden; border-radius: 4px; }
+  .spectrogram.fixed { cursor: default; }
   .compact .spectrogram { height: 150px; }
   canvas { width: 100%; height: 100%; display: block; }
-  .selection { position: absolute; top: 0; bottom: 0; background: #fff3; border-left: 2px solid #fff5bd; border-right: 2px solid #fff5bd; pointer-events: none; }
+  .selection { position: absolute; top: 0; bottom: 0; border-left: 2px solid #fff5bd; border-right: 2px solid #fff5bd; pointer-events: none; }
   .playhead { position: absolute; top: 0; bottom: 0; border-left: 2px solid #60dcff; pointer-events: none; }
-  .spectrogram-state { position: absolute; inset: 0; display: grid; place-items: center; background: #120000e8; color: #fff5bd; padding: 20px; }
+  .spectrogram-state { position: absolute; inset: 0; display: grid; place-items: center; background: #010101e8; color: #fff5bd; padding: 20px; }
   .time-axis { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 11px; color: rgb(var(--stone-600)); }
 </style>
