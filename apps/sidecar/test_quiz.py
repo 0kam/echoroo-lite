@@ -46,6 +46,14 @@ class QuizTest(unittest.TestCase):
                 correct = snapshot['questions'][0]['clip']['species_id']
                 self.assertEqual(client.get(f'/quiz/sessions/{sid}/questions/1/audio').status_code, 400)
                 self.assertEqual(client.get(f'/quiz/sessions/{sid}/questions/0/audio').status_code, 200)
+                interval='?start_s=0&end_s=1'
+                self.assertEqual(client.get(f'/quiz/sessions/{sid}/questions/1/spectrogram{interval}').status_code,400)
+                plot=client.get(f'/quiz/sessions/{sid}/questions/0/spectrogram{interval}')
+                self.assertEqual(plot.status_code,200,plot.text)
+                ref=snapshot['questions'][0]['clip']['source']['id']
+                self.assertEqual(plot.json(),client.get(f'/sources/reference/{ref}/spectrogram{interval}').json())
+                self.assertTrue(plot.json()['pixels'])
+                self.assertFalse({'path','species','clip','source'} & plot.json().keys())
                 result = client.post(f'/quiz/sessions/{sid}/answers', json={'position': 0, 'species_id': correct}).json()
                 self.assertEqual(result['question']['feedback']['status'], 'correct')
                 self.assertEqual(client.post(f'/quiz/sessions/{sid}/answers', json={'position': 0, 'species_id': correct}).json()['answered'], 1)

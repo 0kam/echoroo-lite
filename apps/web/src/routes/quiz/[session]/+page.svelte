@@ -15,29 +15,27 @@
   const quizUrl = `${resolve('/quiz')}${context.query ? `?${context.query}` : ''}`;
   const returnUrl = context.returnPath ? `${resolve('/datasets')}${context.returnPath.slice('/datasets'.length)}` : '';
   const sessionId = $derived(Number(page.params.session));
-  let session = $state<QuizSession | null>(null), loadError = $state(''), inspect = $state(false);
-  let reviewPosition = $state<number | null>(null), questionAudio = $state<HTMLAudioElement>();
+  let session = $state<QuizSession | null>(null), loadError = $state('');
+  let reviewPosition = $state<number | null>(null), questionPlayer = $state<{play:()=>Promise<void>;stop:()=>void}>();
   let feedbackElement = $state<HTMLDivElement>(), questionHeading = $state<HTMLHeadingElement>();
   let answering = $state<string | null>(null);
   async function load() { session = await api<QuizSession>(`/quiz/sessions/${sessionId}`); }
   const answer = createTask(async (speciesId: string | null) => {
     if (!session?.question) return;
-    answering = speciesId ?? 'unknown'; questionAudio?.pause();
+    answering = speciesId ?? 'unknown'; questionPlayer?.stop();
     try {
       session = await api<QuizSession>(`/quiz/sessions/${session.id}/answers`, { position: session.question.position, species_id: speciesId });
-      inspect = false; await tick(); feedbackElement?.focus();
+      await tick(); feedbackElement?.focus();
     } finally { answering = null; }
   }, { toast: true });
   const advance = createTask(async () => {
-    questionAudio?.pause(); inspect = false; await load(); await tick(); questionHeading?.focus();
+    questionPlayer?.stop(); await load(); await tick(); questionHeading?.focus();
   }, { toast: true });
   const replay = createTask(async (position: number) => {
-    questionAudio?.pause(); reviewPosition = position; await tick();
-    if (!questionAudio) return;
-    questionAudio.currentTime = 0;
-    try { await questionAudio.play(); } catch { throw Error('unreadable_audio'); }
+    questionPlayer?.stop(); reviewPosition = position; await tick();
+    try { await questionPlayer?.play(); } catch { throw Error('unreadable_audio'); }
   }, { toast: true });
-  onMount(() => { load().catch(e => loadError = e instanceof Error ? e.message : 'unknown_error'); return () => questionAudio?.pause(); });
+  onMount(() => { load().catch(e => loadError = e instanceof Error ? e.message : 'unknown_error'); return () => questionPlayer?.stop(); });
 </script>
 
 <div class="page">
@@ -54,10 +52,7 @@
         <h2 class="question" tabindex="-1" bind:this={questionHeading}>{t('quizQuestion')} {question.position + 1}</h2>
         {#if !question.feedback}<p>{t('quizQuestionPrompt')}</p>{/if}
         {#key `${session.id}:${question.position}`}
-          <!-- Bird-call practice audio has no speech transcript. -->
-          <!-- svelte-ignore a11y_media_has_caption -->
-          <audio bind:this={questionAudio} controls preload="metadata" aria-label={t('quizQuestionAudio')}
-            src={mediaURL(`/quiz/sessions/${session.id}/questions/${question.position}/audio`)} onerror={() => loadError = 'unreadable_audio'}></audio>
+          <AudioRegion bind:this={questionPlayer} source={{kind:'quiz',id:session.id,position:question.position,seconds:question.seconds}} start={0} end={question.seconds} fixedRange />
         {/key}
         {#if !question.feedback}
           <div class="choices">{#each question.choices as species (species.id)}
@@ -77,8 +72,6 @@
             <p class="muted">{t('quizCredit')}: {feedback.clip.metadata.credit.recordist || t('quizCreditMissing')} {feedback.clip.metadata.credit.source_url ?? ''} · {feedback.clip.metadata.credit.license || t('quizLicenseMissing')}</p>
             {#if feedback.clip.metadata.image_file}<p class="muted">{t('quizPhotoCredit')}: {feedback.clip.metadata.credit.photographer || t('quizCreditMissing')} · {feedback.clip.metadata.credit.image_license || t('quizLicenseMissing')}</p>{/if}
             {#if feedback.clip.metadata.xeno_canto}<p class="muted">XC{feedback.clip.metadata.xeno_canto.id} · {feedback.clip.metadata.xeno_canto.recordist} · {feedback.clip.metadata.xeno_canto.license}</p>{/if}
-            <Button size="sm" onclick={() => inspect = !inspect}>{t('quizInspectAudio')}</Button>
-            {#if inspect}<AudioRegion source={feedback.clip.source} start={0} end={feedback.clip.seconds} fixedRange />{/if}
           </div>
           <Button class="next" variant="primary" pending={advance.pending} onclick={() => advance.run()}>{t(session.complete ? 'quizShowResults' : 'quizNext')}</Button>
         {/if}
@@ -95,9 +88,8 @@
           {t('quizYourAnswer')}: {#if row.answer}{commonName(row.answer, app.locale)} · <i>{row.answer.scientific_name}</i>{:else}{t('quizUnknown')}{/if}</span>
           <Button size="sm" pending={replay.pending && reviewPosition === row.position} disabled={replay.pending} onclick={() => replay.run(row.position)}>{t('play')}</Button></div>{/each}</div>
         {#if reviewPosition !== null}{#key reviewPosition}
-          <!-- svelte-ignore a11y_media_has_caption -->
-          <audio bind:this={questionAudio} controls preload="metadata" aria-label={`${t('quizQuestionAudio')} ${reviewPosition + 1}`}
-            src={mediaURL(`/quiz/sessions/${session.id}/questions/${reviewPosition}/audio`)} onerror={() => loadError = 'unreadable_audio'}></audio>
+          {@const review = session.review.find(row=>row.position===reviewPosition)!}
+          <AudioRegion bind:this={questionPlayer} source={{kind:'quiz',id:session.id,position:review.position,seconds:review.clip.seconds}} start={0} end={review.clip.seconds} fixedRange />
         {/key}{/if}
       {/if}
       {#if answer.error || advance.error || replay.error}<p class="error" role="alert">{t(answer.error || advance.error || replay.error)}</p>{/if}
@@ -108,7 +100,6 @@
 <style>
   .quiz-session { max-width: 960px; width: 100%; align-self: center; }
   .question { margin-top: 20px; }
-  audio { margin: 12px 0; }
   .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 20px 0; }
   .choices :global(.choice) { justify-content: flex-start; text-align: left; white-space: normal; min-height: 76px; }
   .choices :global(.unknown) { min-height: 50px; }

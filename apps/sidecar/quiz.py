@@ -197,12 +197,16 @@ def answer_question(root, session_id, body):
     return session_view(root, session_id, body.position)
 
 
-def question_audio(root, session_id, position):
+def question_source(root, session_id, position):
     with connect(root) as db:
         _, snapshot, answers = session_row(db, session_id)
     if not 0 <= position < len(snapshot['questions']) or position > len(answers):
         raise CatalogError('invalid_input')
-    return checked_source(snapshot['questions'][position]['clip']['source'])
+    return snapshot['questions'][position]['clip']['source']
+
+
+def question_audio(root, session_id, position):
+    return checked_source(question_source(root, session_id, position))
 
 
 def clip_image(root, clip_id):

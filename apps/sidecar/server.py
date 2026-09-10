@@ -354,6 +354,14 @@ def create_app(root, models, token):
         path = question_audio(root, session_id, position)
         return FileResponse(path, media_type='audio/mpeg' if path.suffix == '.mp3' else 'audio/wav')
 
+    @app.get('/quiz/sessions/{session_id}/questions/{position}/spectrogram')
+    def quiz_spectrogram(session_id: int, position: int,
+                         start_s: float = Query(ge=0, allow_inf_nan=False),
+                         end_s: float = Query(gt=0, allow_inf_nan=False)):
+        from quiz import question_source
+        from audio import spectrogram
+        return spectrogram(question_source(root, session_id, position), start_s, end_s)
+
     @app.post("/references")
     def reference(body: ReferenceRequest):
         from audio import add_reference

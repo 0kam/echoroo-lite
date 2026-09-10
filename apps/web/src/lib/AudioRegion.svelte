@@ -9,11 +9,12 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, sourceAudioURL } from './api.svelte';
+  import { api, mediaURL } from './api.svelte';
   import { t } from './app.svelte';
   import Button from './ui/Button.svelte';
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false }:
-    { source: AudioSource; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean } = $props();
+    { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean } = $props();
+  const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
   let canvas: HTMLCanvasElement, audio: HTMLAudioElement;
   let viewStart = $state(0), span = $state(30), loading = $state(true), error = $state('');
   let cursor = $state(0);
@@ -29,7 +30,7 @@
     loading = true; error = '';
     try {
       const data = await api<{ width: number; height: number; pixels: string }>(
-        `/sources/${source.kind}/${source.id}/spectrogram?start_s=${viewStart}&end_s=${viewEnd}`);
+        `${mediaPath}/spectrogram?start_s=${viewStart}&end_s=${viewEnd}`);
       if (version !== request) return;
       canvas.width = data.width; canvas.height = data.height;
       const pixels = atob(data.pixels), frame = new ImageData(data.width, data.height);
@@ -130,7 +131,7 @@
   </div>
   <!-- Field recordings have no speech transcript. -->
   <!-- svelte-ignore a11y_media_has_caption -->
-  <audio bind:this={audio} preload="metadata" src={sourceAudioURL(source.kind, source.id)} aria-label={t('audio')}
+  <audio bind:this={audio} preload="metadata" src={mediaURL(`${mediaPath}/audio`)} aria-label={t('audio')}
     onerror={() => { error = 'unreadable_audio'; status = 'idle'; }} onplaying={() => { if (!audio.paused) { status = 'playing'; scheduleStop(); } }}
     onwaiting={() => { if (status === 'playing') status = 'loading'; }}
     onpause={() => { if (audio.paused && (status !== 'loading' || stopAt !== null)) { status = 'idle'; clearTimeout(stopTimer); } }} onended={stop} onseeked={scheduleStop} onratechange={scheduleStop}
