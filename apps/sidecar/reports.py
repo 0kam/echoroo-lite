@@ -28,6 +28,18 @@ def dataset_context(db, dataset_id):
     return dict(dataset), dict(site), records
 
 
+def scope_records(records,zone,first,last):
+    """Only recordings overlapping the local report period, including midnight crossings."""
+    first=datetime.fromisoformat(str(first)+'T00:00:00').replace(tzinfo=zone)
+    last=(datetime.fromisoformat(str(last)+'T00:00:00')+timedelta(days=1)).replace(tzinfo=zone)
+    return [r for r in records if datetime.fromisoformat(r['recorded_at'])<last and
+            datetime.fromisoformat(r['recorded_at'])+timedelta(seconds=r['seconds'])>first]
+
+
+def window_in_scope(record,start,end,zone,first,last):
+    return str(first)<=window_key(record,start,zone)[0][0] and window_key(record,end-1e-6,zone)[0][0]<=str(last)
+
+
 def options(root, dataset_id):
     with connect(root) as db:
         dataset, site, records = dataset_context(db, dataset_id)
@@ -272,6 +284,9 @@ def detection(root, body, *, persist=True):
         if not analyses:
             raise CatalogError('no_report_analyses')
         zone = ZoneInfo(site['timezone'])
+        records=scope_records(records,zone,body.start_date,body.end_date)
+        record_ids={r['id'] for r in records}
+        analyses=[a for a in analyses if a['recording_id'] in record_ids]
         cells = calendar_cells(records, zone, body.start_date, body.end_date)
         indexed = {r['id']: r for r in records}
         stats, evidence, analysis_ids, missing_region = {}, [], [], []
@@ -291,7 +306,7 @@ def detection(root, body, *, persist=True):
             selected_index = next((i for i, label in enumerate(labels) if label == wanted), None)
             for i, start in enumerate(starts):
                 key, local = window_key(record, float(start), zone)
-                if key not in cells:
+                if key not in cells or not window_in_scope(record,float(start),float(start)+15,zone,body.start_date,body.end_date):
                     continue
                 selected_labels = enumerate(labels) if wanted is None or persist else ([] if selected_index is None else [(selected_index, wanted)])
                 for j, label in selected_labels:
@@ -348,6 +363,7 @@ def search_report(root, body, *, persist=True):
         # Search uses the original site settings; later imports do not add searched intervals.
         site = original['site']
         zone = ZoneInfo(site['timezone'])
+        records=scope_records(records,zone,body.start_date,body.end_date)
         cells = calendar_cells(records, zone, body.start_date, body.end_date)
         indexed = {r['id']: r for r in records}
         cutoff = db.execute('SELECT COALESCE(MAX(id),0) FROM search_judgements').fetchone()[0]
@@ -357,6 +373,7 @@ def search_report(root, body, *, persist=True):
             row = db.execute('SELECT recording_id FROM analyses WHERE id=?', (aid,)).fetchone()
             recorded_ids.add(row[0])
         for rid in recorded_ids:
+            if rid not in indexed:continue
             checked_source(indexed[rid])
             for key, duration in effort(indexed[rid], zone):
                 if key in cells:
@@ -371,7 +388,9 @@ def search_report(root, body, *, persist=True):
         labelled_scores = {'target': [], 'other': []}
         distribution = [{'low': -1 + i / 10, 'high': -1 + (i + 1) / 10, 'count': 0, 'target': 0, 'other': 0, 'unknown': 0} for i in range(20)]
         for hit in hits:
-            record = indexed[hit['recording_id']]
+            record = indexed.get(hit['recording_id'])
+            if record is None or hit['end_s']>record['seconds'] or abs(hit['end_s']-hit['start_s']-5)>1e-6:continue
+            if not window_in_scope(record,hit['start_s'],hit['end_s'],zone,body.start_date,body.end_date):continue
             key, local = window_key(record, hit['start_s'], zone)
             if key not in cells:
                 continue
@@ -408,6 +427,7 @@ def search_report(root, body, *, persist=True):
                 suggestion = {'threshold': (positive + negative) / 2, 'positive_median': positive, 'negative_median': negative,
                               'positive_count': len(labelled_scores['target']), 'negative_count': len(labelled_scores['other']),
                               'method': 'midpoint_of_labelled_class_medians', 'purpose': 'exploration_only'}
+        analysis_ids=[aid for aid in analysis_ids if db.execute('SELECT recording_id FROM analyses WHERE id=?',(aid,)).fetchone()[0] in indexed]
         snapshot = {'kind': 'search', 'dataset': dataset, 'site': site, 'run_id': body.run_id, 'search_snapshot': original,
                     'analysis_ids': analysis_ids, 'model_sha256': original['model_sha256'], 'threshold': body.threshold,
                     'start_date': body.start_date.isoformat(), 'end_date': body.end_date.isoformat(), 'window_s': 5,

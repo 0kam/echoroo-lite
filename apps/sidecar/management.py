@@ -1,6 +1,7 @@
 """Explicit site management; original recordings and exported files are never removed."""
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 from storage import CatalogError, connect
@@ -75,7 +76,8 @@ def deletion_plan(db, site_id, dataset_id=None):
     runs = [r[0] for r in db.execute('''SELECT DISTINCT h.run_id FROM search_hits h JOIN segments s ON s.id=h.segment_id
         WHERE s.analysis_id IN (SELECT value FROM json_each(?))''',(json.dumps(sorted(aids)),))]
     validations = [r[0] for r in db.execute('SELECT DISTINCT session_id FROM validation_items WHERE recording_id IN (SELECT value FROM json_each(?))',(json.dumps(recordings),))]
-    reports, exports = [], []
+    annotations = [r[0] for r in db.execute('SELECT DISTINCT session_id FROM annotation_items WHERE recording_id IN (SELECT value FROM json_each(?))',(json.dumps(recordings),))]
+    custom_models, reports, exports = [], [], []
     def depends(value):
         if isinstance(value, list):
             return any(depends(v) for v in value)
@@ -83,11 +85,14 @@ def deletion_plan(db, site_id, dataset_id=None):
             return False
         return (bool(set(value.get('analysis_ids', [])) & aids) or bool(set(value.get('recording_ids', [])) & rids)
                 or value.get('recording_id') in rids or value.get('run_id') in runs
+                or value.get('model_id') in custom_models
                 or value.get('base_report_id') in reports or value.get('report_id') in reports
                 or value.get('validation_id') in validations
+                or value.get('annotation_session_id') in annotations
+                or value.get('annotation_source',{}).get('session_id') in annotations
                 or (value.get('kind')=='recording' and value.get('id') in rids)
                 or any(depends(v) for v in value.values() if isinstance(v,(dict,list))))
-    for table, chosen in [('search_runs',runs), ('validation_sessions',validations), ('reports',reports), ('workflow_exports',exports)]:
+    for table, chosen in [('search_runs',runs), ('annotation_sessions',annotations), ('custom_models',custom_models), ('validation_sessions',validations), ('reports',reports), ('workflow_exports',exports)]:
         for row in db.execute(f'SELECT t.*,d.site_id FROM {table} t JOIN datasets d ON d.id=t.dataset_id ORDER BY t.id'):
             related = depends(json.loads(row['snapshot']))
             if row['site_id'] != site_id:
@@ -98,12 +103,12 @@ def deletion_plan(db, site_id, dataset_id=None):
                 if row['id'] not in chosen:
                     chosen.append(row['id'])
     plan = {'site_id':site_id,'dataset_id':dataset_id,'name':site['name'] if dataset_id is None else selected[0]['name'],
-            'datasets':ids,'recordings':recordings,'analyses':analyses,'searches':runs,'validations':validations,'reports':reports,'exports':exports,
+            'datasets':ids,'recordings':recordings,'analyses':analyses,'searches':runs,'validations':validations,'annotations':annotations,'custom_models':custom_models,'reports':reports,'exports':exports,
             'remaining_dataset_id':remaining[0] if remaining else None}
     # A stale confirmation must not silently delete newly added answers or records.
     revision = [db.execute('SELECT version FROM result_revision WHERE id=1').fetchone()[0],
                 *[db.execute(f'SELECT COALESCE(MAX(id),0) FROM {table}').fetchone()[0] for table in
-                  ('search_judgements','validation_answers','search_samples','workflow_exports')]]
+                  ('search_judgements','validation_answers','annotation_answers','search_samples','workflow_exports','custom_models')]]
     plan['revision'] = hashlib.sha256(json.dumps([plan,revision],sort_keys=True).encode()).hexdigest()
     return plan
 
@@ -132,6 +137,10 @@ def delete(root, site_id, dataset_id, revision):
         db.execute('DELETE FROM validation_answers WHERE item_id IN (SELECT id FROM validation_items WHERE session_id IN (SELECT value FROM json_each(?)))',(json.dumps(plan['validations']),))
         remove('validation_items','session_id',plan['validations'])
         remove('validation_sessions','id',plan['validations'])
+        remove('custom_models','id',plan['custom_models'])
+        db.execute('DELETE FROM annotation_answers WHERE item_id IN (SELECT id FROM annotation_items WHERE session_id IN (SELECT value FROM json_each(?)))',(json.dumps(plan['annotations']),))
+        remove('annotation_items','session_id',plan['annotations'])
+        remove('annotation_sessions','id',plan['annotations'])
         remove('reports','id',plan['reports'])
         remove('workflow_exports','id',plan['exports'])
         for table in ('candidates','segments'):
@@ -141,7 +150,7 @@ def delete(root, site_id, dataset_id, revision):
         # A job anchored to the first import can also contain surviving recordings.
         db.execute('DELETE FROM jobs WHERE dataset_id IN (SELECT value FROM json_each(?)) AND id NOT IN (SELECT job_id FROM analyses)',(json.dumps(plan['datasets']),))
         if plan['remaining_dataset_id'] is not None:
-            for table in ('jobs','search_runs','validation_sessions','reports','workflow_exports'):
+            for table in ('jobs','search_runs','validation_sessions','annotation_sessions','custom_models','reports','workflow_exports'):
                 db.execute(f'UPDATE {table} SET dataset_id=? WHERE dataset_id IN (SELECT value FROM json_each(?))',(plan['remaining_dataset_id'],json.dumps(plan['datasets'])))
         remove('datasets','id',plan['datasets'])
         if dataset_id is None:
@@ -165,6 +174,11 @@ def delete(root, site_id, dataset_id, revision):
             generated.unlink()
         except OSError:
             pass
+    model_folder = (Path(root)/'custom-models').resolve()
+    for model_id in plan['custom_models']:
+        generated = model_folder/str(model_id)
+        if generated.resolve().is_relative_to(model_folder):
+            shutil.rmtree(generated, ignore_errors=True)
     from results_workflow import cached_fingerprint, cached_options
     from reports import cached_windows
     cached_fingerprint.cache_clear(); cached_options.cache_clear(); cached_windows.cache_clear()

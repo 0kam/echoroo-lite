@@ -5,6 +5,7 @@ import os
 import random
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -104,9 +105,17 @@ class EvidenceCheck(unittest.TestCase):
                          {'source_kind': 'reference', 'source_id': ref['id'], 'start_s': 0, 'end_s': 5}]
                 body = {'dataset_id': 1, 'targets': [{'species_id': species['id'], 'clips': clips},
                         {'species_id': other['id'], 'clips': clips[:1]}]}
-                with patch('search_runs.load_perch', return_value=(Session(), 'model')):
+                statements = []
+                @contextmanager
+                def traced_connect(path):
+                    with connect(path) as db:
+                        db.set_trace_callback(statements.append)
+                        yield db
+                with patch('search_runs.load_perch', return_value=(Session(), 'model')), \
+                        patch('search_runs.connect', traced_connect):
                     response = client.post('/search-runs', json=body)
                 self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(sum('JOIN vectors v' in sql for sql in statements), 1)
                 run, second = response.json()
                 self.assertEqual(run['hit_count'], 5)  # The local reference's own interval is excluded.
                 self.assertEqual(run['hits'][0]['segment_id'], 2)

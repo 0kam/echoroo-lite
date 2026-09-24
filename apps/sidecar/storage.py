@@ -120,6 +120,32 @@ def initialize(root):
                 verdict TEXT NOT NULL CHECK(verdict IN ('target','other','unknown')),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             CREATE INDEX IF NOT EXISTS validation_answer_item ON validation_answers(item_id,id DESC);
+            CREATE TABLE IF NOT EXISTS annotation_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id INTEGER NOT NULL REFERENCES datasets,
+                fingerprint TEXT NOT NULL, snapshot TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS annotation_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES annotation_sessions,
+                position INTEGER NOT NULL, recording_id INTEGER NOT NULL REFERENCES recordings,
+                start_s REAL NOT NULL, end_s REAL NOT NULL, stratum TEXT NOT NULL,
+                UNIQUE(session_id,position), UNIQUE(session_id,recording_id,start_s));
+            CREATE TABLE IF NOT EXISTS annotation_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES annotation_items,
+                ranges TEXT NOT NULL, complete INTEGER NOT NULL CHECK(complete IN (0,1)),
+                quiz_snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            CREATE INDEX IF NOT EXISTS annotation_answer_item ON annotation_answers(item_id,id DESC);
+            CREATE TABLE IF NOT EXISTS custom_models (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dataset_id INTEGER NOT NULL REFERENCES datasets,
+                species_id TEXT NOT NULL REFERENCES species,
+                annotation_session_id INTEGER NOT NULL REFERENCES annotation_sessions,
+                status TEXT NOT NULL CHECK(status IN ('ready','threshold_unavailable')),
+                snapshot TEXT NOT NULL,
+                artifact_path TEXT,
+                artifact_sha256 TEXT,
+                scores_path TEXT,
+                scores_sha256 TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS workflow_exports (
                 id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
                 snapshot TEXT NOT NULL, path TEXT NOT NULL,
@@ -146,6 +172,13 @@ def initialize(root):
             CREATE VIRTUAL TABLE IF NOT EXISTS vectors USING vec0(
                 embedding float[1536] distance_metric=cosine);
         """)
+        if 'ranges' not in {r['name'] for r in db.execute('PRAGMA table_info(validation_answers)')}:
+            db.execute('ALTER TABLE validation_answers ADD COLUMN ranges TEXT')
+        if 'palette_ids' not in {r['name'] for r in db.execute('PRAGMA table_info(annotation_answers)')}:
+            db.execute("ALTER TABLE annotation_answers ADD COLUMN palette_ids TEXT NOT NULL DEFAULT '[]'")
+        for table in ('validation_answers','search_judgements'):
+            if 'quiz_snapshot' not in {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}:
+                db.execute(f'ALTER TABLE {table} ADD COLUMN quiz_snapshot TEXT')
         db.execute('CREATE TABLE IF NOT EXISTS changed_locations (site_id INTEGER PRIMARY KEY REFERENCES sites)')
         db.execute('CREATE TABLE IF NOT EXISTS result_revision (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)')
         db.execute('INSERT OR IGNORE INTO result_revision VALUES(1,0)')

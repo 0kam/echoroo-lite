@@ -6,7 +6,7 @@ export type Cell = { date: string; hour: number; recorded_seconds: number; analy
 export type Evidence = { recording_id: number; analysis_id: number; segment_id?: number; path: string; seconds: number;
   recorded_at: string; timezone: string; start_s: number; end_s: number; score: number; local_time: string;
   date: string; hour: number; status: string };
-export type Report = { validation?:Validation|null; id: number; kind: 'detection' | 'search'; created_at: string; engine?: string; run_id?: number;
+export type Report = { validation?:Validation|null; id: number; kind: 'detection' | 'search'; created_at: string; engine?: 'birdnet'|'perch'|'custom'; model_id?:number; model_name?:string; custom_model?:{perch_model_sha256:string;feature_spec:string;cv_window_s:number;evaluation_window_s:number}; run_id?: number;
   dataset: { id: number; name: string }; site: { id: number; name: string; timezone: string }; species: Species | null;
   model_sha256: string; start_date: string; end_date: string; threshold: number | null; window_s: number;
   summaries: { species: Species; eligible_windows: number; candidate_windows: number | null; candidate_rate: number | null;
@@ -17,5 +17,5 @@ export type Report = { validation?:Validation|null; id: number; kind: 'detection
   threshold_suggestion?: { threshold: number; positive_count: number; negative_count: number } | null;
   distribution?: { low: number; high: number; count: number; target: number; other: number; unknown: number }[] };
 export type ReportOptions = { years:number[]; first_date: string; last_date: string;
-  models: { engine: 'birdnet' | 'perch'; model_sha256: string; name: string; recordings: number }[] };
+  models: { engine: string; model_sha256: string; name: string; recordings: number }[] };
 export const percent = (value: number | null) => value === null ? '—' : `${(value * 100).toFixed(1)}%`;

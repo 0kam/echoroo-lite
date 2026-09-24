@@ -13,13 +13,13 @@
     .flatMap(line => Array.from(line).join('').match(new RegExp(`.{1,${app.locale === 'ja' ? 48 : 90}}`, 'gu')) || []));
   const header = $derived(132 + siteLines.length * 20);
   const cx = 480, outer = 330, inner = 60;
-  const quality = $derived(report.kind==='detection' && report.validation?.applicable && report.validation.stage==='complete' ? report.validation.results[report.engine??''] : null);
+  const quality = $derived(report.validation?.applicable ? report.validation.results[report.kind==='search'?'search':report.engine??''] : null);
   const cy = $derived(header + 360), height = $derived(header + 900);
   const ring = $derived((outer - inner) / days);
   const dateTicks = $derived([...new Set([0,1,2,3].map(i => Math.round((days-1)*i/3)))]);
   const metric = $derived(t(report.kind === 'search' ? 'maximumSimilarity' : 'candidateRate'));
   const scaleMin = $derived(report.kind === 'search' ? report.threshold ?? -1 : 0);
-  const condition = $derived(report.kind === 'search' ? `${t('searchHistory')} #${report.run_id}` : `${report.engine === 'birdnet' ? 'BirdNET' : 'Perch'} · ${report.model_sha256.slice(0, 12)}`);
+  const condition = $derived(report.kind === 'search' ? `${t('searchHistory')} #${report.run_id}` : `${report.engine === 'birdnet' ? 'BirdNET' : report.engine === 'perch' ? 'Perch' : report.model_name??t('customModel')} · ${report.model_sha256.slice(0, 12)}`);
   const color = (cell: Cell) => {
     if (cell.status === 'no_recording') return 'transparent';
     if (cell.status === 'unanalysed' || cell.status === 'not_evaluated') return `url(#${uid}-missing)`;
@@ -112,7 +112,7 @@
     <circle cx="363" cy={cy+458} r="4" fill="#222"/><text x="382" y={cy+463} font-size="14" fill="#575279">{t('confirmedEvidence')}</text>
   {/if}
   <text aria-hidden={compact} x="70" y={cy+494} font-size="14" fill="#575279">{t(report.kind==='search' ? 'searchFigureCaution' : quality ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
-{#if quality}<text aria-hidden={compact} x="70" y={cy+523} font-size="14" fill="#575279">{t('wFigureQuality')} #{report.validation?.id} · precision {percent(quality.precision.value)} [{interval(quality.precision)}] · recall {percent(quality.recall.value)} [{interval(quality.recall)}]</text>{/if}
+{#if quality}<text aria-hidden={compact} x="70" y={cy+523} font-size="14" fill="#575279">{t(report.validation?.stage==='complete'?'wFigureQuality':'vInterim')} #{report.validation?.id} · precision {percent(quality.precision.value)} [{interval(quality.precision)}] · recall {percent(quality.recall.value)} [{interval(quality.recall)}]</text>{/if}
 </svg>
 </div>
 

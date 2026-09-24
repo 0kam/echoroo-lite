@@ -1,0 +1,176 @@
+{
+  "single_fixed_look_95_one_sided_minimum_n_by_errors": {
+    "0.8": {
+      "0": 14,
+      "1": 22,
+      "2": 30
+    },
+    "0.9": {
+      "0": 29,
+      "1": 46,
+      "2": 61
+    }
+  },
+  "recommended_fixed_30": {
+    "minimum_successes_large_population": 28,
+    "lower_95_one_sided_at_28": 0.804673956345074,
+    "audio_seconds_at_15s_per_clip": 450,
+    "scenarios": [
+      {
+        "true_precision": 0.8,
+        "probability_of_support": 0.04417898515199706
+      },
+      {
+        "true_precision": 0.85,
+        "probability_of_support": 0.15140060732360866
+      },
+      {
+        "true_precision": 0.9,
+        "probability_of_support": 0.4113512395595056
+      },
+      {
+        "true_precision": 0.95,
+        "probability_of_support": 0.81217881314696
+      },
+      {
+        "true_precision": 0.98,
+        "probability_of_support": 0.9782821654563825
+      }
+    ]
+  },
+  "two_look_20_then_30": {
+    "null_precision": 0.8,
+    "false_support_probability_binomial": 0.04789370370007657,
+    "early_20_of_20_stagewise_lower": 0.8608916593317348,
+    "final_28_of_30_stagewise_lower": 0.8016715412846768,
+    "finite_null_grid": {
+      "population_min": 30,
+      "population_max": 10000,
+      "worst_population": 10000,
+      "maximum_false_support_probability": 0.04766585226696593,
+      "note": "A finite grid is a check, not a proof for every population size."
+    },
+    "scenarios": [
+      {
+        "true_precision": 0.8,
+        "probability_of_support": 0.04789370370007657,
+        "expected_clips": 29.884707849539314
+      },
+      {
+        "true_precision": 0.85,
+        "probability_of_support": 0.1583697074319066,
+        "expected_clips": 29.612404689154857
+      },
+      {
+        "true_precision": 0.9,
+        "probability_of_support": 0.41988480541616496,
+        "expected_clips": 28.784233454094306
+      },
+      {
+        "true_precision": 0.95,
+        "probability_of_support": 0.816302676525057,
+        "expected_clips": 26.41514077591458
+      },
+      {
+        "true_precision": 0.98,
+        "probability_of_support": 0.9788589161757271,
+        "expected_clips": 23.32392028244906
+      }
+    ]
+  },
+  "overlap": {
+    "purpose": "Clip-overlap opportunity only; not model quality or measured human effort.",
+    "annotation_session": 2,
+    "evaluation_recording_ids": [
+      1,
+      3,
+      5,
+      7,
+      11,
+      12,
+      13,
+      16,
+      18,
+      20,
+      21,
+      24
+    ],
+    "analysis_ids": [
+      5,
+      6,
+      9,
+      10,
+      13,
+      14,
+      17,
+      18,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      35,
+      36,
+      39,
+      40,
+      43,
+      44,
+      45,
+      46,
+      51,
+      52
+    ],
+    "population_15s_windows": 1440,
+    "illustrative_fixed_score_threshold": 0.1,
+    "threshold_note": "Not a validated species-specific threshold.",
+    "pool_sizes": [
+      {
+        "species": "Tarsiger cyanurus",
+        "model": "birdnet",
+        "positives": 261
+      },
+      {
+        "species": "Tarsiger cyanurus",
+        "model": "perch",
+        "positives": 297
+      },
+      {
+        "species": "Horornis diphone",
+        "model": "birdnet",
+        "positives": 112
+      },
+      {
+        "species": "Horornis diphone",
+        "model": "perch",
+        "positives": 183
+      },
+      {
+        "species": "Phylloscopus xanthodryas",
+        "model": "birdnet",
+        "positives": 478
+      },
+      {
+        "species": "Phylloscopus xanthodryas",
+        "model": "perch",
+        "positives": 273
+      }
+    ],
+    "repetitions": 500,
+    "seed_start": 20260923,
+    "scenarios": [
+      {
+        "sample_per_species_model": 20,
+        "without_deduplication": 120,
+        "independent_with_deduplication_mean": 111.936,
+        "shared_ranks_with_deduplication_mean": 65.586
+      },
+      {
+        "sample_per_species_model": 30,
+        "without_deduplication": 180,
+        "independent_with_deduplication_mean": 162.36,
+        "shared_ranks_with_deduplication_mean": 98.362
+      }
+    ]
+  }
+}

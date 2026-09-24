@@ -44,13 +44,19 @@
       {#if job&&app.datasets.find(d=>d.id===job.dataset_id)?.site_id===result.site.id}<JobStatus {job}/>{/if}
 
     </section>
+    <section class="panel"><div class="section-heading"><div><h2>{t('aListen')}</h2><p>{t('aIntro')}</p></div><Button href={`${resolve(`/datasets/${id}/annotations`)}${range}`}>{t('aListen')}</Button></div></section>
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('wMissing')}</Button></div>
       <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>
       {#if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
-      <div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wConfirmed')}</th><th>{t('wQuality')}</th></tr></thead><tbody>
+      <div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('aHeard')}</th><th>{t('wQuality')}</th></tr></thead><tbody>
         {#each result.species as row (row.species.id)}<tr><td><a href={`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=${row.models.find(m=>m.candidate_windows>0)?.engine??'auto'}`}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
-          <td>{#each row.models as model}<div>{model.engine==='birdnet'?'BirdNET':'Perch'}: {model.candidate_windows.toLocaleString(app.locale)} {t('wDetectedWindows')} · {model.candidate_days} {t('wDays')}</div>{:else}—{/each}</td>
-          <td>{row.confirmed||t('wNoConfirmed')}</td><td>{t(qualityStatus(row.validation))}</td></tr>
+          <td>{#each row.models as model}<div>{model.engine==='birdnet'?'BirdNET':'Perch'}: {model.candidate_windows.toLocaleString(app.locale)} {t('wDetectedWindows')} · {model.candidate_days} {t('wDays')}</div>{:else}—{/each}{#each row.custom_models??[] as model}<div><a href={`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=custom&model_id=${model.id}`}>{t('customModelNumber').replace('{number}',String(model.id))}</a></div>{/each}</td>
+          <td>{row.confirmed||(!row.annotated?t('wNoConfirmed'):'')}{#if row.annotated}<div>{t('aIntervals').replace('{count}',String(row.annotated))}</div>{/if}</td><td>
+            {#if row.custom_models?.length}
+              {#if row.models.length}<div>BirdNET / Perch: {t(qualityStatus(row.validation))}</div>{/if}
+              {#each row.custom_models as model}<div>{t('customModelNumber').replace('{number}',String(model.id))}: {t(qualityStatus(model.validation))}</div>{/each}
+            {:else}{t(qualityStatus(row.validation))}{/if}
+          </td></tr>
         {:else}<tr><td colspan="4">{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</td></tr>{/each}
       </tbody></table></div>
     </section>{:else}<p>{t('wNoAnalysis')}</p>{/if}

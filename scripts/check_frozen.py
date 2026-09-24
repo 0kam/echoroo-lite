@@ -140,6 +140,32 @@ with ExitStack() as stack:
                 assert {'species.csv', 'hourly.csv', 'evidence.csv', 'quality.csv', 'report.json'} <= set(archive.namelist())
                 assert any(name.endswith('.wav') for name in archive.namelist())
             print(f"Frozen detection/search reports and CSV/audio export passed in {time.perf_counter() - started:.2f}s.")
+            started = time.perf_counter()
+            annotation=api('/annotations',{**dates,'dataset_id':imported['dataset_id']})
+            question=annotation['question'];a=question['start_s']
+            assert annotation['total']>0 and 'scores' not in question
+            detail=api(f"/sources/recording/{record['id']}/spectrogram?start_s={a}&end_s={a+15}&detail=true")
+            assert detail['width']>1000
+            annotated=api(f"/annotations/{annotation['id']}/answers",{'item_id':question['id'],'version':question['version'],
+                'ranges':[{'species_id':target['id'],'start_s':a+1,'end_s':a+2},
+                          {'species_id':None,'start_s':a+5,'end_s':a+6}],'complete':True})
+            assert annotated['heard'][0]['species']['id']==target['id']
+            print(f"Frozen shared sampling, high-resolution spectrogram and versioned ranges passed in {time.perf_counter()-started:.2f}s.")
+            started = time.perf_counter()
+            overview = api(f"/datasets/{imported['dataset_id']}/overview")
+            suite = api('/workflow-exports', {**dates, 'dataset_id': imported['dataset_id'],
+                'revision': overview['revision'], 'species_ids': [target['id']], 'folder': temp, 'locale': 'ja'})
+            with zipfile.ZipFile(suite['path']) as archive:
+                assert archive.testzip() is None
+                manifest = json.loads(archive.read('manifest.json'))
+                assert manifest['format'] == 'html' and manifest['scope']['recording_ids'] == [record['id']]
+                assert '聞き分けクイズの補足記録' in archive.read('index.html').decode()
+                assert '図を保存' in archive.read('index.html').decode()
+                assert len(json.loads(archive.read('references.json'))) == 2
+                assert len(json.loads(archive.read('annotations/ranges.json')))==2
+                assert all(entry['bytes'] > 0 for name, entry in manifest['files'].items() if name.endswith('.png'))
+            assert Path(suite['report_path']).is_file()
+            print(f"Frozen HTML report, Japanese figures, references, audio and data suite passed in {time.perf_counter() - started:.2f}s.")
         if args.parent_eof:
             child.stdin.close()
         else:

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { page } from '$app/state';
   import { isTauri } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -20,7 +20,9 @@
   let species=$state<Species|null>(null),source=$state<Reference|null>(null),targets=$state<Target[]>([]);
   let first=$state(query.get('start_date')||''),last=$state(query.get('end_date')||''),start=$state(0),end=$state(5),referencePath=$state(''),error=$state('');
   let ready=$state(false);
+  let alive=true;
   let xc=$state(true),history=$state<SearchRun[]>([]);
+  onDestroy(()=>{alive=false;});
   $effect(()=>{if(ready){if(!species)source=null;saveDraft();}});
   const valid=$derived(!!source&&Number.isFinite(start)&&Number.isFinite(end)&&end-start>=.2-1e-9&&end-start<=30&&start>=0&&end<=source.seconds);
   function chooseReference(row:Reference){source=row;start=0;end=Math.min(5,row.seconds);}
@@ -36,6 +38,7 @@
   const search=createTask(async()=>{addClip();if(!targets.length)return;
     const runs=await api<SearchRun[]>('/search-runs',{dataset_id:id,start_date:first||null,end_date:last||null,
       targets:targets.map(row=>({species_id:row.species.id,clips:row.clips.map(c=>({source_kind:c.source.kind,source_id:c.source.id,start_s:c.start_s,end_s:c.end_s}))}))});
+    if(!alive)return;
     source=null;saveDraft();
     await goto(resolve(`/datasets/${id}/search/${runs[0].id}`));
   },{toast:true});
@@ -55,12 +58,12 @@
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   <section class="panel"><SpeciesPicker bind:value={species} disabled={search.pending}/></section>
   {#if species}
-    <section class="panel"><h2>{t('wSource')}</h2><div class="actions"><Button active={xc} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
-      <Button pending={addReference.pending} disabled={!isTauri()&&!referencePath.trim()} onclick={()=>addReference.run()}>{t('referenceFromFile')}</Button></div>
-      {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath}/></label>{/if}
-      {#if xc}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference}/></div>{/key}{/if}
+    <section class="panel"><h2>{t('wSource')}</h2><div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
+      <Button pending={addReference.pending} disabled={search.pending||(!isTauri()&&!referencePath.trim())} onclick={()=>addReference.run()}>{t('referenceFromFile')}</Button></div>
+      {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending}/></label>{/if}
+      {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference}/></div>{/key}{/if}
 
-      {#if source}<Button onclick={()=>source=null}>{t('uBackSounds')}</Button>{#key `${source.kind}:${source.id}`}<div class="reference-player"><p>{fileName(source.path)}</p>
+      {#if source}<Button disabled={search.pending} onclick={()=>source=null}>{t('uBackSounds')}</Button>{#key `${source.kind}:${source.id}`}<div class="reference-player" inert={search.pending} aria-disabled={search.pending}><p>{fileName(source.path)}</p>
         <AudioRegion {source} bind:start bind:end/>
         {#if source.attribution}<p class="muted">XC{source.attribution.id} · {source.attribution.recordist} · {source.attribution.license}</p>{/if}</div>{/key}
         <Button disabled={!valid||search.pending||(targets.find(r=>r.species.id===species?.id)?.clips.length??0)>=20} onclick={()=>{addClip();source=null;}}>{t('addQueryClip')}</Button>
@@ -68,10 +71,11 @@
     </section>
   {/if}
   {#if targets.length}<section class="panel"><h2>{t('wQueries')}</h2>{#each targets as target,index}<div class="section-heading"><span>{commonName(target.species,app.locale)} · <i>{target.species.scientific_name}</i> · {target.clips.length} {t('quizClips')}</span>
-    <Button size="sm" disabled={search.pending} onclick={()=>{targets.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div><div class="added-clips">{#each target.clips as clip,clipIndex}<div class="actions"><Button onclick={()=>{species=target.species;source=clip.source;start=clip.start_s;end=clip.end_s;}}>{fileName(clip.source.path)} · {clip.start_s.toFixed(1)}–{clip.end_s.toFixed(1)} {t('seconds')}</Button><Button aria-label={`${t('removeReference')}: ${fileName(clip.source.path)}`} onclick={()=>{target.clips.splice(clipIndex,1);if(!target.clips.length)targets.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div>{/each}</div>{/each}
+    <Button size="sm" disabled={search.pending} onclick={()=>{targets.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div><div class="added-clips">{#each target.clips as clip,clipIndex}<div class="actions"><Button disabled={search.pending} onclick={()=>{species=target.species;source=clip.source;start=clip.start_s;end=clip.end_s;}}>{fileName(clip.source.path)} · {clip.start_s.toFixed(1)}–{clip.end_s.toFixed(1)} {t('seconds')}</Button><Button disabled={search.pending} aria-label={`${t('removeReference')}: ${fileName(clip.source.path)}`} onclick={()=>{target.clips.splice(clipIndex,1);if(!target.clips.length)targets.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div>{/each}</div>{/each}
     <Button disabled={search.pending||targets.length>=20} onclick={()=>{species=null;source=null;}}>{t('wAddTarget')}</Button></section>{/if}
   {#if species||targets.length}<section class="panel"><p class="muted">{#if first&&last}{first}–{last} · {/if} {t('wAutoSaved')}</p>
-    <Button variant="primary" pending={search.pending} disabled={!!activeJob()||(!targets.length&&(!species||!valid))} onclick={()=>search.run()}>{t('wSearchAction')}</Button></section>{/if}
+    {#if search.pending}<p class="muted" role="status">{t('searchingAudioStatus')}</p>{/if}
+    <Button variant="primary" pending={search.pending} disabled={!!activeJob()||(!targets.length&&(!species||!valid))} onclick={()=>search.run()}>{search.pending?t('searchingAudio'):t('wSearchAction')}</Button></section>{/if}
   {#if history.length}<details><summary>{t('savedSearches')}</summary>{#each history as run}<p><a href={resolve(`/datasets/${id}/search/${run.id}`)}>{commonName(run.species,app.locale)} · {run.created_at}</a></p>{/each}</details>{/if}
 </div>
 <style>.search-page{max-width:1050px}h1{margin:16px 0}h2{margin-bottom:16px}.reference-player{margin:20px 0}.actions{margin-bottom:16px}details{margin-top:16px}</style>

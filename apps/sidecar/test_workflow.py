@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from server import create_app
 from storage import connect
-from validation import exact_count_interval,evaluate
+from validation import exact_count_interval,evaluate,plan_checkpoints,checkpoint_alpha,suggest_thresholds
 from results_workflow import threshold_for
 from scipy.stats import hypergeom
 
@@ -106,23 +106,76 @@ class WorkflowCheck(unittest.TestCase):
                 self.assertEqual(session.status_code,200,session.text)
                 session=session.json();sid=session['id']
                 self.assertEqual(client.post('/validations',json=body).json()['id'],sid)
+                self.assertEqual(client.post('/validations',json={**body,'dataset_id':2}).json()['id'],sid)
                 self.assertNotIn('scores',session['question'])
+                self.assertLessEqual(session['counts']['calibration']['total'],30)
+                self.assertEqual(client.post(f'/validations/{sid}/evaluation').json()['detail'],'validation_calibration_incomplete')
+                with connect(root) as db:
+                    snapshot=json.loads(db.execute('SELECT snapshot FROM validation_sessions WHERE id=?',(sid,)).fetchone()[0])
+                    self.assertEqual(snapshot['calibration_threshold_policy'],'max_recall_then_precision_then_highest_cutoff_v2')
+                    future=db.execute('SELECT id FROM validation_items WHERE session_id=? AND position=1',(sid,)).fetchone()[0]
+                self.assertEqual(client.get(f'/validations/{sid}?item_id={future}').status_code,400)
+                self.assertEqual(client.post(f'/validations/{sid}/answers',json={'item_id':future,'verdict':'target'}).json()['detail'],'validation_answer_order')
                 first_question=session['question']['id']
                 phases=set()
+                interim=None
                 while session['stage']!='complete':
                     phases.add(session['stage']);question=session['question']
+                    if not question:
+                        # The final calibration answer remains correctable until an explicit transition.
+                        self.assertEqual(session['stage'],'calibration')
+                        last=session['history'][-1]
+                        self.assertEqual(client.get(f'/validations/{sid}?item_id={last["id"]}').json()['question']['verdict'],last['verdict'])
+                        client.post(f'/validations/{sid}/answers',json={'item_id':last['id'],'verdict':last['verdict']})
+                        revision=client.get('/datasets/1/overview').json()['revision']
+                        session=client.post(f'/validations/{sid}/evaluation').json()
+                        self.assertNotEqual(client.get('/datasets/1/overview').json()['revision'],revision)
+                        with connect(root) as db:
+                            audit=json.loads(db.execute('SELECT snapshot FROM validation_sessions WHERE id=?',(sid,)).fetchone()[0])['evaluation_audits']
+                        self.assertTrue(all(len(a['positive_ids'])<=30 and len(a['negative_ids'])<=30 for a in audit.values()))
+                        continue
                     target=int(question['start_s']/15)%3!=0
                     response=client.post(f'/validations/{sid}/answers',json={'item_id':question['id'],'verdict':'target' if target else 'other'})
                     self.assertEqual(response.status_code,200,response.text);session=response.json()
+                    if session['stage']=='evaluation' and session['counts']['evaluation']['answered']==10:
+                        self.assertEqual(session['evaluated_count'],0)
+                        self.assertTrue(session['results']);interim=session['results']
+                        for result in interim.values():
+                            self.assertFalse(result['precision_complete'])
+                            self.assertIsNone(result['precision_lower_95'])
+                            self.assertFalse(result['goal_met'])
+                        detail=client.get(f'/datasets/1/species/{taxon["id"]}').json()
+                        self.assertEqual(detail['validation']['results'],interim)
+                    if session['stage']=='evaluation' and session['counts']['evaluation']['answered']==11:
+                        self.assertEqual(session['evaluated_count'],0)
+                        before={key:value['precision_sample']['answered'] for key,value in interim.items()}
+                        after={key:value['precision_sample']['answered'] for key,value in session['results'].items()}
+                        self.assertTrue(all(after[key]>=count for key,count in before.items()))
+                        self.assertTrue(any(after[key]>count for key,count in before.items()))
                 self.assertEqual(phases,{'calibration','evaluation'})
+                self.assertEqual(session['counts']['evaluation']['answered'], session['counts']['evaluation']['total'])
+                self.assertEqual(session['counts']['recall']['answered'], 0)
+                self.assertTrue(session['can_start_recall'])
                 for result in session['results'].values():
                     self.assertEqual(result['precision'],dict(value=1,low=1,high=1))
-                    self.assertEqual(result['recall'],dict(value=1,low=1,high=1))
+                    self.assertEqual(result['recall'],dict(value=None,low=None,high=None))
+                    self.assertTrue(result['precision_complete']);self.assertFalse(result['recall_complete'])
                     self.assertTrue(result['goal_met']);self.assertTrue(result['adjusted'])
                 self.assertEqual(client.post(f'/validations/{sid}/answers',json={'item_id':first_question,'verdict':'other'}).json()['detail'],'validation_phase_locked')
+                # Completed evaluation answers can be corrected, with history retained.
+                last=session['history'][-1]
+                corrected=client.post(f'/validations/{sid}/answers',json={'item_id':last['id'],'verdict':'other' if last['verdict']=='target' else 'target'}).json()
+                self.assertEqual(corrected['stage'],'complete')
+                self.assertNotEqual(corrected['results'],session['results'])
+                restored=client.post(f'/validations/{sid}/answers',json={'item_id':last['id'],'verdict':last['verdict']}).json()
+                self.assertEqual(restored['results'],session['results'])
+                with connect(root) as db:
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM validation_answers WHERE item_id=?',(last['id'],)).fetchone()[0],3)
+                    future=db.execute("SELECT id FROM validation_items WHERE session_id=? AND phase='calibration' ORDER BY position LIMIT 1",(sid,)).fetchone()[0]
+                self.assertEqual(client.get(f'/validations/{sid}?item_id={future}').status_code,400)
                 detail=client.get(f'/datasets/1/species/{taxon["id"]}').json()
                 self.assertEqual(detail['validation']['stage'],'complete')
-                self.assertLess(detail['report']['threshold'],.1)
+                self.assertEqual(detail['report']['threshold'],.2)
                 with connect(root) as db:
                     groups={p:{(r['recording_id'],r['start_s']) for r in db.execute('SELECT * FROM validation_items WHERE phase=?',(p,))} for p in phases}
                     self.assertFalse(groups['calibration']&groups['evaluation'])
@@ -134,6 +187,9 @@ class WorkflowCheck(unittest.TestCase):
                     self.assertIn('quality.csv',archive.namelist());self.assertIn(f'validation/{sid}.json',archive.namelist())
                     manifest=json.loads(archive.read('manifest.json'));self.assertEqual(len(manifest['results']),2)
                     self.assertTrue(any(n.endswith('.wav') for n in archive.namelist()))
+                saved_bytes=Path(response.json()['path']).read_bytes()
+                client.post(f'/validations/{sid}/answers',json={'item_id':last['id'],'verdict':'unknown'})
+                self.assertEqual(Path(response.json()['path']).read_bytes(),saved_bytes)
                 history=client.get('/datasets/1/exports').json()
                 self.assertEqual(len(history[0]['results']),2)
                 self.assertNotIn('snapshot',history[0])
@@ -141,7 +197,9 @@ class WorkflowCheck(unittest.TestCase):
                     old=db.execute('SELECT * FROM analyses WHERE engine="birdnet" LIMIT 1').fetchone()
                     job=db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(1,'done',1)").lastrowid
                     db.execute('INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,?,?,?)',(job,old['recording_id'],'birdnet',old['metadata'],old['scores_path']))
-                self.assertFalse(client.get(f'/validations/{sid}').json()['applicable'])
+                stale=client.get(f'/validations/{sid}').json()
+                self.assertFalse(stale['applicable']);self.assertFalse(stale['can_start_recall'])
+                self.assertEqual(client.post(f'/validations/{sid}/recall').json()['detail'],'workflow_changed')
                 self.assertEqual(client.post('/workflow-exports',json=export_body).json()['detail'],'workflow_changed')
 
     def test_finite_bounds_and_unknowns(self):
@@ -175,6 +233,40 @@ class WorkflowCheck(unittest.TestCase):
         self.assertEqual(result['precision']['high'],1);self.assertEqual(result['unknown'],1)
         result=evaluate(snapshot,[{**i,'verdict':'other'} for i in items])['birdnet']
         self.assertIsNone(result['recall']['value']);self.assertFalse(result['goal_met'])
+
+    def test_threshold_ties_prefer_highest_cutoff(self):
+        snapshot={'models':{'birdnet':'test','search':'test'},'target_precision':.9,
+            'calibration_strata':{'0':{'population':4,'sample':4}}}
+        items=[{'scores':json.dumps({'birdnet':score,'search':score}),'stratum':'0','verdict':verdict}
+            for score,verdict in [(0.9,'target')]*3+[(0.1,'other')]]
+        thresholds=suggest_thresholds(snapshot,items)
+        self.assertEqual(thresholds['birdnet'],{'threshold':.9,'adjusted':True})
+        self.assertEqual(thresholds['search'],{'threshold':.9,'adjusted':True})
+
+    def test_checkpoint_intervals_cover_all_planned_looks(self):
+        # Exact path probabilities, including stopping at the first failed interval.
+        snapshot={'evaluation_strata':{'1':{'sample':30,'population':40}}}
+        plan_checkpoints(snapshot);checkpoints=snapshot['evaluation_checkpoints']
+        self.assertEqual(checkpoints,[10,20,30])
+        self.assertAlmostEqual(sum(checkpoint_alpha(checkpoints,n) for n in checkpoints),.05)
+        N=40
+        for K in range(N+1):
+            alive={0:1.}
+            for n in range(1,31):
+                next_alive={}
+                for k,p in alive.items():
+                    for label,left in [(1,K-k),(0,N-K-(n-1-k))]:
+                        if left<=0:continue
+                        successes=k+label
+                        if n in checkpoints:
+                            lo,hi=exact_count_interval(N,n,successes,checkpoint_alpha(checkpoints,n))
+                            if not lo<=K<=hi:continue
+                        next_alive[successes]=next_alive.get(successes,0)+p*left/(N-n+1)
+                alive=next_alive
+            self.assertGreaterEqual(sum(alive.values()),.95-1e-12)
+        # Four strata and repeated looks still permit the target at the final cap.
+        self.assertGreater(exact_count_interval(10000,60,60,.025/4)[0]/10000,.9)
+        self.assertEqual(checkpoint_alpha([7],7),.05)
 
 
 if __name__=='__main__':unittest.main()

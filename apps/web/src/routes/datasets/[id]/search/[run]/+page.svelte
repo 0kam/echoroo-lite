@@ -18,6 +18,11 @@
   const datasetId = $derived(Number(page.params.id)), runId = $derived(Number(page.params.run));
   const dataset = $derived(datasetOf(datasetId));
   let run = $state<Run | null>(null), sampleId = $state(''), loadError = $state('');
+  const range=$derived.by(()=>{
+    const query=new URL(page.url.hash.slice(1),page.url).searchParams,dates=new URLSearchParams();
+    for(const key of ['start_date','end_date'] as const){const value=query.get(key)||run?.snapshot[key];if(value)dates.set(key,value);}
+    return dates.toString();
+  });
   let low = $state(0.5), high = $state(1), count = $state(20);
   let judging = $state<number | null>(null), index=$state(0), sampling=$state(false);
   const currentHit=$derived(run?.hits[index]);
@@ -75,7 +80,7 @@
       {#if judge.error}<p class="error" role="alert">{t(judge.error)}</p>{/if}
       <div class="actions between"><Button disabled={index===0||judge.pending} onclick={()=>index--}>‹ {t('uPreviousSound')}</Button><Button disabled={index>=run.hits.length-1||judge.pending} onclick={()=>index++}>{t('uNextSound')} ›</Button></div>
     </section>
-    <div class="actions"><Button href={resolve(`/datasets/${datasetId}/species/${run.snapshot.species.id}`)}>{t('wBackSpecies')}</Button><Button onclick={()=>sampling=true}>{t('uReviewOtherBand')}</Button></div>
+    <div class="actions"><Button href={`${resolve(`/datasets/${datasetId}/species/${run.snapshot.species.id}`)}?${range}&run_id=${runId}`}>{t('rSearchResults')}</Button><Button onclick={()=>sampling=true}>{t('uReviewOtherBand')}</Button></div>
     <p class="muted">{t('uSavedAlways')}</p>{/if}
   {/if}
 </div>

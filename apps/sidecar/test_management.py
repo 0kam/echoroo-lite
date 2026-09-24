@@ -71,13 +71,22 @@ class ManagementCheck(unittest.TestCase):
             with patch('storage.monotonic_ids'):
                 old_app=create_app(root,root,'test')
             with TestClient(old_app,headers={'Authorization':'Bearer test'}) as client:
-                self.populate(root,client)
+                species=self.populate(root,client)
+                with connect(root) as db:
+                    for recording in (1,2):
+                        snap=json.dumps({'recording_ids':[recording]})
+                        annotation=db.execute("INSERT INTO annotation_sessions(dataset_id,fingerprint,snapshot) VALUES(1,'test',?)",(snap,)).lastrowid
+                        model=db.execute("""INSERT INTO custom_models(dataset_id,species_id,annotation_session_id,status,snapshot)
+                            VALUES(1,?,?,'ready',?)""",(species,annotation,json.dumps({'recording_ids':[recording],'annotation_session_id':annotation}))).lastrowid
+                        folder=root/'custom-models'/str(model);folder.mkdir(parents=True)
+                        (folder/'model.npz').write_bytes(b'generated model')
             originals={p:p.read_bytes() for p in [*root.glob('original-*/*.wav'),*root.glob('export-*.zip')]}
             initialize(root)
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 preview=client.get('/sites/1/delete-preview?dataset_id=1').json()
                 self.assertEqual({k:preview[k] for k in ('recordings','analyses','searches','validations','reports','exports')},
                                  dict(recordings=1,analyses=2,searches=1,validations=1,reports=2,exports=1))
+                self.assertEqual(preview['custom_models'],1)
                 # Reading the confirmation or cancelling it changes nothing.
                 self.assertEqual(client.get('/sites/1/delete-preview?dataset_id=1').json(),preview)
                 response=client.post('/sites/1/delete',json={'dataset_id':1,'revision':preview['revision']})
@@ -87,13 +96,15 @@ class ManagementCheck(unittest.TestCase):
                     self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
                     self.assertEqual([r[0] for r in db.execute('SELECT id FROM site_recordings WHERE scope_id=2')],[2])
                     self.assertEqual(db.execute('SELECT dataset_id FROM jobs WHERE id=1').fetchone()[0],2)
-                    for table in ('search_runs','validation_sessions','reports','workflow_exports'):
+                    for table in ('search_runs','validation_sessions','custom_models','reports','workflow_exports'):
                         self.assertEqual(db.execute(f'SELECT COUNT(*) FROM {table} WHERE dataset_id=1').fetchone()[0],0)
                         self.assertGreater(db.execute(f'SELECT COUNT(*) FROM {table} WHERE dataset_id=2').fetchone()[0],0)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM vectors').fetchone()[0],3)
                     self.assertEqual(db.execute('SELECT answers FROM quiz_sessions').fetchone()[0],'[1]')
                 self.assertFalse((root/'analyses/1/1-birdnet.npz').exists())
                 self.assertTrue((root/'analyses/1/2-birdnet.npz').exists())
+                self.assertFalse((root/'custom-models/1').exists())
+                self.assertTrue((root/'custom-models/2/model.npz').exists())
                 self.assertEqual(client.get('/sites/1/delete-preview?dataset_id=3').json()['detail'],'not_found')
                 # Delete the last import; the now-empty site can still accept recordings.
                 preview=client.get('/sites/1/delete-preview?dataset_id=2').json()

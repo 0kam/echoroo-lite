@@ -68,9 +68,12 @@ def context(root, dataset_id, first=None, last=None):
     result['fingerprint'] = signature
     with connect(root) as db:
         revision=[db.execute(f'SELECT COALESCE(MAX(id),0) FROM {table}').fetchone()[0] for table in
-                  ('search_runs','search_judgements','validation_answers','validation_sessions')]
+                  ('search_runs','search_judgements','validation_answers','validation_sessions','annotation_answers','annotation_sessions','custom_models')]
+        revision.append([tuple(r) for r in db.execute("SELECT id,json_extract(snapshot,'$.stage') FROM validation_sessions ORDER BY id")])
         revision.append([tuple(r) for r in db.execute('SELECT id,names FROM species ORDER BY id')])
     result['names_revision']=hashlib.sha256(json.dumps(revision[-1]).encode()).hexdigest()
+    with connect(root) as db:
+        revision.append([tuple(r) for r in db.execute('SELECT id,answers FROM quiz_sessions ORDER BY id')])
     result['revision']=hashlib.sha256(json.dumps([result['fingerprint'],data_revision,revision]).encode()).hexdigest()
     return result
 
@@ -92,7 +95,7 @@ def detection_snapshot(root, ctx, model, species_id=None, threshold=.1):
     body = SimpleNamespace(dataset_id=ctx['dataset']['id'], engine=model['engine'], model_sha256=model['model_sha256'],
         threshold=threshold, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']),
         species_id=species_id, base_report_id=None)
-    return cached(root, ['detection-site-v3', ctx['fingerprint'], ctx['names_revision'], ctx['site']['name'], ctx['dataset']['name'], vars(body)], lambda: detection(root, body, persist=False))
+    return cached(root, ['detection-site-v5', ctx['fingerprint'], ctx['names_revision'], ctx['site']['name'], ctx['dataset']['name'], vars(body)], lambda: detection(root, body, persist=False))
 
 
 def searches(root, dataset_id, species_id=None):
@@ -104,30 +107,40 @@ def searches(root, dataset_id, species_id=None):
 
 def search_snapshot(root, ctx, run_id):
     with connect(root) as db:
-        run = db.execute('SELECT dataset_id FROM search_runs WHERE id=?',(run_id,)).fetchone()
+        run = db.execute('SELECT dataset_id,species_id FROM search_runs WHERE id=?',(run_id,)).fetchone()
         if not run or not db.execute('SELECT 1 FROM datasets WHERE id=? AND site_id=?',(run[0],ctx['site']['id'])).fetchone():
             raise CatalogError('not_found')
         cutoff = db.execute('SELECT COALESCE(MAX(id),0) FROM search_judgements').fetchone()[0]
+    quality=current_validations(root,ctx,run_id=run_id).get(run['species_id'])
     def build():
-        body = SimpleNamespace(run_id=run_id, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']), threshold=None)
+        threshold=threshold_for(quality,{'engine':'search','model_sha256':quality['models']['search']}) if quality else None
+        body = SimpleNamespace(run_id=run_id, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']), threshold=threshold)
         result = search_report(root, body, persist=False)
-        if result['threshold_suggestion']:
-            body.threshold = result['threshold_suggestion']['threshold']
-            result = search_report(root, body, persist=False)
+        result['validation']=quality
         return result
-    return cached(root, ['search-site-v3',ctx['fingerprint'],ctx['names_revision'],run_id,ctx['start_date'],ctx['end_date'],cutoff], build)
+    return cached(root, ['search-site-v5',ctx['revision'],run_id,ctx['start_date'],ctx['end_date'],cutoff], build)
 
 
-def current_validations(root, ctx):
+def custom_snapshot(root, ctx, model_id):
+    from custom_models import report_snapshot
+    def build():
+        result = report_snapshot(root, ctx, model_id)
+        result['validation'] = current_validations(root, ctx, model_id=model_id).get(result['species']['id'])
+        return result
+    return cached(root, ['custom-report-v1', ctx['revision'], ctx['start_date'], ctx['end_date'], model_id], build)
+
+
+def current_validations(root, ctx, run_id=None, model_id=None):
     from validation import view_session
     with connect(root) as db:
         rows = db.execute('SELECT id,species_id,snapshot,fingerprint FROM validation_sessions WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC', (ctx['dataset']['id'],)).fetchall()
     chosen={}
     for row in rows:
+        snap=json.loads(row['snapshot'])
+        if snap.get('run_id')!=run_id or snap.get('model_id')!=model_id:continue
         sid=row['species_id']
         if sid in chosen and chosen[sid]['applicable']:
             continue
-        snap=json.loads(row['snapshot'])
         applicable=not ctx.get('location_stale') and row['fingerprint']==ctx['fingerprint'] and (snap['start_date'],snap['end_date'])==(ctx['start_date'],ctx['end_date'])
         if sid not in chosen or applicable:
             chosen[sid]=view_session(root,row['id'],ctx=ctx,include_items=False)
@@ -135,16 +148,19 @@ def current_validations(root, ctx):
 
 
 def threshold_for(quality, model):
-    if quality and quality['applicable'] and quality['stage']=='complete':
-        result = quality['results'].get(model['engine'])
+    if quality and quality['applicable']:
+        result = quality.get('results',{}).get(model['engine'])
         if result and result['model_sha256']==model['model_sha256']:
             return result['threshold']
-    return .1
+        if quality.get('models',{}).get(model['engine'])==model['model_sha256']:
+            adjusted=quality.get('thresholds',{}).get(model['engine'])
+            if adjusted:return adjusted['threshold']
+    return None if model['engine']=='search' else .1
 
 
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root,dataset_id,first,last)
-    return cached(root, ['overview-v1', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
+    return cached(root, ['overview-v7', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
                   lambda: build_overview(root, dataset_id, ctx))
 
 
@@ -153,11 +169,15 @@ def build_overview(root, dataset_id, ctx):
     with connect(root) as db:
         records = [dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?',(dataset_id,))]
         named = {r['id']: names_for(r) for r in db.execute('SELECT * FROM species')}
+    from reports import scope_records,effort
+    from zoneinfo import ZoneInfo
+    zone=ZoneInfo(ctx['site']['timezone'])
+    records=scope_records(records,zone,ctx['start_date'],ctx['end_date'])
     rows = {}
     def add(taxon):
         sid = taxon['id']
         if sid not in rows:
-            rows[sid]={'species':named.get(sid,taxon),'models':[],'searches':[],'confirmed':0,'validation':quality.get(sid)}
+            rows[sid]={'species':named.get(sid,taxon),'models':[],'custom_models':[],'searches':[],'confirmed':0,'annotated':0,'validation':quality.get(sid)}
         return rows[sid]
     for model in ctx['models']:
         snap = detection_snapshot(root,ctx,model)
@@ -171,6 +191,16 @@ def build_overview(root, dataset_id, ctx):
             item = add(summary['species'])
             threshold = threshold_for(quality.get(summary['species']['id']),model)
             item['models'].append({**summary,'species':None,**model,'threshold':threshold})
+    from custom_models import list_models
+    for model in list_models(root, ctx):
+        item = add(model['species'])
+        entry = dict(model)
+        entry['validation'] = current_validations(root, ctx, model_id=model['id']).get(model['species']['id'])
+        if model['applicable'] and model['status']=='ready':
+            snap = custom_snapshot(root, ctx, model['id'])
+            if snap['summaries']:
+                entry.update({k:v for k,v in snap['summaries'][0].items() if k!='species'})
+        item['custom_models'].append(entry)
     seen = {}
     for run in searches(root,dataset_id):
         item = add(run['species']); item['searches'].append(run)
@@ -181,11 +211,19 @@ def build_overview(root, dataset_id, ctx):
     for sid in quality:
         if sid in named:
             add(named[sid])
-    return {**ctx,'records':len(records),'recorded_seconds':sum(r['seconds'] for r in records),
-            'species': sorted(rows.values(),key=lambda r:(-max([m['candidate_windows'] for m in r['models']] or [0]),-r['confirmed'],r['species']['scientific_name']))}
+    from annotations import evidence
+    manual = {}
+    for entry in evidence(root,ctx):
+        if entry['species']:
+            item=add(entry['species'])
+            seen=manual.setdefault(entry['species_id'],set())
+            seen.add((entry['recording_id'],entry['review_start_s'],entry['review_end_s']))
+            item['annotated']=len(seen)
+    return {**ctx,'records':len(records),'recorded_seconds':sum(seconds for r in records for key,seconds in effort(r,zone) if ctx['start_date']<=key[0]<=ctx['end_date']),
+            'species': sorted(rows.values(),key=lambda r:(-max([m.get('candidate_windows') or 0 for m in [*r['models'],*r['custom_models']]] or [0]),-r['confirmed'],r['species']['scientific_name']))}
 
 
-def species_result(root,dataset_id,species_id,first=None,last=None,engine='auto',run_id=None,cell_date=None,hour=None):
+def species_result(root,dataset_id,species_id,first=None,last=None,engine='auto',run_id=None,cell_date=None,hour=None,model_id=None):
     ctx=context(root,dataset_id,first,last)
     with connect(root) as db:
         row=db.execute('SELECT * FROM species WHERE id=?',(species_id,)).fetchone()
@@ -194,19 +232,40 @@ def species_result(root,dataset_id,species_id,first=None,last=None,engine='auto'
         taxon=names_for(row)
     quality=current_validations(root,ctx).get(species_id)
     runs=searches(root,dataset_id,species_id)
+    from custom_models import list_models
+    custom = list_models(root, ctx, species_id)
     if engine == 'auto':
         engine = next((m['engine'] for m in ctx['models'] if any(
             row['species']['id'] == species_id and row['candidate_windows'] > 0
-            for row in detection_snapshot(root,ctx,m)['summaries'])), 'birdnet')
+            for row in detection_snapshot(root,ctx,m)['summaries'])), None)
+        if engine is None and model_id is None and run_id is None:
+            selected=next((m for m in custom if m['applicable'] and m['status']=='ready'),None)
+            if selected:model_id=selected['id'];engine='custom'
+        engine=engine or 'birdnet'
     model=next((m for m in ctx['models'] if m['engine']==engine),None)
     snap=None
-    if run_id is not None:
+    if model_id is not None:
+        selected = next((m for m in custom if m['id']==model_id),None)
+        if not selected:
+            from custom_models import get_model
+            selected=get_model(root,model_id)
+            if selected['species']['id']!=species_id or selected['scope']['site_id']!=ctx['site']['id']:
+                raise CatalogError('not_found')
+            if (selected['scope']['start_date'],selected['scope']['end_date'])!=(ctx['start_date'],ctx['end_date']):
+                selected={**selected,'applicable':False,'reason':'custom_model_scope_changed'}
+            custom.append(selected)
+        quality=current_validations(root,ctx,model_id=model_id).get(species_id)
+        if selected['applicable'] and selected['status']=='ready':
+            snap=custom_snapshot(root,ctx,model_id)
+    elif run_id is not None:
         if run_id not in [r['id'] for r in runs]:
             raise CatalogError('not_found')
         snap=search_snapshot(root,ctx,run_id)
+        quality=snap.get('validation')
     elif model:
         snap=detection_snapshot(root,ctx,model,species_id,threshold_for(quality,model))
         snap['validation']=quality
     with connect(root) as db:
         report=snapshot_view(db,snap,cell_date=cell_date,hour=hour) if snap else None
-    return {**ctx,'species':taxon,'validation':quality,'searches':runs,'report':report}
+    from annotations import evidence
+    return {**ctx,'species':taxon,'validation':quality,'searches':runs,'custom_models':custom,'report':report,'annotations':evidence(root,ctx,species_id)}

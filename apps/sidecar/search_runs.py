@@ -30,7 +30,7 @@ def create_runs(root, models, body):
         coverage = {'total_recordings': total, 'searched_recordings': len(compatible),
                     'unsearched_recordings': total - len(compatible),
                     'searched_segments': db.execute('SELECT COUNT(*) FROM segments WHERE analysis_id IN target_analyses').fetchone()[0]}
-        ids = []
+        ids, searches = [], []
         group = secrets.token_hex(16)
         for target in body.targets:
             species = db.execute('SELECT * FROM species WHERE id=?', (target.species_id,)).fetchone()
@@ -52,16 +52,20 @@ def create_runs(root, models, body):
                         'analysis_ids': [r['analysis_id'] for r in compatible], **coverage}
             run_id = db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',
                                 (body.dataset_id, target.species_id, json.dumps(snapshot, ensure_ascii=False))).lastrowid
-            rows = db.execute('''SELECT s.*, r.path, v.embedding FROM segments s
-                JOIN vectors v ON v.rowid=s.id JOIN analyses a ON a.id=s.analysis_id
-                JOIN recordings r ON r.id=a.recording_id WHERE s.analysis_id IN target_analyses ORDER BY s.id''')
-            # ponytail: scan in 256-vector blocks; add a partitioned vector index if annual-scale search needs it.
-            while batch := rows.fetchmany(256):
-                matrix = np.stack([np.frombuffer(r['embedding'], dtype='<f4') for r in batch])
-                norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-                if not np.isfinite(matrix).all() or np.any(norms == 0):
-                    raise CatalogError('invalid_scores')
-                similarities = np.clip((matrix / norms) @ queries.T, -1, 1)
+            ids.append(run_id)
+            searches.append((run_id, references, queries, owners))
+        rows = db.execute('''SELECT s.*, r.path, v.embedding FROM segments s
+            JOIN vectors v ON v.rowid=s.id JOIN analyses a ON a.id=s.analysis_id
+            JOIN recordings r ON r.id=a.recording_id WHERE s.analysis_id IN target_analyses ORDER BY s.id''')
+        # ponytail: scan in 256-vector blocks; add a partitioned vector index if annual-scale search needs it.
+        while batch := rows.fetchmany(256):
+            matrix = np.stack([np.frombuffer(r['embedding'], dtype='<f4') for r in batch])
+            norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+            if not np.isfinite(matrix).all() or np.any(norms == 0):
+                raise CatalogError('invalid_scores')
+            matrix /= norms
+            for run_id, references, queries, owners in searches:
+                similarities = np.clip(matrix @ queries.T, -1, 1)
                 winners = similarities.argmax(axis=1)
                 hits = []
                 for i, row in enumerate(batch):
@@ -71,11 +75,11 @@ def create_runs(root, models, body):
                     winner = int(winners[i])
                     hits.append((run_id, row['id'], float(similarities[i, winner]), *owners[winner]))
                 db.executemany('INSERT INTO search_hits VALUES(?,?,?,?,?)', hits)
-            for row in compatible:
-                checked_source(row)
+        for row in compatible:
+            checked_source(row)
+        for _, references, _, _ in searches:
             for ref in references:
                 checked_source(ref['source'])
-            ids.append(run_id)
     return [get_run(root, run_id) for run_id in ids]
 
 
@@ -143,6 +147,8 @@ def judge(root, run_id, segment_id, verdict, note):
             WHERE h.run_id=? AND h.segment_id=?''', (run_id, segment_id)).fetchone()
         if hit is None:
             raise CatalogError('not_found')
-        jid = db.execute('INSERT INTO search_judgements(run_id,species_id,segment_id,verdict,note) VALUES(?,?,?,?,?)',
-                         (run_id, hit['species_id'], segment_id, verdict, note)).lastrowid
+        from quiz import report_results
+        quiz=json.dumps(report_results(db,[hit['species_id']]))
+        jid = db.execute('INSERT INTO search_judgements(run_id,species_id,segment_id,verdict,note,quiz_snapshot) VALUES(?,?,?,?,?,?)',
+                         (run_id, hit['species_id'], segment_id, verdict, note, quiz)).lastrowid
         return dict(db.execute('SELECT * FROM search_judgements WHERE id=?', (jid,)).fetchone())

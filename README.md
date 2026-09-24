@@ -5,6 +5,9 @@ annotation loop (BirdNET detection + Perch similarity search + quiz-based
 proficiency), rebuilt as a Tauri app with a Python sidecar and SQLite.
 
 - Implementation status and remaining work: [docs/implementation-status.md](docs/implementation-status.md)
+- UI review handoff: [docs/UI-REVIEW-HANDOFF-2026-09-24.md](docs/UI-REVIEW-HANDOFF-2026-09-24.md)
+- Fixed 30-window validation QA: [docs/validation-effort-qa-2026-09-24.md](docs/validation-effort-qa-2026-09-24.md)
+- Mac workflow QA, measured effort, and remaining checks: [docs/release-readiness-2026-09-22.md](docs/release-readiness-2026-09-22.md)
 - Requirements: [docs/requirements.md](docs/requirements.md) (initial scope accepted)
 - Design baseline: [docs/plan.md](docs/plan.md) (2026-07; requirements review reopened 2026-09)
 - Session handoff: [docs/HANDOFF-2026-09.md](docs/HANDOFF-2026-09.md)
@@ -22,9 +25,41 @@ Saved searches support multiple references per species, a distribution of all ma
 random similarity-band sampling, and persistent judgements. Xeno-Canto key settings, search and selected
 downloads are implemented and verified against the live service in the Mac release app.
 Detection and search reports provide species summaries, evidence audio, spiral plots
-and CSV/SVG/PNG/audio ZIP exports. A 26-species practice quiz supports custom sets,
-selected audio clips and saved first answers. Validation, relinking, and Windows
-release acceptance are pending.
+and portable HTML reports with CSV/SVG/PNG/audio ZIP exports. A 26-species practice quiz supports custom sets,
+selected audio clips and saved first answers. Detection and search validation can adjust
+species-specific thresholds and evaluate them on separate samples. Windows acceptance
+and an independent, unseen-audio capability test remain pending.
+
+From a site's results, **Listen and identify animals** opens shared 15-second
+samples. Choose names from the stable site list, ordered by AI detection count
+(or add a species), mark one or more call ranges, and save. Double-click the
+spectrogram to play from that point to the end of the clip without changing marks.
+Scroll to zoom; scroll over an axis to zoom time or frequency separately.
+The wide spectrogram follows the comparison preview's proportions, with persistent,
+larger scrollbars for panning after zooming. Unknown species and overlapping calls
+are supported, and previous answers can be corrected. Unmarked species remain
+unassessed. Every 10 clips, review the animals heard and optionally check one
+species: marked positives are reused, only missing presence/absence answers are
+requested, and detection quality is measured on recordings held aside before
+sampling. HTML exports include these exact ranges, spectrograms, audio and
+versioned CSV/JSON evidence even when no model detected the species. Range counts
+are not extrapolated to whole-site frequencies. See
+[the validation design](docs/validation-design.md) for sampling and uncertainty.
+
+From a species result, **Create a model for this species** reuses confirmed call
+ranges and search judgements to fit a small classifier over fixed Perch embeddings.
+Unknown, unmarked and unfinished answers are not negative examples. Creation also
+applies the model to the site's recordings. Grouped cross-validation on 5-second
+training examples selects a threshold; its reference metrics are separate from
+the 15-second evaluation on recordings held aside before training. Results update
+every 10 answers without requiring the entire sample to be completed. The HTML
+suite includes model files, scores, evidence and evaluation provenance. Neither
+cross-validation nor a high point estimate alone establishes detection quality.
+
+Spectrograms use a 16 ms Hann window, 2 ms steps and 2× zero padding, with the
+Roseus palette and a linear frequency axis. The same display settings apply to
+recordings, references, quizzes and new report figures; exports retain the FFT
+settings. These display choices do not change audio, model scores or annotations.
 
 Prerequisites: Node.js 22.12+, Rust stable, Python 3.11 and the platform's Tauri
 build prerequisites. The UI uses the [official SvelteKit static configuration](https://v2.tauri.app/start/frontend/sveltekit/).
@@ -45,8 +80,9 @@ On Windows, create `.venv` with Python 3.11 and replace `.venv/bin/python` with
 download step. It checks the pinned Perch hashes and prepares BirdNET's cache.
 Do not run `uv venv` over an existing environment you want to keep.
 
-In the app, add a site (latitude/longitude and IANA timezone), name a recording
-group, choose a folder, review the import, then register it. This slice accepts
+In the app, add a site (latitude/longitude and IANA timezone), choose a folder,
+review the import, then register it. The imported recording group gets a folder-based
+name by default and can be renamed later. This slice accepts
 mono WAV/FLAC whose filenames end in `YYYYMMDD_HHMMSS`. It scans subfolders and
 skips registered paths, invalid dates, unsupported channels and unreadable files.
 Choose a recording and run analysis; candidate interval buttons play and stop
@@ -55,10 +91,11 @@ Large recording groups show 100 rows per page and can be filtered by the recordi
 date in the site's local time. Filtering the list does not change the scope of
 **Analyze recording group**.
 
-To search, choose a recording or **Add local audio** (WAV/FLAC/MP3, mono/stereo).
-Drag a time interval on the spectrogram or enter its start/end in seconds, listen
-to it, then choose **Try this interval** for a temporary search. The reference selection
-can be 0.2–30 seconds; the display loads only 5–60 seconds at a time. Results show
+To search, open search from a dataset or species result, choose a target species and
+reference audio from this PC or Xeno-Canto, then drag a time interval on the spectrogram
+or enter its start/end in seconds. Add the interval as an example and start the search;
+the reference selection can be 0.2–30 seconds and the display loads only 5–60 seconds
+at a time. Results show
 the 30 highest cosine similarities and play their intervals. **Back to reference**
 returns to the original selection. Model input intervals and zero padding are
 shown in the results. Stereo references are averaged to mono.
@@ -75,19 +112,58 @@ Unknown**. Samples, their populations, reference versions and judgement history 
 restart and reanalysis. Unreviewed intervals are separate from negative judgements.
 Similarity is not an identification probability, nor evidence of absence. See [search implementation](docs/search-implementation.md).
 
-Open **Reports**, select detection or a saved search, set local dates and an optional
-species, and create a report. Detection compares each model in complete 15-second
-windows; search uses the saved 5-second similarities. Select a species and a plot cell
-to listen to its evidence. **Export report** writes CSVs, the selected species' SVG/PNG
-and checked audio intervals into a ZIP in your chosen folder. Reports retain their
-original analysis versions and judgement state. Without validation, quality remains
-explicitly unevaluated. See [report implementation](docs/report-implementation.md).
+From a site's results, choose **Export report**, keep or change the included species,
+and select a destination folder. The app saves a readable `index.html` with native
+text and tables, species plots, validation results, supplementary quiz practice
+records and playable audio. **Copy text and tables** supports drafting in Word;
+**Save figure** provides a labelled PNG. PDF and DOCX generation are not included.
+The same contents are packaged in a ZIP: recipients extract it before opening
+`index.html`. All report resources are local; no web service is needed for playback.
+
+Detection counts use complete 15-second windows and search uses complete 5-second
+windows. Species/model detection thresholds and species/reference-set search
+thresholds apply to all eligible intervals, including unreviewed ones. Calibration
+and independent evaluation are distinguished; an adjusted threshold is not itself
+evidence of validated precision. Search counts remain unset until a threshold can be
+calibrated. AI examples, human validation intervals and positive search judgements
+remain separate. Saved files retain their original recording scope, analysis,
+thresholds, answers and contemporaneous quiz records. See
+[report implementation](docs/report-implementation.md) for provenance and verification limits.
+
+New validation sessions keep the 90% calibration target, then fix at most 30
+predicted-positive windows for each species and model before evaluation answers are
+seen. The formal precision result is calculated only after every fixed window is
+answered: a one-sided 95% lower bound of at least 80% meets the evaluation goal.
+Progress can be saved and resumed, but interim answers never provide a guarantee or
+automatic pass. The same human annotation is reused when samples for multiple species
+or models contain the same audio; because 30 is a per-species, per-model limit, the
+combined task is not always 30 unique sounds. Recall is an optional, separate check
+that also samples missed detections; precision alone does not establish recall.
+Saved sessions using the earlier 90% evaluation method retain that method and sample.
+Previous answers can be corrected where the saved method permits. Corrections retain
+their history and never rewrite saved exports. Detection truth is presence
+anywhere in 15 seconds, compared with the maximum of five BirdNET 3-second scores
+or three Perch 5-second scores; it does not label every native subwindow.
+BirdNET predictions used as a functional QA oracle are provisional test data, not
+scientific ground truth or a species-performance estimate.
+
+The 30-window limit is a design choice. Earlier overlap-reduction estimates are
+simulations, not measurements of human effort. Source-web QA, production web,
+Mac `.app` and DMG builds have passed. Native Mac checks cover starting, saving,
+resuming and correcting evaluations, results and local HTML playback. Windows has
+not been tested. See the [fixed-sample QA record](docs/validation-effort-qa-2026-09-24.md).
+
+On a species page, **Make a model for this species** shows the checked positive and
+negative material. If enough material is available, **Create a model that tells these
+calls apart** applies the fixed Perch-embedding classifier to the scoped recordings;
+the same page can then start an independent check on recordings not used to create it.
+Reference values from the checked material remain separate from that evaluation.
 
 Open **Bird-call quiz** to practice with the 26 birds from `koe-e-lab/sample_data`,
 without importing field recordings first. Select species/audio and save a named set,
 then start a session. Answers, unknowns and progress are saved; results allow review
-and replay. **Add a question from audio** uses local audio, a current field recording
-or Xeno-Canto, with a spectrogram-selected 0.2–60-second interval copied into app data.
+and replay. **Add a question from audio** uses audio chosen on this PC or Xeno-Canto,
+with a spectrogram-selected 0.2–60-second interval copied into app data.
 These are learning results, not estimates of identification ability or field precision/recall.
 See [quiz implementation and source details](docs/quiz-implementation.md).
 

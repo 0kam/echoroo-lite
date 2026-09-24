@@ -13,13 +13,18 @@
   import { t } from './app.svelte';
   import Button from './ui/Button.svelte';
   import { roseus } from './roseus';
-  let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false }:
-    { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean } = $props();
+  import ZoomSpectrogram from './ZoomSpectrogram.svelte';
+  import type { CallRange } from './annotations';
+  let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
+    zoomable=false, marks=[], onrange, storageKey }:
+    { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
+      zoomable?:boolean;marks?:CallRange[];onrange?:(start:number,end:number)=>void;storageKey?:string } = $props();
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
-  let canvas: HTMLCanvasElement, audio: HTMLAudioElement;
+  let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
   let viewStart = $state(0), span = $state(30), loading = $state(true), error = $state('');
   let cursor = $state(0);
   let frequencyMax = $state(12000);
+  let initialized=$state(false);
   let anchor: number | null = null, request = 0, stopAt: number | null = null;
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
   let playbackVersion = 0;
@@ -28,6 +33,7 @@
   const percent = (time: number) => Math.max(0, Math.min(100, (time - viewStart) / (viewEnd - viewStart) * 100));
 
   async function load() {
+    if(zoomable){loading=false;return;}
     const version = ++request;
     loading = true; error = '';
     try {
@@ -104,17 +110,25 @@
   onMount(() => {
     if(fixedRange)span=Math.min(60,end-start);
     navigate(fixedRange?start:Math.floor(start / span) * span);
+    initialized=true;
     return () => { request++; stop(); };
   });
 </script>
 
-<div class="region" class:compact>
+{#snippet playbackButton()}
+  <Button variant="primary" aria-busy={status === 'loading'} onclick={() => status !== 'idle' ? stop() : zoomable?play(viewStart,viewEnd):play()}>
+    {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(fixedRange?'uListen':'playRange')}
+  </Button>
+{/snippet}
+<div class="region" class:compact class:zoomable>
   {#if !fixedRange && source.seconds>span}<div class="region-controls">
     <Button disabled={viewStart<=0} onclick={()=>navigate(viewStart-span)}>‹ {t('previousView')}</Button>
     <label class="position">{t('viewStart')}<input type="range" min="0" max={Math.max(0,source.seconds-span)} step="1" value={viewStart} oninput={e=>navigate(e.currentTarget.valueAsNumber)}/></label>
     <Button disabled={viewEnd>=source.seconds} onclick={()=>navigate(viewStart+span)}>{t('nextView')} ›</Button>
   </div>{/if}
-  <div class="spectrogram-grid">
+  {#if zoomable&&initialized&&viewEnd>viewStart}
+    <ZoomSpectrogram {mediaPath} start={viewStart} end={viewEnd} {marks} {cursor} {onrange} {storageKey} onplay={play} controls={playbackButton}/>
+  {:else}<div class="spectrogram-grid">
     <div class="frequencies"><span>{+(frequencyMax / 1000).toFixed(2)} kHz</span><span>{+(frequencyMax / 2000).toFixed(2)} kHz</span><span>0</span></div>
     <div class="spectrogram" class:fixed={fixedRange} role="group" aria-label={t('spectrogram')}
       onpointerdown={event => { if (fixedRange || loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
@@ -127,15 +141,13 @@
       {#if loading || error}<div class="spectrogram-state" role="status">{t(error || 'loadingSpectrogram')}</div>{/if}
     </div>
     <div></div><div class="time-axis"><span>{clipTime(viewStart)}</span><span>{clipTime((viewStart + viewEnd) / 2)}</span><span>{clipTime(viewEnd)}</span></div>
-  </div>
-  <div class="region-controls">
-    <Button variant="primary" aria-busy={status === 'loading'} onclick={() => status !== 'idle' ? stop() : play()}>
-      {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(fixedRange?'uListen':'playRange')}
-    </Button>
+  </div>{/if}
+  {#if !zoomable}<div class="region-controls">
+    {@render playbackButton()}
     {#if !fixedRange}<label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} readonly={fixedRange} /></label>
     <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} readonly={fixedRange} /></label>
     <span class="muted range-hint">{t('rangeHint')}</span>{/if}
-  </div>
+  </div>{/if}
   <!-- Field recordings have no speech transcript. -->
   <!-- svelte-ignore a11y_media_has_caption -->
   <audio bind:this={audio} preload="metadata" src={mediaURL(`${mediaPath}/audio`)} aria-label={t('audio')}
@@ -149,6 +161,7 @@
 <style>
   .region { display: flex; flex-direction: column; gap: 10px; }
   .region-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
+  .zoomable .region-controls { order: -1; }
   .region-controls label { width: 110px; }
   .range-hint { align-self: center; }
   .region-controls .position {flex:1;min-width:140px}

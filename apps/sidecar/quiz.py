@@ -197,6 +197,30 @@ def answer_question(root, session_id, body):
     return session_view(root, session_id, body.position)
 
 
+def report_results(db, species_ids, *, include_sessions=False):
+    """Freeze available practice evidence; it is not an unseen capability test."""
+    latest={};sessions=[]
+    for row in db.execute("SELECT * FROM quiz_sessions WHERE answers!='[]' ORDER BY id DESC"):
+        snap=json.loads(row['snapshot']);answers=json.loads(row['answers']);counts={}
+        for question,answer in zip(snap['questions'],answers):
+            sid=question['clip']['species_id']
+            if sid not in species_ids:continue
+            item=counts.setdefault(sid,{'correct':0,'incorrect':0,'unknown':0,'total':0})
+            status='unknown' if answer['species_id'] is None else 'correct' if answer['species_id']==sid else 'incorrect'
+            item[status]+=1;item['total']+=1;item['answered_at']=answer['at']
+        if not counts:continue
+        digest=hashlib.sha256(row['snapshot'].encode()).hexdigest()
+        for sid,item in counts.items():
+            if sid not in latest or item['answered_at']>latest[sid]['answered_at']:
+                latest[sid]={'species_id':sid,'session_id':row['id'],'purpose':snap['purpose'],
+                    'set_sha256':digest,'method':snap['method'],'complete':len(answers)==len(snap['questions']),
+                    'session_answer_count':len(answers),'created_at':row['created_at'],**item}
+        if include_sessions:
+            sessions.append({'id':row['id'],'snapshot':snap,'answers':answers,'created_at':row['created_at'],'set_sha256':digest})
+    return {'per_species':list(latest.values()),'sessions':sessions,
+        'interpretation':'practice_only_not_field_annotation_accuracy','independent_test_available':False}
+
+
 def question_source(root, session_id, position):
     with connect(root) as db:
         _, snapshot, answers = session_row(db, session_id)

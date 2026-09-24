@@ -135,11 +135,63 @@ class ValidationRequest(BaseModel):
     species_id: str
     start_date: date
     end_date: date
+    run_id: int | None = None
+    annotation_session_id: int | None = None
+
+
+class CustomValidationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    model_id: int = Field(ge=1)
+
+
+class GroupValidationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    dataset_id: int
+    species_ids: list[str] = Field(min_length=2, max_length=100)
+    start_date: date
+    end_date: date
+    annotation_session_id: int
+
+
+class CustomModelRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    annotation_session_id: int = Field(ge=1)
+    species_id: str
+
+
+class AnnotationRange(BaseModel):
+    species_id: str | None
+    start_s: float = Field(ge=0, allow_inf_nan=False)
+    end_s: float = Field(gt=0, allow_inf_nan=False)
+
+
+class AnnotationRequest(BaseModel):
+    dataset_id: int
+    start_date: date
+    end_date: date
+
+
+class AnnotationAnswer(BaseModel):
+    item_id: int
+    version: int = Field(ge=0)
+    ranges: list[AnnotationRange] = Field(max_length=200)
+    palette_ids: list[str] = Field(default_factory=list, max_length=1000)
+    complete: bool = True
+
+
+class ValidationReview(BaseModel):
+    session_id: int
+    item_id: int
+    verdict: Literal['target', 'other', 'unknown']
+    version: int = Field(ge=0)
 
 
 class ValidationAnswer(BaseModel):
     item_id: int
     verdict: Literal['target', 'other', 'unknown']
+    ranges: list[AnnotationRange] | None = Field(default=None, max_length=200)
+    version: int | None = Field(default=None, ge=0)
+    reviews: list[ValidationReview] | None = Field(default=None, max_length=100)
 
 
 class EvidenceSelection(BaseModel):
@@ -155,21 +207,12 @@ class ReportExportRequest(BaseModel):
     audio: list[EvidenceSelection] = Field(default_factory=list, max_length=200)
 
 
-class WorkflowFigure(BaseModel):
-    species_id: str
-    engine: Literal['birdnet','perch','search']
-    run_id: int | None = None
-    svg: str = Field(default='',max_length=10_000_000)
-    png: str = Field(default='',max_length=24_000_000)
-
-
 class WorkflowExportRequest(BaseModel):
     dataset_id: int
     start_date: date
     end_date: date
     revision: str
     species_ids: list[str] = Field(min_length=1,max_length=1000)
-    figures: list[WorkflowFigure] = Field(max_length=4000)
     folder: str
     locale: Literal['ja','en'] = 'en'
 
@@ -283,39 +326,101 @@ def create_app(root, models, token):
 
     @app.get('/datasets/{dataset_id}/species/{species_id}')
     def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
-                         engine: Literal['birdnet','perch','auto'] = 'auto', run_id: int | None = None,
+                         engine: Literal['birdnet','perch','custom','auto'] = 'auto', run_id: int | None = None,
+                         model_id: int | None = Query(default=None,ge=1),
                          cell_date: date | None = None, hour: int | None = Query(default=None,ge=0,le=23)):
         from results_workflow import species_result
         return species_result(root,dataset_id,species_id,start_date.isoformat() if start_date else None,
-            end_date.isoformat() if end_date else None,engine,run_id,cell_date.isoformat() if cell_date else None,hour)
+            end_date.isoformat() if end_date else None,engine,run_id,cell_date.isoformat() if cell_date else None,hour,model_id)
 
     @app.get('/datasets/{dataset_id}/exports')
     def workflow_exports(dataset_id: int):
         with connect(root) as db:
-            return [{'id':r['id'],'path':r['path'],'created_at':r['created_at'],'results':json.loads(r['snapshot'])['results']} for r in db.execute('SELECT id,path,created_at,snapshot FROM workflow_exports WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC',(dataset_id,))]
+            rows=db.execute('SELECT id,path,created_at,snapshot FROM workflow_exports WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC',(dataset_id,))
+            result=[]
+            for row in rows:
+                snap=json.loads(row['snapshot'])
+                result.append({'id':row['id'],'path':row['path'],'created_at':row['created_at'],'results':snap['results'],
+                    'format':snap.get('format'),'folder_path':snap.get('folder_path')})
+            return result
 
     @app.post('/workflow-exports')
     def workflow_export(body: WorkflowExportRequest):
         from workflow_export import export
         with lock:
-            return export(root,body)
+            try:return export(root,body)
+            except OSError:raise CatalogError('report_write_failed') from None
+
+    @app.post('/workflow-exports/{export_id}/open')
+    def workflow_export_open(export_id: int,kind: Literal['document','folder']='document'):
+        from workflow_export import open_export
+        return open_export(root,export_id,kind)
+
+    @app.post('/annotations')
+    def annotation_start(body: AnnotationRequest):
+        from annotations import start_session
+        with lock:
+            return start_session(root, body)
+
+    @app.get('/annotations/{session_id}')
+    def annotation_view(session_id: int, item_id: int | None = None):
+        from annotations import view_session
+        return view_session(root, session_id, item_id)
+
+    @app.post('/annotations/{session_id}/answers')
+    def annotation_answer(session_id: int, body: AnnotationAnswer):
+        from annotations import save_answer
+        with lock:
+            return save_answer(root, session_id, body)
+
+    @app.get('/annotations/{session_id}/custom-model-readiness')
+    def custom_model_readiness(session_id: int, species_id: str):
+        from custom_models import readiness
+        return readiness(root,session_id,species_id)
+
+    @app.post('/custom-models')
+    def custom_model_create(body: CustomModelRequest):
+        from custom_models import create
+        with lock:
+            if worker and worker.is_alive():
+                raise HTTPException(409,'job_busy')
+            return create(root,body.annotation_session_id,body.species_id)
+
+    @app.get('/custom-models/{model_id}')
+    def custom_model_detail(model_id: int):
+        from custom_models import get_model
+        return get_model(root,model_id)
 
     @app.post('/validations')
-    def validation_start(body: ValidationRequest):
+    def validation_start(body: ValidationRequest | CustomValidationRequest | GroupValidationRequest):
         from validation import start_session
         with lock:
             return start_session(root,body)
 
     @app.get('/validations/{session_id}')
-    def validation_view(session_id: int):
+    def validation_view(session_id: int, item_id: int | None = None):
         from validation import view_session
-        return view_session(root,session_id)
+        return view_session(root,session_id,item_id=item_id)
+
+    @app.post('/validations/{session_id}/evaluation')
+    def validation_evaluation(session_id: int):
+        from validation import finish_calibration
+        with lock:
+            return finish_calibration(root,session_id)
+
+    @app.post('/validations/{session_id}/recall')
+    def validation_recall(session_id: int):
+        from validation import start_recall
+        with lock:
+            return start_recall(root,session_id)
 
     @app.post('/validations/{session_id}/answers')
     def validation_answer(session_id: int,body: ValidationAnswer):
         from validation import answer
         with lock:
-            return answer(root,session_id,body.item_id,body.verdict)
+            return answer(root,session_id,body.item_id,body.verdict,
+                          [r.model_dump() for r in body.ranges] if body.ranges is not None else None, body.version,
+                          [r.model_dump() for r in body.reviews] if body.reviews is not None else None)
 
     @app.get("/catalog")
     def catalog():
@@ -476,9 +581,9 @@ def create_app(root, models, token):
     @app.get("/sources/{kind}/{source_id}/spectrogram")
     def source_spectrogram(kind: Literal["recording", "reference"], source_id: int,
                            start_s: float = Query(ge=0, allow_inf_nan=False),
-                           end_s: float = Query(gt=0, allow_inf_nan=False)):
+                           end_s: float = Query(gt=0, allow_inf_nan=False), detail: bool = False):
         from audio import source, spectrogram
-        return spectrogram(source(root, kind, source_id), start_s, end_s)
+        return spectrogram(source(root, kind, source_id), start_s, end_s, max_columns=8000 if detail else 1000)
 
     @app.post("/search")
     def similarity_search(body: SearchRequest):

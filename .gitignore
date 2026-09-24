@@ -17,3 +17,5 @@ apps/desktop/binaries/
 *.spec
 .xeno-canto-key
 .xc-key-*
+/output/
+/:memory:.ses

@@ -68,26 +68,28 @@ def read_interval(row, start, end, maximum=60, *, native_rate=False):
         "source_sample_rate": rate, "source_channels": samples.shape[1], "sample_rate": rate if native_rate else 32000}
 
 
-def spectrogram(row, start, end):
+def spectrogram(row, start, end, *, max_columns=1000):
     # Display at the native rate: no resampling or scientific-library cold import.
     samples, interval = read_interval(row, start, end, native_rate=True)
     rate = interval['sample_rate']
-    size, hop = max(4, round(rate * .032)), max(1, round(rate * .008))
+    size, hop = max(4, round(rate * .016)), max(1, round(rate * .002))
+    fft_size = size * 2
     window = np.hanning(size + 1)[:-1].astype(np.float32)
-    frequencies = np.fft.rfftfreq(size, 1 / rate)
+    frequencies = np.fft.rfftfreq(fft_size, 1 / rate)
     included = frequencies <= 12000
     frames = np.lib.stride_tricks.sliding_window_view(np.pad(samples, (size // 2, size)), size)[::hop]
     frames = frames[:math.ceil((end - start) * rate / hop)]
     # Bound FFT working memory even for high-rate field recordings.
-    power = np.concatenate([np.abs(np.fft.rfft(chunk * window, axis=1)[:, included] / window.sum()) ** 2
+    power = np.concatenate([np.abs(np.fft.rfft(chunk * window, n=fft_size, axis=1)[:, included] / window.sum()) ** 2
                             for chunk in np.array_split(frames, max(1, math.ceil(len(frames) / 256)))], axis=0).T
     # Pool into evenly spaced display columns; do not decode an entire field recording.
-    width = min(1000, power.shape[1])
+    width = min(max_columns, power.shape[1])
     edges = np.linspace(0, power.shape[1], width + 1).astype(int)
     power = np.maximum.reduceat(power, edges[:-1], axis=1)
     db = 10 * np.log10(np.maximum(power, 1e-12))
     ceiling = max(-80.0, float(db.max()))
     pixels = (np.clip((db - (ceiling - 70)) / 70, 0, 1) * 255).astype(np.uint8)[::-1]
     return {**interval, "width": width, "height": len(frequencies[frequencies <= 12000]),
+            "window": "hann", "window_samples": size, "hop_samples": hop, "fft_samples": fft_size,
             "frequency_max_hz": float(frequencies[included][-1]), "db_min": ceiling - 70, "db_max": ceiling,
             "pixels": base64.b64encode(pixels.tobytes()).decode("ascii")}
