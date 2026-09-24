@@ -148,6 +148,14 @@ export const workflowEn = {
   validation_too_few:'There are too few intervals to separate calibration and evaluation. Add more recordings.',
   validation_mixed_models:'Reanalyse with the same model version before starting validation.',
   validation_phase_locked:'These answers set the threshold. They are locked after evaluation starts to keep threshold adjustment separate from evaluation.',
+  refTitle:"Examples of this species' calls", refListenFirst:'First, listen to the examples (about 1 minute).',
+  refOverview:'Steps: ① first sounds: {n} → ② sounds of this species: up to {m} per AI → ③ optional: check for missed calls',
+  refNamed:'Identified recording', refQuiz:'practice quiz', refSearchReference:'used in your search', refConfirmed:'A sound you confirmed',
+  refPrevious:'Previous', refNext:'Next', refNone:'There are no examples of this species yet.',
+  refPrepare:'Get 3 examples from Xeno-Canto', refPrepareHint:'Downloads 3 clear recordings made in Japan and keeps them on this PC, so you can listen offline next time.',
+  refXcNone:'Xeno-Canto has no clear recordings of this species from Japan.', refLearn:'Learn about this bird ({site})',
+  refChooseSpecies:'Species to listen to', refMarkOptional:'Mark where it calls (optional)',
+  vUnknownNote:"'Cannot tell' is counted as undecided, not as wrong.",
 };
 export const workflowJa: Record<keyof typeof workflowEn,string> = {
   rSearch: "参照音による検索",
@@ -299,4 +307,12 @@ export const workflowJa: Record<keyof typeof workflowEn,string> = {
   validation_too_few:'調整用と評価用に分ける区間が足りません。録音を追加してください。',
   validation_mixed_models:'モデル版が混在しています。同じ版で再解析してから検証を始めてください。',
   validation_phase_locked:'この回答で集計の基準を決めました。評価に合わせて基準が変わらないよう、評価を始めた後は固定されています。',
+  refTitle:'この種のお手本', refListenFirst:'まず声を聞いてみましょう（1分ほど）。',
+  refOverview:'作業の流れ：①最初に聞く音 {n}音 → ②この種の音 最大{m}音（AIごと） → ③任意：見逃しの確認',
+  refNamed:'名前が確かな音', refQuiz:'練習クイズ', refSearchReference:'検索に使った音', refConfirmed:'あなたが確認した音',
+  refPrevious:'前のお手本', refNext:'次のお手本', refNone:'この種のお手本はまだありません。',
+  refPrepare:'Xeno-Canto からお手本を用意する（3件）', refPrepareHint:'日本で録音された聞き取りやすい音を3件ダウンロードし、このPCに保存します。次からはインターネットなしで聞けます。',
+  refXcNone:'Xeno-Canto に、日本で録音された聞き取りやすい音が見つかりませんでした。', refLearn:'この鳥について調べる（{site}）',
+  refChooseSpecies:'お手本を聞く種', refMarkOptional:'鳴いている場所に印を付ける（任意）',
+  vUnknownNote:'「判断できない」は誤りではなく、保留として数えます。',
 };

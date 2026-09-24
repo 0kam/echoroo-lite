@@ -211,8 +211,9 @@ def export(root,body):
                         if key in selected:
                             row.update(audio_file=save_audio(folder,records[key[0]],key[1],key[2]),audio_role='search_positive' if engine=='search' else 'ai_example',audio_reason='included')
                         if item.get('judgement_id'):
-                            judgement=db.execute('SELECT quiz_snapshot FROM search_judgements WHERE id=?',(item['judgement_id'],)).fetchone()
+                            judgement=db.execute('SELECT quiz_snapshot,examples_snapshot FROM search_judgements WHERE id=?',(item['judgement_id'],)).fetchone()
                             row['quiz_at_answer']=json.loads(judgement[0]) if judgement and judgement[0] else None
+                            row['examples_at_answer']=json.loads(judgement[1]) if judgement and judgement[1] else None
                         evidence.append(row)
                     v=snap.get('validation');result=quality_result(snap)
                     common.update(validation_method=v.get('method') if v else None,target_precision=v.get('target_precision') if v else None,

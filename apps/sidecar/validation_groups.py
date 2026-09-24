@@ -244,7 +244,7 @@ def answer_group(root, sid, reviews, ranges=None):
         for review in reviews:
             validation._write_answer(root, db, review['session_id'], review['item_id'],
                                      review['verdict'], ranges, review['version'],
-                                     allow_out_of_order=True)
+                                     allow_out_of_order=True, examples=review.get('examples_snapshot'))
     return view_group(root, sid)
 
 

@@ -209,7 +209,7 @@ Freeze on the target OS. Binaries use Tauri's host-triple naming convention and
 are excluded from Git. Models are currently provisioned separately in the release
 data directory; the installer does not yet offer model setup.
 Model and label provenance, hashes, and unresolved distribution terms are recorded
-in [Model sources](docs/model-sources.md). BirdNET's model terms include a
+in [Model sources](docs/model-sources.md), including the eBird taxonomy used for species-page links. BirdNET's model terms include a
 noncommercial condition; permission for the intended business use is not yet established.
 Windows CI has passed all eight API tests, frozen BirdNET/Perch inference on supplied
 audio, searches, saved judgements, reports and CSV/audio exports, quizzes and clean shutdown.

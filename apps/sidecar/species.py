@@ -17,6 +17,13 @@ def additional_names():
     return json.loads((Path(__file__).parent / 'data/species-extra.json').read_text(encoding='utf-8'))['species']
 
 
+@lru_cache(maxsize=1)
+def ebird_codes():
+    # Built by scripts/build_ebird_codes.py from the eBird taxonomy; may be empty until then.
+    path = Path(__file__).parent / 'data/ebird-codes.json'
+    return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+
+
 def initialize_species(root):
     with connect(root) as db:
         db.execute("""CREATE TABLE IF NOT EXISTS species (

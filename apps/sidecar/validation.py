@@ -279,7 +279,7 @@ def search_population(root,ctx,species_id,run_id):
 
 
 def answered_items(db,sid,phase=None):
-    return [dict(r) for r in db.execute('''SELECT i.*,a.verdict,a.id AS answer_id,a.created_at AS answered_at,a.quiz_snapshot,a.ranges FROM validation_items i
+    return [dict(r) for r in db.execute('''SELECT i.*,a.verdict,a.id AS answer_id,a.created_at AS answered_at,a.quiz_snapshot,a.examples_snapshot,a.ranges FROM validation_items i
         LEFT JOIN validation_answers a ON a.id=(SELECT MAX(id) FROM validation_answers WHERE item_id=i.id)
         WHERE i.session_id=? AND (? IS NULL OR i.phase=?) ORDER BY i.phase,i.position''',(sid,phase,phase))]
 
@@ -433,7 +433,7 @@ def evaluate(snapshot,items,alpha=.05):
     return result
 
 
-def answer(root,sid,item_id,verdict,ranges=None,version=None,reviews=None):
+def answer(root,sid,item_id,verdict,ranges=None,version=None,reviews=None,examples=None):
     with connect(root) as db:
         row=db.execute('SELECT snapshot FROM validation_sessions WHERE id=?',(sid,)).fetchone()
         if not row:raise CatalogError('not_found')
@@ -444,11 +444,11 @@ def answer(root,sid,item_id,verdict,ranges=None,version=None,reviews=None):
         return answer_group(root,sid,reviews,ranges)
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
-        _write_answer(root,db,sid,item_id,verdict,ranges,version)
+        _write_answer(root,db,sid,item_id,verdict,ranges,version,examples=examples)
     return view_session(root,sid)
 
 
-def _write_answer(root,db,sid,item_id,verdict,ranges,version,allow_out_of_order=False):
+def _write_answer(root,db,sid,item_id,verdict,ranges,version,allow_out_of_order=False,examples=None):
     row=db.execute('SELECT * FROM validation_sessions WHERE id=?',(sid,)).fetchone()
     if not row:
         raise CatalogError('not_found')
@@ -497,7 +497,8 @@ def _write_answer(root,db,sid,item_id,verdict,ranges,version,allow_out_of_order=
                                             (peer_id,item['recording_id'],item['start_s'])):
                         peer.setdefault('shared_ranges',{})[str(value['id'])]=ranges
                     db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(peer,allow_nan=False),peer_id))
-    db.execute('INSERT INTO validation_answers(item_id,verdict,quiz_snapshot,ranges) VALUES(?,?,?,?)',(item_id,verdict,json.dumps(quiz),json.dumps(ranges) if ranges is not None else None))
+    db.execute('INSERT INTO validation_answers(item_id,verdict,quiz_snapshot,ranges,examples_snapshot) VALUES(?,?,?,?,?)',(item_id,verdict,json.dumps(quiz),
+        json.dumps(ranges) if ranges is not None else None,json.dumps(examples) if examples is not None else None))
     if phase=='evaluation':update_results(snap,answered_items(db,sid,phase))
     db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(snap,allow_nan=False),sid))
 

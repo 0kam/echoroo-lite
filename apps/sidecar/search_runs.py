@@ -141,7 +141,7 @@ def draw_sample(root, run_id, low, high, count):
     return get_run(root, run_id, sample)
 
 
-def judge(root, run_id, segment_id, verdict, note):
+def judge(root, run_id, segment_id, verdict, note, examples=None):
     with connect(root) as db:
         hit = db.execute('''SELECT r.species_id FROM search_hits h JOIN search_runs r ON r.id=h.run_id
             WHERE h.run_id=? AND h.segment_id=?''', (run_id, segment_id)).fetchone()
@@ -149,6 +149,7 @@ def judge(root, run_id, segment_id, verdict, note):
             raise CatalogError('not_found')
         from quiz import report_results
         quiz=json.dumps(report_results(db,[hit['species_id']]))
-        jid = db.execute('INSERT INTO search_judgements(run_id,species_id,segment_id,verdict,note,quiz_snapshot) VALUES(?,?,?,?,?,?)',
-                         (run_id, hit['species_id'], segment_id, verdict, note, quiz)).lastrowid
+        jid = db.execute('INSERT INTO search_judgements(run_id,species_id,segment_id,verdict,note,quiz_snapshot,examples_snapshot) VALUES(?,?,?,?,?,?,?)',
+                         (run_id, hit['species_id'], segment_id, verdict, note, quiz,
+                          json.dumps(examples) if examples is not None else None)).lastrowid
         return dict(db.execute('SELECT * FROM search_judgements WHERE id=?', (jid,)).fetchone())

@@ -85,6 +85,7 @@ fn launch(data: PathBuf) -> Result<(Child, Connection), Box<dyn std::error::Erro
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data = std::env::var_os("ECHOROO_DATA")
                 .map(PathBuf::from)

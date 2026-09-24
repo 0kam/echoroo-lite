@@ -5,7 +5,8 @@
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
-  import { commonName } from '$lib/species';
+  import { commonName,speciesPage } from '$lib/species';
+  import { openExternal } from '$lib/files';
   import { rangeQuery,type CustomModel,type SpeciesResult,type Validation } from '$lib/workflow';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import CustomModelPanel from '$lib/CustomModelPanel.svelte';
@@ -17,7 +18,7 @@
   const id=Number(page.params.id),speciesId=page.params.species!;
   const initial=new URL(page.url.hash.slice(1),page.url).searchParams;
   let result=$state<SpeciesResult|null>(null),engine=$state(initial.get('engine')||'auto'),run=$state(initial.get('run_id')||''),modelId=$state(Number(initial.get('model_id'))||0),customDetail=$state<CustomModel|null>(null),error=$state(''),loading=$state(true),liveUrl=$state('');
-  let request=0;
+  let request=0,about=$state<{ebird_code:string|null;in_quiz:boolean}|null>(null);
   let openEvidence=$state(-1);
   async function load(){const version=++request;loading=true;error='';
     const query=new URLSearchParams({engine});
@@ -30,7 +31,8 @@
     catch(e){if(version===request)error=e instanceof Error?e.message:'unknown_error';}
     finally{if(version===request)loading=false;}
   }
-  onMount(()=>{void load();});
+  onMount(()=>{void load();api<{ebird_code:string|null;in_quiz:boolean}>(`/species/${speciesId}/examples?dataset_id=${id}`).then(value=>about=value).catch(()=>{});});
+  const external=$derived(result&&about?speciesPage(result.species,about.ebird_code,app.locale):null);
   const range=$derived(result?rangeQuery(result.start_date,result.end_date):initial.toString());
   const validate=createTask(async()=>{
     if(!result)return;
@@ -45,7 +47,8 @@
 </script>
 <div class="page">
   <div class="page-header"><div><div class="crumbs"><a href={`${resolve(`/datasets/${id}`)}?${range}`}>{t('uBackResults')}</a><span>{result?.site.name}</span></div>
-    <h1>{result?commonName(result.species,app.locale):t('species')} <i class="sci">{result?.species.scientific_name}</i></h1></div>
+    <h1>{result?commonName(result.species,app.locale):t('species')} <i class="sci">{result?.species.scientific_name}</i></h1>
+    {#if external}<Button size="sm" onclick={()=>void openExternal(external.url)}>{t('refLearn').replace('{site}',external.name)}</Button>{/if}</div>
     <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('wFurther')}</Button></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}
@@ -76,7 +79,7 @@
     <section class="panel"><QualityPanel validation={result.validation}/>
       {#if !run&&!modelId&&!result.validation?.applicable}<p class="muted">{t('aQualityRouteIntro')}</p>{/if}
       {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant="primary" pending={validate.pending} onclick={()=>validate.run()}>{t(result.validation&&!result.validation.applicable?'wCheckAgain':result.validation?.stage==='complete'?'wValidationDone':result.validation?.applicable?'wContinue':'wEvaluate')}</Button>
-      <Button href={practice}>{t('wPractice')}</Button></div>{/if}
+      {#if about?.in_quiz}<Button href={practice}>{t('wPractice')}</Button>{/if}</div>{/if}
     </section>
     <div class="custom-entry"><CustomModelPanel datasetId={id} speciesId={speciesId} startDate={result.start_date} endDate={result.end_date} oncreated={model=>{modelId=model.id;engine='custom';run='';load();}}/></div>
     {#if result.searches.length}<section class="panel"><h2>{t('wConfirmed')}</h2>

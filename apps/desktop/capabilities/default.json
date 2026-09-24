@@ -1,5 +1,7 @@
 {
   "identifier": "main",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "permissions": ["core:default", "dialog:allow-open",
+    {"identifier": "opener:allow-open-url", "allow": [{"url": "https://ebird.org/*"}, {"url": "https://*.wikipedia.org/*"},
+      {"url": "https://xeno-canto.org/*"}, {"url": "https://creativecommons.org/*"}]}]
 }

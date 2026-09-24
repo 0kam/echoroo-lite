@@ -1,3 +1,7 @@
+<script lang="ts" module>
+  export const licenseName=(value:string)=>{const match=value.match(/creativecommons\.org\/licenses\/([^/]+)\/([^/]+)/);return match?`CC ${match[1].toUpperCase()} ${match[2]}`:value;};
+</script>
+
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
@@ -16,7 +20,6 @@
   let importing = $state<number | null>(null), restored=$state(false);
   onMount(()=>{try{const saved=JSON.parse(sessionStorage.getItem(`echoroo-xc-${species?.id}`)||'null');if(saved){country=saved.country;quality=saved.quality;results=saved.results;lastQuery=saved.lastQuery;}}catch{}restored=true;});
   $effect(()=>{if(restored)sessionStorage.setItem(`echoroo-xc-${species?.id}`,JSON.stringify({country,quality,results,lastQuery}));});
-  const licenseName=(value:string)=>{const match=value.match(/creativecommons\.org\/licenses\/([^/]+)\/([^/]+)/);return match?`CC ${match[1].toUpperCase()} ${match[2]}`:value;};
   const search = createTask(async (page: number, fresh = false) => {
     if (fresh && species) lastQuery = { species_id: species.id, country, quality };
     if (!lastQuery) return;
