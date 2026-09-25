@@ -23,7 +23,7 @@
 </script>
 <div class="editor" class:targeted={!!target}>
   {#if !target}<aside>
-    <label>{t('aChoose')}<input type="search" bind:value={filter} placeholder={t('aFilter')} disabled={disabled}/></label>
+    <label>{t('aNames')}<input type="search" bind:value={filter} placeholder={t('aFilter')} disabled={disabled}/></label>
     <div class="palette" role="group" aria-label={t('aChoose')}>
       {#each ordered as s}<button type="button" disabled={disabled} aria-pressed={chosen===s.id} onclick={()=>choose(s.id)}>{commonName(s,app.locale)||s.scientific_name}<i>{s.scientific_name}</i></button>{/each}
     </div>
@@ -35,15 +35,16 @@
     {#if !target}<p class="instruction">{chosen===undefined?t('aChooseFirst'):t(marking?'aDrag':'aDragOff').replace('{name}',label(chosen))}</p>{/if}
     <AudioRegion bind:this={player} {source} fixedRange zoomable {start} {end} marks={ranges} onrange={mark} bind:marking storageKey={`${storageKey}:view`}/>
     {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
-    <details class="keyboard"><summary>{t('aKeyboard')}</summary><div class="actions">
+    <!-- When checking one species, marking is optional, so its tools appear only once the user turns it on. -->
+    {#if !target||marking||ranges.length}<details class="keyboard"><summary>{t('aKeyboard')}</summary><div class="actions">
       <label>{t('rangeStart')}<input type="number" min="0" max={end-start} step="0.01" bind:value={from}/></label>
       <label>{t('rangeEnd')}<input type="number" min="0" max={end-start} step="0.01" bind:value={to}/></label>
       <Button disabled={disabled||chosen===undefined} onclick={()=>mark(start+from,start+to)}>{t('aAddRange')}</Button></div></details>
-    <div class="heard"><h3>{t('aHeard')}</h3>
+    <div class="heard"><h3>{t('aMarks')}</h3>
       {#each ranges as range,index}<div class="range-row"><span>{index+1}. <strong>{label(range.species_id)}</strong></span><span>{(range.start_s-start).toFixed(2)}–{(range.end_s-start).toFixed(2)} s</span>
         <Button disabled={disabled} onclick={()=>player.play(range.start_s,range.end_s)}>{t('uListen')}</Button><Button disabled={disabled} aria-label={`${t('aRemove')} ${index+1}`} onclick={()=>{ranges=ranges.filter((_,i)=>i!==index);}}>{t('aRemove')}</Button></div>
-      {:else}<p class="muted">{t('aNoMarks')}</p>{/each}
-    </div>
+      {:else}<p class="muted">{t(target?'aNoMarksTarget':'aNoMarks')}</p>{/each}
+    </div>{/if}
   </div>
 </div>
 <style>

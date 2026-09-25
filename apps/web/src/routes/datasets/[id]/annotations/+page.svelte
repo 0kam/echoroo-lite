@@ -9,6 +9,7 @@
   import { rangeQuery,type Overview,type Validation } from '$lib/workflow';
   import type { AnnotationSession,CallRange } from '$lib/annotations';
   import RangeEditor from '$lib/RangeEditor.svelte';
+  import ValidationSteps from '$lib/ValidationSteps.svelte';
   import SpeciesPicker from '$lib/SpeciesPicker.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -17,10 +18,15 @@
   let session=$state<AnnotationSession|null>(null),ranges=$state<CallRange[]>([]),palette=$state<Species[]>([]),view=$state<'listen'|'list'>('listen');
   let detectionCounts=$state<Record<string,number>>({});
   let existingValidations=$state<{id:number;species:Species[];complete:boolean}[]>([]);
-  let error=$state(''),storageError=$state(false),selected=$state<Species|null>(null),selectedIds=$state<string[]>([]),editor=$state<RangeEditor>();
+  // `focus` is the species whose reliability check brought the user here; it sets the return path.
+  let focus=$state(''),error=$state(''),storageError=$state(false),selected=$state<Species|null>(null),selectedIds=$state<string[]>([]),editor=$state<RangeEditor>();
   const key=$derived(session?.question?`echoroo-annotation:${session.id}:${session.question.id}`:'');
   const previous=$derived(session?.history.filter(i=>i.position<(session?.question?.position??Infinity)).at(-1));
   const query=$derived(session?rangeQuery(session.start_date,session.end_date):'');
+  const exit=$derived(focus?`${resolve(`/datasets/${id}/species/${focus}`)}?${query}`:`${resolve(`/datasets/${id}`)}?${query}`);
+  // Clips are saved in sets of ten; show progress toward the current set rather than the whole sample.
+  const goal=$derived(session?Math.min(session.total,Math.max(10,Math.ceil(((session.question?.position??session.total-1)+1)/10)*10)):0);
+  const needed=$derived(session?Math.max(0,Math.min(10,session.total)-session.completed):0);
   function show(data:AnnotationSession){editor?.stop();session=data;ranges=data.question?.ranges??[];palette=data.palette;
     if(data.question)try{const saved=JSON.parse(localStorage.getItem(`echoroo-annotation:${data.id}:${data.question.id}`)||'null');
       if(saved?.version===data.question.version){ranges=saved.ranges;palette=saved.palette;}}catch{storageError=true;}
@@ -41,8 +47,8 @@
       if(current){current.species.push(row.species);current.complete=current.complete&&validation.stage==='complete';}
       else grouped.set(validationId,{id:validationId,species:[row.species],complete:validation.stage==='complete'});
     }existingValidations=[...grouped.values()];
-    const taxon=params.get('species');if(taxon)selectedIds=[taxon];
-    if(params.get('view')==='list'||!data.question)view='list';
+    const taxon=params.get('species');if(taxon){selectedIds=[taxon];focus=taxon;}
+    if(!data.question||params.get('view')==='list'&&(data.can_evaluate||!data.has_holdout))view='list';
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
   const navigate=createTask(async(item?:number)=>{if(!session)return;show(await api<AnnotationSession>(`/annotations/${session.id}${item?`?item_id=${item}`:''}`));view='listen';});
   const save=createTask(async()=>{if(!session?.question)return;editor?.stop();const current=session.question;
@@ -56,37 +62,40 @@
   const busy=$derived(save.pending||navigate.pending||quality.pending);
 </script>
 <div class="page annotation-page">
-  <div class="crumbs"><a href={`${resolve(`/datasets/${id}`)}?${query}`}>{t('uBackResults')}</a><span>›</span>{session?.site.name}</div>
+  <div class="crumbs"><a href={exit}>{t(focus?'wBackSpecies':'uBackResults')}</a><span>›</span>{session?.site.name}</div>
   {#if error}<p class="error" role="alert">{t(error)}</p>
   {:else if session}
-    <div class="page-header"><div><h1>{t(view==='list'?'aHeard':'aChoose')}</h1><p>{view==='list'?session.start_date+' — '+session.end_date:t('aProgress').replace('{n}',String(session.question?session.question.position+1:session.total)).replace('{total}',String(session.total))}{#if view==='listen'&&session.question} · {new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:session.site.timezone}).format(new Date(session.question.local_time))}{/if}</p></div>
+    <div class="page-header"><div><h1>{t(view==='list'?'aHeard':'aChoose')}</h1><p>{view==='list'?session.start_date+' — '+session.end_date:t('aProgress').replace('{n}',String(session.question?session.question.position+1:session.total)).replace('{total}',String(goal))}{#if view==='listen'&&session.question} · {new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:session.site.timezone}).format(new Date(session.question.local_time))}{/if}</p></div>
       {#if view==='listen'}<Button onclick={()=>{editor?.stop();view='list';}}>{t('aReviewShared')}</Button>{/if}</div>
+    {#if focus}<ValidationSteps validation={null} listening/>{/if}
     {#if !session.applicable}<p class="notice">{t('wScopeChanged')}</p>{/if}
     {#if session.completed<Math.min(10,session.total)}<p class="muted">{t('aWorkflowIntro').replace('{count}',String(Math.min(10,session.total)))}</p>{/if}
     {#if view==='listen'&&session.question}
       <section class="panel listen-panel">
         {#key session.question.id}<RangeEditor bind:this={editor} source={session.question.source} start={session.question.start_s} end={session.question.end_s}
           bind:palette bind:ranges {detectionCounts} storageKey={key} disabled={busy}/>{/key}
-        <div class="footer"><Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>{t('aPrevious')}</Button>
+        <div class="footer"><Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('aPrevious')}</Button>
           <Button variant="primary" pending={save.pending} disabled={busy} onclick={()=>save.run()}>{t(session.question.position===session.total-1?'aFinish':'aNext')}</Button></div>
         <p class:notice={storageError} class="muted" role="status">{t(storageError?'aStorageFailed':'aDraft')}</p>
       </section>
       <p class="muted">{t('aPaletteHint')}</p>
     {:else}
       <p>{t('aSaved').replace('{count}',String(session.completed))}</p>
-      {#if session.question}<Button variant="primary" onclick={()=>navigate.run()}>{t('aContinue')}</Button>{:else if previous}<Button onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}
-      <section class="panel"><p>{t('aEvidenceNote')}</p>
-        {#each session.heard as row}<div class="animal"><a href={`${resolve(`/datasets/${id}/species/${row.species.id}`)}?${query}`}><strong>{commonName(row.species,app.locale)||row.species.scientific_name}</strong>{#if commonName(row.species,app.locale)}<i>{row.species.scientific_name}</i>{/if}</a><span>{t('aIntervals').replace('{count}',String(row.intervals))}</span></div>
+      <div class="actions">{#if session.question}<Button variant={session.can_evaluate?'default':'primary'} onclick={()=>navigate.run()}>{t('aContinue')}</Button>{/if}{#if previous}<Button onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
+      {#snippet heard()}<section class="panel"><h2>{t('aExactEvidence')}</h2><p class="muted">{t('aEvidenceNote')}</p>
+        {#each session!.heard as row}<div class="animal"><a href={`${resolve(`/datasets/${id}/species/${row.species.id}`)}?${query}`}><strong>{commonName(row.species,app.locale)||row.species.scientific_name}</strong>{#if commonName(row.species,app.locale)}<i>{row.species.scientific_name}</i>{/if}</a><span>{t('aIntervals').replace('{count}',String(row.intervals))}</span></div>
         {:else}<p>{t('aNoHeard')}</p>{/each}
-      </section>
-      <section class="panel"><h2>{t('aQualityTitle')}</h2><p>{t('aQualityHelp')}</p>
+      </section>{/snippet}
+      {#snippet check()}<section class="panel"><h2>{t('aQualityTitle')}</h2><p>{t('aQualityHelp')}</p>
         {#if existingValidations.length}<div class="existing-validations">{#each existingValidations as validation}<a class="button" href={resolve(`/datasets/${id}/validation/${validation.id}`)}><span>{validation.species.map(species=>commonName(species,app.locale)||species.scientific_name).join('・')}</span><strong>{t(validation.complete?'vViewExisting':'vResumeExisting')}</strong></a>{/each}</div>{/if}
-        {#if !session.has_holdout}<p>{t('annotation_no_holdout')}</p>{:else if !session.can_evaluate}<p>{t('aNeedBatch').replace('{count}',String(Math.min(10,session.total)))}</p>{:else}
+        {#if !session!.has_holdout}<p>{t('annotation_no_holdout')}</p>{:else if !session!.can_evaluate}<p>{t('aNeedBatch').replace('{count}',String(needed))}</p>{:else}
           <fieldset class="species-checks"><legend>{t('vChooseSpecies')}</legend>{#each [...palette].sort((a,b)=>(detectionCounts[b.id]??0)-(detectionCounts[a.id]??0)||(commonName(a,app.locale)||a.scientific_name).localeCompare(commonName(b,app.locale)||b.scientific_name,app.locale)) as s}<label><input type="checkbox" value={s.id} bind:group={selectedIds} disabled={busy}/> {commonName(s,app.locale)||s.scientific_name}</label>{/each}</fieldset>
+          <p class="muted">{t('vSharedSpeciesHint')}</p>
           <details><summary>{t('aAddSpecies')}</summary><SpeciesPicker bind:value={selected} label={t('aCatalog')} disabled={busy}/><p class="muted">{t('vAddedSpeciesIncluded')}</p></details>
-          <p class="muted">{t('vSharedSpeciesHint')}</p><div class="actions"><Button variant="primary" disabled={(!selectedIds.length&&!selected)||busy||!session.applicable} pending={quality.pending} onclick={()=>quality.run()}>{t('aQualityStart')}</Button></div>
+          <div class="actions"><Button variant="primary" disabled={(!selectedIds.length&&!selected)||busy||!session!.applicable} pending={quality.pending} onclick={()=>quality.run()}>{t('aQualityStart')}</Button></div>
         {/if}
-      </section>
+      </section>{/snippet}
+      {#if focus}{@render check()}{@render heard()}{:else}{@render heard()}{@render check()}{/if}
     {/if}
     {#if save.error||navigate.error||quality.error}<p class="error" class:answer-feedback={view==='listen'&&!!session.question} role="alert">{t(save.error||navigate.error||quality.error)}</p>{/if}
   {:else}<h1>{t('aListen')}</h1><p><Spinner/> {t('loading')}</p>{/if}

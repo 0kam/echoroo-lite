@@ -112,7 +112,7 @@
     <circle cx="363" cy={cy+458} r="4" fill="#222"/><text x="382" y={cy+463} font-size="14" fill="#575279">{t('confirmedEvidence')}</text>
   {/if}
   <text aria-hidden={compact} x="70" y={cy+494} font-size="14" fill="#575279">{t(report.kind==='search' ? 'searchFigureCaution' : quality ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
-{#if quality}<text aria-hidden={compact} x="70" y={cy+523} font-size="14" fill="#575279">{t(report.validation?.stage==='complete'?'wFigureQuality':'vInterim')} #{report.validation?.id} · precision {percent(quality.precision.value)} [{interval(quality.precision)}] · recall {percent(quality.recall.value)} [{interval(quality.recall)}]</text>{/if}
+{#if quality}<text aria-hidden={compact} x="70" y={cy+523} font-size="14" fill="#575279">{t(report.validation?.stage==='complete'?'wFigureQuality':'vInterim')} #{report.validation?.id} · {t('wPrecisionShort')} {percent(quality.precision.value)} [{interval(quality.precision)}] · {t('wRecallShort')} {percent(quality.recall.value)} [{interval(quality.recall)}]</text>{/if}
 </svg>
 </div>
 

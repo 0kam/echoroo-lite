@@ -8,6 +8,7 @@
   import { commonName } from '$lib/species';
   import { rangeQuery,type CustomModel,type SpeciesResult,type Validation } from '$lib/workflow';
   import QualityPanel from '$lib/QualityPanel.svelte';
+  import ValidationSteps from '$lib/ValidationSteps.svelte';
   import CustomModelPanel from '$lib/CustomModelPanel.svelte';
   import ReportView from '$lib/ReportView.svelte';
   import AudioRegion from '$lib/AudioRegion.svelte';
@@ -35,7 +36,7 @@
   const validate=createTask(async()=>{
     if(!result)return;
     if(modelId){const validation=result.validation?.applicable?result.validation:await api<Validation>('/validations',{model_id:modelId});await goto(resolve(`/datasets/${id}/validation/${validation.id}`));return;}
-    if(!run&&!result.validation?.applicable){await goto(`${resolve(`/datasets/${id}/annotations`)}?${range}&species=${speciesId}&view=list`);return;}
+    if(!run&&!result.validation?.applicable){await goto(`${resolve(`/datasets/${id}/annotations`)}?${range}&species=${speciesId}`);return;}
     const validation=result.validation?.applicable?result.validation:await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,start_date:result.start_date,end_date:result.end_date,run_id:run?Number(run):null});
     await goto(resolve(`/datasets/${id}/validation/${validation.id}`));
   },{toast:true});
@@ -58,8 +59,14 @@
       {:else if result.report}{#key liveUrl}<ReportView report={result.report} {liveUrl}/>{/key}
       {:else}<p class="empty">{t('wNoModel')}</p>{/if}
     </section>
+    <section class="panel"><QualityPanel validation={result.validation}/>
+      {#if !modelId&&(!result.validation||result.validation.applicable)}<ValidationSteps validation={result.validation}/>{/if}
+      {#if !run&&!modelId&&!result.validation?.applicable}<p class="muted">{t('aQualityRouteIntro')}</p>{/if}
+      {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant="primary" pending={validate.pending} onclick={()=>validate.run()}>{t(result.validation&&!result.validation.applicable?'wCheckAgain':result.validation?.stage==='complete'?'vViewQuality':result.validation?.applicable?'wContinue':'wEvaluate')}</Button>
+      <Button href={practice}>{t('wPractice')}</Button></div>{/if}
+    </section>
     {#if result.annotations.length}<section class="panel"><h2>{t('aExactEvidence')}</h2><p>{t('aEvidenceNote')}</p>
-      {#each result.annotations as item,index}<div><Button active={openEvidence===index} onclick={()=>openEvidence=openEvidence===index?-1:index}>{item.local_time} · {item.start_s.toFixed(2)}–{item.end_s.toFixed(2)} s</Button>
+      {#each result.annotations as item,index}<div><Button active={openEvidence===index} onclick={()=>openEvidence=openEvidence===index?-1:index}>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:result.site.timezone}).format(new Date(item.local_time))} · {(item.end_s-item.start_s).toFixed(1)} {t('seconds')}</Button>
         {#if openEvidence===index}<div class="evidence"><AudioRegion source={{id:item.recording_id,kind:'recording',path:item.source_path,seconds:item.seconds}} fixedRange start={item.start_s} end={item.end_s}/></div>{/if}
       </div>{/each}</section>{/if}
     {#if customDetail}<section class="panel custom-detail"><h2>{customName(customDetail)}</h2>
@@ -73,11 +80,6 @@
         {/if}
         <h3>{t('customModelEvaluation')}</h3>{#if customDetail.evaluation.validation_id!==null}<p>{customDetail.evaluation.answered} / {customDetail.evaluation.total} {t('wAnswered')}</p>{:else}<p>{t('customModelEvaluationPending')}</p>{/if}{/if}
     </section>{/if}
-    <section class="panel"><QualityPanel validation={result.validation}/>
-      {#if !run&&!modelId&&!result.validation?.applicable}<p class="muted">{t('aQualityRouteIntro')}</p>{/if}
-      {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant="primary" pending={validate.pending} onclick={()=>validate.run()}>{t(result.validation&&!result.validation.applicable?'wCheckAgain':result.validation?.stage==='complete'?'wValidationDone':result.validation?.applicable?'wContinue':'wEvaluate')}</Button>
-      <Button href={practice}>{t('wPractice')}</Button></div>{/if}
-    </section>
     <div class="custom-entry"><CustomModelPanel datasetId={id} speciesId={speciesId} startDate={result.start_date} endDate={result.end_date} oncreated={model=>{modelId=model.id;engine='custom';run='';load();}}/></div>
     {#if result.searches.length}<section class="panel"><h2>{t('wConfirmed')}</h2>
       {#each result.searches as search}<p><a class="button" href={`${resolve(`/datasets/${id}/search/${search.id}`)}?${range}`}>{t('wContinue')} · {search.created_at}</a></p>{/each}</section>{/if}
