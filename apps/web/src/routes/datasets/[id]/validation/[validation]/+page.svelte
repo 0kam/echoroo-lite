@@ -60,7 +60,7 @@
       {#if validation.can_start_recall}<p>{t('vRecallOptional')}</p>{/if}
       <div class="actions"><Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{#if validation.can_start_recall}<Button pending={beginRecall.pending} disabled={busy||!validation.applicable} onclick={()=>beginRecall.run()}>{t('vStartRecall')}</Button>{/if}{#if previous}<Button pending={navigate.pending} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if beginRecall.error}<p class="error" role="alert">{t(beginRecall.error)}</p>{/if}</section>
-    {:else if !started}<section class="panel"><h2>{t('wEvaluate')}</h2><p>{t(validation.kind==='search'?'rSearchValidationPlan':'wValidationPlan')}</p>
+    {:else if !started}<section class="panel"><h2>{t('wEvaluate')}</h2><p>{t('wValidationPlan')}</p>
       {#if shared&&validation.counts.calibration.answered}<p>{sharedProgress}</p>{/if}
       <p>{t('vFirstCount').replace('{count}',String(remaining))}</p>
       <p><strong>{t('refListenFirst')}</strong></p>{@render examples()}<Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>
@@ -75,7 +75,7 @@
           <div class="actions"><Button variant="primary" onclick={()=>paused=false}>{t('wNextBatch')}</Button><Button href={back}>{t('wStopHere')}</Button>{#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
         {:else if validation.question}
           {@const question=validation.question}
-          <div class="phase-progress"><h2>{t('aSharedAdjustment')}</h2>
+          <div class="phase-progress"><h2>{t('vQuestionNamed').replace('{name}',commonName(validation.species,app.locale)||validation.species.scientific_name)}</h2>
             <p>{t('vAnsweredCount').replace('{answered}',String(validation.counts[phase].answered)).replace('{total}',String(validation.counts[phase].total)).replace('{remaining}',String(remaining))}{#if corrected}<span role="status"> · ✓ {t('vCorrectionSaved')}</span>{/if}</p></div>
           {#if note}<p class="muted">{t(note)}</p>{/if}
           {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} marks={question.ranges.filter(range=>range.species_id===validation?.species.id)} storageKey={`echoroo-validation:${sid}:${question.id}:view`}/>{/key}

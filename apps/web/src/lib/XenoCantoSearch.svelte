@@ -42,7 +42,7 @@
     {#if countryFilter}<label>{t('xcCountry')}<input bind:value={country} maxlength="100" placeholder="Japan" /></label>
       <Button onclick={() => { countryFilter = false; country = ''; }}>{t('xcAllCountries')}</Button>
     {:else}<Button onclick={() => countryFilter = true}>{t('xcFilterCountry')}</Button>{/if}
-    <label>{t('xcQuality')}<select bind:value={quality}><option value="">{t('allQualities')}</option>{#each ['A','B','C','D','E'] as q}<option>{q}</option>{/each}</select></label>
+    <label>{t('xcQuality')}<select bind:value={quality}><option value="">{t('allQualities')}</option>{#each ['A','B','C','D','E'] as q}<option value={q}>{q}{q==='A'?` (${t('xcQualityBest')})`:q==='E'?` (${t('xcQualityWorst')})`:''}</option>{/each}</select></label>
     <Button type="submit" pending={search.pending} disabled={!species || !configured}>{t('xcSearch')}</Button>
   </form>
   {#if search.error}<p class="error" role="alert">{t(search.error)}</p>{/if}

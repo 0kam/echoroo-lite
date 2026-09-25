@@ -70,7 +70,7 @@
       </form><Button onclick={()=>sampling=false}>{t('uBackSounds')}</Button>
       {#if draw.error}<p class="error" role="alert">{t(draw.error)}</p>{/if}
     </section>
-    {:else}<div class="with-examples"><section class="panel"><div class="phase-progress"><h2>{t('uReviewPrompt')}</h2><p>{Math.min(index+1,run.hits.length)} / {run.hits.length} · {reviewed} {t('wAnswered')}</p></div>
+    {:else}<div class="with-examples"><section class="panel"><div class="phase-progress"><h2>{t('vQuestionNamed').replace('{name}',commonName(run.snapshot.species,app.locale)||run.snapshot.species.scientific_name)}</h2><p>{Math.min(index+1,run.hits.length)} / {run.hits.length} · {reviewed} {t('wAnswered')}</p></div>
       <p class="muted">{t('uReviewWhy')}</p>
       {#if currentHit}
         <p>{siteTime(currentHit,'short')}</p>

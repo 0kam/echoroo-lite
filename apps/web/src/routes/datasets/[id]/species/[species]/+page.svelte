@@ -35,7 +35,8 @@
   async function checkMaterials(data:SpeciesResult){if(!data.validation&&!data.searches.length)return;
     try{const session=await api<{id:number}>('/annotations',{dataset_id:id,start_date:data.start_date,end_date:data.end_date});
       const ready=await api<CustomModelReadiness>(`/annotations/${session.id}/custom-model-readiness?species_id=${encodeURIComponent(speciesId)}`);
-      canRebuild=ready.answers.target>=ready.requirements.positive_5s&&ready.answers.other>=ready.requirements.negative_5s;}catch{/* The link simply stays hidden. */}}
+      // Offer rebuilding only when it can actually be done, or when marking calls on "heard" sounds is all that is missing.
+      canRebuild=ready.can_train||ready.needs_range.length>0&&ready.reasons.every(reason=>reason==='custom_positive_examples_needed');}catch{/* The link simply stays hidden. */}}
   onMount(()=>{void load().then(()=>{if(result)void checkMaterials(result);});api<{ebird_code:string|null;in_quiz:boolean}>(`/species/${speciesId}/examples?dataset_id=${id}`).then(value=>about=value).catch(()=>{});});
   const external=$derived(result&&about?speciesPage(result.species,about.ebird_code,app.locale):null);
   const range=$derived(result?rangeQuery(result.start_date,result.end_date):initial.toString());
@@ -69,7 +70,7 @@
     <section class="panel"><QualityPanel validation={result.validation}/>
       {#if !modelId&&(!result.validation||result.validation.applicable)}<ValidationSteps validation={result.validation}/>{/if}
       {#if customDetail&&(!customDetail.applicable||customDetail.status==='threshold_unavailable')}<p class="notice">{t(customDetail.applicable?'custom_threshold_unavailable':customDetail.reason??'custom_model_scope_changed')}</p>{/if}
-      {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant={missed?'default':'primary'} pending={validate.pending} onclick={()=>validate.run()}>{listenLabel(result.validation)}</Button>
+      {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant={missed?'default':'primary'} pending={validate.pending} onclick={()=>validate.run()}>{result.validation?.applicable&&result.validation.stage==='complete'?t('vOpenCheck'):listenLabel(result.validation)}</Button>
       {#if about?.in_quiz}<Button href={practice}>{t('wPractice')}</Button>{/if}</div>{/if}
       <!-- Searching and rebuilding are offered only once a check shows the AI falls short for this species. -->
       {#if missed}<div class="next-step"><p><strong>{t('vGoalMissedTitle')}</strong> {t('vGoalMissedHint')}</p>{#if !run||canRebuild}<p>{t('vGoalMissedNext')}</p>{/if}
@@ -79,7 +80,8 @@
       {#each result.annotations as item,index}<div><Button active={openEvidence===index} onclick={()=>openEvidence=openEvidence===index?-1:index}>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:result.site.timezone}).format(new Date(item.local_time))} · {(item.end_s-item.start_s).toFixed(1)} {t('seconds')}</Button>
         {#if openEvidence===index}<div class="evidence"><AudioRegion source={{id:item.recording_id,kind:'recording',path:item.source_path,seconds:item.seconds}} fixedRange start={item.start_s} end={item.end_s}/></div>{/if}
       </div>{/each}</section>{/if}
-    {#if result.custom_models?.length||canRebuild&&!missed}<div class="custom-entry"><Button href={modelHref}>{t('customModelTitle')}</Button></div>{/if}
+    <!-- Rebuilding is offered only when a check falls short (above); afterwards this link manages what was built. -->
+    {#if result.custom_models?.length}<div class="custom-entry"><Button href={modelHref}>{t('sModelManage')}</Button></div>{/if}
     {#if result.searches.length}<section class="panel"><h2>{t('wConfirmed')}</h2>
       {#each result.searches as search}<p><a class="button" href={`${resolve(`/datasets/${id}/search/${search.id}`)}?${range}`}>{t('sContinueReview')} · {new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:result.site.timezone}).format(new Date(`${search.created_at.replace(' ','T')}Z`))}</a></p>{/each}</section>{/if}
   {:else if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
