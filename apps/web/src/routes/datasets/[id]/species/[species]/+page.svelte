@@ -40,14 +40,16 @@
     const validation=result.validation?.applicable?result.validation:await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,start_date:result.start_date,end_date:result.end_date,run_id:run?Number(run):null});
     await goto(resolve(`/datasets/${id}/validation/${validation.id}`));
   },{toast:true});
-  const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}?${range}&engine=${engine}${run?`&run_id=${run}`:''}${modelId?`&model_id=${modelId}`:''}`)}`);
+  // The current view (period and result tab), so pages opened from here can return to it.
+  const view=$derived(`${range}&engine=${engine}${run?`&run_id=${run}`:''}${modelId?`&model_id=${modelId}`:''}`);
+  const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}?${view}`)}`);
   const customName=(model:CustomModel)=>t('customModelNumber').replace('{number}',String(model.id));
   const customPrecision=$derived(customDetail?.cv.reference_precision?.value??null),customRecall=$derived(customDetail?.cv.reference_recall?.value??null);
 </script>
 <div class="page">
   <div class="page-header"><div><div class="crumbs"><a href={`${resolve(`/datasets/${id}`)}?${range}`}>{t('uBackResults')}</a><span>{result?.site.name}</span></div>
     <h1>{result?commonName(result.species,app.locale):t('species')} <i class="sci">{result?.species.scientific_name}</i></h1></div>
-    <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('wFurther')}</Button></div>
+    <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('wFurther')}</Button></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}
     {#if result.location_stale}<p class="notice" role="status">{t('location_reanalysis')}</p>{/if}

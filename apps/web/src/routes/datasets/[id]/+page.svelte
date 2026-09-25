@@ -38,7 +38,7 @@
     <section class="panel"><div class="section-heading"><div class="stat-row"><span><strong>{result.analysed_recordings} / {result.records}</strong> {t('files')}</span>
       <span><strong>{result.recorded_seconds<3600?duration(result.recorded_seconds):(result.recorded_seconds/3600).toFixed(1)+' h'}</strong></span>
       <span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span></div>
-      <div class="actions"><Button href={`${resolve('/datasets/new')}?site=${result.site.id}`}>{t('uAddRecordings')}</Button><Button href={resolve(`/datasets/${id}/recordings`)}>{t('wViewRecordings')}</Button>
+      <div class="actions"><Button href={`${resolve('/datasets/new')}?site=${result.site.id}&return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('uAddRecordings')}</Button><Button href={resolve(`/datasets/${id}/recordings`)}>{t('wViewRecordings')}</Button>
         {#if result.mixed_models||result.analysed_recordings<result.records}<Button pending={analyze.pending} disabled={!!job} onclick={()=>analyze.run()}>{t('analyzeAll')}</Button>{/if}</div></div>
       {#if result.mixed_models}<p class="notice">{t('wModelVersions')}</p>{/if}
       {#if job&&app.datasets.find(d=>d.id===job.dataset_id)?.site_id===result.site.id}<JobStatus {job}/>{/if}

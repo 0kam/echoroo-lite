@@ -1,3 +1,4 @@
+import { resolve } from '$app/paths';
 import type { Species } from './species';
 import type { Report, ReportOptions } from './reports';
 import type { AudioSource } from './AudioRegion.svelte';
@@ -42,3 +43,6 @@ export const qualityStatus = (value:Validation|null) => !value ? 'wUnevaluated' 
 export const validationPhase = (value:Validation|null) => value?.audit_step==='recall'?'recall':value?.stage==='calibration'?'calibration':'evaluation';
 export const interval = (value:Metric) => value.low===null||value.high===null?'—':`${(value.low*100).toFixed(1)}–${(value.high*100).toFixed(1)}%`;
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
+// `return=` carries the in-app page to go back to (hash routing); anything not matching `allowed` is ignored.
+export const returnPath = (url:URL,allowed:RegExp) => {const path=new URL(url.hash.slice(1)||url.pathname+url.search,url).searchParams.get('return')??'';return allowed.test(path)?path:'';};
+export const appHref = (path:string) => `${resolve('/')}${path.slice(1)}`;

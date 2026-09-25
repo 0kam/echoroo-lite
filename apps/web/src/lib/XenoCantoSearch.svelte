@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import { api } from './api.svelte';
   import { app, t } from './app.svelte';
   import { commonName, type Species } from './species';
@@ -31,7 +32,7 @@
 
 <div class="xc">
   {#if configured === false}
-    <p class="muted">{t('xcNotConfigured')} · <a href={resolve('/settings')}>{t('navSettings')}</a></p>
+    <p class="muted">{t('xcNotConfigured')} · <a href={`${resolve('/settings')}?return=${encodeURIComponent(page.url.hash.slice(1))}`}>{t('navSettings')}</a></p>
   {/if}
   <p class="muted">{species ? `${commonName(species, app.locale)} · ${species.scientific_name}` : t('chooseTargetFirst')}</p>
   <form class="query" onsubmit={e => { e.preventDefault(); search.run(1, true); }}>

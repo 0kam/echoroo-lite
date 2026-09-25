@@ -57,7 +57,7 @@
         {#if (dirty||changingPlace)&&renameId===null}<Button disabled={save.pending} onclick={()=>receive(details!)}>{t('mCancel')}</Button>{/if}</div>
       {#if save.error}<p class="error" role="alert">{t(save.error)}</p>{/if}
     </form>
-    <section class="panel"><div class="section-heading"><h2>{t('mImports')}</h2><Button href={`${resolve('/datasets/new')}?site=${id}`}>{t('uAddRecordings')}</Button></div>
+    <section class="panel"><div class="section-heading"><h2>{t('mImports')}</h2><Button href={`${resolve('/datasets/new')}?site=${id}&return=${encodeURIComponent(`/sites/${id}/manage`)}`}>{t('uAddRecordings')}</Button></div>
       {#each details.datasets as dataset}
         <div class="collection">
           {#if renameId===dataset.id}<form class="actions" onsubmit={event=>{event.preventDefault();rename.run();}}>
