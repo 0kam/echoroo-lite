@@ -60,6 +60,16 @@ export function qualityText(value:Validation|null,result?:QualityResult) {
 }
 /** A finished check where no AI reached its goal: the species needs another way to be confirmed. */
 export const goalMissed = (value:Validation|null) => !!value?.applicable&&value.stage==='complete'&&Object.keys(value.results).length>0&&!Object.values(value.results).some(result=>result.goal_met);
+// Missed calls are advisory (user decision 2026-09-25): below this share of calls found, the check suggests other ways
+// to record calls but the report group still follows the precision goal alone.
+export const RECALL_GUIDE = .8;
+/** A finished missed-call check where no AI found at least RECALL_GUIDE of the calls present. */
+export const recallLow = (value:Validation|null) => {
+  const checked=value?.applicable&&value.stage==='complete'?Object.values(value.results).filter(result=>result.recall_complete&&result.recall.value!==null):[];
+  return checked.length>0&&checked.every(result=>result.recall.value!<RECALL_GUIDE);
+};
+const recallText = (result:QualityResult) => result.recall_complete&&result.recall.value!==null
+  ?' · '+fill(result.recall.value<RECALL_GUIDE?'wRecallBelow':'wRecallMet',{p:percentText(result.recall.value),target:percentText(RECALL_GUIDE)}):'';
 /** The one button into listening: start, continue (answered/total), see the result, or check again. */
 export function listenLabel(value:Validation|null,start='wEvaluate') {
   if(!value||value.applicable&&value.stage==='calibration'&&!value.counts.calibration.answered)return t(start);
@@ -71,7 +81,7 @@ export function listenLabel(value:Validation|null,start='wEvaluate') {
 /** One line per AI once the check is complete; otherwise a single status line. */
 export function qualityLines(value:Validation|null) {
   const results=value?.applicable&&value.stage==='complete'?Object.entries(value.results):[];
-  return results.length?results.map(([engine,result])=>`${results.length>1?`${modelName(engine)}: `:''}${qualityText(value,result)}`):[qualityText(value)];
+  return results.length?results.map(([engine,result])=>`${results.length>1?`${modelName(engine)}: `:''}${qualityText(value,result)}${recallText(result)}`):[qualityText(value)];
 }
 export const interval = (value:Metric) => value.low===null||value.high===null?'—':`${(value.low*100).toFixed(1)}–${(value.high*100).toFixed(1)}%`;
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();

@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { goalMissed,validationPhase,type Validation } from '$lib/workflow';
+  import { goalMissed,recallLow,validationPhase,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ValidationSteps from '$lib/ValidationSteps.svelte';
@@ -45,7 +45,7 @@
   const sharedProgress=$derived(validation?t('aSharedProgress').replace('{answered}',String(validation.counts.calibration.answered)).replace('{remaining}',String(validation.counts.calibration.total-validation.counts.calibration.answered)):'');
   // One sentence per step on why these sounds are asked; the reasons differ between AI detections and searches.
   const note=$derived(!validation?.question?'':phase==='recall'?'vRecallNote':validation.kind==='search'?(phase==='calibration'?'vSearchFirstNote':'vSearchEvaluationNote'):phase==='evaluation'?'vEvaluationNote':shared?'vFirstSoundsNote':'');
-  const missed=$derived(goalMissed(validation));
+  const missed=$derived(goalMissed(validation)),lowRecall=$derived(!missed&&recallLow(validation));
 </script>
 {#snippet examples()}{#if validation}<div class="examples-column"><ReferencePanel species={validation.species} datasetId={id} validationId={sid} {practice} onexamples={list=>heard=list}/></div>{/if}{/snippet}
 <div class="page validation-page"><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
@@ -55,7 +55,7 @@
     <ValidationSteps {validation}/>
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??(validation.annotation_source_current?'wScopeChanged':'annotation_source_changed'))}</p>{/if}
     {#if validation.stage==='complete'&&!validation.question}<section class="panel"><QualityPanel {validation}/>
-      {#if missed}<div class="next-step"><p><strong>{t('vGoalMissedTitle')}</strong> {t('vGoalMissedHint')}</p>{#if validation.kind==='detection'}<p>{t('vGoalMissedNext')}</p>{/if}
+      {#if missed||lowRecall}<div class="next-step"><p><strong>{t(missed?'vGoalMissedTitle':'vRecallLowTitle')}</strong> {t(missed?'vGoalMissedHint':'vRecallLowHint')}</p>{#if validation.kind==='detection'}<p>{t(missed?'vGoalMissedNext':'vRecallLowNext')}</p>{/if}
         {#if validation.kind==='detection'}<div class="actions"><Button href={`${resolve(`/datasets/${id}/search`)}?species=${validation.species.id}&start_date=${validation.start_date}&end_date=${validation.end_date}`}>{t('sCheckYourself')}</Button></div>{/if}</div>{/if}
       {#if validation.can_start_recall}<p>{t('vRecallOptional')}</p>{/if}
       <div class="actions"><Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{#if validation.can_start_recall}<Button pending={beginRecall.pending} disabled={busy||!validation.applicable} onclick={()=>beginRecall.run()}>{t('vStartRecall')}</Button>{/if}{#if previous}<Button pending={navigate.pending} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>

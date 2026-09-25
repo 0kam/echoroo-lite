@@ -7,7 +7,7 @@
   import { app,t } from '$lib/app.svelte';
   import { commonName,speciesPage } from '$lib/species';
   import { openExternal } from '$lib/files';
-  import { customName,goalMissed,listenLabel,rangeQuery,type CustomModel,type CustomModelReadiness,type SpeciesResult,type Validation } from '$lib/workflow';
+  import { customName,goalMissed,recallLow,listenLabel,rangeQuery,type CustomModel,type CustomModelReadiness,type SpeciesResult,type Validation } from '$lib/workflow';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ValidationSteps from '$lib/ValidationSteps.svelte';
   import ReportView from '$lib/ReportView.svelte';
@@ -48,7 +48,7 @@
   },{toast:true});
   // The current view (period and result tab), so pages opened from here can return to it.
   const view=$derived(`${range}&engine=${engine}${run?`&run_id=${run}`:''}${modelId?`&model_id=${modelId}`:''}`);
-  const missed=$derived(goalMissed(result?.validation??null)),modelHref=$derived(`${resolve(`/datasets/${id}/species/${speciesId}/model`)}?${range}`);
+  const missed=$derived(goalMissed(result?.validation??null)),lowRecall=$derived(!missed&&recallLow(result?.validation??null)),modelHref=$derived(`${resolve(`/datasets/${id}/species/${speciesId}/model`)}?${range}`);
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}?${view}`)}`);
 </script>
 <div class="page">
@@ -72,8 +72,8 @@
       {#if customDetail&&(!customDetail.applicable||customDetail.status==='threshold_unavailable')}<p class="notice">{t(customDetail.applicable?'custom_threshold_unavailable':customDetail.reason??'custom_model_scope_changed')}</p>{/if}
       {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant={missed?'default':'primary'} pending={validate.pending} onclick={()=>validate.run()}>{result.validation?.applicable&&result.validation.stage==='complete'?t('vOpenCheck'):listenLabel(result.validation)}</Button>
       {#if about?.in_quiz}<Button href={practice}>{t('wPractice')}</Button>{/if}</div>{/if}
-      <!-- Searching and rebuilding are offered only once a check shows the AI falls short for this species. -->
-      {#if missed}<div class="next-step"><p><strong>{t('vGoalMissedTitle')}</strong> {t('vGoalMissedHint')}</p>{#if !run||canRebuild}<p>{t('vGoalMissedNext')}</p>{/if}
+      <!-- Searching and rebuilding are offered only once a check shows the AI falls short: too many wrong detections, or (advice only) too many missed calls. -->
+      {#if missed||lowRecall}<div class="next-step"><p><strong>{t(missed?'vGoalMissedTitle':'vRecallLowTitle')}</strong> {t(missed?'vGoalMissedHint':'vRecallLowHint')}</p>{#if !run||canRebuild}<p>{t(missed?'vGoalMissedNext':'vRecallLowNext')}</p>{/if}
         <div class="actions">{#if !run}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('sCheckYourself')}</Button>{/if}{#if canRebuild}<Button href={modelHref}>{t('customModelTitle')}</Button>{/if}</div></div>{/if}
     </section>
     {#if result.annotations.length}<section class="panel"><h2>{t('aExactEvidence')}</h2><p>{t('aEvidenceNote')}</p>
