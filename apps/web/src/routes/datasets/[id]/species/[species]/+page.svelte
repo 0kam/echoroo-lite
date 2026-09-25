@@ -7,7 +7,7 @@
   import { app,t } from '$lib/app.svelte';
   import { commonName,speciesPage } from '$lib/species';
   import { openExternal } from '$lib/files';
-  import { customName,goalMissed,recallLow,listenLabel,rangeQuery,type CustomModel,type CustomModelReadiness,type SpeciesResult,type Validation } from '$lib/workflow';
+  import { canRebuild,customName,goalMissed,recallLow,listenLabel,rangeQuery,type CustomModel,type SpeciesResult,type Validation } from '$lib/workflow';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ValidationSteps from '$lib/ValidationSteps.svelte';
   import ReportView from '$lib/ReportView.svelte';
@@ -19,7 +19,7 @@
   const initial=new URL(page.url.hash.slice(1),page.url).searchParams;
   let result=$state<SpeciesResult|null>(null),engine=$state(initial.get('engine')||'auto'),run=$state(initial.get('run_id')||''),modelId=$state(Number(initial.get('model_id'))||0),customDetail=$state<CustomModel|null>(null),error=$state(''),loading=$state(true),liveUrl=$state('');
   let request=0,about=$state<{ebird_code:string|null;in_quiz:boolean}|null>(null);
-  let openEvidence=$state(-1),canRebuild=$state(false);
+  let openEvidence=$state(-1),rebuild=$state(false),rebuildChecked=false;
   async function load(){const version=++request;loading=true;error='';
     const query=new URLSearchParams({engine});
     if(result){query.set('start_date',result.start_date);query.set('end_date',result.end_date);}
@@ -31,13 +31,7 @@
     catch(e){if(version===request)error=e instanceof Error?e.message:'unknown_error';}
     finally{if(version===request)loading=false;}
   }
-  // The rebuild page is offered once at least 3 "heard" and 3 "not heard" answers exist.
-  async function checkMaterials(data:SpeciesResult){if(!data.validation&&!data.searches.length)return;
-    try{const session=await api<{id:number}>('/annotations',{dataset_id:id,start_date:data.start_date,end_date:data.end_date});
-      const ready=await api<CustomModelReadiness>(`/annotations/${session.id}/custom-model-readiness?species_id=${encodeURIComponent(speciesId)}`);
-      // Offer rebuilding only when it can actually be done, or when marking calls on "heard" sounds is all that is missing.
-      canRebuild=ready.can_train||ready.needs_range.length>0&&ready.reasons.every(reason=>reason==='custom_positive_examples_needed');}catch{/* The link simply stays hidden. */}}
-  onMount(()=>{void load().then(()=>{if(result)void checkMaterials(result);});api<{ebird_code:string|null;in_quiz:boolean}>(`/species/${speciesId}/examples?dataset_id=${id}`).then(value=>about=value).catch(()=>{});});
+  onMount(()=>{void load();api<{ebird_code:string|null;in_quiz:boolean}>(`/species/${speciesId}/examples?dataset_id=${id}`).then(value=>about=value).catch(()=>{});});
   const external=$derived(result&&about?speciesPage(result.species,about.ebird_code,app.locale):null);
   const range=$derived(result?rangeQuery(result.start_date,result.end_date):initial.toString());
   // Creates or resumes the check; the server prepares the site's shared first clips itself.
@@ -49,6 +43,10 @@
   // The current view (period and result tab), so pages opened from here can return to it.
   const view=$derived(`${range}&engine=${engine}${run?`&run_id=${run}`:''}${modelId?`&model_id=${modelId}`:''}`);
   const missed=$derived(goalMissed(result?.validation??null)),lowRecall=$derived(!missed&&recallLow(result?.validation??null)),modelHref=$derived(`${resolve(`/datasets/${id}/species/${speciesId}/model`)}?${range}`);
+  // Asked once, when the guidance first appears on any tab.
+  $effect(()=>{if((missed||lowRecall)&&result&&!rebuildChecked){rebuildChecked=true;void canRebuild(id,speciesId,result.start_date,result.end_date).then(value=>rebuild=value);}});
+  // Not on the collected-calls tab: the user has already collected similar calls there.
+  const searchable=$derived(!run);
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}?${view}`)}`);
 </script>
 <div class="page">
@@ -73,8 +71,8 @@
       {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant={missed?'default':'primary'} pending={validate.pending} onclick={()=>validate.run()}>{result.validation?.applicable&&result.validation.stage==='complete'?t('vOpenCheck'):listenLabel(result.validation)}</Button>
       {#if about?.in_quiz}<Button href={practice}>{t('wPractice')}</Button>{/if}</div>{/if}
       <!-- Searching and rebuilding are offered only once a check shows the AI falls short: too many wrong detections, or (advice only) too many missed calls. -->
-      {#if missed||lowRecall}<div class="next-step"><p><strong>{t(missed?'vGoalMissedTitle':'vRecallLowTitle')}</strong> {t(missed?'vGoalMissedHint':'vRecallLowHint')}</p>{#if !run||canRebuild}<p>{t(missed?'vGoalMissedNext':'vRecallLowNext')}</p>{/if}
-        <div class="actions">{#if !run}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('sCheckYourself')}</Button>{/if}{#if canRebuild}<Button href={modelHref}>{t('customModelTitle')}</Button>{/if}</div></div>{/if}
+      {#if missed||lowRecall}<div class="next-step"><p><strong>{t(missed?'vGoalMissedTitle':'vRecallLowTitle')}</strong> {t(missed?'vGoalMissedHint':'vRecallLowHint')}</p>{#if searchable||rebuild}<p>{t(missed?'vGoalMissedNext':'vRecallLowNext')}</p>
+        <div class="actions">{#if searchable}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('sCheckYourself')}</Button>{/if}{#if rebuild}<Button href={modelHref}>{t('customModelTitle')}</Button>{/if}</div>{/if}</div>{/if}
     </section>
     {#if result.annotations.length}<section class="panel"><h2>{t('aExactEvidence')}</h2><p>{t('aEvidenceNote')}</p>
       {#each result.annotations as item,index}<div><Button active={openEvidence===index} onclick={()=>openEvidence=openEvidence===index?-1:index}>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:result.site.timezone}).format(new Date(item.local_time))} · {(item.end_s-item.start_s).toFixed(1)} {t('seconds')}</Button>

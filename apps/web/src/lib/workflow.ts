@@ -4,6 +4,7 @@ import type { Report, ReportOptions } from './reports';
 import type { AudioSource } from './AudioRegion.svelte';
 import type { CallRange } from './annotations';
 import { app,t } from './app.svelte';
+import { api } from './api.svelte';
 export type Metric = { value: number | null; low: number | null; high: number | null };
 export type ReferenceMetric = {value:number|null;positive?:number;predicted?:number;found?:number;present?:number};
 export type AuditSample = {total:number;answered:number;target:number;unknown:number;population:number};
@@ -68,6 +69,13 @@ export const recallLow = (value:Validation|null) => {
   const checked=value?.applicable&&value.stage==='complete'?Object.values(value.results).filter(result=>result.recall_complete&&result.recall.value!==null):[];
   return checked.length>0&&checked.every(result=>result.recall.value!<RECALL_GUIDE);
 };
+/** Whether rebuilding the AI with this site's sounds can actually be done now, or only needs calls marked on "heard" sounds. */
+export async function canRebuild(datasetId:number,speciesId:string,start_date:string,end_date:string) {
+  try{const session=await api<{id:number}>('/annotations',{dataset_id:datasetId,start_date,end_date});
+    const ready=await api<CustomModelReadiness>(`/annotations/${session.id}/custom-model-readiness?species_id=${encodeURIComponent(speciesId)}`);
+    return ready.can_train||ready.needs_range.length>0&&ready.reasons.every(reason=>reason==='custom_positive_examples_needed');}
+  catch{return false;}
+}
 const recallText = (result:QualityResult) => result.recall_complete&&result.recall.value!==null
   ?' · '+fill(result.recall.value<RECALL_GUIDE?'wRecallBelow':'wRecallMet',{p:percentText(result.recall.value),target:percentText(RECALL_GUIDE)}):'';
 /** The one button into listening: start, continue (answered/total), see the result, or check again. */

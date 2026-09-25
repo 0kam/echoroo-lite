@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { goalMissed,recallLow,validationPhase,type Validation } from '$lib/workflow';
+  import { canRebuild,goalMissed,recallLow,rangeQuery,validationPhase,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ValidationSteps from '$lib/ValidationSteps.svelte';
@@ -14,7 +14,7 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),sid=Number(page.params.validation);
-  let validation=$state<Validation|null>(null),error=$state(''),paused=$state(false),started=$state(false),corrected=$state(false),heard=$state<ExampleRef[]>();
+  let validation=$state<Validation|null>(null),rebuild=$state(false),rebuildChecked=false,error=$state(''),paused=$state(false),started=$state(false),corrected=$state(false),heard=$state<ExampleRef[]>();
   const phase=$derived(validationPhase(validation));
   const previous=$derived(validation?.history.filter(item=>item.position<(validation?.question?.position??Infinity)).at(-1));
   const next=$derived(validation?.history.find(item=>item.position>(validation?.question?.position??Infinity)));
@@ -39,13 +39,19 @@
     if(value.counts[phase].answered>0&&value.counts[phase].answered%10===0)paused=true;
   });
   const busy=$derived(answer.pending||navigate.pending||begin.pending||beginRecall.pending);
-  const back=$derived(validation?`${resolve(`/datasets/${id}/species/${validation.species.id}`)}?start_date=${validation.start_date}&end_date=${validation.end_date}${validation.run_id?`&run_id=${validation.run_id}`:''}${validation.model_id?`&model_id=${validation.model_id}&engine=custom`:''}`:resolve(`/datasets/${id}`));
+  // The species results tab this check belongs to, so pages opened from here return to it.
+  const range=$derived(validation?rangeQuery(validation.start_date,validation.end_date):'');
+  const view=$derived(validation?`${range}${validation.run_id?`&run_id=${validation.run_id}`:''}${validation.model_id?`&model_id=${validation.model_id}&engine=custom`:''}`:'');
+  const back=$derived(validation?`${resolve(`/datasets/${id}/species/${validation.species.id}`)}?${view}`:resolve(`/datasets/${id}`));
   const practice=$derived(validation?`${resolve('/quiz')}?species=${validation.species.id}&return=${encodeURIComponent(`/datasets/${id}/validation/${sid}`)}`:'');
   const shared=$derived(!!validation?.annotation_session_id);
   const sharedProgress=$derived(validation?t('aSharedProgress').replace('{answered}',String(validation.counts.calibration.answered)).replace('{remaining}',String(validation.counts.calibration.total-validation.counts.calibration.answered)):'');
   // One sentence per step on why these sounds are asked; the reasons differ between AI detections and searches.
   const note=$derived(!validation?.question?'':phase==='recall'?'vRecallNote':validation.kind==='search'?(phase==='calibration'?'vSearchFirstNote':'vSearchEvaluationNote'):phase==='evaluation'?'vEvaluationNote':shared?'vFirstSoundsNote':'');
   const missed=$derived(goalMissed(validation)),lowRecall=$derived(!missed&&recallLow(validation));
+  // Same options as the species results: search except on the collected-calls tab, rebuild only when it can be built.
+  const searchable=$derived(validation?.kind!=='search');
+  $effect(()=>{if((missed||lowRecall)&&validation&&!rebuildChecked){rebuildChecked=true;void canRebuild(id,validation.species.id,validation.start_date,validation.end_date).then(value=>rebuild=value);}});
 </script>
 {#snippet examples()}{#if validation}<div class="examples-column"><ReferencePanel species={validation.species} datasetId={id} validationId={sid} {practice} onexamples={list=>heard=list}/></div>{/if}{/snippet}
 <div class="page validation-page"><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
@@ -55,8 +61,8 @@
     <ValidationSteps {validation}/>
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??(validation.annotation_source_current?'wScopeChanged':'annotation_source_changed'))}</p>{/if}
     {#if validation.stage==='complete'&&!validation.question}<section class="panel"><QualityPanel {validation}/>
-      {#if missed||lowRecall}<div class="next-step"><p><strong>{t(missed?'vGoalMissedTitle':'vRecallLowTitle')}</strong> {t(missed?'vGoalMissedHint':'vRecallLowHint')}</p>{#if validation.kind==='detection'}<p>{t(missed?'vGoalMissedNext':'vRecallLowNext')}</p>{/if}
-        {#if validation.kind==='detection'}<div class="actions"><Button href={`${resolve(`/datasets/${id}/search`)}?species=${validation.species.id}&start_date=${validation.start_date}&end_date=${validation.end_date}`}>{t('sCheckYourself')}</Button></div>{/if}</div>{/if}
+      {#if missed||lowRecall}<div class="next-step"><p><strong>{t(missed?'vGoalMissedTitle':'vRecallLowTitle')}</strong> {t(missed?'vGoalMissedHint':'vRecallLowHint')}</p>{#if searchable||rebuild}<p>{t(missed?'vGoalMissedNext':'vRecallLowNext')}</p>
+        <div class="actions">{#if searchable}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${validation.species.id}&${view}`}>{t('sCheckYourself')}</Button>{/if}{#if rebuild}<Button href={`${resolve(`/datasets/${id}/species/${validation.species.id}/model`)}?${range}`}>{t('customModelTitle')}</Button>{/if}</div>{/if}</div>{/if}
       {#if validation.can_start_recall}<p>{t('vRecallOptional')}</p>{/if}
       <div class="actions"><Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{#if validation.can_start_recall}<Button pending={beginRecall.pending} disabled={busy||!validation.applicable} onclick={()=>beginRecall.run()}>{t('vStartRecall')}</Button>{/if}{#if previous}<Button pending={navigate.pending} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if beginRecall.error}<p class="error" role="alert">{t(beginRecall.error)}</p>{/if}</section>
