@@ -10,15 +10,15 @@
   export type Attribution = { id: number; scientific_name: string; common_name: string; recordist: string;
     country: string; location: string; quality: string; length: string; type: string; date: string; license: string; url: string };
   let { species, onselect }: { species: Species | null; onselect: (source: AudioSource & { attribution?: Attribution }) => void } = $props();
-  let configured = $state<boolean | null>(null), country = $state('Japan'), quality = $state('A');
+  let configured = $state<boolean | null>(null), country = $state(''), countryFilter = $state(false), quality = $state('A');
   let results = $state<{ recordings: Attribution[]; total_recordings: number; total_pages: number; page: number } | null>(null);
   let lastQuery: { species_id: string; country: string; quality: string } | null = null;
   let importing = $state<number | null>(null), restored=$state(false);
-  onMount(()=>{try{const saved=JSON.parse(sessionStorage.getItem(`echoroo-xc-${species?.id}`)||'null');if(saved){country=saved.country;quality=saved.quality;results=saved.results;lastQuery=saved.lastQuery;}}catch{}restored=true;});
+  onMount(()=>{try{const saved=JSON.parse(sessionStorage.getItem(`echoroo-xc-${species?.id}`)||'null');if(saved){country=saved.country;countryFilter=!!saved.country;quality=saved.quality;results=saved.results;lastQuery=saved.lastQuery;}}catch{}restored=true;});
   $effect(()=>{if(restored)sessionStorage.setItem(`echoroo-xc-${species?.id}`,JSON.stringify({country,quality,results,lastQuery}));});
   const licenseName=(value:string)=>{const match=value.match(/creativecommons\.org\/licenses\/([^/]+)\/([^/]+)/);return match?`CC ${match[1].toUpperCase()} ${match[2]}`:value;};
   const search = createTask(async (page: number, fresh = false) => {
-    if (fresh && species) lastQuery = { species_id: species.id, country, quality };
+    if (fresh && species) lastQuery = { species_id: species.id, country: countryFilter ? country.trim() : '', quality };
     if (!lastQuery) return;
     results = await api(`/xeno-canto/search?${new URLSearchParams({ ...lastQuery, page: String(page) })}`);
   });
@@ -35,7 +35,9 @@
   {/if}
   <p class="muted">{species ? `${commonName(species, app.locale)} · ${species.scientific_name}` : t('chooseTargetFirst')}</p>
   <form class="query" onsubmit={e => { e.preventDefault(); search.run(1, true); }}>
-    <label>{t('xcCountry')}<input bind:value={country} maxlength="100" /></label>
+    {#if countryFilter}<label>{t('xcCountry')}<input bind:value={country} maxlength="100" placeholder="Japan" /></label>
+      <Button onclick={() => { countryFilter = false; country = ''; }}>{t('xcAllCountries')}</Button>
+    {:else}<Button onclick={() => countryFilter = true}>{t('xcFilterCountry')}</Button>{/if}
     <label>{t('xcQuality')}<select bind:value={quality}><option value="">{t('allQualities')}</option>{#each ['A','B','C','D','E'] as q}<option>{q}</option>{/each}</select></label>
     <Button type="submit" pending={search.pending} disabled={!species || !configured}>{t('xcSearch')}</Button>
   </form>

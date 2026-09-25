@@ -75,7 +75,7 @@
         {#key currentHit.segment_id}<AudioRegion source={{id:currentHit.recording_id,kind:'recording',path:currentHit.path,seconds:currentHit.seconds}} start={currentHit.start_s} end={currentHit.end_s} fixedRange/>{/key}
         {#if currentHit.verdict}<p>{t('uReviewSaved')}: {t(`verdict_${currentHit.verdict}`)}</p>{/if}
         <div class="actions answers">{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
-          <Button variant={verdict==='target'?'primary':'default'} pending={judge.pending} onclick={()=>judge.run(currentHit,verdict)}>{t(label)}</Button>{/each}</div>
+          <Button size="lg" active={currentHit.verdict===verdict} aria-pressed={currentHit.verdict===verdict} pending={judge.pending} onclick={()=>judge.run(currentHit,verdict)}>{currentHit.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
       {:else}<p>{t('uReviewDone')}</p>{/if}
       {#if judge.error}<p class="error" role="alert">{t(judge.error)}</p>{/if}
       <div class="actions between"><Button disabled={index===0||judge.pending} onclick={()=>index--}>‹ {t('uPreviousSound')}</Button><Button disabled={index>=run.hits.length-1||judge.pending} onclick={()=>index++}>{t('uNextSound')} ›</Button></div>

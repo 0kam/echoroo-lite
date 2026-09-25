@@ -16,13 +16,13 @@
   import ZoomSpectrogram from './ZoomSpectrogram.svelte';
   import type { CallRange } from './annotations';
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, marks=[], onrange, storageKey }:
+    zoomable=false, marks=[], onrange, marking=$bindable(false), storageKey }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;marks?:CallRange[];onrange?:(start:number,end:number)=>void;storageKey?:string } = $props();
+      zoomable?:boolean;marks?:CallRange[];onrange?:(start:number,end:number)=>void;marking?:boolean;storageKey?:string } = $props();
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
   let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
   let viewStart = $state(0), span = $state(30), loading = $state(true), error = $state('');
-  let cursor = $state(0);
+  let cursor = $state(0), playhead = $state<number | null>(null);
   let frequencyMax = $state(12000);
   let initialized=$state(false);
   let anchor: number | null = null, request = 0, stopAt: number | null = null;
@@ -104,6 +104,20 @@
       await audio.play(); if (version === playbackVersion) scheduleStop();
     } catch { if (version === playbackVersion) { error = 'unreadable_audio'; status = 'idle'; } }
   }
+  /** Zoomable view: plays from the playhead (set by double-click) to the end of the clip. */
+  function playFromHead() {
+    const from = playhead !== null && playhead < viewEnd - 0.05 ? playhead : viewStart;
+    void play(from, viewEnd);
+  }
+  function seek(time: number) {
+    playhead = time; cursor = time;
+    if (status !== 'idle') void play(time, viewEnd);
+  }
+  function toggle() {
+    if (status === 'idle') { playFromHead(); return; }
+    if (zoomable && status === 'playing') playhead = cursor; // Pausing keeps the position for the next play.
+    stop();
+  }
   export function stop() {
     playbackVersion++; cancelMetadata?.(); audio?.pause(); clearTimeout(stopTimer); stopAt = null; status = 'idle';
   }
@@ -116,7 +130,7 @@
 </script>
 
 {#snippet playbackButton()}
-  <Button variant="primary" aria-busy={status === 'loading'} onclick={() => status !== 'idle' ? stop() : zoomable?play(viewStart,viewEnd):play()}>
+  <Button variant="primary" aria-busy={status === 'loading'} onclick={() => zoomable ? toggle() : status !== 'idle' ? stop() : play()}>
     {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(fixedRange?'uListen':'playRange')}
   </Button>
 {/snippet}
@@ -127,7 +141,8 @@
     <Button disabled={viewEnd>=source.seconds} onclick={()=>navigate(viewStart+span)}>{t('nextView')} ›</Button>
   </div>{/if}
   {#if zoomable&&initialized&&viewEnd>viewStart}
-    <ZoomSpectrogram {mediaPath} start={viewStart} end={viewEnd} {marks} {cursor} {onrange} {storageKey} onplay={play} controls={playbackButton}/>
+    <ZoomSpectrogram {mediaPath} start={viewStart} end={viewEnd} {marks} cursor={status === 'idle' ? playhead : cursor} {onrange} bind:marking {storageKey}
+      onseek={seek} onplay={toggle} controls={playbackButton}/>
   {:else}<div class="spectrogram-grid">
     <div class="frequencies"><span>{+(frequencyMax / 1000).toFixed(2)} kHz</span><span>{+(frequencyMax / 2000).toFixed(2)} kHz</span><span>0</span></div>
     <div class="spectrogram" class:fixed={fixedRange} role="group" aria-label={t('spectrogram')}

@@ -9,11 +9,13 @@
   let {source,start,end,palette=$bindable([]),ranges=$bindable([]),storageKey,target=null,disabled=false,detectionCounts={}}:
     {source:AudioSource;start:number;end:number;palette:Species[];ranges?:CallRange[];storageKey:string;target?:Species|null;disabled?:boolean;detectionCounts?:Record<string,number>}=$props();
   let chosen=$state<string|null|undefined>(untrack(()=>target?.id)),filter=$state(''),adding=$state(false),picked=$state<Species|null>(null);
-  let from=$state(0),to=$state(1),player:AudioRegion,error=$state('');
+  let from=$state(0),to=$state(1),player:AudioRegion,error=$state(''),marking=$state(false);
   const species=$derived([...new Map([...palette,...(target?[target]:[])].map(s=>[s.id,s])).values()]);
   const ordered=$derived(species.filter(s=>[commonName(s,app.locale),s.scientific_name,...Object.values(s.common_names)].some(n=>n.toLocaleLowerCase(app.locale).includes(filter.toLocaleLowerCase(app.locale)))).sort((a,b)=>(detectionCounts[b.id]??0)-(detectionCounts[a.id]??0)||(commonName(a,app.locale)||a.scientific_name).localeCompare(commonName(b,app.locale)||b.scientific_name,app.locale)));
   const label=(sid:string|null|undefined)=>sid===null?t('aUnknown'):commonName(species.find(s=>s.id===sid)??{common_names:{}},app.locale)||species.find(s=>s.id===sid)?.scientific_name||'';
-  $effect(()=>{if(picked)untrack(()=>{if(!palette.some(s=>s.id===picked!.id))palette=[...palette,picked!];chosen=picked!.id;picked=null;adding=false;});});
+  $effect(()=>{if(picked)untrack(()=>{if(!palette.some(s=>s.id===picked!.id))palette=[...palette,picked!];choose(picked!.id);picked=null;adding=false;});});
+  // Choosing an animal means the next drag should mark its call rather than move the view.
+  function choose(id:string|null){chosen=id;error='';marking=true;}
   function mark(a:number,b:number){if(disabled)return;if(chosen===undefined){error='aChooseFirst';return;}
     if(!(Number.isFinite(a)&&Number.isFinite(b)&&start<=a&&a<b&&b<=end)){error='invalid_interval';return;}
     player?.stop();ranges=[...ranges,{species_id:chosen,start_s:a,end_s:b}];error='';}
@@ -23,15 +25,15 @@
   {#if !target}<aside>
     <label>{t('aChoose')}<input type="search" bind:value={filter} placeholder={t('aFilter')} disabled={disabled}/></label>
     <div class="palette" role="group" aria-label={t('aChoose')}>
-      {#each ordered as s}<button type="button" disabled={disabled} aria-pressed={chosen===s.id} onclick={()=>{chosen=s.id;error='';}}>{commonName(s,app.locale)||s.scientific_name}<i>{s.scientific_name}</i></button>{/each}
+      {#each ordered as s}<button type="button" disabled={disabled} aria-pressed={chosen===s.id} onclick={()=>choose(s.id)}>{commonName(s,app.locale)||s.scientific_name}<i>{s.scientific_name}</i></button>{/each}
     </div>
-    <Button disabled={disabled} active={chosen===null} aria-pressed={chosen===null} onclick={()=>{chosen=null;error='';}}>{t('aUnknown')}</Button>
+    <Button disabled={disabled} active={chosen===null} aria-pressed={chosen===null} onclick={()=>choose(null)}>{t('aUnknown')}</Button>
     <Button disabled={disabled} onclick={()=>adding=!adding}>{t('aAddSpecies')}</Button>
     {#if adding}<SpeciesPicker bind:value={picked} label={t('aCatalog')} disabled={disabled}/>{/if}
   </aside>{/if}
   <div class="audio-area">
-    {#if !target}<p class="instruction">{chosen===undefined?t('aChooseFirst'):t('aDrag').replace('{name}',label(chosen))}</p>{/if}
-    <AudioRegion bind:this={player} {source} fixedRange zoomable {start} {end} marks={ranges} onrange={mark} storageKey={`${storageKey}:view`}/>
+    {#if !target}<p class="instruction">{chosen===undefined?t('aChooseFirst'):t(marking?'aDrag':'aDragOff').replace('{name}',label(chosen))}</p>{/if}
+    <AudioRegion bind:this={player} {source} fixedRange zoomable {start} {end} marks={ranges} onrange={mark} bind:marking storageKey={`${storageKey}:view`}/>
     {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
     <details class="keyboard"><summary>{t('aKeyboard')}</summary><div class="actions">
       <label>{t('rangeStart')}<input type="number" min="0" max={end-start} step="0.01" bind:value={from}/></label>
