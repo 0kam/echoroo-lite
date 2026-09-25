@@ -7,7 +7,7 @@
   import { app,t } from '$lib/app.svelte';
   import { commonName,speciesPage } from '$lib/species';
   import { openExternal } from '$lib/files';
-  import { customName,listenLabel,rangeQuery,type CustomModel,type CustomModelReadiness,type SpeciesResult,type Validation } from '$lib/workflow';
+  import { customName,goalMissed,listenLabel,rangeQuery,type CustomModel,type CustomModelReadiness,type SpeciesResult,type Validation } from '$lib/workflow';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ValidationSteps from '$lib/ValidationSteps.svelte';
   import ReportView from '$lib/ReportView.svelte';
@@ -47,13 +47,14 @@
   },{toast:true});
   // The current view (period and result tab), so pages opened from here can return to it.
   const view=$derived(`${range}&engine=${engine}${run?`&run_id=${run}`:''}${modelId?`&model_id=${modelId}`:''}`);
+  const missed=$derived(goalMissed(result?.validation??null)),modelHref=$derived(`${resolve(`/datasets/${id}/species/${speciesId}/model`)}?${range}`);
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}?${view}`)}`);
 </script>
 <div class="page">
   <div class="page-header"><div><div class="crumbs"><a href={`${resolve(`/datasets/${id}`)}?${range}`}>{t('uBackResults')}</a><span>{result?.site.name}</span></div>
     <h1>{result?commonName(result.species,app.locale):t('species')} <i class="sci">{result?.species.scientific_name}</i></h1>
     {#if external}<Button size="sm" onclick={()=>void openExternal(external.url)}>{t('refLearn').replace('{site}',external.name)}</Button>{/if}</div>
-    <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('wFurther')}</Button></div>
+</div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}
     {#if result.location_stale}<p class="notice" role="status">{t('location_reanalysis')}</p>{/if}
@@ -68,16 +69,19 @@
     <section class="panel"><QualityPanel validation={result.validation}/>
       {#if !modelId&&(!result.validation||result.validation.applicable)}<ValidationSteps validation={result.validation}/>{/if}
       {#if customDetail&&(!customDetail.applicable||customDetail.status==='threshold_unavailable')}<p class="notice">{t(customDetail.applicable?'custom_threshold_unavailable':customDetail.reason??'custom_model_scope_changed')}</p>{/if}
-      {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant="primary" pending={validate.pending} onclick={()=>validate.run()}>{listenLabel(result.validation)}</Button>
+      {#if !modelId||customDetail?.status==='ready'&&customDetail.applicable}<div class="actions"><Button variant={missed?'default':'primary'} pending={validate.pending} onclick={()=>validate.run()}>{listenLabel(result.validation)}</Button>
       {#if about?.in_quiz}<Button href={practice}>{t('wPractice')}</Button>{/if}</div>{/if}
+      <!-- Searching and rebuilding are offered only once a check shows the AI falls short for this species. -->
+      {#if missed}<div class="next-step"><p><strong>{t('vGoalMissedTitle')}</strong> {t('vGoalMissedHint')}</p>{#if !run||canRebuild}<p>{t('vGoalMissedNext')}</p>{/if}
+        <div class="actions">{#if !run}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('sCheckYourself')}</Button>{/if}{#if canRebuild}<Button href={modelHref}>{t('customModelTitle')}</Button>{/if}</div></div>{/if}
     </section>
     {#if result.annotations.length}<section class="panel"><h2>{t('aExactEvidence')}</h2><p>{t('aEvidenceNote')}</p>
       {#each result.annotations as item,index}<div><Button active={openEvidence===index} onclick={()=>openEvidence=openEvidence===index?-1:index}>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:result.site.timezone}).format(new Date(item.local_time))} · {(item.end_s-item.start_s).toFixed(1)} {t('seconds')}</Button>
         {#if openEvidence===index}<div class="evidence"><AudioRegion source={{id:item.recording_id,kind:'recording',path:item.source_path,seconds:item.seconds}} fixedRange start={item.start_s} end={item.end_s}/></div>{/if}
       </div>{/each}</section>{/if}
-    {#if canRebuild||result.custom_models?.length}<div class="custom-entry"><Button href={`${resolve(`/datasets/${id}/species/${speciesId}/model`)}?${range}`}>{t('customModelTitle')}</Button></div>{/if}
+    {#if result.custom_models?.length||canRebuild&&!missed}<div class="custom-entry"><Button href={modelHref}>{t('customModelTitle')}</Button></div>{/if}
     {#if result.searches.length}<section class="panel"><h2>{t('wConfirmed')}</h2>
-      {#each result.searches as search}<p><a class="button" href={`${resolve(`/datasets/${id}/search/${search.id}`)}?${range}`}>{t('wContinue')} · {search.created_at}</a></p>{/each}</section>{/if}
+      {#each result.searches as search}<p><a class="button" href={`${resolve(`/datasets/${id}/search/${search.id}`)}?${range}`}>{t('sContinueReview')} · {new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:result.site.timezone}).format(new Date(`${search.created_at.replace(' ','T')}Z`))}</a></p>{/each}</section>{/if}
   {:else if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.model-tabs{margin-bottom:24px}section p{margin:16px 0}.evidence{padding:12px}.custom-entry{margin-top:12px}</style>
+<style>.model-tabs{margin-bottom:24px}section p{margin:16px 0}.evidence{padding:12px}.custom-entry{margin-top:12px}.next-step{margin-top:16px;padding:12px 14px;border:1px solid rgb(var(--color-warning));border-radius:8px;background:rgb(var(--color-warning-light))}.next-step p{margin:0 0 10px}</style>

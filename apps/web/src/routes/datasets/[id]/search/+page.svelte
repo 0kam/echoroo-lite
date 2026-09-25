@@ -6,7 +6,7 @@
   import { isTauri } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { api } from '$lib/api.svelte';
-  import { app,t,activeJob,loadRecordings,fileName } from '$lib/app.svelte';
+  import { app,t,activeJob,fileName } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
   import { rangeQuery,type SearchRun } from '$lib/workflow';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
@@ -20,10 +20,9 @@
   let species=$state<Species|null>(null),source=$state<Reference|null>(null),targets=$state<Target[]>([]);
   let first=$state(query.get('start_date')||''),last=$state(query.get('end_date')||''),start=$state(0),end=$state(5),referencePath=$state(''),error=$state('');
   let ready=$state(false);
-  // Return to the page this search was opened from: a recording, a species result, or the site's species list.
-  const fromRecording=query.get('recording'),fromSpecies=query.get('species'),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','run_id','model_id'].includes(key)));
-  const back=fromRecording?{href:resolve(`/datasets/${id}/recordings/${fromRecording}`),label:'uBackRecording'}
-    :fromSpecies?{href:`${resolve(`/datasets/${id}/species/${fromSpecies}`)}?${speciesState}`,label:'wBackSpecies'}
+  // Two reasons to be here: a species the AI list lacks (from site results) or a species whose AI check fell short (from its results).
+  const fromSpecies=query.get('species'),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','run_id','model_id'].includes(key)));
+  const back=fromSpecies?{href:`${resolve(`/datasets/${id}/species/${fromSpecies}`)}?${speciesState}`,label:'wBackSpecies'}
     :{href:`${resolve(`/datasets/${id}`)}${first&&last?`?${rangeQuery(first,last)}`:''}`,label:'uBackResults'};
   let alive=true;
   let xc=$state(true),history=$state<SearchRun[]>([]);
@@ -54,12 +53,10 @@
     ready=true;
     history=await api<SearchRun[]>(`/search-runs?dataset_id=${id}`);
     if(query.get('species'))species=await api<Species>(`/species/${encodeURIComponent(query.get('species')!)}`);
-    if(query.get('recording')){const record=(await loadRecordings(id)).find(r=>String(r.id)===query.get('recording'));
-      if(record){chooseReference({...record,kind:'recording'});xc=false;const from=Number(query.get('start_s')),to=Number(query.get('end_s'));if(Number.isFinite(from)&&Number.isFinite(to)&&from>=0&&to>from&&to<=record.seconds){start=from;end=to;}}}
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
 </script>
 <div class="page search-page"><div class="crumbs"><a href={back.href}>{t(back.label)}</a><span>{app.sites.find(s=>s.id===app.datasets.find(d=>d.id===id)?.site_id)?.name}</span></div>
-  <h1>{t(species?'wFurther':'wFind')}</h1>{#if !species}<p>{t('wFindHint')}</p>{/if}
+  <h1>{t(fromSpecies?'sCheckYourself':'sFindMissing')}</h1><p>{t(fromSpecies?'sCheckHint':'wFindHint')}</p>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   <section class="panel"><SpeciesPicker bind:value={species} disabled={search.pending}/></section>
   {#if species}

@@ -61,7 +61,7 @@
       {#if job&&app.datasets.find(d=>d.id===job.dataset_id)?.site_id===result.site.id}<JobStatus {job}/>{/if}
 
     </section>
-    {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('wFurther')}</Button></div>
+    {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindMissing')}</Button></div>
       <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>
       {#if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
       {#each groups as group}{#if group.rows.length}

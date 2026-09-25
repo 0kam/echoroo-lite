@@ -66,8 +66,7 @@
       <p>{t('customModelIntro')}</p>
       {#if ready.can_train}<Button variant={latest?'default':'primary'} pending={build.pending} onclick={()=>build.run()}>{t('customModelCreate')}</Button>
         {#if build.pending}<p role="status"><Spinner/> {t('customModelPreparing')}</p>{/if}
-      {:else}{#each ready.reasons as reason}<p class="notice">{t(reason)}</p>{/each}
-        {#if ready.reasons.some(reason=>reason.endsWith('_examples_needed'))}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${encodeURIComponent(speciesId)}&${range}`}>{t('customModelFindMore')}</Button>{/if}{/if}
+      {:else}{#each ready.reasons as reason}<p class="notice">{t(reason)}</p>{/each}{/if}
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
     </section>
     {#if latest}<section class="panel"><h2>{customName(latest)}</h2>

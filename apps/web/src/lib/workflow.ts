@@ -58,6 +58,8 @@ export function qualityText(value:Validation|null,result?:QualityResult) {
   const key=result!.goal_met?'wGoalMetDynamic':precision!==null&&precision>=value.target_precision?'wGoalUnsureDynamic':'wGoalNotMetDynamic';
   return fill(key,{p:percentText(precision),target:percentText(value.target_precision)});
 }
+/** A finished check where no AI reached its goal: the species needs another way to be confirmed. */
+export const goalMissed = (value:Validation|null) => !!value?.applicable&&value.stage==='complete'&&Object.keys(value.results).length>0&&!Object.values(value.results).some(result=>result.goal_met);
 /** The one button into listening: start, continue (answered/total), see the result, or check again. */
 export function listenLabel(value:Validation|null,start='wEvaluate') {
   if(!value||value.applicable&&value.stage==='calibration'&&!value.counts.calibration.answered)return t(start);

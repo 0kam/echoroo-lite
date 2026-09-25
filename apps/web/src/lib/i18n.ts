@@ -359,7 +359,7 @@ export const en = {
   analyzeAllHint: 'Runs BirdNET and Perch on every recording. Only one analysis runs at a time; you can keep working meanwhile.',
   analysisStarted: 'Analysis started', analysisInProgress: 'Analysing', cancelRequested: 'Stop requested',
   noRecordingsForDate: 'No recordings on this date.', previousRecording: 'Previous recording', nextRecording: 'Next recording',
-  searchFromRecording: 'Search similar sounds', playing: 'Playing', loadingAudio: 'Loading audio…',
+ playing: 'Playing', loadingAudio: 'Loading audio…',
   notAnalysed: 'This recording has not been analysed.', analysisPending: 'Analysis is running. Candidates appear when it finishes.',
   candidateRowHint: 'Select a row to listen to that interval.', aboutScores: 'About these scores',
   // Search
@@ -367,7 +367,7 @@ export const en = {
   stepSpecies: 'Target species', stepReference: 'Reference sound and interval', stepPeriod: 'Recording dates', stepQuerySet: 'Reference set',
   referenceFromDataset: 'Recording in this dataset', referenceFromFile: "Choose audio on this PC", chooseRecording: 'Choose a recording',
   savedSearchesIntro: 'Saved searches keep their reference set, the similarity of every segment, and your judgements.',
-  noSavedSearches: 'No saved searches yet.', review: 'Review', searchSaved: 'Search saved', backToSearch: 'Back to search',
+  noSavedSearches: 'No saved searches yet.', review: 'Review', searchSaved: 'Search saved',
   quickResults: 'Trial results', runNotFound: 'Saved search not found',
   // Reports
   reportsIntro: 'Reports fix the analysis version, threshold and judgements at creation time. Export them as SVG, PNG, CSV and evidence audio.',
@@ -738,7 +738,7 @@ export const ja: Record<Key, string> = {
   analyzeAllHint: '全録音を BirdNET と Perch で解析します。解析は同時に1つだけで、実行中も他の操作を続けられます。',
   analysisStarted: '解析を開始しました', analysisInProgress: '解析中', cancelRequested: '停止を受け付けました',
   noRecordingsForDate: 'この日の録音はありません。', previousRecording: '前の録音', nextRecording: '次の録音',
-  searchFromRecording: 'この録音から類似検索', playing: '再生中', loadingAudio: '音源を読み込み中…',
+ playing: '再生中', loadingAudio: '音源を読み込み中…',
   notAnalysed: 'この録音は未解析です。', analysisPending: '解析中です。完了すると候補が表示されます。',
   candidateRowHint: '行を選ぶとその区間を再生します。', aboutScores: 'スコアについて',
   // Search
@@ -746,7 +746,7 @@ export const ja: Record<Key, string> = {
   stepSpecies: '対象種', stepReference: '参照音と区間', stepPeriod: '検索する録音の日付', stepQuerySet: '参照音セット',
   referenceFromDataset: 'この録音群の録音', referenceFromFile: "PCから音声を選ぶ", chooseRecording: '録音を選ぶ',
   savedSearchesIntro: '保存した検索は参照音セット・全区間の類似度・判定を保持します。',
-  noSavedSearches: '保存した検索はまだありません。', review: '判定する', searchSaved: '検索を保存しました', backToSearch: '検索に戻る',
+  noSavedSearches: '保存した検索はまだありません。', review: '判定する', searchSaved: '検索を保存しました',
   quickResults: '試し検索の結果', runNotFound: '保存した検索が見つかりません',
   // Reports
   reportsIntro: '報告は作成時点の解析版・閾値・判定を固定します。SVG・PNG・CSV・根拠音として書き出せます。',

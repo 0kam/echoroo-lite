@@ -48,9 +48,11 @@
     api<Run>(`/search-runs/${id}${sampleId?`?sample_id=${sampleId}`:''}`).then(value => { if (id === runId) {run = value;const occupied=value.distribution.filter(b=>b.count);if(occupied.length){low=Number(occupied[0].low.toFixed(1));high=Number(occupied[occupied.length-1].high.toFixed(1));}const next=value.hits.findIndex(h=>!h.verdict);index=next<0?value.hits.length:next;} })
       .catch(e => { if (id === runId) loadError = e instanceof Error ? e.message : 'unknown_error'; });
   });
+  // Search results feed the species page's search tab, where their reliability is checked.
+  const speciesHref=$derived(run?`${resolve(`/datasets/${datasetId}/species/${run.snapshot.species.id}`)}?${range}&run_id=${runId}`:'');
 </script>
 <div class="page review-page">
-  <div class="crumbs"><a href={resolve(`/datasets/${datasetId}/search`)}>{t('backToSearch')}</a><span>{app.sites.find(s=>s.id===dataset?.site_id)?.name}</span></div>
+  <div class="crumbs"><a href={speciesHref}>{t('wBackSpecies')}</a><span>{app.sites.find(s=>s.id===dataset?.site_id)?.name}</span></div>
   {#if loadError}<p class="error" role="alert">{t(loadError)}</p>
   {:else if !run}<p role="status">{t('loading')}</p>
   {:else}
@@ -68,22 +70,24 @@
       </form><Button onclick={()=>sampling=false}>{t('uBackSounds')}</Button>
       {#if draw.error}<p class="error" role="alert">{t(draw.error)}</p>{/if}
     </section>
-    {:else}<div class="with-examples"><section class="panel"><h2>{t('uReviewPrompt')}</h2>
-      <p>{Math.min(index+1,run.hits.length)} / {run.hits.length} · {t('uSoundNumber')}</p>
-      <progress value={reviewed} max={run.hits.length}></progress>
+    {:else}<div class="with-examples"><section class="panel"><div class="phase-progress"><h2>{t('uReviewPrompt')}</h2><p>{Math.min(index+1,run.hits.length)} / {run.hits.length} · {reviewed} {t('wAnswered')}</p></div>
+      <p class="muted">{t('uReviewWhy')}</p>
       {#if currentHit}
         <p>{siteTime(currentHit,'short')}</p>
-        {#key currentHit.segment_id}<AudioRegion source={{id:currentHit.recording_id,kind:'recording',path:currentHit.path,seconds:currentHit.seconds}} start={currentHit.start_s} end={currentHit.end_s} fixedRange/>{/key}
-        <div class="actions answers">{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
-          <Button size="lg" active={currentHit.verdict===verdict} aria-pressed={currentHit.verdict===verdict} pending={judge.pending} onclick={()=>judge.run(currentHit,verdict)}>{currentHit.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
+        <!-- Same listening parts as the validation screen; each sound starts from the whole clip. -->
+        {#key currentHit.segment_id}<AudioRegion source={{id:currentHit.recording_id,kind:'recording',path:currentHit.path,seconds:currentHit.seconds}} start={currentHit.start_s} end={currentHit.end_s} fixedRange zoomable storageKey={`echoroo-review:${runId}:${currentHit.segment_id}:view`}/>{/key}
+        <div class="actions answers"><Button disabled={index===0||judge.pending} onclick={()=>index--}>‹ {t('uPreviousSound')}</Button>
+          <div class="verdicts" role="group" aria-label={t('uReviewPrompt')}>{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
+          <Button size="lg" active={currentHit.verdict===verdict} aria-pressed={currentHit.verdict===verdict} disabled={judge.pending} onclick={()=>judge.run(currentHit,verdict)}>{currentHit.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
+          <Button disabled={index>=run.hits.length-1||judge.pending} onclick={()=>index++}>{t('uNextSound')} ›</Button>
+          <p class="muted unknown-note">{t('vUnknownNote')}</p></div>
       {:else}<p>{t('uReviewDone')}</p>{/if}
       {#if judge.error}<p class="error" role="alert">{t(judge.error)}</p>{/if}
-      <div class="actions between"><Button disabled={index===0||judge.pending} onclick={()=>index--}>‹ {t('uPreviousSound')}</Button><Button disabled={index>=run.hits.length-1||judge.pending} onclick={()=>index++}>{t('uNextSound')} ›</Button></div>
     </section>
     <ReferencePanel species={run.snapshot.species} {datasetId} {runId} sampleId={run.sample_id} onexamples={list=>heardExamples=list}
       practice={`${resolve('/quiz')}?species=${run.snapshot.species.id}&return=${encodeURIComponent(`/datasets/${datasetId}/search/${runId}`)}`}/></div>
-    <div class="actions"><Button href={`${resolve(`/datasets/${datasetId}/species/${run.snapshot.species.id}`)}?${range}&run_id=${runId}`}>{t('rSearchResults')}</Button><Button onclick={()=>sampling=true}>{t('uReviewOtherBand')}</Button></div>
+    <div class="actions"><Button variant={currentHit?'default':'primary'} href={speciesHref}>{t('rSearchResults')}</Button><Button onclick={()=>sampling=true}>{t('uReviewOtherBand')}</Button></div>
     <p class="muted">{t('uSavedAlways')}</p>{/if}
   {/if}
 </div>
-<style>.review-page{max-width:1280px!important}.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}.with-examples>:global(.examples){position:sticky;top:16px}@media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.with-examples>:global(.examples){position:static}}p{margin:16px 0}.answers{margin:24px 0}.between{justify-content:space-between;margin-top:28px}form{margin:20px 0}</style>
+<style>.review-page{max-width:1280px!important}.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}.with-examples>:global(.examples){position:sticky;top:16px}@media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.with-examples>:global(.examples){position:static}}p{margin:16px 0}.phase-progress{display:flex;align-items:center;justify-content:space-between;gap:12px}.answers{position:fixed;bottom:0;left:0;right:0;z-index:3;justify-content:space-between;align-items:center;row-gap:4px;padding:10px max(24px,calc((100vw - 1280px)/2));background:rgb(var(--color-page-bg));border-top:1px solid rgb(var(--stone-300));margin:0}.answers .verdicts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.unknown-note{flex-basis:100%;text-align:center;margin:0!important;font-size:14px}.review-page{padding-bottom:130px}@media(max-width:700px){.answers{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 12px}.answers .verdicts{grid-column:1/-1;order:-1;flex-wrap:nowrap;gap:6px}.answers .verdicts :global(.button){flex:1;padding:8px;font-size:16px;min-height:48px}.unknown-note{grid-column:1/-1}.review-page{padding-bottom:220px}}form{margin:20px 0}</style>

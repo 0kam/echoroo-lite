@@ -15,7 +15,6 @@
   {#if error}<p class="error" role="alert">{t(error)}</p>{:else if loading}<p>{t('loading')}</p>{:else if record}
     <h1>{siteTime(record)}</h1>
     <section class="panel"><AudioRegion source={{...record,kind:'recording'}} bind:start bind:end/>
-      <Button href={`${resolve(`/datasets/${id}/search`)}?recording=${rid}&start_s=${start}&end_s=${end}`}>{t('searchFromRecording')}</Button>
     </section>
     <div class="actions between"><Button href={previous?resolve(`/datasets/${id}/recordings/${previous.id}`):undefined} disabled={!previous}>‹ {t('previousRecording')}</Button><Button href={next?resolve(`/datasets/${id}/recordings/${next.id}`):undefined} disabled={!next}>{t('nextRecording')} ›</Button></div>
   {:else}<p>{t('recordingNotFound')}</p>{/if}
