@@ -38,61 +38,36 @@ class AnnotationCheck(unittest.TestCase):
                 db.execute('INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,?,?,?)',(job,rid,'birdnet',json.dumps(meta),str(path)))
         self.scope={'dataset_id':1,'start_date':'2024-08-08','end_date':'2024-08-08'}
         with patch('annotations.secrets.randbits',return_value=20):
-            self.session=self.post('/annotations',self.scope)
+            self.sid=self.post('/annotations',self.scope)['id']
+        with connect(self.root) as db:
+            self.items=[dict(r) for r in db.execute('SELECT id,start_s FROM annotation_items WHERE session_id=? ORDER BY position',(self.sid,))]
 
     def post(self,path,body=None):
         response=self.client.post(path,json=body)
         self.assertEqual(response.status_code,200,response.text)
         return response.json()
 
+    def mark(self,item,ranges,complete=True):
+        """Legacy site-wide call marks; the listening page that wrote them is gone."""
+        with connect(self.root) as db:
+            db.execute("INSERT INTO annotation_answers(item_id,ranges,complete,quiz_snapshot) VALUES(?,?,?,'{}')",(item['id'],json.dumps(ranges),int(complete)))
+
     def fill(self,count=10):
-        for index in range(count):
-            question=self.session['question'];start=question['start_s']
+        for index,item in enumerate(self.items[:count]):
+            start=item['start_s']
             ranges=[dict(species_id=self.taxon['id'],start_s=start+1,end_s=start+2)] if index<3 else []
             if index==0:ranges += [dict(species_id=self.other['id'],start_s=start+1.5,end_s=start+3),dict(species_id=None,start_s=start+8,end_s=start+9)]
-            self.session=self.post(f'/annotations/{self.session["id"]}/answers',dict(item_id=question['id'],version=question['version'],ranges=ranges,complete=True))
-
-    def test_common_palette_resume_versions_and_empty_not_negative(self):
-        first=self.session['question'];sid=self.session['id']
-        self.assertFalse({'scores','stratum','group','predictions'} & set(first))
-        self.assertEqual(self.post('/annotations',self.scope)['id'],sid)
-        start=first['start_s']
-        invalid=self.client.post(f'/annotations/{sid}/answers',json=dict(item_id=first['id'],version=0,ranges=[dict(species_id=self.taxon['id'],start_s=start,end_s=start+16)],complete=True))
-        self.assertEqual(invalid.json()['detail'],'invalid_interval')
-        self.fill()
-        self.assertTrue(self.session['can_evaluate'])
-        self.assertIn(self.other['id'],[s['id'] for s in self.session['palette']])
-        self.assertEqual({r['species']['id']:r['intervals'] for r in self.session['heard']},{self.taxon['id']:3,self.other['id']:1})
-        saved=self.client.get(f'/annotations/{sid}?item_id={first["id"]}').json()['question']
-        self.assertEqual(len(saved['ranges']),3)
-        stale=self.client.post(f'/annotations/{sid}/answers',json=dict(item_id=first['id'],version=0,ranges=[],complete=True))
-        self.assertEqual(stale.json()['detail'],'annotation_changed')
-        unused=self.post('/species',dict(scientific_name='Example palette only',ja='未選択の種',en='Palette only'))
-        result=self.post(f'/annotations/{sid}/answers',dict(item_id=first['id'],version=saved['version'],ranges=[],palette_ids=[unused['id']],complete=True))
-        self.assertIn(unused['id'],[s['id'] for s in result['palette']])
-        self.assertNotIn(unused['id'],[s['species']['id'] for s in result['heard']])
-        self.assertIn(unused['id'],[s['id'] for s in self.post('/annotations',self.scope)['palette']])
-        with connect(self.root) as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM annotation_answers WHERE item_id=?',(first['id'],)).fetchone()[0],2)
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM validation_answers').fetchone()[0],0)
+            self.mark(item,ranges)
 
     def test_only_latest_complete_answer_becomes_evidence(self):
-        first=self.session['question'];sid=self.session['id'];start=first['start_s']
+        first=self.items[0];start=first['start_s']
         ranges=[dict(species_id=self.taxon['id'],start_s=start+1,end_s=start+2),
                 dict(species_id=self.other['id'],start_s=start+2,end_s=start+3)]
-        draft=self.post(f'/annotations/{sid}/answers',dict(item_id=first['id'],version=0,ranges=ranges,complete=False))
-        self.assertEqual(draft['completed'],0);self.assertEqual(draft['heard'],[])
-        self.assertIn(self.other['id'],[s['id'] for s in draft['palette']])
+        self.mark(first,ranges,complete=False)
         self.assertEqual(self.client.get(f'/datasets/1/species/{self.taxon["id"]}').json()['annotations'],[])
-
-        saved=self.post(f'/annotations/{sid}/answers',dict(item_id=first['id'],version=draft['question']['version'],ranges=ranges,complete=True))
-        self.assertEqual({r['species']['id']:r['intervals'] for r in saved['heard']},{self.taxon['id']:1,self.other['id']:1})
+        self.mark(first,ranges)
         self.assertEqual(len(self.client.get(f'/datasets/1/species/{self.taxon["id"]}').json()['annotations']),1)
-
-        current=self.client.get(f'/annotations/{sid}?item_id={first["id"]}').json()['question']
-        draft=self.post(f'/annotations/{sid}/answers',dict(item_id=first['id'],version=current['version'],ranges=ranges,complete=False))
-        self.assertEqual(draft['completed'],0);self.assertEqual(draft['heard'],[])
-        self.assertIn(self.other['id'],[s['id'] for s in draft['palette']])
+        self.mark(first,ranges,complete=False)
         from results_workflow import cached,context
         ctx=context(self.root,1)
         cached(self.root,['overview-v3',1,ctx['revision'],ctx['start_date'],ctx['end_date']],
@@ -105,15 +80,29 @@ class AnnotationCheck(unittest.TestCase):
         with zipfile.ZipFile(exported['path']) as archive:
             self.assertEqual(json.loads(archive.read('annotations/ranges.json')),[])
 
+    def test_species_check_starts_without_site_listening(self):
+        body={**self.scope,'species_id':self.taxon['id']}
+        validation=self.post('/validations',body)
+        self.assertEqual(validation['annotation_session_id'],self.sid)
+        self.assertEqual(validation['counts']['calibration'],dict(total=10,answered=0))
+        self.assertEqual(self.post('/validations',body)['id'],validation['id'])
+        with connect(self.root) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM annotation_sessions').fetchone()[0],1)
+            # Former "evaluate together" members open as ordinary single-species checks.
+            db.execute("UPDATE validation_sessions SET snapshot=json_set(snapshot,'$.group_ids',json('[1,2]'))")
+        legacy=self.client.get(f'/validations/{validation["id"]}').json()
+        self.assertEqual((legacy['species']['id'],legacy['question']['id']),(self.taxon['id'],validation['question']['id']))
+        self.assertNotIn('members',legacy)
+
     def test_reuse_explicit_positives_and_reserve_whole_recordings(self):
-        self.fill();sid=self.session['id']
-        body={**self.scope,'species_id':self.taxon['id'],'annotation_session_id':sid}
+        self.fill();sid=self.sid
+        body={**self.scope,'species_id':self.taxon['id']}
         validation=self.post('/validations',body);vid=validation['id']
         self.assertEqual(validation['counts']['calibration'],dict(total=10,answered=3))
         self.assertEqual(self.post('/validations',body)['id'],vid)
         while validation['question']:
             q=validation['question']
-            validation=self.post(f'/validations/{vid}/answers',dict(item_id=q['id'],verdict='other',ranges=q['ranges'],version=q['version']))
+            validation=self.post(f'/validations/{vid}/answers',dict(item_id=q['id'],verdict='other',version=q['version']))
         validation=self.post(f'/validations/{vid}/evaluation')
         with connect(self.root) as db:
             groups={phase:{r[0] for r in db.execute('SELECT recording_id FROM validation_items WHERE session_id=? AND phase=?',(vid,phase))} for phase in ('calibration','evaluation')}
@@ -127,23 +116,41 @@ class AnnotationCheck(unittest.TestCase):
         self.assertEqual(validation['stage'],'complete')
         self.assertEqual(validation['evaluation_population'],24)
         # Later source corrections invalidate live quality, without changing frozen answers.
-        first=self.session['history'][0]['id'];old=self.client.get(f'/annotations/{sid}?item_id={first}').json()['question']
-        self.post(f'/annotations/{sid}/answers',dict(item_id=first,version=old['version'],ranges=[],complete=True))
+        self.mark(self.items[0],[])
         stale=self.client.get(f'/validations/{vid}').json()
         self.assertFalse(stale['applicable']);self.assertFalse(stale['can_start_recall'])
         self.assertEqual(self.client.post(f'/validations/{vid}/recall').json()['detail'],'workflow_changed')
 
+    def test_heard_answers_wait_for_marks_that_can_be_added_later(self):
+        v=self.post('/validations',{**self.scope,'species_id':self.taxon['id']});vid=v['id']
+        while v['question']:
+            v=self.post(f'/validations/{vid}/answers',dict(item_id=v['question']['id'],verdict='target',version=v['question']['version']))
+        self.post(f'/validations/{vid}/evaluation')
+        url=f'/annotations/{self.sid}/custom-model-readiness?species_id={self.taxon["id"]}'
+        waiting=self.client.get(url).json()['needs_range']
+        self.assertEqual(len(waiting),10)
+        item=waiting[0];mark=[dict(species_id=self.taxon['id'],start_s=item['start_s']+1,end_s=item['start_s']+2)]
+        locked=self.client.post(f'/validations/{vid}/answers',json=dict(item_id=item['item_id'],verdict='other',version=item['version']))
+        self.assertEqual(locked.json()['detail'],'validation_phase_locked')
+        self.post(f'/validations/{vid}/answers',dict(item_id=item['item_id'],verdict='target',ranges=mark,version=item['version']))
+        ready=self.client.get(url).json()
+        self.assertEqual((len(ready['needs_range']),ready['answers']['target']),(9,10))
+        with connect(self.root) as db:  # New marks never rewrite the site's shared marks.
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM annotation_answers').fetchone()[0],0)
+
     def test_quality_correction_updates_shared_ranges_and_keeps_history(self):
-        self.fill();sid=self.session['id']
-        v=self.post('/validations',{**self.scope,'species_id':self.taxon['id'],'annotation_session_id':sid})
+        self.fill()
+        v=self.post('/validations',{**self.scope,'species_id':self.taxon['id']})
         q=self.client.get(f'/validations/{v["id"]}?item_id={v["history"][0]["id"]}').json()['question']
-        remaining=[r for r in q['ranges'] if r['species_id']!=self.taxon['id']]
         conflict=self.client.post(f'/validations/{v["id"]}/answers',json=dict(item_id=q['id'],verdict='other',ranges=q['ranges']))
         self.assertEqual(conflict.json()['detail'],'annotation_conflict')
-        corrected=self.post(f'/validations/{v["id"]}/answers',dict(item_id=q['id'],verdict='other',ranges=remaining,version=q['version']))
+        # Without explicit ranges, "not heard" withdraws this species' reused marks and keeps the others.
+        corrected=self.post(f'/validations/{v["id"]}/answers',dict(item_id=q['id'],verdict='other',version=q['version']))
         self.assertTrue(corrected['applicable'])
-        common=self.client.get(f'/annotations/{sid}').json()
-        self.assertEqual(next(r['intervals'] for r in common['heard'] if r['species']['id']==self.taxon['id']),2)
+        with connect(self.root) as db:
+            latest=json.loads(db.execute('SELECT ranges FROM annotation_answers WHERE item_id=? ORDER BY id DESC',(self.items[0]['id'],)).fetchone()[0])
+        self.assertEqual({r['species_id'] for r in latest},{self.other['id'],None})
+        self.assertEqual(len(self.client.get(f'/datasets/1/species/{self.taxon["id"]}').json()['annotations']),2)
 
     def test_unmodelled_ranges_in_results_and_portable_report(self):
         self.fill()

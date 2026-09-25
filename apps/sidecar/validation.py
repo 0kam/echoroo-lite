@@ -131,10 +131,7 @@ def start_custom_session(root, model_id):
     return view_session(root, sid, ctx=ctx)
 
 
-def start_session(root,body,_group=True):
-    if _group and getattr(body, 'species_ids', None):
-        from validation_groups import start_group
-        return start_group(root, body)
+def start_session(root,body):
     model_id = getattr(body, 'model_id', None)
     if model_id is not None:
         return start_custom_session(root, model_id)
@@ -143,7 +140,7 @@ def start_session(root,body,_group=True):
     if ctx.get('location_stale'):
         raise CatalogError('location_reanalysis')
     run_id=getattr(body,'run_id',None)
-    shared = shared_calibration(root, body, ctx) if getattr(body, 'annotation_session_id', None) and run_id is None else None
+    shared = shared_calibration(root, body) if run_id is None else None
     with connect(root) as db:
         existing=db.execute('''SELECT id,snapshot FROM validation_sessions WHERE dataset_id IN
             (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?))
@@ -153,7 +150,7 @@ def start_session(root,body,_group=True):
             snap=json.loads(row['snapshot'])
             if (snap.get('model_id') is None and snap.get('run_id')==run_id and (snap['start_date'],snap['end_date'])==(ctx['start_date'],ctx['end_date'])
                 and snap.get('annotation_source') == (shared['source'] if shared else None)):
-                return view_session(root,row['id'],ctx=ctx,_group=_group)
+                return view_session(root,row['id'],ctx=ctx)
     if run_id is None:
         items,models,analyses=population(root,ctx,body.species_id)
         extra={}
@@ -176,7 +173,7 @@ def start_session(root,body,_group=True):
         sid=db.execute('INSERT INTO validation_sessions(dataset_id,species_id,fingerprint,snapshot) VALUES(?,?,?,?)',
             (body.dataset_id,body.species_id,ctx['fingerprint'],'{}')).lastrowid
         if shared:
-            snapshot.update(annotation_source=shared['source'], palette=shared['palette'],
+            snapshot.update(annotation_source=shared['source'],
                 excluded_recording_ids=shared['excluded_recording_ids'], split_unit=shared['split_unit'],
                 calibration_method='shared_calibration_recording_holdout_v1', evaluation_scope='complete_windows_in_reserved_recordings',
                 calibration_strata=shared['strata'], shared_ranges={})
@@ -185,8 +182,10 @@ def start_session(root,body,_group=True):
                 scores=lookup.get((item['recording_id'],item['start_s']),{}).get('scores',{})
                 iid=db.execute('INSERT INTO validation_items(session_id,phase,position,recording_id,start_s,stratum,scores) VALUES(?,?,?,?,?,?,?)',
                     (sid,'calibration',position,item['recording_id'],item['start_s'],item['stratum'],json.dumps(scores))).lastrowid
-                snapshot['shared_ranges'][str(iid)]=json.loads(item['ranges'])
-                if any(r['species_id']==body.species_id for r in json.loads(item['ranges'])):
+                # Only saved call marks are reused; clips nobody marked are simply asked.
+                ranges=json.loads(item['ranges']) if item['complete'] else []
+                snapshot['shared_ranges'][str(iid)]=ranges
+                if any(r['species_id']==body.species_id for r in ranges):
                     db.execute('INSERT INTO validation_answers(item_id,verdict,quiz_snapshot,ranges) VALUES(?,?,?,?)',
                         (iid,'target',item['quiz_snapshot'],item['ranges']))
         else:
@@ -196,31 +195,25 @@ def start_session(root,body,_group=True):
         if not sum(s['sample'] for s in snapshot['calibration_strata'].values()):
             raise CatalogError('validation_too_few')
         db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(snapshot),sid))
-    return view_session(root,sid,ctx=ctx,_group=_group)
+    return view_session(root,sid,ctx=ctx)
 
 
-def shared_calibration(root, body, ctx):
-    from annotations import latest_answers, session_row, palette_for
+def shared_calibration(root, body):
+    """The site's shared sample: its first 10 clips, or more when legacy call marks completed more."""
+    from annotations import latest_answers, session_row, start_session as shared_session
     from sampling import draw_plan
+    session_id = shared_session(root, body)
     with connect(root) as db:
-        row, snap = session_row(db, body.annotation_session_id)
-        if (row['fingerprint'] != ctx['fingerprint'] or snap['site']['id'] != ctx['site']['id']
-            or (snap['start_date'], snap['end_date']) != (ctx['start_date'], ctx['end_date'])):
-            raise CatalogError('workflow_changed')
+        row, snap = session_row(db, session_id)
         if not snap['evaluation_recording_ids']:
             raise CatalogError('annotation_no_holdout')
         rows = latest_answers(db, row['id'])
-        complete = []
-        for item in rows:
-            if not item['complete']: break
-            complete.append(item)
-        count = len(complete) if len(complete)==len(rows) else len(complete)//10*10
-        if count < min(10, len(rows)):
-            raise CatalogError('annotation_need_batch')
-        complete = complete[:count]
+        complete = next((i for i, item in enumerate(rows) if not item['complete']), len(rows))
+        count = max(min(10, len(rows)), complete if complete == len(rows) else complete//10*10)
+        chosen = rows[:count]
         _, strata = draw_plan(np.array([i['stratum'] for i in snap['population']]), count, int(snap['seed'])+2)
-        return {'source': {'session_id': row['id'], 'answers': {str(i['id']): i['answer_id'] for i in complete}},
-                'items': complete, 'strata': {r['stratum']:r for r in strata}, 'palette': palette_for(db, snap, rows),
+        return {'source': {'session_id': row['id'], 'answers': {str(i['id']): i['answer_id'] for i in chosen if i['complete']}},
+                'items': chosen, 'strata': {r['stratum']:r for r in strata},
                 'excluded_recording_ids': snap['calibration_recording_ids'], 'split_unit': snap['split_unit']}
 
 
@@ -433,22 +426,14 @@ def evaluate(snapshot,items,alpha=.05):
     return result
 
 
-def answer(root,sid,item_id,verdict,ranges=None,version=None,reviews=None,examples=None):
-    with connect(root) as db:
-        row=db.execute('SELECT snapshot FROM validation_sessions WHERE id=?',(sid,)).fetchone()
-        if not row:raise CatalogError('not_found')
-        grouped_session=bool(json.loads(row['snapshot']).get('group_ids'))
-    if grouped_session:
-        from validation_groups import answer_group
-        if not reviews:raise CatalogError('validation_group_answers_required')
-        return answer_group(root,sid,reviews,ranges)
+def answer(root,sid,item_id,verdict,ranges=None,version=None,examples=None):
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
         _write_answer(root,db,sid,item_id,verdict,ranges,version,examples=examples)
     return view_session(root,sid)
 
 
-def _write_answer(root,db,sid,item_id,verdict,ranges,version,allow_out_of_order=False,examples=None):
+def _write_answer(root,db,sid,item_id,verdict,ranges,version,examples=None):
     row=db.execute('SELECT * FROM validation_sessions WHERE id=?',(sid,)).fetchone()
     if not row:
         raise CatalogError('not_found')
@@ -459,58 +444,53 @@ def _write_answer(root,db,sid,item_id,verdict,ranges,version,allow_out_of_order=
     item=db.execute('SELECT * FROM validation_items WHERE id=? AND session_id=?',(item_id,sid)).fetchone()
     if not item:
         raise CatalogError('not_found')
-    phase='evaluation' if snap['stage']=='complete' else snap['stage']
-    if item['phase']!=phase:
-        raise CatalogError('validation_phase_locked')
+    stage='evaluation' if snap['stage']=='complete' else snap['stage'];phase=item['phase']
     if not annotation_source_current(db,snap):raise CatalogError('annotation_source_changed')
     rows=answered_items(db,sid,phase)
     current=next(r for r in rows if r['id']==item_id)
+    # Locked answers keep their verdict; only call ranges on a "heard" answer can still be marked.
+    if phase!=stage and not (ranges is not None and verdict==current['verdict']=='target'):
+        raise CatalogError('validation_phase_locked')
     if version is not None and (current['answer_id'] or 0)!=version:raise CatalogError('annotation_changed')
     pending = rows
     if phase == 'evaluation' and snap['method'] == audit.METHOD:
         pending = [r for r in rows if r['id'] in audit.active_ids(snap)]
-    if not allow_out_of_order and current['verdict'] is None and item_id!=next((r['id'] for r in pending if r['verdict'] is None),None):
+    if current['verdict'] is None and item_id!=next((r['id'] for r in pending if r['verdict'] is None),None):
         raise CatalogError('validation_answer_order')
     recording=db.execute('SELECT * FROM recordings WHERE id=?',(item['recording_id'],)).fetchone()
     checked_source(recording)
     from annotations import clean_ranges
-    ranges=clean_ranges(db,ranges,item['start_s'],item['start_s']+snap['window_s']) if ranges is not None else json.loads(current['ranges'] or 'null')
+    if ranges is not None:
+        ranges=clean_ranges(db,ranges,item['start_s'],item['start_s']+snap['window_s'])
+    else:
+        ranges=json.loads(current['ranges'] or 'null')
+        # "Not heard" withdraws this species' reused marks instead of contradicting them.
+        if ranges and verdict!='target':ranges=[r for r in ranges if r['species_id']!=row['species_id']]
     if ranges and verdict!='target' and any(r['species_id']==row['species_id'] for r in ranges):
         raise CatalogError('annotation_conflict')
     from quiz import report_results
     quiz=report_results(db,[row['species_id']])
-    if phase=='calibration' and snap.get('annotation_source') and ranges is not None:
+    source=snap.get('annotation_source')
+    # Only withdrawn reused marks go back to the shared marks; new marks stay with this species' answer.
+    if stage=='calibration' and source and ranges is not None and verdict!='target':
         original=db.execute('SELECT id FROM annotation_items WHERE session_id=? AND recording_id=? AND start_s=?',
-            (snap['annotation_source']['session_id'],item['recording_id'],item['start_s'])).fetchone()
-        previous=db.execute('SELECT * FROM annotation_answers WHERE id=?',(snap['annotation_source']['answers'][str(original['id'])],)).fetchone()
-        if json.loads(previous['ranges'])!=ranges:
+            (source['session_id'],item['recording_id'],item['start_s'])).fetchone()
+        previous=db.execute('SELECT * FROM annotation_answers WHERE id=?',(source['answers'].get(str(original['id'])),)).fetchone() if original else None
+        if previous and json.loads(previous['ranges'])!=ranges:
             aid=db.execute('INSERT INTO annotation_answers(item_id,ranges,complete,quiz_snapshot,palette_ids) VALUES(?,?,?,?,?)',
                 (original['id'],json.dumps(ranges),previous['complete'],json.dumps(quiz),previous['palette_ids'])).lastrowid
-            snap['annotation_source']['answers'][str(original['id'])]=aid
-            for peer_id in snap.get('group_ids', []):
-                if peer_id == sid:continue
-                peer=json.loads(db.execute('SELECT snapshot FROM validation_sessions WHERE id=?',(peer_id,)).fetchone()[0])
-                source=peer.get('annotation_source',{})
-                if peer['stage']=='calibration' and source.get('answers',{}).get(str(original['id']))==previous['id']:
-                    source['answers'][str(original['id'])]=aid
-                    for value in db.execute('SELECT id FROM validation_items WHERE session_id=? AND recording_id=? AND start_s=?',
-                                            (peer_id,item['recording_id'],item['start_s'])):
-                        peer.setdefault('shared_ranges',{})[str(value['id'])]=ranges
-                    db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(peer,allow_nan=False),peer_id))
+            source['answers'][str(original['id'])]=aid
     db.execute('INSERT INTO validation_answers(item_id,verdict,quiz_snapshot,ranges,examples_snapshot) VALUES(?,?,?,?,?)',(item_id,verdict,json.dumps(quiz),
         json.dumps(ranges) if ranges is not None else None,json.dumps(examples) if examples is not None else None))
     if phase=='evaluation':update_results(snap,answered_items(db,sid,phase))
     db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(snap,allow_nan=False),sid))
 
 
-def finish_calibration(root,sid,_group=True):
+def finish_calibration(root,sid):
     with connect(root) as db:
         row=db.execute('SELECT snapshot FROM validation_sessions WHERE id=?',(sid,)).fetchone()
         if not row:raise CatalogError('not_found')
         snap=json.loads(row['snapshot'])
-        if _group and snap.get('group_ids'):
-            from validation_groups import finish_group
-            return finish_group(root,sid)
         model_current, model_reason = custom_model_status(root, snap)
         if not model_current:
             raise CatalogError(model_reason)
@@ -520,20 +500,17 @@ def finish_calibration(root,sid,_group=True):
             if not rows or any(r['verdict'] is None for r in rows):raise CatalogError('validation_calibration_incomplete')
             begin_evaluation(db,sid,snap,rows)
             db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(snap,allow_nan=False),sid))
-    return view_session(root,sid,_group=_group)
+    return view_session(root,sid)
 
 
-def start_recall(root,sid,_group=True):
-    current = view_session(root, sid, include_items=False, _group=False)
+def start_recall(root,sid):
+    current = view_session(root, sid, include_items=False)
     if not current['applicable']:
         raise CatalogError('workflow_changed')
     with connect(root) as db:
         row=db.execute('SELECT snapshot FROM validation_sessions WHERE id=?',(sid,)).fetchone()
         if not row:raise CatalogError('not_found')
         snap=json.loads(row['snapshot'])
-        if _group and snap.get('group_ids'):
-            from validation_groups import start_recall_group
-            return start_recall_group(root,sid)
         if snap['method'] != audit.METHOD or snap['stage']=='calibration':
             raise CatalogError('validation_precision_incomplete')
         rows=answered_items(db,sid,'evaluation')
@@ -543,19 +520,16 @@ def start_recall(root,sid,_group=True):
         snap.update(audit_step='recall',recall_started=True)
         audit.update(snap,rows)
         db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(snap,allow_nan=False),sid))
-    return view_session(root,sid,_group=_group)
+    return view_session(root,sid)
 
 
-def view_session(root,sid,ctx=None,include_items=True,item_id=None,_group=True):
+def view_session(root,sid,ctx=None,include_items=True,item_id=None):
     from results_workflow import context
     with connect(root) as db:
         row=db.execute('SELECT * FROM validation_sessions WHERE id=?',(sid,)).fetchone()
         if not row:
             raise CatalogError('not_found')
         snap=json.loads(row['snapshot']);taxon=names_for(db.execute('SELECT * FROM species WHERE id=?',(row['species_id'],)).fetchone())
-        if include_items and _group and snap.get('group_ids'):
-            from validation_groups import view_group
-            return view_group(root,sid,ctx=ctx,item_id=item_id)
         source_current=annotation_source_current(db,snap)
         items=answered_items(db,sid)
         counts={phase:{'total':sum(i['phase']==phase for i in items),'answered':sum(i['phase']==phase and i['verdict'] is not None for i in items)} for phase in ['calibration','evaluation']}
@@ -591,8 +565,7 @@ def view_session(root,sid,ctx=None,include_items=True,item_id=None,_group=True):
                   and (snap['start_date'],snap['end_date'])==(ctx['start_date'],ctx['end_date']))
     return {'id':sid,'dataset_id':row['dataset_id'],'species':taxon,'stage':snap['stage'],'counts':counts,'question':question,
         'kind':snap.get('kind','detection'),'run_id':snap.get('run_id'),'model_id':snap.get('model_id'),'history':history,
-        'group_ids':snap.get('group_ids',[]),
-        'annotation_session_id':snap.get('annotation_source',{}).get('session_id'), 'palette':snap.get('palette',[taxon]),
+        'annotation_session_id':snap.get('annotation_source',{}).get('session_id'),
         'annotation_source_current':source_current,'split_unit':snap.get('split_unit'),
         'excluded_recording_ids':snap.get('excluded_recording_ids',[]),
         'evaluated_count':snap.get('evaluated_count',counts['evaluation']['answered'] if snap['stage']=='complete' else 0),

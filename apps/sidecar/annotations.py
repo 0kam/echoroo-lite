@@ -133,7 +133,7 @@ def start_session(root, body):
             WHERE d.site_id=? AND a.fingerprint=? ORDER BY a.id DESC''', (ctx['site']['id'], ctx['fingerprint'])):
             snap = json.loads(row['snapshot'])
             if (snap['start_date'], snap['end_date']) == (ctx['start_date'], ctx['end_date']):
-                return view_session(root, row['id'])
+                return row['id']
     snap = build_plan(root, ctx, secrets.randbits(63))
     if context(root, body.dataset_id, ctx['start_date'], ctx['end_date'])['revision'] != ctx['revision']:
         raise CatalogError('workflow_changed')
@@ -144,7 +144,7 @@ def start_session(root, body):
             item = snap['population'][index]
             db.execute('INSERT INTO annotation_items(session_id,position,recording_id,start_s,end_s,stratum) VALUES(?,?,?,?,?,?)',
                        (sid, position, item['recording_id'], item['start_s'], item['start_s'] + 15, item['stratum']))
-    return view_session(root, sid)
+    return sid
 
 
 def latest_answers(db, sid):
@@ -160,45 +160,6 @@ def session_row(db, sid):
     return row, json.loads(row['snapshot'])
 
 
-def palette_for(db, snapshot, rows):
-    ids = {s['id'] for s in snapshot['palette']}
-    for row in rows:
-        ids.update(json.loads(row['palette_ids'] or '[]'))
-        ids.update(r['species_id'] for r in json.loads(row['ranges'] or '[]') if r['species_id'])
-    return [names_for(r) for r in db.execute('SELECT * FROM species ORDER BY scientific_name') if r['id'] in ids]
-
-
-def view_session(root, sid, item_id=None):
-    from results_workflow import fingerprint
-    with connect(root) as db:
-        row, snap = session_row(db, sid)
-        rows = latest_answers(db, sid)
-        palette = palette_for(db, snap, rows)
-        current = next((r for r in rows if not r['complete']), None)
-        question = next((r for r in rows if r['id'] == item_id), None) if item_id is not None else current
-        if item_id is not None and (not question or (not question['complete'] and question != current)):
-            raise CatalogError('validation_answer_order')
-        if question:
-            record = dict(db.execute('SELECT * FROM recordings WHERE id=?', (question['recording_id'],)).fetchone())
-            question = {k: question[k] for k in ('id', 'position', 'start_s', 'end_s', 'complete')} | {
-                'version': question['answer_id'] or 0, 'ranges': json.loads(question['ranges'] or '[]'),
-                'source': {'id': record['id'], 'kind': 'recording', 'path': record['path'], 'seconds': record['seconds']},
-                'local_time': window_key(record, question['start_s'], ZoneInfo(snap['site']['timezone']))[1]}
-        heard = defaultdict(int)
-        for item in rows:
-            if not item['complete']:
-                continue
-            for taxon in {r['species_id'] for r in json.loads(item['ranges'] or '[]') if r['species_id']}:
-                heard[taxon] += 1
-        return {'id': sid, 'dataset_id': row['dataset_id'], 'site': snap['site'], 'start_date': snap['start_date'], 'end_date': snap['end_date'],
-                'total': len(rows), 'completed': sum(bool(r['complete']) for r in rows), 'question': question,
-                'palette': palette, 'heard': [{'species': s, 'intervals': heard[s['id']]} for s in palette if heard[s['id']]],
-                'history': [{'id': r['id'], 'position': r['position']} for r in rows if r['complete']],
-                'can_evaluate': bool(snap['evaluation_recording_ids']) and sum(bool(r['complete']) for r in rows) >= min(10, len(rows)),
-                'has_holdout': bool(snap['evaluation_recording_ids']),
-                'applicable': row['fingerprint'] == fingerprint(root, row['dataset_id'])}
-
-
 def clean_ranges(db, ranges, start, end):
     result = []
     for value in ranges:
@@ -209,30 +170,6 @@ def clean_ranges(db, ranges, start, end):
             raise CatalogError('not_found')
         result.append({'species_id': sid, 'start_s': float(a), 'end_s': float(b)})
     return sorted(result, key=lambda r: (r['start_s'], r['end_s'], r['species_id'] or ''))
-
-
-def save_answer(root, sid, body):
-    from quiz import report_results
-    with connect(root) as db:
-        db.execute('BEGIN IMMEDIATE')
-        _, snapshot = session_row(db, sid)
-        rows = latest_answers(db, sid)
-        row = next((r for r in rows if r['id'] == body.item_id), None)
-        if not row or (not row['complete'] and row != next((r for r in rows if not r['complete']), None)):
-            raise CatalogError('validation_answer_order')
-        if (row['answer_id'] or 0) != body.version:
-            raise CatalogError('annotation_changed')
-        checked_source(db.execute('SELECT * FROM recordings WHERE id=?', (row['recording_id'],)).fetchone())
-        ranges = clean_ranges(db, [r.model_dump() for r in body.ranges], row['start_s'], row['end_s'])
-        ids = sorted({r['species_id'] for r in ranges if r['species_id']})
-        palette_ids = set(body.palette_ids) | {s['id'] for s in palette_for(db, snapshot, rows)} | set(ids)
-        if not palette_ids.issubset({r[0] for r in db.execute('SELECT id FROM species')}):
-            raise CatalogError('not_found')
-        additions = sorted(palette_ids - {s['id'] for s in snapshot['palette']})
-        quiz = report_results(db, ids, include_sessions=True)
-        db.execute('INSERT INTO annotation_answers(item_id,ranges,complete,quiz_snapshot,palette_ids) VALUES(?,?,?,?,?)',
-                   (row['id'], json.dumps(ranges), int(body.complete), json.dumps(quiz), json.dumps(additions)))
-    return view_session(root, sid)
 
 
 def evidence(root, ctx, species_id=None):

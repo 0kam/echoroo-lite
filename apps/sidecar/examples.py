@@ -22,13 +22,11 @@ def _example(kind, row, source_kind, start, end, label):
 
 def _question_windows(root, db, validation_id, run_id, sample_id):
     if validation_id is not None:
-        from validation_groups import _group_ids
-        windows = []
-        for sid in _group_ids(db, validation_id):
-            width = db.execute("SELECT json_extract(snapshot,'$.window_s') FROM validation_sessions WHERE id=?", (sid,)).fetchone()[0]
-            windows += [('recording', r[0], r[1], r[1] + width) for r in
-                        db.execute('SELECT recording_id,start_s FROM validation_items WHERE session_id=?', (sid,))]
-        return windows
+        width = db.execute("SELECT json_extract(snapshot,'$.window_s') FROM validation_sessions WHERE id=?", (validation_id,)).fetchone()
+        if width is None:
+            raise CatalogError('not_found')
+        return [('recording', r[0], r[1], r[1] + width[0]) for r in
+                db.execute('SELECT recording_id,start_s FROM validation_items WHERE session_id=?', (validation_id,))]
     if run_id is not None:
         from search_runs import get_run
         return [('recording', h['recording_id'], h['start_s'], h['end_s']) for h in get_run(root, run_id, sample_id)['hits']]

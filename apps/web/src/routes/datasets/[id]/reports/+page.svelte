@@ -7,7 +7,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { rangeQuery,type Overview } from '$lib/workflow';
+  import { rangeQuery,speciesGroup,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -21,7 +21,7 @@
   const back=$derived(`${resolve(`/datasets/${id}`)}?${overview?rangeQuery(overview.start_date,overview.end_date):query}`);
   onMount(()=>{void(async()=>{try{
     const [data,saved]=await Promise.all([api<Overview>(`/datasets/${id}/overview?${query}`),api<Export[]>(`/datasets/${id}/exports`)]);
-    overview=data;history=saved;selected=data.species.map(row=>row.species.id);
+    overview=data;history=saved;selected=data.species.filter(row=>speciesGroup(row)!=='few').map(row=>row.species.id);
     try{const draft=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(draft){selected=draft.selected.filter((id:string)=>data.species.some(row=>row.species.id===id));folder=draft.folder;}}catch{}
     restored=true;
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
@@ -47,8 +47,10 @@
       <p>{overview.start_date}–{overview.end_date} · {overview.site.timezone}</p>
       <p>{overview.records.toLocaleString(app.locale)} {t('rAudioFiles')} · {(overview.recorded_seconds/3600).toLocaleString(app.locale,{maximumFractionDigits:1})} {t('rHours')}</p>
       <details><summary>{t('wIncludeSpecies')} · {selected.length}</summary>
-        {#each overview.species as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending}/>
-          <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i></span></label>{/each}
+        {#each [false,true] as few}{@const rows=overview.species.filter(row=>(speciesGroup(row)==='few')===few)}
+          {#if few&&rows.length}<h3>{t('wGroupFew')}</h3><p class="notice">{t('wFewCaution')}</p>{/if}
+          {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending}/>
+            <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i></span></label>{/each}{/each}
       </details>
       <p>{t('rExportContents')}</p>
       {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} disabled={exportFiles.pending}/></label>{/if}
@@ -69,4 +71,4 @@
     </div>{/each}</section>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.report-page{max-width:960px}h1{margin-top:20px}h2{margin-bottom:12px}p{margin:16px 0}.lead{font-size:18px}.export-species{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}.export-species input{width:22px;height:22px}details{margin:24px 0}summary{font-size:18px;padding:12px 0;cursor:pointer}.path{overflow-wrap:anywhere;color:rgb(var(--stone-700));font-size:14px}.saved{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:18px 0;border-top:1px solid rgb(var(--stone-300))}.saved p{margin:0 0 8px}.output{border-color:rgb(var(--primary-700))}</style>
+<style>.report-page{max-width:960px}h1{margin-top:20px}h2{margin-bottom:12px}p{margin:16px 0}.lead{font-size:18px}.export-species{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}.export-species input{width:22px;height:22px}details{margin:24px 0}summary{font-size:18px;padding:12px 0;cursor:pointer}h3{margin:28px 0 0}.path{overflow-wrap:anywhere;color:rgb(var(--stone-700));font-size:14px}.saved{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:18px 0;border-top:1px solid rgb(var(--stone-300))}.saved p{margin:0 0 8px}.output{border-color:rgb(var(--primary-700))}</style>
