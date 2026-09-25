@@ -177,8 +177,10 @@ def initialize(root):
         if 'palette_ids' not in {r['name'] for r in db.execute('PRAGMA table_info(annotation_answers)')}:
             db.execute("ALTER TABLE annotation_answers ADD COLUMN palette_ids TEXT NOT NULL DEFAULT '[]'")
         for table in ('validation_answers','search_judgements'):
-            if 'quiz_snapshot' not in {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}:
-                db.execute(f'ALTER TABLE {table} ADD COLUMN quiz_snapshot TEXT')
+            columns = {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}
+            for column in ('quiz_snapshot', 'examples_snapshot'):
+                if column not in columns:
+                    db.execute(f'ALTER TABLE {table} ADD COLUMN {column} TEXT')
         db.execute('CREATE TABLE IF NOT EXISTS changed_locations (site_id INTEGER PRIMARY KEY REFERENCES sites)')
         db.execute('CREATE TABLE IF NOT EXISTS result_revision (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)')
         db.execute('INSERT OR IGNORE INTO result_revision VALUES(1,0)')

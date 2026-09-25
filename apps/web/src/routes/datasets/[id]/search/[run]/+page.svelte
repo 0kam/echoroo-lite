@@ -7,6 +7,7 @@
   import { commonName, type Species } from '$lib/species';
   import AudioRegion, { type AudioSource } from '$lib/AudioRegion.svelte';
   import SimilarityDistribution, { type Band } from '$lib/SimilarityDistribution.svelte';
+  import ReferencePanel, { type ExampleRef } from '$lib/ReferencePanel.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   type Hit = { segment_id: number; recording_id: number; path: string; seconds: number; recorded_at: string; timezone: string;
@@ -24,7 +25,7 @@
     return dates.toString();
   });
   let low = $state(0.5), high = $state(1), count = $state(20);
-  let judging = $state<number | null>(null), index=$state(0), sampling=$state(false);
+  let judging = $state<number | null>(null), index=$state(0), sampling=$state(false), heardExamples=$state<ExampleRef[]>();
   const currentHit=$derived(run?.hits[index]);
   const sample = $derived(run?.samples.find(s => String(s.id) === sampleId));
   const reviewed = $derived(run ? run.hits.filter(h => h.verdict).length : 0);
@@ -37,7 +38,7 @@
   const judge = createTask(async (hit: Hit, verdict: string) => {
     judging = hit.segment_id;
     try {
-      await api(`/search-runs/${runId}/judgements`, { segment_id: hit.segment_id, verdict, note: hit.note || '' });
+      await api(`/search-runs/${runId}/judgements`, { segment_id: hit.segment_id, verdict, note: hit.note || '', examples_snapshot: heardExamples });
       await load(); index=Math.min(index+1,run!.hits.length);
     } finally { judging = null; }
   }, { toast: true });
@@ -67,7 +68,7 @@
       </form><Button onclick={()=>sampling=false}>{t('uBackSounds')}</Button>
       {#if draw.error}<p class="error" role="alert">{t(draw.error)}</p>{/if}
     </section>
-    {:else}<section class="panel"><h2>{t('uReviewPrompt')}</h2>
+    {:else}<div class="with-examples"><section class="panel"><h2>{t('uReviewPrompt')}</h2>
       <p>{Math.min(index+1,run.hits.length)} / {run.hits.length} · {t('uSoundNumber')}</p>
       <progress value={reviewed} max={run.hits.length}></progress>
       {#if currentHit}
@@ -79,8 +80,10 @@
       {#if judge.error}<p class="error" role="alert">{t(judge.error)}</p>{/if}
       <div class="actions between"><Button disabled={index===0||judge.pending} onclick={()=>index--}>‹ {t('uPreviousSound')}</Button><Button disabled={index>=run.hits.length-1||judge.pending} onclick={()=>index++}>{t('uNextSound')} ›</Button></div>
     </section>
+    <ReferencePanel species={run.snapshot.species} {datasetId} {runId} sampleId={run.sample_id} onexamples={list=>heardExamples=list}
+      practice={`${resolve('/quiz')}?species=${run.snapshot.species.id}&return=${encodeURIComponent(`/datasets/${datasetId}/search/${runId}`)}`}/></div>
     <div class="actions"><Button href={`${resolve(`/datasets/${datasetId}/species/${run.snapshot.species.id}`)}?${range}&run_id=${runId}`}>{t('rSearchResults')}</Button><Button onclick={()=>sampling=true}>{t('uReviewOtherBand')}</Button></div>
     <p class="muted">{t('uSavedAlways')}</p>{/if}
   {/if}
 </div>
-<style>.review-page{max-width:820px!important}p{margin:16px 0}.answers{margin:24px 0}.between{justify-content:space-between;margin-top:28px}form{margin:20px 0}</style>
+<style>.review-page{max-width:1280px!important}.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}.with-examples>:global(.examples){position:sticky;top:16px}@media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.with-examples>:global(.examples){position:static}}p{margin:16px 0}.answers{margin:24px 0}.between{justify-content:space-between;margin-top:28px}form{margin:20px 0}</style>

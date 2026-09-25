@@ -9,7 +9,7 @@ import threading
 from datetime import date
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -102,10 +102,28 @@ class SampleRequest(BaseModel):
     count: int = Field(default=20, ge=1, le=200)
 
 
+class ExampleRef(BaseModel):
+    kind: Literal['named', 'confirmed']
+    origin: Literal['quiz', 'xeno-canto', 'search-reference', 'annotation', 'validation', 'search-judgement']
+    id: int | Annotated[str, Field(max_length=100)]
+
+
+# The examples the reviewer could listen to when answering; stored for reproducibility.
+ExamplesSnapshot = Annotated[list[ExampleRef] | None, Field(max_length=50)]
+
+
+class ExamplesRequest(BaseModel):
+    dataset_id: int
+    validation_id: int | None = None
+    run_id: int | None = None
+    sample_id: int | None = None
+
+
 class JudgementRequest(BaseModel):
     segment_id: int
     verdict: Literal['target', 'other', 'unknown']
     note: str = Field(default='', max_length=2000)
+    examples_snapshot: ExamplesSnapshot = None
 
 
 class XCKeyRequest(BaseModel):
@@ -136,21 +154,11 @@ class ValidationRequest(BaseModel):
     start_date: date
     end_date: date
     run_id: int | None = None
-    annotation_session_id: int | None = None
 
 
 class CustomValidationRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     model_id: int = Field(ge=1)
-
-
-class GroupValidationRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    dataset_id: int
-    species_ids: list[str] = Field(min_length=2, max_length=100)
-    start_date: date
-    end_date: date
-    annotation_session_id: int
 
 
 class CustomModelRequest(BaseModel):
@@ -171,27 +179,12 @@ class AnnotationRequest(BaseModel):
     end_date: date
 
 
-class AnnotationAnswer(BaseModel):
-    item_id: int
-    version: int = Field(ge=0)
-    ranges: list[AnnotationRange] = Field(max_length=200)
-    palette_ids: list[str] = Field(default_factory=list, max_length=1000)
-    complete: bool = True
-
-
-class ValidationReview(BaseModel):
-    session_id: int
-    item_id: int
-    verdict: Literal['target', 'other', 'unknown']
-    version: int = Field(ge=0)
-
-
 class ValidationAnswer(BaseModel):
     item_id: int
     verdict: Literal['target', 'other', 'unknown']
     ranges: list[AnnotationRange] | None = Field(default=None, max_length=200)
     version: int | None = Field(default=None, ge=0)
-    reviews: list[ValidationReview] | None = Field(default=None, max_length=100)
+    examples_snapshot: ExamplesSnapshot = None
 
 
 class EvidenceSelection(BaseModel):
@@ -360,18 +353,7 @@ def create_app(root, models, token):
     def annotation_start(body: AnnotationRequest):
         from annotations import start_session
         with lock:
-            return start_session(root, body)
-
-    @app.get('/annotations/{session_id}')
-    def annotation_view(session_id: int, item_id: int | None = None):
-        from annotations import view_session
-        return view_session(root, session_id, item_id)
-
-    @app.post('/annotations/{session_id}/answers')
-    def annotation_answer(session_id: int, body: AnnotationAnswer):
-        from annotations import save_answer
-        with lock:
-            return save_answer(root, session_id, body)
+            return {'id': start_session(root, body)}
 
     @app.get('/annotations/{session_id}/custom-model-readiness')
     def custom_model_readiness(session_id: int, species_id: str):
@@ -391,8 +373,14 @@ def create_app(root, models, token):
         from custom_models import get_model
         return get_model(root,model_id)
 
+    @app.post('/custom-models/{model_id}/delete')
+    def custom_model_delete(model_id: int):
+        from custom_models import delete_model
+        with management_change():
+            return delete_model(root,model_id)
+
     @app.post('/validations')
-    def validation_start(body: ValidationRequest | CustomValidationRequest | GroupValidationRequest):
+    def validation_start(body: ValidationRequest | CustomValidationRequest):
         from validation import start_session
         with lock:
             return start_session(root,body)
@@ -420,7 +408,7 @@ def create_app(root, models, token):
         with lock:
             return answer(root,session_id,body.item_id,body.verdict,
                           [r.model_dump() for r in body.ranges] if body.ranges is not None else None, body.version,
-                          [r.model_dump() for r in body.reviews] if body.reviews is not None else None)
+                          [r.model_dump() for r in body.examples_snapshot] if body.examples_snapshot is not None else None)
 
     @app.get("/catalog")
     def catalog():
@@ -468,7 +456,24 @@ def create_app(root, models, token):
             row=db.execute('SELECT * FROM species WHERE id=?',(species_id,)).fetchone()
             if row is None:
                 raise CatalogError('not_found')
-            return names_for(row)
+            from species import ebird_codes
+            return {**names_for(row), 'ebird_code': ebird_codes().get(row['scientific_name'])}
+
+    @app.get('/species/{species_id}/examples')
+    def species_examples(species_id: str, dataset_id: int, validation_id: int | None = None,
+                         run_id: int | None = None, sample_id: int | None = None):
+        from examples import examples
+        from quiz import initialize_quiz
+        with lock:
+            initialize_quiz(root)
+        return examples(root, species_id, dataset_id, validation_id, run_id, sample_id)
+
+    @app.post('/species/{species_id}/examples/xeno-canto')
+    def species_examples_xc(species_id: str, body: ExamplesRequest):
+        from examples import examples, fetch_xeno_canto
+        with lock:
+            fetch_xeno_canto(root, species_id)
+        return examples(root, species_id, body.dataset_id, body.validation_id, body.run_id, body.sample_id)
 
     @app.post("/species")
     def update_species(body: SpeciesRequest):
@@ -619,7 +624,8 @@ def create_app(root, models, token):
     @app.post('/search-runs/{run_id}/judgements')
     def judge_search(run_id: int, body: JudgementRequest):
         from search_runs import judge
-        return judge(root, run_id, body.segment_id, body.verdict, body.note)
+        return judge(root, run_id, body.segment_id, body.verdict, body.note,
+                     [r.model_dump() for r in body.examples_snapshot] if body.examples_snapshot is not None else None)
 
     @app.get('/reports/options')
     def report_options(dataset_id: int):

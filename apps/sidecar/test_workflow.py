@@ -135,7 +135,8 @@ class WorkflowCheck(unittest.TestCase):
                         self.assertTrue(all(len(a['positive_ids'])<=30 and len(a['negative_ids'])<=30 for a in audit.values()))
                         continue
                     target=int(question['start_s']/15)%3!=0
-                    response=client.post(f'/validations/{sid}/answers',json={'item_id':question['id'],'verdict':'target' if target else 'other'})
+                    response=client.post(f'/validations/{sid}/answers',json={'item_id':question['id'],'verdict':'target' if target else 'other',
+                        'examples_snapshot':[{'kind':'named','origin':'search-reference','id':'R1-1'}]})
                     self.assertEqual(response.status_code,200,response.text);session=response.json()
                     if session['stage']=='evaluation' and session['counts']['evaluation']['answered']==10:
                         self.assertEqual(session['evaluated_count'],0)
@@ -185,6 +186,9 @@ class WorkflowCheck(unittest.TestCase):
                 self.assertEqual(response.status_code,200,response.text)
                 with zipfile.ZipFile(response.json()['path']) as archive:
                     self.assertIn('quality.csv',archive.namelist());self.assertIn(f'validation/{sid}.json',archive.namelist())
+                    saved_validation=json.loads(archive.read(f'validation/{sid}.json'))
+                    self.assertEqual(json.loads(saved_validation['items'][0]['examples_snapshot']),[{'kind':'named','origin':'search-reference','id':'R1-1'}])
+                    self.assertIn('examples_snapshot',saved_validation['answer_history'][0])
                     manifest=json.loads(archive.read('manifest.json'));self.assertEqual(len(manifest['results']),2)
                     self.assertTrue(any(n.endswith('.wav') for n in archive.namelist()))
                 saved_bytes=Path(response.json()['path']).read_bytes()

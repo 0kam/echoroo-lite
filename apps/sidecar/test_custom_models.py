@@ -77,6 +77,8 @@ class CustomModelCheck(unittest.TestCase):
                 ready=client.get(f'/annotations/{annotation}/custom-model-readiness',params={'species_id':SPECIES})
                 self.assertEqual(ready.status_code,200,ready.text);ready=ready.json()
                 self.assertTrue(ready['can_train']);self.assertEqual(ready['examples']['recordings'],4)
+                self.assertEqual(ready['answers'],{'target':4,'other':8})
+                self.assertEqual({(m['label'],m['origin'],m['end_s']-m['start_s']) for m in ready['materials']},{('target','search',5),('other','search',5)})
                 self.assertEqual((ready['examples']['positive_5s'],ready['examples']['negative_5s']),(4,8))
                 with connect(root) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM annotation_items').fetchone()[0],0)
                 created=client.post('/custom-models',json={'annotation_session_id':annotation,'species_id':SPECIES})
@@ -122,6 +124,26 @@ class CustomModelCheck(unittest.TestCase):
                     (run,SPECIES,segments[1,0]))
             stale=get_model(root,model_id)
             self.assertFalse(stale['applicable']);self.assertEqual(stale['reason'],'custom_model_labels_changed')
+
+
+    def test_delete_removes_only_what_the_model_made(self):
+        with custom_model_fixture() as (root,annotation,segments,run):
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                model_id=client.post('/custom-models',json={'annotation_session_id':annotation,'species_id':SPECIES}).json()['id']
+                session=client.post('/validations',json={'model_id':model_id}).json()
+                client.post(f"/validations/{session['id']}/answers",json={'item_id':session['question']['id'],'verdict':'target'})
+                listed=client.get(f'/annotations/{annotation}/custom-model-readiness',params={'species_id':SPECIES}).json()['models']
+                self.assertEqual([(m['id'],m['validation']['id']) for m in listed],[(model_id,session['id'])])
+                self.assertTrue((root/'custom-models'/str(model_id)).is_dir())
+                deleted=client.post(f'/custom-models/{model_id}/delete')
+                self.assertEqual(deleted.json(),{'id':model_id,'validations':1})
+                self.assertFalse((root/'custom-models'/str(model_id)).exists())
+                self.assertEqual(client.post(f'/custom-models/{model_id}/delete').json()['detail'],'not_found')
+                self.assertEqual(client.get(f"/validations/{session['id']}").json()['detail'],'not_found')
+                with connect(root) as db:
+                    self.assertEqual([db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0] for t in
+                                      ('custom_models','validation_sessions','validation_items','validation_answers','search_judgements')],[0,0,0,0,12])
+                self.assertTrue(client.get(f'/annotations/{annotation}/custom-model-readiness',params={'species_id':SPECIES}).json()['can_train'])
 
 
 if __name__=='__main__':

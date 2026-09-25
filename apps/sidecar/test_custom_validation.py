@@ -76,9 +76,10 @@ class CustomValidationCheck(unittest.TestCase):
                            for index in range(4)]
             stock = SimpleNamespace(dataset_id=1, species_id=SPECIES,
                 start_date=date(2024, 8, 8), end_date=date(2024, 8, 8),
-                run_id=None, annotation_session_id=None, model_id=None)
+                run_id=None, model_id=None)
             with patch('results_workflow.context', return_value=ctx), \
-                    patch('validation.population', return_value=(stock_items, {'birdnet': 'birdnet-sha'}, [])):
+                    patch('validation.population', return_value=(stock_items, {'birdnet': 'birdnet-sha'}, [])), \
+                    patch('validation.shared_calibration', return_value=None):
                 ordinary = start_session(root, stock)
             self.assertNotEqual(ordinary['id'], session['id'])
             self.assertEqual((ordinary['kind'], ordinary['model_id']), ('detection', None))

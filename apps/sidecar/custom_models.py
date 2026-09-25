@@ -158,7 +158,8 @@ def _prepare(root,annotation_session_id,species_id):
             if row['recording_id'] not in training or not row['complete']:continue
             for value in json.loads(row['ranges'] or '[]'):
                 if value['species_id']==species_id:intervals.append((row['recording_id'],value['start_s'],value['end_s'],'target',{'source_kind':'annotation_range','source_id':row['source_id'],'source_answer_id':row['answer_id']}))
-        rows=db.execute('''SELECT i.id AS source_id,i.phase,i.recording_id,i.start_s,a.id AS answer_id,a.verdict,a.ranges,v.snapshot
+        needs_range=[]
+        rows=db.execute('''SELECT i.id AS source_id,i.phase,i.recording_id,i.start_s,a.id AS answer_id,a.verdict,a.ranges,v.snapshot,v.id AS session_id
             FROM validation_items i JOIN validation_sessions v ON v.id=i.session_id
             JOIN validation_answers a ON a.id=(SELECT MAX(id) FROM validation_answers WHERE item_id=i.id)
             WHERE v.species_id=? AND i.phase='calibration' ''',(species_id,))
@@ -175,7 +176,14 @@ def _prepare(root,annotation_session_id,species_id):
                 if ranges:
                     for value in ranges:intervals.append((row['recording_id'],value['start_s'],value['end_s'],'target',source))
                 elif window==5:intervals.append((row['recording_id'],row['start_s'],row['start_s']+5,'target',source))
-                else:excluded['target_without_range']+=1
+                else:
+                    # A 15-second "heard" answer says nothing about which 5 seconds; it waits for a mark.
+                    excluded['target_without_range']+=1
+                    record=records.get(row['recording_id'])
+                    if record:needs_range.append({'validation_id':row['session_id'],'item_id':row['source_id'],'version':row['answer_id'],
+                        'source':{'id':record['id'],'kind':'recording','path':record['path'],'seconds':record['seconds']},
+                        'start_s':row['start_s'],'end_s':row['start_s']+window,'local_time':window_key(record,row['start_s'],zone)[1],
+                        'ranges':json.loads(row['ranges'] or '[]')})
         rows=db.execute('''SELECT j.id AS answer_id,j.segment_id,j.verdict,a.recording_id FROM search_judgements j
             JOIN segments s ON s.id=j.segment_id JOIN analyses a ON a.id=s.analysis_id
             WHERE j.species_id=? AND j.id=(SELECT MAX(id) FROM search_judgements WHERE species_id=j.species_id AND segment_id=j.segment_id)''',(species_id,))
@@ -219,6 +227,16 @@ def _prepare(root,annotation_session_id,species_id):
                 'start_s':segment['start_s'],'end_s':segment['end_s'],'label':classes.pop(),'group_key':_group_key(record,unit,zone),
                 'sources':origins,'vector':vector})
         counts={label:sum(row['label']==label for row in examples) for label in ('target','other')}
+        # One entry per checked sound (a mark, a 15-second answer or a search judgement), not per 5-second piece.
+        materials={}
+        for row in examples:
+            for origin in row['sources']:
+                key=(row['label'],row['recording_id'],origin['range_start_s'],origin['range_end_s'])
+                record=records[row['recording_id']]
+                materials.setdefault(key,{'label':row['label'],'origin':'search' if origin['source_kind'] in ('search_validation','search_judgement') else 'listening',
+                    'source':{'id':record['id'],'kind':'recording','path':record['path'],'seconds':record['seconds']},
+                    'start_s':origin['range_start_s'],'end_s':origin['range_end_s'],'local_time':window_key(record,origin['range_start_s'],zone)[1]})
+        materials=sorted(materials.values(),key=lambda m:(m['label']!='target',m['source']['id'],m['start_s']))
         class_groups={label:{row['group_key'] for row in examples if row['label']==label} for label in ('target','other')}
         groups={row['group_key'] for row in examples};group_labels={key:{row['label'] for row in examples if row['group_key']==key} for key in groups}
         folds,fold_seed=_folds(group_labels,snap['seed'],species_id) if groups else ({},'')
@@ -251,13 +269,27 @@ def _prepare(root,annotation_session_id,species_id):
                     WHERE v.species_id=? AND i.phase='evaluation' ''',(species_id,)).fetchone()[0],
                 'by_source':dict(sorted((kind,sum(any(source['source_kind']==kind for source in row['sources']) for row in examples)) for kind in {source['source_kind'] for row in examples for source in row['sources']}))},
             'requirements':{'positive_5s':MIN_CLASS_EXAMPLES,'negative_5s':MIN_CLASS_EXAMPLES,'cv_groups':CV_FOLDS,'evaluation_groups':1},
+            'materials':materials,'needs_range':needs_range,
+            'answers':{label:len({(source['source_kind'],source['source_id']) for *_,kind,source in [*intervals,*direct] if kind==label})
+                +(len(needs_range) if label=='target' else 0) for label in ('target','other')},
             'can_train':not reasons,'reasons':reasons}
     return public,{'annotation':dict(annotation),'annotation_snapshot':snap,'dataset':dict(dataset),'records':records,'analyses':analyses,
         'examples':examples,'folds':folds,'current_fingerprint':current_fingerprint}
 
 
 def readiness(root,annotation_session_id,species_id):
-    return _prepare(root,annotation_session_id,species_id)[0]
+    from results_workflow import context, current_validations, custom_snapshot
+    public=_prepare(root,annotation_session_id,species_id)[0]
+    ctx=context(root,public['dataset_id'],public['scope']['start_date'],public['scope']['end_date'])
+    models=[]
+    for row in _scoped_rows(root,ctx,species_id):
+        model=_public(root,row,ctx['fingerprint'])
+        model['validation']=current_validations(root,ctx,model_id=row['id']).get(species_id)
+        if model['applicable'] and model['status']=='ready':
+            summaries=custom_snapshot(root,ctx,row['id'])['summaries']
+            model['detections']=summaries[0]['candidate_windows'] if summaries else 0
+        models.append(model)
+    return {**public,'models':models}
 
 
 def _cv(examples,folds):
@@ -416,15 +448,35 @@ def get_model(root,model_id):
     return _public(root,row,fingerprint(root,row['dataset_id']))
 
 
-def list_models(root,ctx,species_id=None):
+def _scoped_rows(root,ctx,species_id=None):
+    """This site's models for the displayed period, newest first."""
     with connect(root) as db:
         rows=db.execute('''SELECT m.* FROM custom_models m JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=?
             AND (? IS NULL OR m.species_id=?) ORDER BY m.id DESC''',(ctx['site']['id'],species_id,species_id)).fetchall()
+    scope=[ctx['start_date'],ctx['end_date']]
+    return [row for row in rows if [json.loads(row['snapshot'])['scope'][k] for k in ('start_date','end_date')]==scope]
+
+
+def delete_model(root,model_id):
+    """Remove what the model produced: its files, its row and its own checks. Human answers stay."""
+    with connect(root) as db:
+        db.execute('BEGIN IMMEDIATE')
+        if not db.execute('SELECT 1 FROM custom_models WHERE id=?',(model_id,)).fetchone():raise CatalogError('not_found')
+        sessions=json.dumps([r[0] for r in db.execute("SELECT id FROM validation_sessions WHERE json_extract(snapshot,'$.model_id')=?",(model_id,))])
+        db.execute('DELETE FROM validation_answers WHERE item_id IN (SELECT id FROM validation_items WHERE session_id IN (SELECT value FROM json_each(?)))',(sessions,))
+        db.execute('DELETE FROM validation_items WHERE session_id IN (SELECT value FROM json_each(?))',(sessions,))
+        db.execute('DELETE FROM validation_sessions WHERE id IN (SELECT value FROM json_each(?))',(sessions,))
+        db.execute('DELETE FROM custom_models WHERE id=?',(model_id,))
+        db.execute('DELETE FROM workflow_cache')
+    # Only our own generated folder is removed, never a path read from the catalogue.
+    shutil.rmtree(Path(root)/'custom-models'/str(model_id),ignore_errors=True)
+    return {'id':model_id,'validations':len(json.loads(sessions))}
+
+
+def list_models(root,ctx,species_id=None):
     candidates=defaultdict(list)
-    for row in rows:
-        snap=json.loads(row['snapshot'])
-        if (snap['scope']['start_date'],snap['scope']['end_date'])==(ctx['start_date'],ctx['end_date']):
-            candidates[row['species_id']].append(row)
+    for row in _scoped_rows(root,ctx,species_id):
+        candidates[row['species_id']].append(row)
     chosen=[]
     for group in candidates.values():
         latest=_public(root,group[0],ctx['fingerprint']);selected=None
