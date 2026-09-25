@@ -9,11 +9,14 @@
   import { app,t,fileName,duration,refreshCatalog,rememberDataset } from '$lib/app.svelte';
   import Button from '$lib/ui/Button.svelte';
   import SiteMap from '$lib/SiteMap.svelte';
+  import { appHref,returnPath } from '$lib/workflow';
   import { createTask } from '$lib/ui/task.svelte';
   const query=new URL(page.url.hash.slice(1),page.url).searchParams;
   let siteId=$state(query.get('site')||''),siteName=$state(''),folder=$state('');
   let zone=$state('Asia/Tokyo'),latitude=$state<number|null>(null),longitude=$state<number|null>(null);
   let preview=$state<{count:number;seconds:number;skipped:{path:string;code:string}[]}|null>(null);
+  // Adding recordings to an existing site returns to the page it was opened from (site results or site management).
+  const adding=!!query.get('site'),origin=returnPath(page.url,/^\/(datasets\/\d+|sites\/\d+\/manage)(\?[^#]*)?$/);
   const draftKey=`echoroo-import-${query.get('site')||'new'}`;
   let restored=$state(false);
   onMount(()=>{try{const draft=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(draft){({siteId,siteName,folder,zone,latitude,longitude}=draft);}}catch{}restored=true;});
@@ -31,10 +34,10 @@
   });
 </script>
 <div class="page import-page">
-  <div class="crumbs"><a href={resolve('/datasets')}>{t('uSites')}</a></div>
-  <h1>{selected?`${selected.name} · ${t('uAddRecordings')}`:t('uNewSite')}</h1>
+  <div class="crumbs">{#if origin}<a href={appHref(origin)}>{t(origin.startsWith('/sites/')?'mManage':'uBackResults')}</a>{:else}<a href={resolve('/datasets')}>{t('uSites')}</a>{/if}</div>
+  <h1>{adding?`${selected?`${selected.name} · `:''}${t('uAddRecordings')}`:t('uNewSite')}</h1>
   <form class="stack" onsubmit={e=>{e.preventDefault();inspect.run();}} oninput={()=>preview=null}>
-    {#if !selected}<section class="panel">
+    {#if !adding}<section class="panel">
       <h2>{t('uSiteDetails')}</h2><p>{t('uSiteOnce')}</p>
         <label>{t('siteName')}<input bind:value={siteName} required maxlength="200" placeholder={t('uSiteExample')}/></label>
         <SiteMap bind:latitude bind:longitude editable/>

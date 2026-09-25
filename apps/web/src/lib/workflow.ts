@@ -1,3 +1,4 @@
+import { resolve } from '$app/paths';
 import type { Species } from './species';
 import type { Report, ReportOptions } from './reports';
 import type { AudioSource } from './AudioRegion.svelte';
@@ -81,3 +82,6 @@ export function speciesGroup(row:Overview['species'][number]):'confirmed'|'check
   const most=Math.max(0,...row.models.map(model=>model.candidate_windows),...(row.custom_models??[]).map(model=>model.candidate_windows??0));
   return !checks.length&&!row.searches.length&&!row.annotated&&most<FEW_DETECTIONS?'few':'check';
 }
+// `return=` carries the in-app page to go back to (hash routing); anything not matching `allowed` is ignored.
+export const returnPath = (url:URL,allowed:RegExp) => {const path=new URL(url.hash.slice(1)||url.pathname+url.search,url).searchParams.get('return')??'';return allowed.test(path)?path:'';};
+export const appHref = (path:string) => `${resolve('/')}${path.slice(1)}`;

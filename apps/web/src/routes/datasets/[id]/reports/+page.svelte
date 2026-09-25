@@ -6,22 +6,25 @@
   import { chooseDirectory } from '$lib/files';
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
-  import { commonName } from '$lib/species';
+  import { commonName,type Species } from '$lib/species';
   import { rangeQuery,speciesGroup,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string};
+  type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string;results?:{report_id:number}[]};
+  type Snapshot = {id:number;created_at:string;species:Species|null;start_date:string|null;end_date:string|null};
   const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
   let overview=$state<Overview|null>(null),selected=$state<string[]>([]),error=$state(''),folder=$state('');
-  let output=$state<Export|null>(null),history=$state<Export[]>([]);
+  let output=$state<Export|null>(null),history=$state<Export[]>([]),earlier=$state<Snapshot[]>([]);
   const draftKey=`echoroo-export-${id}-${query}`;
   let restored=$state(false);
   $effect(()=>{if(restored)sessionStorage.setItem(draftKey,JSON.stringify({selected,folder}));});
   const back=$derived(`${resolve(`/datasets/${id}`)}?${overview?rangeQuery(overview.start_date,overview.end_date):query}`);
   onMount(()=>{void(async()=>{try{
-    const [data,saved]=await Promise.all([api<Overview>(`/datasets/${id}/overview?${query}`),api<Export[]>(`/datasets/${id}/exports`)]);
+    const [data,saved,snapshots]=await Promise.all([api<Overview>(`/datasets/${id}/overview?${query}`),api<Export[]>(`/datasets/${id}/exports`),api<Snapshot[]>(`/reports?dataset_id=${id}`)]);
     overview=data;history=saved;selected=data.species.filter(row=>speciesGroup(row)!=='few').map(row=>row.species.id);
+    // Snapshots saved by an export are opened from that export; list only the ones saved on their own by earlier versions.
+    const exported=new Set(saved.flatMap(item=>item.results?.map(result=>result.report_id)??[]));earlier=snapshots.filter(item=>!exported.has(item.id));
     try{const draft=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(draft){selected=draft.selected.filter((id:string)=>data.species.some(row=>row.species.id===id));folder=draft.folder;}}catch{}
     restored=true;
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
@@ -33,6 +36,7 @@
       revision:overview.revision,species_ids:selected,folder,locale:app.locale});
     history=await api(`/datasets/${id}/exports`);
   });
+  const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:overview?.site.timezone}).format(new Date(value.replace(' ','T')+'Z'));
   const openReport=createTask(async(exportId:number,kind:'document'|'folder')=>{
     await api(`/workflow-exports/${exportId}/open?kind=${kind}`,{});
   });
@@ -65,10 +69,11 @@
     </section>{/if}
     {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{/if}
     {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="saved">
-      <div><p>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:overview.site.timezone}).format(new Date(item.created_at.replace(' ','T')+'Z'))}</p>
+      <div><p>{when(item.created_at)}</p>
         <small class="path">{item.folder_path??item.path}</small></div>
       {#if item.folder_path}<Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{/if}
     </div>{/each}</section>{/if}
+    {#if earlier.length}<details><summary>{t('wEarlierReports')} · {earlier.length}</summary>{#each earlier as item}<p><a href={`${resolve(`/datasets/${id}/reports/${item.id}`)}?${query}`}>{item.species?(item.species.common_names&&commonName(item.species,app.locale))||item.species.scientific_name:t('species')} · {item.start_date}–{item.end_date} · {when(item.created_at)}</a></p>{/each}</details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
 <style>.report-page{max-width:960px}h1{margin-top:20px}h2{margin-bottom:12px}p{margin:16px 0}.lead{font-size:18px}.export-species{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}.export-species input{width:22px;height:22px}details{margin:24px 0}summary{font-size:18px;padding:12px 0;cursor:pointer}h3{margin:28px 0 0}.path{overflow-wrap:anywhere;color:rgb(var(--stone-700));font-size:14px}.saved{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:18px 0;border-top:1px solid rgb(var(--stone-300))}.saved p{margin:0 0 8px}.output{border-color:rgb(var(--primary-700))}</style>
