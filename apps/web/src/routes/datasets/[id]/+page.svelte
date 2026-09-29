@@ -39,7 +39,8 @@
   {#each rows as row (row.species.id)}<tr><td><a href={speciesHref(row)}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
     <td>{#each row.models as model}<div>{model.engine==='birdnet'?'BirdNET':'Perch'}: {model.candidate_windows.toLocaleString(app.locale)} {t('wDetectedWindows')} · {model.candidate_days} {t('wDays')}</div>{:else}—{/each}{#each row.custom_models??[] as model}<div><a href={`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=custom&model_id=${model.id}`}>{customName(model)}</a></div>{/each}</td>
     <td>{#if row.models.length||!row.custom_models?.length}{#each qualityLines(row.validation) as line}<div>{line}</div>{/each}{/if}
-      {#each row.custom_models??[] as model}{#each qualityLines(model.validation) as line}<div>{customName(model)}: {line}</div>{/each}{/each}</td></tr>{/each}
+      {#each row.custom_models??[] as model}{#each qualityLines(model.validation) as line}<div>{customName(model)}: {line}</div>{/each}{/each}
+      {#each row.searches.filter(run=>run.validation) as run}{#each qualityLines(run.validation!) as line}<div>{t('wConfirmed')}: {line}</div>{/each}{/each}</td></tr>{/each}
 </tbody></table></div>{/snippet}
 <div class="page">
   <div class="page-header"><div><div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span>{result?.site.name}</div>

@@ -26,7 +26,6 @@
     catch(e){error=e instanceof Error?e.message:'unknown_error';}
   }
   onMount(()=>void load());
-  const back=`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}`;
   const time=(value:{local_time:string})=>value.local_time.slice(0,19).replace('T',' ');
   // New marks are saved on the original "heard" answer; other species' marks on that sound are kept.
   const saveMarks=createTask(async(item:Waiting)=>{
@@ -42,6 +41,8 @@
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=null;await load();},{toast:true});
   const usable=(model:Model)=>model.applicable&&model.status==='ready';
   const latest=$derived(ready?.models.find(usable)??ready?.models[0]);
+  // Back to the built AI's tab once one exists; the current list means a deleted model is never linked.
+  const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${latest?`&engine=custom&model_id=${latest.id}`:''}`);
   const status=(model:Model)=>usable(model)?qualityLines(model.validation).join(' / '):t(model.applicable?'custom_threshold_unavailable':model.reason??'custom_model_scope_changed');
 </script>
 <div class="page">

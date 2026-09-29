@@ -40,7 +40,7 @@ export type CustomModel = {id:number;status:'ready'|'threshold_unavailable';crea
 export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;
   start_date:string;end_date:string;records:number;recorded_seconds:number;analysed_recordings:number;
   species:{species:Species;models:{engine:string;model_sha256:string;candidate_days:number;candidate_windows:number;eligible_windows:number;candidate_rate:number;threshold:number}[];
-    searches:SearchRun[];confirmed:number;annotated:number;validation:Validation|null;custom_models?:(CustomModel&{validation:Validation|null;candidate_windows?:number})[]}[]};
+    searches:(SearchRun&{validation?:Validation|null})[];confirmed:number;annotated:number;validation:Validation|null;custom_models?:(CustomModel&{validation:Validation|null;candidate_windows?:number})[]}[]};
 export type SpeciesResult = Omit<Overview,'species'> & {species:Species;report:Report|null;searches:SearchRun[];validation:Validation|null;
   custom_models?:CustomModel[];annotations:(CallRange & {recording_id:number;source_path:string;seconds:number;local_time:string;answer_id:number})[]};
 export const validationPhase = (value:Validation|null) => value?.audit_step==='recall'?'recall':value?.stage==='calibration'?'calibration':'evaluation';
@@ -95,9 +95,9 @@ export const interval = (value:Metric) => value.low===null||value.high===null?'â
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
 // Below this many 15-second detections (by any AI), a species is more likely an AI mistake than present (review A2).
 export const FEW_DETECTIONS = 10;
-/** Site list sections: confirmed (a complete check met its goal), needs checking, or few detections and never checked. */
+/** Site list sections: confirmed (a complete check of an AI or of collected similar calls met its goal), needs checking, or few detections and never checked. */
 export function speciesGroup(row:Overview['species'][number]):'confirmed'|'check'|'few' {
-  const checks=[row.validation,...(row.custom_models??[]).map(model=>model.validation)].filter(value=>value!==null);
+  const checks=[row.validation,...(row.custom_models??[]).map(model=>model.validation),...row.searches.map(run=>run.validation??null)].filter(value=>value!==null);
   if(checks.some(value=>value.applicable&&value.stage==='complete'&&Object.values(value.results).some(result=>result.goal_met)))return 'confirmed';
   const most=Math.max(0,...row.models.map(model=>model.candidate_windows),...(row.custom_models??[]).map(model=>model.candidate_windows??0));
   return !checks.length&&!row.searches.length&&!row.annotated&&most<FEW_DETECTIONS?'few':'check';

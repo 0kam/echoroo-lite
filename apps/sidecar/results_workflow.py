@@ -203,8 +203,9 @@ def build_overview(root, dataset_id, ctx):
         item['custom_models'].append(entry)
     seen = {}
     for run in searches(root,dataset_id):
-        item = add(run['species']); item['searches'].append(run)
         snap = search_snapshot(root,ctx,run['id'])
+        # A met check of collected similar calls confirms the species just like an AI check does.
+        item = add(run['species']); item['searches'].append({**run,'validation':snap['validation']})
         confirmed=seen.setdefault(run['species_id'],set())
         confirmed.update((e['recording_id'],e['start_s'],e['end_s']) for e in snap['evidence'] if e['status']=='target')
         item['confirmed']=len(confirmed)
