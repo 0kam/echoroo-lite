@@ -23,7 +23,10 @@ fn connection(state: tauri::State<Sidecar>) -> Result<Connection, String> {
     state.connection.clone()
 }
 
-fn launch(data: PathBuf) -> Result<(Child, Connection), Box<dyn std::error::Error>> {
+fn launch(
+    data: PathBuf,
+    resources: PathBuf,
+) -> Result<(Child, Connection), Box<dyn std::error::Error>> {
     let mut command;
     let models;
     if cfg!(debug_assertions) {
@@ -43,7 +46,7 @@ fn launch(data: PathBuf) -> Result<(Child, Connection), Box<dyn std::error::Erro
             "echoroo-sidecar"
         };
         command = Command::new(std::env::current_exe()?.parent().unwrap().join(binary));
-        models = data.join("models");
+        models = resources.join("models");
     }
     #[cfg(windows)]
     {
@@ -90,7 +93,8 @@ fn main() {
             let data = std::env::var_os("ECHOROO_DATA")
                 .map(PathBuf::from)
                 .unwrap_or(app.path().app_data_dir()?);
-            let sidecar = match launch(data) {
+            let resources = app.path().resource_dir()?;
+            let sidecar = match launch(data, resources) {
                 Ok((child, connection)) => Sidecar {
                     child: Mutex::new(Some(child)),
                     connection: Ok(connection),

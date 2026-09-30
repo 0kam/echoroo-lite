@@ -76,8 +76,9 @@ npm run desktop
 
 On Windows, create `.venv` with Python 3.11 and replace `.venv/bin/python` with
 `.venv/Scripts/python.exe`. Install the Python requirements with that interpreter
-(`python -m pip install -r ...`) or uv. `setup_models.py` is the explicit online
-download step. It checks the pinned Perch hashes and prepares BirdNET's cache.
+(`python -m pip install -r ...`) or uv. Developers run `setup_models.py` once to
+download and verify the pinned models used by the development preview and release build.
+Installed apps already include these models and need no model setup or network access for analysis.
 Do not run `uv venv` over an existing environment you want to keep.
 
 In the app, add a site (latitude/longitude and IANA timezone), choose a folder,
@@ -186,7 +187,8 @@ and similarity search were verified in the Mac release app on 2026-09-09.
 
 Data defaults to Tauri's app-data directory (`~/Library/Application Support/org.echoroo.lite`
 on macOS). `ECHOROO_DATA` overrides it for development. Models default to `poc/models`
-in development and `<data>/models` in a release; `ECHOROO_MODELS` overrides this.
+in development and the app's bundled read-only resources in a release;
+`ECHOROO_MODELS` overrides this.
 The database, `analyses/` score archives and source audio references belong together.
 Imported field recordings and local references stay in place; selected XC downloads
 and quiz audio are app-managed copies. Include `quiz/` when backing up data.
@@ -201,13 +203,16 @@ Automatic resume and a settings screen for moving data are not implemented yet.
 npm run check
 npm run build
 cargo check --manifest-path apps/desktop/Cargo.toml
+.venv/bin/python scripts/setup_models.py
 .venv/bin/python scripts/freeze_sidecar.py
 npm run desktop:build
 ```
 
 Freeze on the target OS. Binaries use Tauri's host-triple naming convention and
-are excluded from Git. Models are currently provisioned separately in the release
-data directory; the installer does not yet offer model setup.
+are excluded from Git. Run `setup_models.py` before `npm run desktop:build`; the build
+fails if a required model is absent. The pinned BirdNET and Perch models are bundled
+in the app, increasing the app size by about 480 MB, so installed users do not need a
+separate model setup.
 Model and label provenance, hashes, and unresolved distribution terms are recorded
 in [Model sources](docs/model-sources.md), including the eBird taxonomy used for species-page links. BirdNET's model terms include a
 noncommercial condition; permission for the intended business use is not yet established.

@@ -1,3 +1,13 @@
 {
-  "bundle": {"active": true, "targets": "all", "externalBin": ["binaries/echoroo-sidecar"]}
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/echoroo-sidecar"],
+    "resources": {
+      "../../poc/models/perch/perch_v2_no_dft.onnx": "models/perch/perch_v2_no_dft.onnx",
+      "../../poc/models/perch-labels/assets/labels.csv": "models/perch-labels/assets/labels.csv",
+      "../../poc/models/birdnet/acoustic-models/v2.4/": "models/birdnet/acoustic-models/v2.4/",
+      "../../poc/models/birdnet/geo-models/v2.4/": "models/birdnet/geo-models/v2.4/"
+    }
+  }
 }
