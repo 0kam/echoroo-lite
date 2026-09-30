@@ -52,6 +52,18 @@ class ReportDocumentTest(unittest.TestCase):
             self.assertIn(messages(locale)['recall_not_established'], report)
             self.assertIn(messages(locale)['fixed_precision_scope'], report)
 
+    def test_completed_recall_shows_its_range_and_sample_in_plain_words(self):
+        snap=snapshot()
+        result=snap['validation']['results']['birdnet']
+        result.update(recall={'value': .04, 'low': .007, 'high': .71}, recall_complete=True)
+        result['recall_sample'].update(total=30, answered=30, target=1, population=3835)
+        for locale, expected in [('ja', ['約4.0%（0.7%〜71.0%のどこか。聞いた音が少ないため幅が広い）', '約93.0%（78.0%〜99.0%のどこか）',
+                'AIが「いない」とした3,835区間のうち30区間を聞き、1区間で声がありました。']),
+            ('en', ['about 4.0% (somewhere between 0.7% and 71.0%; wide because few sounds were checked)',
+                'Of the 3,835 intervals the AI marked as “absent”, 30 were checked and 1 had the call.'])]:
+            report=text(blocks(manifest([snap], locale), [snap], {'per_species': []}))
+            for part in expected:self.assertIn(part, report)
+
     def test_pending_calibrating_and_undecided_states(self):
         pending=snapshot(stage='evaluation', precision_complete=False)
         self.assertEqual(status(pending), 'pending')

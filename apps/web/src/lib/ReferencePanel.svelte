@@ -74,7 +74,7 @@
   .examples h2 { font-size: 18px; margin: 0; }
   .examples > :global(.button) { align-self: flex-start; }
   .credit { overflow-wrap: anywhere; font-size: 14px; }
-  .actions :global(.button) { white-space: normal; text-align: left; }
+  .actions :global(.button) { text-align: left; }
   .between { justify-content: space-between; align-items: center; flex-wrap: nowrap; }
   p { margin: 4px 0; }
 </style>

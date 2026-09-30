@@ -62,9 +62,23 @@ export function checkText(value:Validation|null) {
 /** The recall guide is advice only: below it, the check suggests building a model, but the goal follows accuracy alone. */
 export const RECALL_GUIDE = .8;
 export function recallText(value:Validation|null) {
-  const result=value?.results[value.engine];
-  if(!value?.applicable||!result?.recall_complete||result.recall?.value==null)return '';
-  return fill(result.recall.value<RECALL_GUIDE?'wRecallBelow':'wRecallMet',{p:percentText(result.recall.value),target:percentText(RECALL_GUIDE)});
+  const result=value?.results[value.engine],recall=result?.recall,sample=result?.recall_sample;
+  if(!value?.applicable||!result?.recall_complete||!recall||(recall.value==null&&recall.low==null))return '';
+  const p=rangeText(recall);
+  const text=recall.value==null?fill('wRecallOnly',{p}):fill(recall.value<RECALL_GUIDE?'wRecallBelow':'wRecallMet',{p,target:percentText(RECALL_GUIDE)});
+  return sample?`${text} ${fill('wRecallSample',{population:sample.population.toLocaleString(app.locale),total:sample.total,target:sample.target})}`:text;
+}
+/** The accuracy estimate with its range, shown next to the goal line that repeats only the point value. */
+export function precisionText(value:Validation|null) {
+  const precision=value?.results[value.engine]?.precision;
+  return value?.applicable&&value.results[value.engine]?.precision_complete&&precision&&(precision.value!=null||precision.low!=null)?fill('wPrecisionAbout',{p:rangeText(precision)}):'';
+}
+/** A 95% interval in plain words; above WIDE_RANGE it also says the range is wide. */
+const WIDE_RANGE = .3;
+export function rangeText(metric:Metric) {
+  if(metric.low===null||metric.high===null)return percentText(metric.value);
+  const range=fill(metric.high-metric.low>WIDE_RANGE?'wRangeWide':'wRange',{low:percentText(metric.low),high:percentText(metric.high)});
+  return metric.value===null?range:fill('wAbout',{p:percentText(metric.value),range});
 }
 /** The one button into a check: start, continue (answered/total), or see the result. */
 export function listenLabel(value:Validation|null) {

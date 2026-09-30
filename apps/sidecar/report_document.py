@@ -68,10 +68,11 @@ def model_group(snap,t):
 
 
 def metric(value,t):
+    """A 95% interval in plain words; wider than 30 points also says it is wide."""
     if not value:return t['unavailable']
-    point=percent(value.get('value'),t['unavailable'])
-    if value.get('low') is None:return point
-    return point+f"\n[{percent(value['low'])}–{percent(value['high'])}]"
+    if value.get('low') is None or value.get('high') is None:return percent(value.get('value'),t['unavailable'])
+    span=t['range_wide' if value['high']-value['low']>.3 else 'range'].format(low=percent(value['low']),high=percent(value['high']))
+    return span if value.get('value') is None else t['about'].format(value=percent(value['value']),range=span)
 
 
 def audit_sample(sample,t):
@@ -156,6 +157,7 @@ def blocks(manifest,snapshots,quiz):
             precision+='\n'+t['one_sided_lower'].format(value=percent(result['precision_lower_95']),target=percent(validation.get('target_precision')))
         recall=metric(result.get('recall') if result and result.get('recall_complete') else None,t)
         if not result or not result.get('recall_complete'):recall+='\n'+t['recall_not_established']
+        else:recall+='\n'+t['recall_sample_sentence'].format(**{k:number(result['recall_sample'].get(k)) for k in ('population','total','target')})
         samples=audit_sample(result.get('precision_sample') if result else None,t)+'\n'+t['recall_sample_label']+': '+audit_sample(result.get('recall_sample') if result else None,t)
         groups.setdefault(model_group(snap,t),[]).append([name(snap['species'],locale)+'\n'+method(snap,t),criterion(snap,t),precision,recall,samples,status_text(snap,t)])
     if groups:table([t[k] for k in ('species_name','criterion','precision','recall','samples','quality')],[r for rows in groups.values() for r in rows],[2.2,1.2,1.5,1.5,1.6,1.7],groups)

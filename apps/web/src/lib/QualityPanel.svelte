@@ -1,12 +1,12 @@
 <script lang="ts">
   import { t } from './app.svelte';
   import { percent } from './reports';
-  import { checkText,recallText,interval,type Validation } from './workflow';
+  import { checkText,precisionText,recallText,interval,type Validation } from './workflow';
   /** One model's check: its status line, then the numbers behind it. */
   let {validation}:{validation:Validation|null}=$props();
   const result=$derived(validation?.results[validation.engine]);
 </script>
-<p><strong>{checkText(validation)}</strong>{#if recallText(validation)}<br>{recallText(validation)}{/if}</p>
+<p><strong>{checkText(validation)}</strong>{#if precisionText(validation)}<br>{precisionText(validation)}{/if}{#if recallText(validation)}<br>{recallText(validation)}{/if}</p>
 {#if validation&&!validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
 {#if validation?.status==='undecided'}<p class="muted">{t('vUndecidedHint')}</p>{/if}
 {#if validation&&result?.precision_sample}
