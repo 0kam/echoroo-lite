@@ -59,11 +59,20 @@ class ThresholdCheck(unittest.TestCase):
         # Unknown answers are left out, not counted as absent.
         self.assertEqual(fit_threshold(sample, [*verdicts[:-1], 'unknown'], self.population)['curve']['answers'], 19)
 
+    def test_all_heard_uses_the_lowest_population_score(self):
+        sample = expit(np.linspace(-8, 8, 20))
+        result = fit_threshold(sample, ['target'] * 20, self.population)
+        self.assertEqual(result['threshold'], self.population.min())
+        self.assertEqual(result['reason'], 'all_target')
+        self.assertEqual(result['estimated_precision'], 1.0)
+        self.assertEqual(result['curve'], {'answers': 20, 'heard': 20})
+        with_unknowns = fit_threshold(sample, ['unknown'] * 19 + ['target'], self.population)
+        self.assertEqual((with_unknowns['threshold'], with_unknowns['reason']),
+                         (self.population.min(), 'all_target'))
+
     def test_no_heard_sound_or_no_relation_cannot_set_a_threshold(self):
         sample = expit(np.linspace(-8, 8, 20))
         self.assertEqual(fit_threshold(sample, ['other'] * 20, self.population), {'threshold': None, 'reason': 'no_target'})
-        self.assertEqual(fit_threshold(sample, ['unknown'] * 19 + ['target'], self.population)['reason'], 'no_relation')
-        self.assertEqual(fit_threshold(sample, ['target'] * 20, self.population)['reason'], 'no_relation')
         backwards = ['target' if s < .5 else 'other' for s in sample]
         result = fit_threshold(sample, backwards, self.population)
         self.assertIsNone(result['threshold'])

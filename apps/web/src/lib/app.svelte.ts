@@ -15,6 +15,7 @@ const LOCALE = 'echoroo-locale', THEME = 'echoroo-theme', DATASET = 'echoroo-dat
 export const app = $state({
   locale: 'en' as Locale, dark: false,
   connected: false, connectionError: '',
+  dataFolder: '',
   sites: [] as Site[], datasets: [] as Dataset[], jobs: [] as Job[],
   datasetId: null as number | null,
   /** Bumps whenever the recordings of a dataset may have changed. */
@@ -66,7 +67,12 @@ export async function refreshCatalog() {
 export function startSession() {
   let timer: ReturnType<typeof setInterval> | undefined, polling = false;
   (async () => {
-    try { await connect(); await refreshCatalog(); app.connected = true; }
+    try {
+      const health = await connect();
+      app.dataFolder = health.data_folder;
+      if (health.status !== 'ok') throw Error(health.detail || 'data_incompatible');
+      await refreshCatalog(); app.connected = true;
+    }
     catch (e) { app.connectionError = e instanceof Error ? e.message : 'unknown_error'; return; }
     timer = setInterval(async () => {
       if (polling) return;

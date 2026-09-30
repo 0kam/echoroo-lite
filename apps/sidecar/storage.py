@@ -10,6 +10,10 @@ import soundfile as sf
 import sqlite_vec
 
 
+# Increment whenever the SQLite schema changes.
+SCHEMA_VERSION = 1
+
+
 class CatalogError(Exception):
     pass
 
@@ -32,6 +36,10 @@ def connect(root):
 def initialize(root):
     Path(root).mkdir(parents=True, exist_ok=True)
     with connect(root) as db:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        has_schema = db.execute("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') LIMIT 1").fetchone()
+        if version != SCHEMA_VERSION and (version != 0 or has_schema):
+            return False
         db.execute("PRAGMA journal_mode=WAL")
         db.executescript("""
             CREATE TABLE IF NOT EXISTS sites (
@@ -168,7 +176,9 @@ def initialize(root):
                 db.execute(f'''CREATE TRIGGER IF NOT EXISTS result_{table}_{operation} AFTER {operation} ON {table}
                     BEGIN UPDATE result_revision SET version=version+1 WHERE id=1; END''')
         db.execute("UPDATE jobs SET status='interrupted' WHERE status IN ('queued', 'running')")
+        db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     monotonic_ids(root)
+    return True
 
 
 def monotonic_ids(root):

@@ -1,11 +1,14 @@
 """Run catalog checks, or --real-recording PATH for the real M0 smoke test."""
 import argparse
+import io
 import json
 import math
+import sqlite3
 import tempfile
 import threading
 import time
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,13 +17,52 @@ import soundfile as sf
 from fastapi.testclient import TestClient
 
 from server import create_app
-from storage import CatalogError, connect, initialize, preview_folder, recording_time
+from storage import SCHEMA_VERSION, CatalogError, connect, initialize, preview_folder, recording_time
 from predictions import perch_candidates
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class SidecarCheck(unittest.TestCase):
+    def test_fresh_database_gets_the_current_schema_version(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.assertTrue(initialize(root))
+            with connect(root) as db:
+                self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+
+    def test_incompatible_database_starts_but_only_health_is_available(self):
+        for version in (0, SCHEMA_VERSION + 1):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                with sqlite3.connect(root / "echoroo.sqlite") as db:
+                    db.execute("CREATE TABLE old_data (id INTEGER PRIMARY KEY)")
+                    db.execute(f"PRAGMA user_version={version}")
+                headers = {"Authorization": "Bearer test-token", "Origin": "http://localhost:1420"}
+                with TestClient(create_app(root, ROOT / "poc/models", "test-token"), headers=headers) as client:
+                    health = client.get("/health")
+                    self.assertEqual(health.status_code, 200)
+                    self.assertEqual(health.json()["status"], "data_incompatible")
+                    self.assertEqual(health.json()["detail"], "data_incompatible")
+                    self.assertEqual(health.json()["data_folder"], str(root))
+                    response = client.get("/catalog")
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.json(), {"detail": "data_incompatible"})
+
+    def test_unexpected_endpoint_error_is_json_with_cors(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            headers = {"Authorization": "Bearer test-token", "Origin": "http://localhost:1420"}
+            app = create_app(root, ROOT / "poc/models", "test-token")
+            errors = io.StringIO()
+            with redirect_stderr(errors), patch("server.list_species", side_effect=RuntimeError("test failure")):
+                with TestClient(app, headers=headers, raise_server_exceptions=False) as client:
+                    response = client.get("/species", params={"q": "test"})
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.json(), {"detail": "unknown_error"})
+            self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:1420")
+            self.assertIn("RuntimeError: test failure", errors.getvalue())
+
     def test_cancelled_import_preview_stops_before_inspection(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);initialize(root);sf.write(root/'20240808_060000.wav',np.zeros(1000),1000)

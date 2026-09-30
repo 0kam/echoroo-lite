@@ -1,11 +1,12 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { untrack } from 'svelte';
 export type Connection = { url: string; token: string };
+export type Health = { status: 'ok' | 'data_incompatible'; data_folder: string; birdnet: boolean; detail?: string | null };
 export let connection: Connection;
 /** Number of requests in flight; the activity bar reads it. */
 export const activity = $state({ count: 0 });
 
-export async function connect() {
+export async function connect(): Promise<Health> {
   if (isTauri()) connection = await invoke<Connection>('connection');
   else {
     // Development: `?url=…&token=…` from the sidecar's first stdout line.
@@ -17,7 +18,7 @@ export async function connect() {
     connection = JSON.parse(sessionStorage.getItem('echoroo-dev') || 'null');
     if (!connection || !/^http:\/\/127\.0\.0\.1:\d+$/.test(connection.url)) throw Error('disconnected');
   }
-  await api('/health');
+  return api<Health>('/health');
 }
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   untrack(() => activity.count++);

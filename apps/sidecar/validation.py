@@ -81,7 +81,10 @@ def fit_threshold(scores, verdicts, population):
         return {'threshold': None, 'reason': 'no_target'}
     x = logit_scores([s for s, _ in known])
     y = np.array([heard for _, heard in known], dtype=np.float64)
-    if y.all() or np.ptp(x) == 0:
+    if y.all():
+        return {'threshold': float(np.min(population)), 'reason': 'all_target', 'estimated_precision': 1.0,
+                'curve': {'answers': len(known), 'heard': len(known)}}
+    if np.ptp(x) == 0:
         return {'threshold': None, 'reason': 'no_relation'}
     design = np.column_stack([np.ones_like(x), x])
 

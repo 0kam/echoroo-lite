@@ -6,6 +6,7 @@ import secrets
 import socket
 import sys
 import threading
+import traceback
 from datetime import date
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
@@ -217,8 +218,9 @@ class QuizEnabledRequest(BaseModel):
 
 
 def create_app(root, models, token):
-    initialize(root)
-    initialize_species(root)
+    compatible = initialize(root)
+    if compatible:
+        initialize_species(root)
     cancel = threading.Event()
     operation_cancel = threading.Event()
     lock = threading.Lock()
@@ -269,12 +271,12 @@ def create_app(root, models, token):
         if not secrets.compare_digest(supplied, token):
             raise HTTPException(401, "unauthorized")
 
-    app = FastAPI(lifespan=lifespan, dependencies=[Depends(authorize), Depends(request_lease)],
+    def require_compatible(request: Request):
+        if not compatible and request.url.path != "/health":
+            raise CatalogError("data_incompatible")
+
+    app = FastAPI(lifespan=lifespan, dependencies=[Depends(authorize), Depends(require_compatible), Depends(request_lease)],
                   docs_url=None, redoc_url=None, openapi_url=None)
-    app.add_middleware(CORSMiddleware,
-                       allow_origins=["http://localhost:1420", "http://127.0.0.1:1420",
-                                      "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"],
-                       allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 
     @app.exception_handler(CatalogError)
     async def catalog_error(request, error):
@@ -284,10 +286,16 @@ def create_app(root, models, token):
     async def validation_error(request, error):
         return JSONResponse({"detail": "invalid_input"}, status_code=422)
 
+    @app.exception_handler(Exception)
+    async def unexpected_error(request, error):
+        traceback.print_exception(error)
+        return JSONResponse({"detail": "unknown_error"}, status_code=500)
+
     @app.get("/health")
     def health():
         from analysis import birdnet_available
-        return {"status": "ok", "data_folder": str(root), "birdnet": birdnet_available(models)}
+        return {"status": "ok" if compatible else "data_incompatible", "data_folder": str(root),
+                "birdnet": birdnet_available(models), "detail": None if compatible else "data_incompatible"}
 
     @app.get('/datasets/{dataset_id}/overview')
     def dataset_overview(dataset_id: int, start_date: date | None = None, end_date: date | None = None):
@@ -778,7 +786,9 @@ def create_app(root, models, token):
         cancel.set()
         return {"status": "cancelling"}
 
-    return app
+    return CORSMiddleware(app, allow_origins=["http://localhost:1420", "http://127.0.0.1:1420",
+                                              "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"],
+                          allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 
 
 def main():

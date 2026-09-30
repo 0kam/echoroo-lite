@@ -62,6 +62,7 @@
     {:else}
       <div class="page"><div class="panel empty" role="status">
         <p class:error={!!app.connectionError}>{t(app.connectionError || 'connecting')}</p>
+        {#if app.connectionError === 'data_incompatible' && app.dataFolder}<p>{t('dataFolderPath')} <code>{app.dataFolder}</code></p>{/if}
         {#if app.connectionError}<button class="button" onclick={() => location.reload()}>{t('retryConnection')}</button>{/if}
       </div></div>
     {/if}
