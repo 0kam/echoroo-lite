@@ -9,7 +9,8 @@
     "check": "npm run check --workspace apps/web",
     "build": "npm run build --workspace apps/web",
     "desktop": "cd apps/desktop && tauri dev",
-    "desktop:build": "cd apps/desktop && tauri build --config tauri.bundle.conf.json"
+    "desktop:build": "cd apps/desktop && tauri build --config tauri.bundle.conf.json",
+    "desktop:build:birdnet": "cd apps/desktop && tauri build --config tauri.bundle.conf.json --config tauri.birdnet.conf.json"
   },
   "devDependencies": {"@tauri-apps/cli": "2.11.4"}
 }

@@ -42,7 +42,7 @@ class ReportCheck(unittest.TestCase):
                 with connect(root) as db:
                     db.execute("INSERT INTO jobs(id,dataset_id,status,total) VALUES(1,1,'complete',2)")
                     for aid, engine, path in [(1, 'birdnet', bird_path), (2, 'perch', perch_path)]:
-                        meta = {'model_sha256': engine, 'model': engine, 'species': labels, 'geo_filter': {'species': labels}}
+                        meta = {'model_sha256': engine, 'model': engine, 'species': labels, 'candidate_filter': {'species': labels}}
                         db.execute('INSERT INTO analyses VALUES(?,1,1,?,?,?)', (aid, engine, json.dumps(meta), str(path)))
                     for i in range(6):
                         db.execute('INSERT INTO segments VALUES(?,2,?,?)', (i + 1, i * 5, (i + 1) * 5))

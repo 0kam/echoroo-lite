@@ -20,7 +20,7 @@ class WindowBatchCheck(unittest.TestCase):
                        (np.array(['C']), np.array([], dtype=int), np.empty((0, 1)), np.empty((0, 1)))]
             def read(a, *_):
                 return outputs[a['id'] % 2]
-            with patch('reports.regional_list', return_value=['B', 'A', 'C']), patch('reports.classification_windows', side_effect=read) as loader:
+            with patch('reports.candidate_list', return_value=['B', 'A', 'C']), patch('reports.classification_windows', side_effect=read) as loader:
                 for _ in range(2):
                     for a, allowed, arrays in classification_batches(root, None, analyses, records):
                         for actual, expected in zip(arrays, read(a)):

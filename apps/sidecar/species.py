@@ -36,11 +36,11 @@ def initialize_species(root):
 
 def names_for(row):
     custom = json.loads(row["names"])
-    birdnet = bundled_names().get(row["scientific_name"], {})
-    defaults = {**additional_names().get(row['scientific_name'], {}), **birdnet}
+    bundled = bundled_names().get(row["scientific_name"], {})
+    defaults = {**additional_names().get(row['scientific_name'], {}), **bundled}
     return {"id": row["id"], "scientific_name": row["scientific_name"],
             "common_names": {**defaults, **custom}, "custom_names": custom,
-            "name_sources": {lang: "user" if lang in custom else "birdnet" if lang in birdnet else 'quiz' for lang in defaults.keys() | custom.keys()}}
+            "name_sources": {lang: "user" if lang in custom else "bundled" if lang in bundled else 'quiz' for lang in defaults.keys() | custom.keys()}}
 
 
 def list_species(root, query):

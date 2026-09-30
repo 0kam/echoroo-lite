@@ -10,7 +10,7 @@
 - BirdNET 付き版は BirdNET 2.4 ＋ Perch。非営利向けとして利用条件を明示し、別に配布する。
 - Perch の候補は、両版とも日本鳥学会「日本鳥類目録 改訂第8版」掲載種で絞る（Perch の学名へ名寄せ）。
 - 和名・英名は BirdNET のラベルから作らない。
-- eBird の種コードとリンクは削除し、種の説明リンクは Wikipedia だけにする。
+- eBird の種コードとリンクは、問い合わせずに現状のまま残す（2026-09-30 訂正）。
 
 ## 1. 2つの版の作り方
 
@@ -43,10 +43,9 @@
   - 英名：Wikidata の英語ラベル。
   を取得して `species.json` を作る。取得日・出典・件数を JSON の `sources` に残す。名前のない種は学名で表示する（現状どおり）。
 
-## 4. eBird の削除
+## 4. eBird
 
-- `apps/sidecar/data/ebird-codes.json`、`scripts/build_ebird_codes.py`、`ebird_codes()` と API の `ebird_code` を削除。
-- `speciesPage` は Wikipedia だけにする。
+- 変更しない（当初は削除案だったが、2026-09-30 に残すと訂正）。
 
 ## 5. 帰属表示と利用条件
 

@@ -1,8 +1,9 @@
 # Echoroo Lite
 
 Offline, single-user desktop edition of Echoroo — the human×machine bird-call
-annotation loop (BirdNET detection + Perch similarity search + quiz-based
-proficiency), rebuilt as a Tauri app with a Python sidecar and SQLite.
+annotation loop, rebuilt as a Tauri app with a Python sidecar and SQLite.
+The standard edition uses Perch V2. A separately distributed non-commercial
+edition adds BirdNET 2.4.
 
 - Implementation status and remaining work: [docs/implementation-status.md](docs/implementation-status.md)
 - UI review handoff: [docs/UI-REVIEW-HANDOFF-2026-09-24.md](docs/UI-REVIEW-HANDOFF-2026-09-24.md)
@@ -18,8 +19,8 @@ source; Lite never merges back.
 
 ## Development preview
 
-The first slice registers Site > Dataset recordings in place, runs BirdNET and
-Perch, saves scores and embeddings, and searches by a spectrogram-selected audio
+The first slice registers Site > Dataset recordings in place, runs the included
+models, saves scores and embeddings, and searches by a spectrogram-selected audio
 interval. Searches can be scoped by the recording's start date in its site timezone.
 Saved searches support multiple references per species, a distribution of all matches,
 random similarity-band sampling, and persistent judgements. Xeno-Canto key settings, search and selected
@@ -70,14 +71,15 @@ From the repository root on macOS:
 uv venv --python 3.11
 uv pip install --python .venv/bin/python -r apps/sidecar/requirements-dev.txt
 npm ci
-.venv/bin/python scripts/setup_models.py
-npm run desktop
+.venv/bin/python scripts/setup_models.py --perch-only --output .local-data/perch-models
+ECHOROO_MODELS=.local-data/perch-models npm run desktop
 ```
 
 On Windows, create `.venv` with Python 3.11 and replace `.venv/bin/python` with
 `.venv/Scripts/python.exe`. Install the Python requirements with that interpreter
-(`python -m pip install -r ...`) or uv. Developers run `setup_models.py` once to
-download and verify the pinned models used by the development preview and release build.
+(`python -m pip install -r ...`) or uv. Developers use `setup_models.py --perch-only`
+for the standard edition, or omit `--perch-only` for the BirdNET development preview
+and both release builds.
 Installed apps already include these models and need no model setup or network access for analysis.
 Do not run `uv venv` over an existing environment you want to keep.
 
@@ -169,7 +171,7 @@ These are learning results, not estimates of identification ability or field pre
 See [quiz implementation and source details](docs/quiz-implementation.md).
 
 Species show a common name in the selected language together with the scientific
-name. The offline catalog uses BirdNET names plus local additions; **Species names**
+name. The offline catalog uses the Checklist of Japanese Birds and Wikidata plus local additions; **Species names**
 lets you search, add taxa and override Japanese/English names. Empty fields restore
 bundled names. Exact matches rank above prefixes and substrings. Perch shares names on exact scientific-name matches; missing names
 fall back to English, then the scientific name. Original predictions stay unchanged.
@@ -206,13 +208,14 @@ cargo check --manifest-path apps/desktop/Cargo.toml
 .venv/bin/python scripts/setup_models.py
 .venv/bin/python scripts/freeze_sidecar.py
 npm run desktop:build
+npm run desktop:build:birdnet
 ```
 
 Freeze on the target OS. Binaries use Tauri's host-triple naming convention and
 are excluded from Git. Run `setup_models.py` before `npm run desktop:build`; the build
-fails if a required model is absent. The pinned BirdNET and Perch models are bundled
-in the app, increasing the app size by about 480 MB, so installed users do not need a
-separate model setup.
+fails if a required model is absent. The standard bundle contains only Perch;
+`desktop:build:birdnet` additionally contains BirdNET 2.4 and uses a separate app
+identifier and data folder. Installed users do not need a separate model setup.
 Model and label provenance, hashes, and unresolved distribution terms are recorded
 in [Model sources](docs/model-sources.md), including the eBird taxonomy used for species-page links. BirdNET's model terms include a
 noncommercial condition; permission for the intended business use is not yet established.

@@ -8,6 +8,7 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1] / "poc/models")
+parser.add_argument("--perch-only", action="store_true")
 args = parser.parse_args()
 models = args.output.resolve()
 assets = [
@@ -38,6 +39,10 @@ for relative, url, expected in assets:
         raise RuntimeError(f"Model checksum mismatch: {relative}")
     temporary.replace(path)
     print(f"Downloaded and verified {relative}")
+
+if args.perch_only:
+    print(f"Perch models ready: {models}")
+    raise SystemExit
 
 os.environ["BIRDNET_APP_DATA"] = str(models / "birdnet")
 import birdnet

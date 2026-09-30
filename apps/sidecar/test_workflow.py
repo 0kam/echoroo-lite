@@ -32,7 +32,7 @@ class WorkflowCheck(unittest.TestCase):
                 save(root,job,record,'birdnet',{'model_sha256':'birdnet','species':labels},dict(
                     labels=np.tile(labels,20),scores=bird.ravel(),start_s=np.repeat(np.arange(20)*3,3),end_s=np.repeat(np.arange(1,21)*3,3)),[])
                 probs=np.repeat([[.2,.2,.01],[.2,.2,.01],[.2,.2,.01],[.2,.05,.01]],3,axis=0)
-                save(root,job,record,'perch',{'model_sha256':'perch','geo_filter':{'species':labels}},dict(
+                save(root,job,record,'perch',{'model_sha256':'perch','candidate_filter':{'species':labels}},dict(
                     labels=[s.partition('_')[0] for s in labels]+['Other'],logits=np.log(np.column_stack([probs,1-probs.sum(axis=1)]))),[])
                 response=client.get('/datasets/1/overview')
                 self.assertEqual(response.status_code,200,response.text)
@@ -81,7 +81,7 @@ class WorkflowCheck(unittest.TestCase):
                         perch=root/f'perch-{rid}.npz'
                         np.savez(perch,labels=['Horornis diphone','Other'],logits=np.log(np.column_stack([probs,1-probs])))
                         for engine,path in [('birdnet',bird),('perch',perch)]:
-                            meta={'model_sha256':engine,'model':engine,'species':[label],'geo_filter':{'species':[label]}}
+                            meta={'model_sha256':engine,'model':engine,'species':[label],'candidate_filter':{'species':[label]}}
                             db.execute('INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,?,?,?)',(job,rid,engine,json.dumps(meta),str(path)))
                 with connect(root) as db:
                     db.execute("INSERT INTO datasets VALUES(2,1,'Second collection','/second')")

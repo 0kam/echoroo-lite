@@ -22,21 +22,24 @@ def location_status(db, site):
     """Return completed recordings at this location and whether older locations remain."""
     from reports import analysis_metadata
     engines = {}
+    present = {}
     stale = False
     rows = db.execute('''SELECT a.recording_id,a.engine,a.metadata FROM analyses a JOIN recordings r ON r.id=a.recording_id
         JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=? AND a.id IN
         (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''', (site['id'],))
     for row in rows:
+        present.setdefault(row['recording_id'], set()).add(row['engine'])
         meta = analysis_metadata(row['metadata'])
-        geo = meta if row['engine']=='birdnet' else (meta.get('geo_filter') or {})
-        matches = all(geo.get(key)==site[key] for key in ('latitude','longitude'))
+        geo = meta if row['engine']=='birdnet' else {}
+        matches = row['engine'] != 'birdnet' or all(geo.get(key)==site[key] for key in ('latitude','longitude'))
         # Legacy metadata without a location is not declared wrong until the user changes it.
         if not any(key in geo for key in ('latitude','longitude')) and not site.get('location_changed', False):
             matches = True
         stale |= not matches
         if matches:
             engines.setdefault(row['recording_id'], set()).add(row['engine'])
-    complete = {rid for rid, values in engines.items() if len(values)==2}
+    complete = {rid for rid, values in engines.items()
+                if 'perch' in values and ('birdnet' not in present[rid] or 'birdnet' in values)}
     return complete, stale
 
 

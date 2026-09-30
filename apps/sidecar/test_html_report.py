@@ -36,7 +36,7 @@ class HtmlReportCheck(unittest.TestCase):
                     for rid in (1,2):
                         path=root/f'perch-{rid}.npz';probs=np.tile([.02,.2,.8],20)
                         np.savez(path,labels=['Horornis diphone','Other'],logits=np.log(np.column_stack([probs,1-probs])))
-                        meta={'model_sha256':'perch','geo_filter':{'species':['Horornis diphone_Japanese Bush Warbler']}}
+                        meta={'model_sha256':'perch','candidate_filter':{'species':['Horornis diphone']}}
                         aid=db.execute("INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,'perch',?,?)",(job,rid,json.dumps(meta),str(path))).lastrowid
                         if rid==1:
                             segments=[db.execute('INSERT INTO segments(analysis_id,start_s,end_s) VALUES(?,?,?)',(aid,i*5,(i+1)*5)).lastrowid for i in range(60)]

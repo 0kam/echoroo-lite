@@ -3,9 +3,11 @@ import argparse
 import json
 import math
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import soundfile as sf
@@ -40,22 +42,18 @@ class SidecarCheck(unittest.TestCase):
             archive = root / "scores.npz"
             np.savez_compressed(archive, logits=logits, labels=labels)
             original = archive.read_bytes()
-            geo = {"species": ["Horornis diphone_Japanese Bush Warbler", "Certhia familiaris_Eurasian Treecreeper"]}
-            candidates, meta = perch_candidates(archive, 7, 1, geo, True)
+            candidates, meta = perch_candidates(archive, 7, 1, {"species": ["Horornis diphone", "Certhia familiaris"]})
             self.assertEqual(meta["display_species_count"], 2)
             self.assertEqual(len(candidates), 4)
             self.assertTrue(all(0 <= c["score"] <= 1 and math.isfinite(c["score"]) for c in candidates))
             self.assertEqual(candidates[0]["score"], 0.5)
             self.assertEqual((candidates[0]["start_s"], candidates[0]["end_s"]), (5, 7))
-            # Recover the regional species that was below the old unfiltered top 5.
+            # Recover an allowed Japanese species that was below the unfiltered top 5.
             recovered = next(c for c in candidates if c["label"] == "Horornis diphone" and c["start_s"] == 0)
             self.assertAlmostEqual(recovered["score"], math.exp(-6) / sum(math.exp(-i) for i in range(7)))
-            all_candidates, all_meta = perch_candidates(archive, 7, 1, geo, False)
-            self.assertEqual(all_meta["display_geo"], "off")
-            self.assertEqual(next(c for c in all_candidates if c["label"] == "Horornis diphone")["score"], 0.5)
-            self.assertEqual(perch_candidates(archive, 7, 1, {"species": []}, True)[0], [])
-            missing, status = perch_candidates(archive, 7, 1, None, True)
-            self.assertEqual((missing, status["display_geo"]), ([], "unavailable"))
+            self.assertEqual(perch_candidates(archive, 7, 1, {"species": []})[0], [])
+            missing, status = perch_candidates(archive, 7, 1, None)
+            self.assertEqual((missing, status["display_candidate_filter"]), ([], "unavailable"))
             self.assertEqual(archive.read_bytes(), original)
 
     def test_species_names_preserve_identity_and_original_predictions(self):
@@ -66,7 +64,7 @@ class SidecarCheck(unittest.TestCase):
             with TestClient(app, headers={"Authorization": "Bearer test-token"}) as client:
                 found = client.get("/species", params={"q": "キバシリ"}).json()
                 treecreeper = next(s for s in found if s["scientific_name"] == "Certhia familiaris")
-                self.assertEqual(treecreeper["common_names"]["en"], "Eurasian Treecreeper")
+                self.assertEqual(treecreeper["common_names"]["en"].casefold(), "eurasian treecreeper")
                 original_id = treecreeper["id"]
                 updated = client.post("/species", json={"scientific_name": "Certhia familiaris", "ja": "試験用の一般名"}).json()
                 self.assertEqual(updated["id"], original_id)
@@ -81,7 +79,7 @@ class SidecarCheck(unittest.TestCase):
                     db.execute("INSERT INTO recordings VALUES(1,1,'/test.wav','2024-08-08T06:00:00','Asia/Tokyo','2024-08-07T21:00:00+00:00',3,24000,144044,0)")
                     db.execute("INSERT INTO jobs(id,dataset_id,status,total) VALUES(1,1,'complete',2)")
                     for aid, engine, label in [(1, "birdnet", "Certhia familiaris_Eurasian Treecreeper"), (2, "perch", "Certhia familiaris")]:
-                        meta = {"species": [label]} if engine == "birdnet" else {"score_type": "logit"}
+                        meta = {"species": [label]} if engine == "birdnet" else {"score_type": "logit", "candidate_filter": {"species": ["Certhia familiaris"]}}
                         db.execute("INSERT INTO analyses VALUES(?,1,1,?,?,?)", (aid, engine, json.dumps(meta), str(archive)))
                         db.execute("INSERT INTO candidates(analysis_id,start_s,end_s,label,score) VALUES(?,0,3,?,0.5)", (aid, label))
                     for label in ["Abavorana luctuosa", "Bowed_string_instrument"]:
@@ -92,30 +90,15 @@ class SidecarCheck(unittest.TestCase):
                     self.assertEqual(candidate["species_id"], original_id)
                     self.assertEqual(candidate["common_names"]["ja"], "試験用の一般名")
                 filtered = next(r for r in results if r["engine"] == "perch")
-                self.assertEqual(filtered["metadata"]["display_geo"], "applied")
+                self.assertEqual(filtered["metadata"]["display_candidate_filter"], "applied")
                 self.assertEqual(len(filtered["candidates"]), 1)
-                # A newer BirdNET run must not supply the region for an older Perch run.
-                with connect(root) as db:
-                    db.execute("INSERT INTO jobs(id,dataset_id,status,total) VALUES(2,1,'complete',2)")
-                    db.execute("INSERT INTO analyses VALUES(3,2,1,'birdnet',?,'test.npz')", (json.dumps({"species": []}),))
-                still_filtered = client.get("/recordings/1/results").json()
-                self.assertEqual(len(next(r for r in still_filtered if r["engine"] == "perch")["candidates"]), 1)
-                with connect(root) as db:
-                    db.execute("DELETE FROM analyses WHERE id=3")
-                    db.execute("DELETE FROM jobs WHERE id=2")
-                results = client.get("/recordings/1/results?perch_geo=false").json()
-                perch = next(r for r in results if r["engine"] == "perch")
-                unknown = next(r for r in perch["candidates"] if r["label"] == "Abavorana luctuosa")
-                self.assertEqual(unknown["scientific_name"], "Abavorana luctuosa")
-                self.assertEqual(unknown["common_names"], {})
-                sound = next(r for r in perch["candidates"] if r["label"] == "Bowed_string_instrument")
-                self.assertIsNone(sound["scientific_name"])
+                perch = filtered
                 self.assertEqual(perch["candidates"][0]["raw_score"], 0.5)
                 self.assertAlmostEqual(perch["candidates"][0]["score"], math.exp(0.5) / (math.exp(0.5) + 2 * math.exp(0.4)))
                 reset = client.post("/species", json={"scientific_name": "Certhia familiaris"}).json()
                 self.assertEqual(reset["id"], original_id)
                 self.assertEqual(reset["common_names"]["ja"], "キバシリ")
-                self.assertEqual(reset["name_sources"]["ja"], "birdnet")
+                self.assertEqual(reset["name_sources"]["ja"], "bundled")
                 custom = client.post("/species", json={"scientific_name": "Example species", "en": "Test species"}).json()
                 self.assertEqual(custom["name_sources"]["en"], "user")
                 self.assertEqual(client.post("/species", json={"scientific_name": "   "}).status_code, 422)
@@ -125,6 +108,37 @@ class SidecarCheck(unittest.TestCase):
                 self.assertEqual(candidate["label"], "Certhia familiaris_Eurasian Treecreeper")
                 self.assertEqual(candidate["score"], 0.5)
                 self.assertEqual(candidate["species_id"], original_id)
+
+    def test_perch_only_analysis_uses_japan_candidates(self):
+        class Session:
+            def run(self, outputs, inputs):
+                return np.ones((1, 1536), dtype=np.float32), np.array([[2, 1]], dtype=np.float32)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            models = root / "models"
+            (models / "perch").mkdir(parents=True)
+            (models / "perch/perch_v2_no_dft.onnx").write_bytes(b"test")
+            (models / "perch-labels/assets").mkdir(parents=True)
+            (models / "perch-labels/assets/labels.csv").write_text(
+                "inat2024_fsd50k\nHorornis diphone\nAbavorana luctuosa\n", encoding="utf-8")
+            audio = root / "SMOKE_20240808_060000.wav"
+            sf.write(audio, np.zeros(160000, dtype=np.float32), 32000)
+            data = root / "data"
+            with TestClient(create_app(data, models, "test"), headers={"Authorization": "Bearer test"}) as client:
+                imported = client.post("/imports", json={"folder": str(root), "site_name": "Test", "dataset_name": "Test",
+                    "timezone": "Asia/Tokyo", "latitude": 35, "longitude": 138}).json()
+                record = client.get(f"/datasets/{imported['dataset_id']}/recordings").json()[0]
+                with connect(data) as db:
+                    job = db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(?,'queued',1)",
+                                     (imported["dataset_id"],)).lastrowid
+                from analysis import run
+                with patch("analysis.load_perch", return_value=(Session(), "perch-sha")):
+                    run(data, models, job, [record], {"latitude": 35, "longitude": 138}, threading.Event())
+                self.assertEqual(client.get("/catalog").json()["jobs"][0]["status"], "complete")
+                results = client.get(f"/recordings/{record['id']}/results").json()
+                self.assertEqual([result["engine"] for result in results], ["perch"])
+                self.assertEqual({row["label"] for row in results[0]["candidates"]}, {"Horornis diphone"})
 
     def test_import_time_auth_duplicate_and_source_integrity(self):
         self.assertEqual(recording_time("rec_20240808_060000.wav", "Asia/Tokyo")[1], "2024-08-07T21:00:00+00:00")
@@ -199,9 +213,9 @@ def real_smoke(path):
                     if result["engine"] == "perch":
                         assert stored["logits"].shape == (int(np.ceil(record["seconds"] / 5)), 14795)
                         assert np.isfinite(stored["logits"]).all()
-                        allowed = {s.partition("_")[0] for s in result["metadata"]["geo_filter"]["species"]}
+                        allowed = set(result["metadata"]["candidate_filter"]["species"])
                         assert all(c["label"] in allowed and 0 <= c["score"] <= 1 for c in result["candidates"])
-                        assert result["metadata"]["display_geo"] == "applied"
+                        assert result["metadata"]["display_candidate_filter"] == "applied"
                     else:
                         assert np.isfinite(stored["scores"]).all()
                         assert len(set(stored["labels"])) == len(result["metadata"]["species"])

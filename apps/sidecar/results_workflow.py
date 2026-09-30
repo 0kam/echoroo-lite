@@ -242,7 +242,7 @@ def species_result(root,dataset_id,species_id,first=None,last=None,engine='auto'
         if engine is None and model_id is None and run_id is None:
             selected=next((m for m in custom if m['applicable'] and m['status']=='ready'),None)
             if selected:model_id=selected['id'];engine='custom'
-        engine=engine or 'birdnet'
+        engine=engine or next((m['engine'] for m in ctx['models']), 'perch')
     model=next((m for m in ctx['models'] if m['engine']==engine),None)
     snap=None
     if model_id is not None:

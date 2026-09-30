@@ -113,14 +113,11 @@ def analysis_metadata(raw):
     return json.loads(raw)
 
 
-def regional_list(db, analysis):
+def candidate_list(db, analysis):
     meta = analysis_metadata(analysis['metadata'])
     if analysis['engine'] == 'birdnet':
         return meta.get('species')
-    if meta.get('geo_filter') is not None:
-        return meta['geo_filter'].get('species')
-    bird = db.execute("SELECT metadata FROM analyses WHERE job_id=? AND recording_id=? AND engine='birdnet'", (analysis['job_id'], analysis['recording_id'])).fetchone()
-    return analysis_metadata(bird[0]).get('species') if bird else None
+    return (meta.get('candidate_filter') or {}).get('species')
 
 
 def classification_windows(analysis, seconds, allowed):
@@ -133,7 +130,7 @@ def classification_batches(root, db, analyses, records):
     """Read annual outputs in bounded batches instead of reopening thousands of ZIPs per species."""
     for offset in range(0, len(analyses), 256):
         batch = analyses[offset:offset + 256]
-        allowed = [regional_list(db, a) for a in batch]
+        allowed = [candidate_list(db, a) for a in batch]
         if len(analyses) <= 256 or any(region is None for region in allowed):
             for a, region in zip(batch, allowed):
                 yield a, region, classification_windows(a, records[a['recording_id']]['seconds'], region) if region is not None else None

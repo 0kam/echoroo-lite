@@ -310,7 +310,8 @@ def create_app(root, models, token):
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "data_folder": str(root)}
+        from analysis import birdnet_available
+        return {"status": "ok", "data_folder": str(root), "birdnet": birdnet_available(models)}
 
     @app.get('/datasets/{dataset_id}/overview')
     def dataset_overview(dataset_id: int, start_date: date | None = None, end_date: date | None = None):
@@ -704,7 +705,7 @@ def create_app(root, models, token):
         return FileResponse(checked_source(row), media_type="audio/wav" if Path(row["path"]).suffix.lower() == ".wav" else "audio/flac")
 
     @app.get("/recordings/{recording}/results")
-    def results(recording: int, perch_geo: bool = True):
+    def results(recording: int):
         with connect(root) as db:
             analyses = db.execute("""SELECT * FROM analyses WHERE id IN
                 (SELECT MAX(id) FROM analyses WHERE recording_id=? GROUP BY engine)""", (recording,)).fetchall()
@@ -713,18 +714,10 @@ def create_app(root, models, token):
                 meta = json.loads(analysis["metadata"])
                 if analysis["engine"] == "perch":
                     from predictions import perch_candidates
-                    geo_filter = meta.get("geo_filter")
-                    if geo_filter is None:
-                        # Old runs saved the region only with BirdNET. Use the SAME run and recording.
-                        bird = db.execute("SELECT metadata FROM analyses WHERE job_id=? AND recording_id=? AND engine='birdnet'",
-                                          (analysis["job_id"], recording)).fetchone()
-                        bird_meta = json.loads(bird[0]) if bird else {}
-                        if "species" in bird_meta:
-                            geo_filter = {key: bird_meta[key] for key in
-                                          ("geo_sha256", "latitude", "longitude", "week", "geo_threshold", "species") if key in bird_meta}
+                    candidate_filter = meta.get("candidate_filter")
                     seconds = db.execute("SELECT seconds FROM recordings WHERE id=?", (recording,)).fetchone()[0]
-                    candidates, display = perch_candidates(analysis["scores_path"], seconds, analysis["id"], geo_filter, perch_geo)
-                    meta = {**meta, **display, "geo_filter": geo_filter}
+                    candidates, display = perch_candidates(analysis["scores_path"], seconds, analysis["id"], candidate_filter)
+                    meta = {**meta, **display}
                 else:
                     candidates = [dict(r) for r in db.execute(
                         "SELECT * FROM candidates WHERE analysis_id=? ORDER BY score DESC LIMIT 100", (analysis["id"],))]
@@ -756,8 +749,9 @@ def create_app(root, models, token):
                         records=[record for record in records if record['id'] not in completed]
                 if not site or not records:
                     raise CatalogError("no_audio")
+                from analysis import birdnet_available
                 job = db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(?,'queued',?)",
-                                 (body.dataset_id, len(records) * 2)).lastrowid
+                                 (body.dataset_id, len(records) * (2 if birdnet_available(models) else 1))).lastrowid
             cancel.clear()
             def work():
                 try:

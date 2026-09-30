@@ -105,8 +105,9 @@ def build_plan(root, ctx, seed):
                 if norm > 0:
                     vectors[index] = mean / norm
         for item in sampled_population:
-            a, b = item['predictions'].get('birdnet'), item['predictions'].get('perch')
-            item['group'] = 'unavailable' if a is None or b is None else 'low' if not a and not b else 'agreement' if a == b else 'difference'
+            values = [value for value in item['predictions'].values() if value is not None]
+            item['group'] = ('unavailable' if not values else 'low' if not any(values)
+                             else 'agreement' if all(value == values[0] for value in values[1:]) else 'difference')
         strata, fits = strata_for(np.array([i['group'] for i in sampled_population]), vectors, seed + 1)
         del vectors
         order, totals = draw_plan(strata, SAMPLE_SIZE, seed + 2)

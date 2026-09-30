@@ -3,6 +3,7 @@ import csv
 import hashlib
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +33,20 @@ def load_perch(models):
     return ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"]), digest(path)
 
 
+def birdnet_available(models):
+    root = Path(models) / "birdnet"
+    return all((root / relative).is_file() for relative in (
+        "acoustic-models/v2.4/tf/model-fp32.tflite",
+        "geo-models/v2.4/tf/model-fp32.tflite",
+    ))
+
+
+def candidate_filter():
+    path = Path(__file__).parent / "data/japan-birds.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {"source": data["sources"], "sha256": digest(path), "species": data["species"]}
+
+
 def save(root, job, recording, engine, meta, scores, candidates, embeddings=None):
     output = Path(root) / "analyses" / str(job)
     output.mkdir(parents=True, exist_ok=True)
@@ -51,7 +66,7 @@ def save(root, job, recording, engine, meta, scores, candidates, embeddings=None
 
     # Build shared display windows before analysis is reported as complete.
     from reports import classification_windows
-    allowed = meta.get('species') if engine == 'birdnet' else (meta.get('geo_filter') or {}).get('species')
+    allowed = meta.get('species') if engine == 'birdnet' else (meta.get('candidate_filter') or {}).get('species')
     if allowed is not None:
         classification_windows({'scores_path':str(path),'engine':engine},recording['seconds'],allowed)
 
@@ -66,33 +81,33 @@ def run(root, models, job, records, site, cancel):
         models = Path(models)
         model_path = models / "perch/perch_v2_no_dft.onnx"
         labels_path = models / "perch-labels/assets/labels.csv"
-        if not all(p.is_file() for p in (model_path, labels_path)) or not list((models / "birdnet").rglob("*.tflite")):
+        if not all(p.is_file() for p in (model_path, labels_path)):
             raise CatalogError("models_missing")
-        os.environ["BIRDNET_APP_DATA"] = str(models / "birdnet")
-        import birdnet
-        from birdnet.acoustic.models.v2_4.tf import AcousticTFDownloaderV2_4
-        from birdnet.geo.models.v2_4.tf import GeoTFDownloaderV2_4
-
-        # birdnet 1.1.1 exposes no offline flag; reuse its cache checks before load.
-        if not (AcousticTFDownloaderV2_4._check_acoustic_model_available("fp32")
-                and GeoTFDownloaderV2_4._check_geo_model_available()):
-            raise CatalogError("models_missing")
-
+        use_birdnet = birdnet_available(models)
         progress("loading_models", 0)
-        acoustic = birdnet.load("acoustic", "2.4", "tf", library="litert")
-        geo = birdnet.load("geo", "2.4", "tf", library="litert")
-        progress("loading_geo", 0)
-        # ponytail: year-round geo until seasonal filtering is specified and checked.
-        species = geo.predict(site["latitude"], site["longitude"], week=None,
-                              min_confidence=0.03).to_structured_array()["species_name"].tolist()
-        if not species:
-            raise CatalogError("no_geo_species")
-        bird_meta = {"model": "BirdNET 2.4 FP32 LiteRT", "model_sha256": digest(acoustic.model_path),
-                     "geo_sha256": digest(geo.model_path), "latitude": site["latitude"],
-                     "longitude": site["longitude"], "week": None, "geo_threshold": 0.03,
-                     "species": species, "score_type": "sigmoid_uncalibrated", "window_s": 3,
-                     "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
-                     "display_threshold": 0.1}
+        acoustic = bird_meta = species = None
+        if use_birdnet:
+            os.environ["BIRDNET_APP_DATA"] = str(models / "birdnet")
+            import birdnet
+            from birdnet.acoustic.models.v2_4.tf import AcousticTFDownloaderV2_4
+            from birdnet.geo.models.v2_4.tf import GeoTFDownloaderV2_4
+            if not (AcousticTFDownloaderV2_4._check_acoustic_model_available("fp32")
+                    and GeoTFDownloaderV2_4._check_geo_model_available()):
+                raise CatalogError("models_missing")
+            acoustic = birdnet.load("acoustic", "2.4", "tf", library="litert")
+            geo = birdnet.load("geo", "2.4", "tf", library="litert")
+            progress("loading_geo", 0)
+            # ponytail: year-round geo until seasonal filtering is specified and checked.
+            species = geo.predict(site["latitude"], site["longitude"], week=None,
+                                  min_confidence=0.03).to_structured_array()["species_name"].tolist()
+            if not species:
+                raise CatalogError("no_geo_species")
+            bird_meta = {"model": "BirdNET 2.4 FP32 LiteRT", "model_sha256": digest(acoustic.model_path),
+                         "geo_sha256": digest(geo.model_path), "latitude": site["latitude"],
+                         "longitude": site["longitude"], "week": None, "geo_threshold": 0.03,
+                         "species": species, "score_type": "sigmoid_uncalibrated", "window_s": 3,
+                         "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
+                         "display_threshold": 0.1}
         progress("loading_perch", 0)
         session, model_sha = load_perch(models)
         with labels_path.open(newline="", encoding="utf-8") as stream:
@@ -100,36 +115,38 @@ def run(root, models, job, records, site, cancel):
         perch_meta = {"model": "Perch V2 no_dft", "model_sha256": model_sha,
                       "labels_sha256": digest(labels_path), "window_s": 5,
                       "score_type": "logit", "stored_top_k": None, "display_top_k": 5,
-                      "geo_filter": {key: bird_meta[key] for key in
-                                     ("geo_sha256", "latitude", "longitude", "week", "geo_threshold", "species")},
+                      "candidate_filter": candidate_filter(),
                       "resampling": "scipy.resample_poly", "last_window": "zero_pad"}
         done = 0
-        progress("loading_birdnet", 0)
-        # Reuse BirdNET's public session: one worker for the job, one file persisted per run.
-        with acoustic.predict_session(n_workers=1, batch_size=1, top_k=None, max_n_files=1,
-                                      default_confidence_threshold=0, custom_species_list=species) as bird_session:
+        if use_birdnet:
+            progress("loading_birdnet", 0)
+        bird_context = acoustic.predict_session(n_workers=1, batch_size=1, top_k=None, max_n_files=1,
+            default_confidence_threshold=0, custom_species_list=species) if acoustic else nullcontext()
+        # Reuse BirdNET's public session when this edition includes it.
+        with bird_context as bird_session:
             for record in records:
                 if cancel.is_set():
                     break
                 path = checked_source(record)
-                progress("birdnet", done)
-                result = bird_session.run(path)
-                if len(result.unprocessable_inputs):
-                    raise CatalogError("unreadable_audio")
-                rows = result.to_structured_array()
-                if not np.isfinite(rows["confidence"]).all():
-                    raise CatalogError("invalid_scores")
-                groups = {}
-                for row in rows:
-                    start, end = float(row["start_time"]), min(float(row["end_time"]), record["seconds"])
-                    if row["confidence"] >= 0.1:
-                        groups.setdefault(start, []).append((start, end, str(row["species_name"]), float(row["confidence"])))
-                candidates = [row for group in groups.values() for row in sorted(group, key=lambda r: -r[3])[:5]]
-                checked_source(record)
-                save(root, job, record, "birdnet", bird_meta,
-                     {"start_s": rows["start_time"], "end_s": rows["end_time"],
-                      "labels": rows["species_name"].astype(str), "scores": rows["confidence"]}, candidates)
-                done += 1
+                if bird_session:
+                    progress("birdnet", done)
+                    result = bird_session.run(path)
+                    if len(result.unprocessable_inputs):
+                        raise CatalogError("unreadable_audio")
+                    rows = result.to_structured_array()
+                    if not np.isfinite(rows["confidence"]).all():
+                        raise CatalogError("invalid_scores")
+                    groups = {}
+                    for row in rows:
+                        start, end = float(row["start_time"]), min(float(row["end_time"]), record["seconds"])
+                        if row["confidence"] >= 0.1:
+                            groups.setdefault(start, []).append((start, end, str(row["species_name"]), float(row["confidence"])))
+                    candidates = [row for group in groups.values() for row in sorted(group, key=lambda r: -r[3])[:5]]
+                    checked_source(record)
+                    save(root, job, record, "birdnet", bird_meta,
+                         {"start_s": rows["start_time"], "end_s": rows["end_time"],
+                          "labels": rows["species_name"].astype(str), "scores": rows["confidence"]}, candidates)
+                    done += 1
                 progress("perch", done)
                 if cancel.is_set():
                     break

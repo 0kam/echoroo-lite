@@ -93,9 +93,10 @@ with ExitStack() as stack:
                 time.sleep(1)
             assert job["status"] == "complete", job
             results = api(f"/recordings/{record['id']}/results")
-            assert {r["engine"] for r in results} == {"birdnet", "perch"}
+            engines = {"perch", "birdnet"} if api("/health")["birdnet"] else {"perch"}
+            assert {r["engine"] for r in results} == engines
             perch = next(r for r in results if r["engine"] == "perch")
-            assert perch["metadata"]["display_geo"] == "applied", perch["metadata"]
+            assert perch["metadata"]["display_candidate_filter"] == "applied", perch["metadata"]
             assert perch["candidates"] and all(0 <= c["score"] <= 1 for c in perch["candidates"])
             print(f"Frozen real-audio analysis passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
@@ -124,7 +125,7 @@ with ExitStack() as stack:
             started = time.perf_counter()
             options = api(f"/reports/options?dataset_id={imported['dataset_id']}")
             dates = {'start_date': options['first_date'], 'end_date': options['last_date']}
-            for engine in ('birdnet', 'perch'):
+            for engine in sorted(engines):
                 model = next(m for m in options['models'] if m['engine'] == engine)
                 report = api('/reports/detection', {**dates, 'dataset_id': imported['dataset_id'], 'engine': engine,
                     'model_sha256': model['model_sha256'], 'threshold': .1, 'species_id': target['id']})

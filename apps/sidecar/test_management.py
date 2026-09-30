@@ -41,7 +41,7 @@ class ManagementCheck(unittest.TestCase):
                         else:
                             np.savez(path,labels=['Horornis diphone','Other'],logits=np.log(np.full((3,2),.5)))
                         meta={'model_sha256':engine,'species':[label],'latitude':35,'longitude':138,
-                              'geo_filter':{'species':[label],'latitude':35,'longitude':138}}
+                              'candidate_filter':{'species':['Horornis diphone']}}
                         aid=db.execute('INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,?,?,?)',
                                        (job,rid,engine,json.dumps(meta),str(path))).lastrowid
                         if engine=='perch':

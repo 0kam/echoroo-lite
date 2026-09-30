@@ -27,14 +27,23 @@ jobs:
       - run: python scripts/freeze_sidecar.py
       - name: Check frozen startup and quiz without models
         run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --parent-eof
-      - name: Provision the pinned models for real inference
+      - name: Provision the pinned models for real inference and both editions
         run: python scripts/setup_models.py
+      - name: Provision Perch-only models
+        run: python scripts/setup_models.py --perch-only --output "$env:RUNNER_TEMP/echoroo-perch-models"
+      - name: Check frozen Perch-only inference
+        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models "$env:RUNNER_TEMP/echoroo-perch-models" --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3 --data "$env:RUNNER_TEMP/echoroo-perch-data"
       - name: Check frozen inference, search, reports and quiz with supplied audio
         run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3 --diagnostics --data "$env:RUNNER_TEMP/echoroo-inference-data"
       - run: npm run desktop:build
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-preview
+          name: windows-standard-preview
+          path: apps/desktop/target/release/bundle/
+      - run: npm run desktop:build:birdnet
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-birdnet-preview
           path: apps/desktop/target/release/bundle/
       - name: Check installation and desktop preview with analysed audio
         timeout-minutes: 8

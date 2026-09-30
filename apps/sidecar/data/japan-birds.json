@@ -1,0 +1,5488 @@
+{
+  "sources": [
+    {
+      "name": "Checklist of Japanese Birds, 8th edition",
+      "publisher": "Ornithological Society of Japan",
+      "version": "8",
+      "url": "https://ornithology.jp/materials/checklist/jpbirdlist8ed_ver1.xlsx",
+      "file": "jpbirdlist8ed_ver1.xlsx",
+      "sha256": "893495f9f7429fb7e4152f6c87b8227266de1eda8a5f76113b687b3bb1552e0e"
+    },
+    {
+      "name": "Perch V2 labels",
+      "file": "labels.csv",
+      "sha256": "e4d5c0397d8fb08bf90c6b13a34810af53504faad927e472fcc567793c9de057"
+    },
+    {
+      "name": "Wikidata",
+      "url": "https://query.wikidata.org/sparql",
+      "license": "CC0",
+      "retrieved": "2026-09-30",
+      "mappings": 10
+    }
+  ],
+  "stats": {
+    "checklist_species": 690,
+    "matched_exact": 646,
+    "matched_wikidata": 10,
+    "matched_manual": 14,
+    "unmatched": 20
+  },
+  "species": [
+    "Acanthis flammea",
+    "Accipiter nisus",
+    "Acridotheres cristatellus",
+    "Acridotheres ginginianus",
+    "Acridotheres javanicus",
+    "Acridotheres tristis",
+    "Acrocephalus bistrigiceps",
+    "Acrocephalus dumetorum",
+    "Acrocephalus orientalis",
+    "Acrocephalus schoenobaenus",
+    "Acrocephalus tangorum",
+    "Actitis hypoleucos",
+    "Actitis macularius",
+    "Aegithalos caudatus",
+    "Aegolius funereus",
+    "Aegypius monachus",
+    "Aethia cristatella",
+    "Aethia psittacula",
+    "Aethia pusilla",
+    "Aethia pygmaea",
+    "Agropsar philippensis",
+    "Agropsar sturninus",
+    "Aix galericulata",
+    "Alauda arvensis",
+    "Alaudala cheleensis",
+    "Alcedo atthis",
+    "Alle alle",
+    "Amandava amandava",
+    "Amaurornis phoenicurus",
+    "Anarhynchus alexandrinus",
+    "Anarhynchus leschenaultii",
+    "Anarhynchus mongolus",
+    "Anarhynchus veredus",
+    "Anas acuta",
+    "Anas crecca",
+    "Anas luzonica",
+    "Anas platyrhynchos",
+    "Anas zonorhyncha",
+    "Anous ceruleus",
+    "Anous minutus",
+    "Anous stolidus",
+    "Anser albifrons",
+    "Anser anser",
+    "Anser caerulescens",
+    "Anser canagicus",
+    "Anser cygnoides",
+    "Anser erythropus",
+    "Anser fabalis",
+    "Anser indicus",
+    "Anthropoides virgo",
+    "Anthus cervinus",
+    "Anthus godlewskii",
+    "Anthus gustavi",
+    "Anthus hodgsoni",
+    "Anthus pratensis",
+    "Anthus richardi",
+    "Anthus roseatus",
+    "Anthus rubescens",
+    "Anthus trivialis",
+    "Antigone canadensis",
+    "Antigone vipio",
+    "Apalopteron familiare",
+    "Apus nipalensis",
+    "Apus pacificus",
+    "Aquila chrysaetos",
+    "Aquila heliaca",
+    "Ardea alba",
+    "Ardea cinerea",
+    "Ardea ibis",
+    "Ardea intermedia",
+    "Ardea purpurea",
+    "Ardenna bulleri",
+    "Ardenna carneipes",
+    "Ardenna creatopus",
+    "Ardenna grisea",
+    "Ardenna pacifica",
+    "Ardenna tenuirostris",
+    "Ardeola bacchus",
+    "Arenaria interpres",
+    "Artamus leucorynchus",
+    "Arundinax aedon",
+    "Asio flammeus",
+    "Asio otus",
+    "Astur gentilis",
+    "Aythya affinis",
+    "Aythya americana",
+    "Aythya collaris",
+    "Aythya ferina",
+    "Aythya fuligula",
+    "Aythya marila",
+    "Aythya nyroca",
+    "Aythya valisineria",
+    "Bambusicola sonorivox",
+    "Bambusicola thoracicus",
+    "Bombycilla garrulus",
+    "Bombycilla japonica",
+    "Botaurus cinnamomeus",
+    "Botaurus eurhythmus",
+    "Botaurus flavicollis",
+    "Botaurus sinensis",
+    "Botaurus stellaris",
+    "Branta bernicla",
+    "Branta canadensis",
+    "Branta hutchinsii",
+    "Branta ruficollis",
+    "Bubo bubo",
+    "Bubo scandiacus",
+    "Bucephala albeola",
+    "Bucephala clangula",
+    "Bulweria bulwerii",
+    "Butastur indicus",
+    "Buteo hemilasius",
+    "Buteo japonicus",
+    "Buteo lagopus",
+    "Butorides striata",
+    "Cacomantis merulinus",
+    "Calandrella brachydactyla",
+    "Calcarius lapponicus",
+    "Calidris acuminata",
+    "Calidris alba",
+    "Calidris alpina",
+    "Calidris bairdii",
+    "Calidris canutus",
+    "Calidris falcinellus",
+    "Calidris ferruginea",
+    "Calidris fuscicollis",
+    "Calidris himantopus",
+    "Calidris mauri",
+    "Calidris melanotos",
+    "Calidris minuta",
+    "Calidris ptilocnemis",
+    "Calidris pugnax",
+    "Calidris pygmaea",
+    "Calidris ruficollis",
+    "Calidris subminuta",
+    "Calidris subruficollis",
+    "Calidris temminckii",
+    "Calidris tenuirostris",
+    "Calliope calliope",
+    "Calonectris leucomelas",
+    "Caprimulgus jotaka",
+    "Carpodacus erythrinus",
+    "Carpodacus roseus",
+    "Carpodacus sibiricus",
+    "Catharus minimus",
+    "Cecropis daurica",
+    "Centropus bengalensis",
+    "Cepphus columba",
+    "Cerorhinca monocerata",
+    "Certhia familiaris",
+    "Ceyx erithaca",
+    "Chalcophaps indica",
+    "Charadrius hiaticula",
+    "Charadrius semipalmatus",
+    "Chlidonias hybrida",
+    "Chlidonias leucopterus",
+    "Chlidonias niger",
+    "Chloris sinica",
+    "Chroicocephalus brunnicephalus",
+    "Chroicocephalus genei",
+    "Chroicocephalus philadelphia",
+    "Chroicocephalus ridibundus",
+    "Ciconia boyciana",
+    "Ciconia nigra",
+    "Cinclus pallasii",
+    "Circus cyaneus",
+    "Circus hudsonius",
+    "Circus melanoleucos",
+    "Circus spilonotus",
+    "Cisticola juncidis",
+    "Clamator coromandus",
+    "Clanga clanga",
+    "Clangula hyemalis",
+    "Coccothraustes coccothraustes",
+    "Colinus virginianus",
+    "Coloeus dauuricus",
+    "Coloeus monedula",
+    "Columba janthina",
+    "Columba livia",
+    "Columba oenas",
+    "Corvus corax",
+    "Corvus corone",
+    "Corvus frugilegus",
+    "Corvus macrorhynchos",
+    "Coturnicops exquisitus",
+    "Coturnix japonica",
+    "Crex crex",
+    "Cuculus canorus",
+    "Cuculus micropterus",
+    "Cuculus optatus",
+    "Cuculus poliocephalus",
+    "Curruca curruca",
+    "Cyanistes cyanus",
+    "Cyanopica cyanus",
+    "Cyanoptila cyanomelana",
+    "Cygnus atratus",
+    "Cygnus buccinator",
+    "Cygnus columbianus",
+    "Cygnus cygnus",
+    "Cygnus olor",
+    "Delichon dasypus",
+    "Dendrocopos hyperythrus",
+    "Dendrocopos leucotos",
+    "Dendrocopos major",
+    "Dendrocopos noguchii",
+    "Dendrocygna javanica",
+    "Dendronanthus indicus",
+    "Dicrurus hottentottus",
+    "Dicrurus leucophaeus",
+    "Dicrurus macrocercus",
+    "Dryobates minor",
+    "Dryocopus javensis",
+    "Dryocopus martius",
+    "Egretta garzetta",
+    "Egretta sacra",
+    "Emberiza aureola",
+    "Emberiza bruniceps",
+    "Emberiza buchanani",
+    "Emberiza chrysophrys",
+    "Emberiza cioides",
+    "Emberiza citrinella",
+    "Emberiza elegans",
+    "Emberiza fucata",
+    "Emberiza hortulana",
+    "Emberiza leucocephalos",
+    "Emberiza melanocephala",
+    "Emberiza pallasi",
+    "Emberiza personata",
+    "Emberiza pusilla",
+    "Emberiza rustica",
+    "Emberiza rutila",
+    "Emberiza schoeniclus",
+    "Emberiza spodocephala",
+    "Emberiza sulphurata",
+    "Emberiza tristrami",
+    "Emberiza variabilis",
+    "Emberiza yessoensis",
+    "Eophona migratoria",
+    "Eophona personata",
+    "Eremophila alpestris",
+    "Erithacus rubecula",
+    "Estrilda melpoda",
+    "Estrilda troglodytes",
+    "Eudromias morinellus",
+    "Eudynamys scolopaceus",
+    "Eumyias thalassinus",
+    "Euplectes orix",
+    "Eurystomus orientalis",
+    "Falco amurensis",
+    "Falco columbarius",
+    "Falco naumanni",
+    "Falco peregrinus",
+    "Falco rusticolus",
+    "Falco subbuteo",
+    "Falco tinnunculus",
+    "Ficedula albicilla",
+    "Ficedula hypoleuca",
+    "Ficedula mugimaki",
+    "Ficedula narcissina",
+    "Ficedula owstoni",
+    "Ficedula parva",
+    "Ficedula zanthopygia",
+    "Fratercula corniculata",
+    "Fregata minor",
+    "Fringilla coelebs",
+    "Fringilla montifringilla",
+    "Fulica atra",
+    "Fulmarus glacialis",
+    "Gallicrex cinerea",
+    "Gallinago gallinago",
+    "Gallinago hardwickii",
+    "Gallinago megala",
+    "Gallinago solitaria",
+    "Gallinago stenura",
+    "Gallinula chloropus",
+    "Gallirallus okinawae",
+    "Garrulax canorus",
+    "Garrulus glandarius",
+    "Garrulus lidthi",
+    "Gavia adamsii",
+    "Gavia arctica",
+    "Gavia immer",
+    "Gavia pacifica",
+    "Gavia stellata",
+    "Gelochelidon nilotica",
+    "Geokichla citrina",
+    "Geokichla sibirica",
+    "Geothlypis trichas",
+    "Glareola maldivarum",
+    "Gorsachius goisagi",
+    "Gorsachius melanolophus",
+    "Grus grus",
+    "Grus japonensis",
+    "Grus monacha",
+    "Gygis alba",
+    "Haematopus ostralegus",
+    "Halcyon coromanda",
+    "Halcyon pileata",
+    "Haliaeetus albicilla",
+    "Haliaeetus leucocephalus",
+    "Haliaeetus pelagicus",
+    "Helopsaltes amnicola",
+    "Helopsaltes certhiola",
+    "Helopsaltes ochotensis",
+    "Helopsaltes pleskei",
+    "Helopsaltes pryeri",
+    "Hierococcyx hyperythrus",
+    "Hierococcyx sparverioides",
+    "Himantopus himantopus",
+    "Himantopus leucocephalus",
+    "Himantopus mexicanus",
+    "Hirundapus caudacutus",
+    "Hirundapus cochinchinensis",
+    "Hirundo rustica",
+    "Hirundo tahitica",
+    "Histrionicus histrionicus",
+    "Horornis canturians",
+    "Horornis diphone",
+    "Hydrobates castro",
+    "Hydrobates furcatus",
+    "Hydrobates leucorhous",
+    "Hydrobates monorhis",
+    "Hydrobates tristrami",
+    "Hydrocoloeus minutus",
+    "Hydrophasianus chirurgus",
+    "Hydroprogne caspia",
+    "Hypothymis azurea",
+    "Hypsipetes amaurotis",
+    "Ichthyaetus ichthyaetus",
+    "Ichthyaetus relictus",
+    "Iduna caligata",
+    "Jynx torquilla",
+    "Ketupa blakistoni",
+    "Lagopus muta",
+    "Lalage melaschistos",
+    "Lanius borealis",
+    "Lanius bucephalus",
+    "Lanius collurio",
+    "Lanius cristatus",
+    "Lanius schach",
+    "Lanius sphenocercus",
+    "Lanius tigrinus",
+    "Larus canus",
+    "Larus crassirostris",
+    "Larus fuscus",
+    "Larus glaucescens",
+    "Larus glaucoides",
+    "Larus hyperboreus",
+    "Larus schistisagus",
+    "Larus vegae",
+    "Larvivora akahige",
+    "Larvivora cyane",
+    "Larvivora komadori",
+    "Larvivora namiyei",
+    "Larvivora sibilans",
+    "Leiothrix lutea",
+    "Leucogeranus leucogeranus",
+    "Leucophaeus atricilla",
+    "Leucophaeus pipixcan",
+    "Leucosticte arctoa",
+    "Lewinia striata",
+    "Limnodromus griseus",
+    "Limnodromus scolopaceus",
+    "Limnodromus semipalmatus",
+    "Limosa haemastica",
+    "Limosa lapponica",
+    "Limosa limosa",
+    "Locustella lanceolata",
+    "Lonchura atricapilla",
+    "Lonchura maja",
+    "Lonchura malacca",
+    "Lonchura punctulata",
+    "Lonchura striata",
+    "Lophodytes cucullatus",
+    "Loxia curvirostra",
+    "Loxia leucoptera",
+    "Luscinia svecica",
+    "Lymnocryptes minimus",
+    "Mareca americana",
+    "Mareca falcata",
+    "Mareca penelope",
+    "Mareca strepera",
+    "Megaceryle lugubris",
+    "Melanitta americana",
+    "Melanitta deglandi",
+    "Melanitta perspicillata",
+    "Melanitta stejnegeri",
+    "Melanocorypha bimaculata",
+    "Melanocorypha mongolica",
+    "Melopsittacus undulatus",
+    "Melospiza melodia",
+    "Mergellus albellus",
+    "Mergus merganser",
+    "Mergus serrator",
+    "Mergus squamatus",
+    "Merops ornatus",
+    "Merops philippinus",
+    "Milvus migrans",
+    "Monticola gularis",
+    "Monticola saxatilis",
+    "Monticola solitarius",
+    "Motacilla alba",
+    "Motacilla cinerea",
+    "Motacilla citreola",
+    "Motacilla flava",
+    "Motacilla grandis",
+    "Motacilla tschutschensis",
+    "Muscicapa dauurica",
+    "Muscicapa ferruginea",
+    "Muscicapa griseisticta",
+    "Muscicapa muttui",
+    "Muscicapa sibirica",
+    "Muscicapa striata",
+    "Myiopsitta monachus",
+    "Netta rufina",
+    "Nettapus coromandelianus",
+    "Ninox japonica",
+    "Nipponia nippon",
+    "Nisaetus nipalensis",
+    "Nucifraga caryocatactes",
+    "Numenius arquata",
+    "Numenius madagascariensis",
+    "Numenius minutus",
+    "Numenius phaeopus",
+    "Numenius tahitiensis",
+    "Numenius tenuirostris",
+    "Nycticorax caledonicus",
+    "Nycticorax nycticorax",
+    "Oceanites oceanicus",
+    "Oenanthe deserti",
+    "Oenanthe isabellina",
+    "Oenanthe oenanthe",
+    "Oenanthe pleschanka",
+    "Onychoprion aleuticus",
+    "Onychoprion anaethetus",
+    "Onychoprion fuscatus",
+    "Onychoprion lunatus",
+    "Oriolus chinensis",
+    "Otis tarda",
+    "Otus elegans",
+    "Otus semitorques",
+    "Otus sunia",
+    "Padda oryzivora",
+    "Pagophila eburnea",
+    "Pandion haliaetus",
+    "Panurus biarmicus",
+    "Paroaria coronata",
+    "Parus cinereus",
+    "Passer cinnamomeus",
+    "Passer domesticus",
+    "Passer montanus",
+    "Passerculus sandwichensis",
+    "Passerella iliaca",
+    "Pastor roseus",
+    "Pavo cristatus",
+    "Pelecanus crispus",
+    "Pelecanus onocrotalus",
+    "Pelecanus philippensis",
+    "Pericrocotus divaricatus",
+    "Pericrocotus tegimae",
+    "Periparus ater",
+    "Periparus venustulus",
+    "Pernis ptilorhynchus",
+    "Phaethon lepturus",
+    "Phaethon rubricauda",
+    "Phalacrocorax carbo",
+    "Phalaropus fulicarius",
+    "Phalaropus lobatus",
+    "Phalaropus tricolor",
+    "Phasianus colchicus",
+    "Phasianus versicolor",
+    "Phoebastria immutabilis",
+    "Phoebastria nigripes",
+    "Phoenicurus auroreus",
+    "Phoenicurus erythronotus",
+    "Phoenicurus fuliginosus",
+    "Phoenicurus ochruros",
+    "Phoenicurus phoenicurus",
+    "Phylloscopus borealis",
+    "Phylloscopus borealoides",
+    "Phylloscopus collybita",
+    "Phylloscopus coronatus",
+    "Phylloscopus examinandus",
+    "Phylloscopus fuscatus",
+    "Phylloscopus ijimae",
+    "Phylloscopus inornatus",
+    "Phylloscopus plumbeitarsus",
+    "Phylloscopus proregulus",
+    "Phylloscopus schwarzi",
+    "Phylloscopus sibilatrix",
+    "Phylloscopus tenellipes",
+    "Phylloscopus trochilus",
+    "Phylloscopus xanthodryas",
+    "Phylloscopus yunnanensis",
+    "Pica serica",
+    "Picoides tridactylus",
+    "Picus awokera",
+    "Picus canus",
+    "Pinicola enucleator",
+    "Pitta nympha",
+    "Pitta sordida",
+    "Platalea leucorodia",
+    "Platalea minor",
+    "Plectrophenax nivalis",
+    "Plegadis falcinellus",
+    "Ploceus intermedius",
+    "Pluvialis apricaria",
+    "Pluvialis fulva",
+    "Pluvialis squatarola",
+    "Podiceps auritus",
+    "Podiceps cristatus",
+    "Podiceps grisegena",
+    "Podiceps nigricollis",
+    "Poecile montanus",
+    "Poecile palustris",
+    "Poliolimnas cinereus",
+    "Polysticta stelleri",
+    "Prunella collaris",
+    "Prunella montanella",
+    "Prunella rubida",
+    "Psittacula alexandri",
+    "Psittacula eupatria",
+    "Psittacula krameri",
+    "Pterodroma cervicalis",
+    "Pterodroma externa",
+    "Pterodroma hypoleuca",
+    "Pterodroma inexpectata",
+    "Pterodroma neglecta",
+    "Pterodroma nigripennis",
+    "Pterodroma sandwichensis",
+    "Pterodroma solandri",
+    "Pterorhinus perspicillatus",
+    "Pterorhinus sannio",
+    "Ptilinopus leclancheri",
+    "Ptychoramphus aleuticus",
+    "Puffinus nativitatis",
+    "Puffinus newelli",
+    "Pycnonotus sinensis",
+    "Pyrrhula pyrrhula",
+    "Rallina eurizonoides",
+    "Rallus indicus",
+    "Recurvirostra avosetta",
+    "Regulus regulus",
+    "Remiz consobrinus",
+    "Rhodostethia rosea",
+    "Riparia paludicola",
+    "Riparia riparia",
+    "Rissa brevirostris",
+    "Rissa tridactyla",
+    "Rostratula benghalensis",
+    "Saundersilarus saundersi",
+    "Saxicola caprata",
+    "Saxicola ferreus",
+    "Saxicola rubetra",
+    "Saxicola stejnegeri",
+    "Scolopax mira",
+    "Scolopax rusticola",
+    "Setophaga coronata",
+    "Sibirionetta formosa",
+    "Sitta europaea",
+    "Sittiparus olivaceus",
+    "Sittiparus varius",
+    "Somateria spectabilis",
+    "Spatula clypeata",
+    "Spatula discors",
+    "Spatula querquedula",
+    "Spilornis cheela",
+    "Spinus spinus",
+    "Spodiopsar cineraceus",
+    "Spodiopsar sericeus",
+    "Stercorarius longicaudus",
+    "Stercorarius maccormicki",
+    "Stercorarius parasiticus",
+    "Stercorarius pomarinus",
+    "Sterna dougallii",
+    "Sterna hirundo",
+    "Sterna paradisaea",
+    "Sterna sumatrana",
+    "Sternula albifrons",
+    "Sternula antillarum",
+    "Streptopelia decaocto",
+    "Streptopelia orientalis",
+    "Streptopelia tranquebarica",
+    "Strix uralensis",
+    "Sturnia sinensis",
+    "Sturnus vulgaris",
+    "Sula dactylatra",
+    "Sula leucogaster",
+    "Sula sula",
+    "Synthliboramphus antiquus",
+    "Synthliboramphus wumizusume",
+    "Syrmaticus soemmerringii",
+    "Syrrhaptes paradoxus",
+    "Tachybaptus ruficollis",
+    "Tachyspiza gularis",
+    "Tachyspiza soloensis",
+    "Tadorna ferruginea",
+    "Tadorna tadorna",
+    "Tarsiger cyanurus",
+    "Terpsiphone atrocaudata",
+    "Tetrastes bonasia",
+    "Tetrax tetrax",
+    "Thalasseus bengalensis",
+    "Thalasseus bergii",
+    "Thinornis dubius",
+    "Thinornis placidus",
+    "Threskiornis melanocephalus",
+    "Todiramphus chloris",
+    "Treron formosae",
+    "Treron sieboldii",
+    "Tringa brevipes",
+    "Tringa erythropus",
+    "Tringa flavipes",
+    "Tringa glareola",
+    "Tringa guttifer",
+    "Tringa incana",
+    "Tringa melanoleuca",
+    "Tringa nebularia",
+    "Tringa ochropus",
+    "Tringa stagnatilis",
+    "Tringa totanus",
+    "Troglodytes troglodytes",
+    "Turdus atrogularis",
+    "Turdus cardis",
+    "Turdus celaenops",
+    "Turdus chrysolaus",
+    "Turdus eunomus",
+    "Turdus hortulorum",
+    "Turdus iliacus",
+    "Turdus mandarinus",
+    "Turdus naumanni",
+    "Turdus obscurus",
+    "Turdus pallidus",
+    "Turdus philomelos",
+    "Turdus pilaris",
+    "Turdus viscivorus",
+    "Turnix suscitator",
+    "Upupa epops",
+    "Uria aalge",
+    "Uria lomvia",
+    "Urile pelagicus",
+    "Urile urile",
+    "Urocissa caerulea",
+    "Urocissa erythroryncha",
+    "Urodynamis taitensis",
+    "Urosphena squameiceps",
+    "Vanellus cinereus",
+    "Vanellus vanellus",
+    "Vidua paradisaea",
+    "Xema sabini",
+    "Xenus cinereus",
+    "Yungipicus kizuki",
+    "Zapornia fusca",
+    "Zapornia paykullii",
+    "Zapornia pusilla",
+    "Zonotrichia atricapilla",
+    "Zonotrichia leucophrys",
+    "Zoothera aurea",
+    "Zoothera dauma",
+    "Zosterops erythropleurus",
+    "Zosterops japonicus"
+  ],
+  "mappings": [
+    {
+      "scientific_name": "Dendrocygna javanica",
+      "ja": "リュウキュウガモ",
+      "part": "A",
+      "perch_scientific_name": "Dendrocygna javanica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Branta bernicla",
+      "ja": "コクガン",
+      "part": "A",
+      "perch_scientific_name": "Branta bernicla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Branta ruficollis",
+      "ja": "アオガン",
+      "part": "A",
+      "perch_scientific_name": "Branta ruficollis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Branta canadensis",
+      "ja": "カナダガン",
+      "part": "A",
+      "perch_scientific_name": "Branta canadensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Branta hutchinsii",
+      "ja": "シジュウカラガン",
+      "part": "A",
+      "perch_scientific_name": "Branta hutchinsii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anser indicus",
+      "ja": "インドガン",
+      "part": "A",
+      "perch_scientific_name": "Anser indicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anser canagicus",
+      "ja": "ミカドガン",
+      "part": "A",
+      "perch_scientific_name": "Anser canagicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anser caerulescens",
+      "ja": "ハクガン",
+      "part": "A",
+      "perch_scientific_name": "Anser caerulescens",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anser anser",
+      "ja": "ハイイロガン",
+      "part": "A",
+      "perch_scientific_name": "Anser anser",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anser cygnoid",
+      "ja": "サカツラガン",
+      "part": "A",
+      "perch_scientific_name": "Anser cygnoides",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Anser fabalis",
+      "ja": "ヒシクイ",
+      "part": "A",
+      "perch_scientific_name": "Anser fabalis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anser albifrons",
+      "ja": "マガン",
+      "part": "A",
+      "perch_scientific_name": "Anser albifrons",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anser erythropus",
+      "ja": "カリガネ",
+      "part": "A",
+      "perch_scientific_name": "Anser erythropus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cygnus olor",
+      "ja": "コブハクチョウ",
+      "part": "A",
+      "perch_scientific_name": "Cygnus olor",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cygnus buccinator",
+      "ja": "ナキハクチョウ",
+      "part": "A",
+      "perch_scientific_name": "Cygnus buccinator",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cygnus columbianus",
+      "ja": "コハクチョウ",
+      "part": "A",
+      "perch_scientific_name": "Cygnus columbianus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cygnus cygnus",
+      "ja": "オオハクチョウ",
+      "part": "A",
+      "perch_scientific_name": "Cygnus cygnus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tadorna tadorna",
+      "ja": "ツクシガモ",
+      "part": "A",
+      "perch_scientific_name": "Tadorna tadorna",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tadorna ferruginea",
+      "ja": "アカツクシガモ",
+      "part": "A",
+      "perch_scientific_name": "Tadorna ferruginea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aix galericulata",
+      "ja": "オシドリ",
+      "part": "A",
+      "perch_scientific_name": "Aix galericulata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Nettapus coromandelianus",
+      "ja": "ナンキンオシ",
+      "part": "A",
+      "perch_scientific_name": "Nettapus coromandelianus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sibirionetta formosa",
+      "ja": "トモエガモ",
+      "part": "A",
+      "perch_scientific_name": "Sibirionetta formosa",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Spatula querquedula",
+      "ja": "シマアジ",
+      "part": "A",
+      "perch_scientific_name": "Spatula querquedula",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Spatula discors",
+      "ja": "ミカヅキシマアジ",
+      "part": "A",
+      "perch_scientific_name": "Spatula discors",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Spatula clypeata",
+      "ja": "ハシビロガモ",
+      "part": "A",
+      "perch_scientific_name": "Spatula clypeata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Mareca strepera",
+      "ja": "オカヨシガモ",
+      "part": "A",
+      "perch_scientific_name": "Mareca strepera",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Mareca falcata",
+      "ja": "ヨシガモ",
+      "part": "A",
+      "perch_scientific_name": "Mareca falcata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Mareca penelope",
+      "ja": "ヒドリガモ",
+      "part": "A",
+      "perch_scientific_name": "Mareca penelope",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Mareca americana",
+      "ja": "アメリカヒドリ",
+      "part": "A",
+      "perch_scientific_name": "Mareca americana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anas luzonica",
+      "ja": "アカノドカルガモ",
+      "part": "A",
+      "perch_scientific_name": "Anas luzonica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anas zonorhyncha",
+      "ja": "カルガモ",
+      "part": "A",
+      "perch_scientific_name": "Anas zonorhyncha",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anas platyrhynchos",
+      "ja": "マガモ",
+      "part": "A",
+      "perch_scientific_name": "Anas platyrhynchos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anas acuta",
+      "ja": "オナガガモ",
+      "part": "A",
+      "perch_scientific_name": "Anas acuta",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anas crecca",
+      "ja": "コガモ",
+      "part": "A",
+      "perch_scientific_name": "Anas crecca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Netta rufina",
+      "ja": "アカハシハジロ",
+      "part": "A",
+      "perch_scientific_name": "Netta rufina",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aythya valisineria",
+      "ja": "オオホシハジロ",
+      "part": "A",
+      "perch_scientific_name": "Aythya valisineria",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aythya americana",
+      "ja": "アメリカホシハジロ",
+      "part": "A",
+      "perch_scientific_name": "Aythya americana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aythya ferina",
+      "ja": "ホシハジロ",
+      "part": "A",
+      "perch_scientific_name": "Aythya ferina",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aythya nyroca",
+      "ja": "メジロガモ",
+      "part": "A",
+      "perch_scientific_name": "Aythya nyroca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aythya collaris",
+      "ja": "クビワキンクロ",
+      "part": "A",
+      "perch_scientific_name": "Aythya collaris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aythya fuligula",
+      "ja": "キンクロハジロ",
+      "part": "A",
+      "perch_scientific_name": "Aythya fuligula",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aythya marila",
+      "ja": "スズガモ",
+      "part": "A",
+      "perch_scientific_name": "Aythya marila",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aythya affinis",
+      "ja": "コスズガモ",
+      "part": "A",
+      "perch_scientific_name": "Aythya affinis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Polysticta stelleri",
+      "ja": "コケワタガモ",
+      "part": "A",
+      "perch_scientific_name": "Polysticta stelleri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Somateria spectabilis",
+      "ja": "ケワタガモ",
+      "part": "A",
+      "perch_scientific_name": "Somateria spectabilis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Histrionicus histrionicus",
+      "ja": "シノリガモ",
+      "part": "A",
+      "perch_scientific_name": "Histrionicus histrionicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Melanitta perspicillata",
+      "ja": "アラナミキンクロ",
+      "part": "A",
+      "perch_scientific_name": "Melanitta perspicillata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Melanitta deglandi",
+      "ja": "アメリカビロードキンクロ",
+      "part": "A",
+      "perch_scientific_name": "Melanitta deglandi",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Melanitta stejnegeri",
+      "ja": "ビロードキンクロ",
+      "part": "A",
+      "perch_scientific_name": "Melanitta stejnegeri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Melanitta americana",
+      "ja": "クロガモ",
+      "part": "A",
+      "perch_scientific_name": "Melanitta americana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Clangula hyemalis",
+      "ja": "コオリガモ",
+      "part": "A",
+      "perch_scientific_name": "Clangula hyemalis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bucephala albeola",
+      "ja": "ヒメハジロ",
+      "part": "A",
+      "perch_scientific_name": "Bucephala albeola",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bucephala clangula",
+      "ja": "ホオジロガモ",
+      "part": "A",
+      "perch_scientific_name": "Bucephala clangula",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Mergellus albellus",
+      "ja": "ミコアイサ",
+      "part": "A",
+      "perch_scientific_name": "Mergellus albellus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lophodytes cucullatus",
+      "ja": "オウギアイサ",
+      "part": "A",
+      "perch_scientific_name": "Lophodytes cucullatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Mergus merganser",
+      "ja": "カワアイサ",
+      "part": "A",
+      "perch_scientific_name": "Mergus merganser",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Mergus serrator",
+      "ja": "ウミアイサ",
+      "part": "A",
+      "perch_scientific_name": "Mergus serrator",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Mergus squamatus",
+      "ja": "コウライアイサ",
+      "part": "A",
+      "perch_scientific_name": "Mergus squamatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tetrastes bonasia",
+      "ja": "エゾライチョウ",
+      "part": "A",
+      "perch_scientific_name": "Tetrastes bonasia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lagopus muta",
+      "ja": "ライチョウ",
+      "part": "A",
+      "perch_scientific_name": "Lagopus muta",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Syrmaticus soemmerringii",
+      "ja": "ヤマドリ",
+      "part": "A",
+      "perch_scientific_name": "Syrmaticus soemmerringii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phasianus versicolor",
+      "ja": "キジ",
+      "part": "A",
+      "perch_scientific_name": "Phasianus versicolor",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Coturnix japonica",
+      "ja": "ウズラ",
+      "part": "A",
+      "perch_scientific_name": "Coturnix japonica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Caprimulgus jotaka",
+      "ja": "ヨタカ",
+      "part": "A",
+      "perch_scientific_name": "Caprimulgus jotaka",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hirundapus caudacutus",
+      "ja": "ハリオアマツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hirundapus caudacutus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hirundapus cochinchinensis",
+      "ja": "クロビタイハリオアマツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hirundapus cochinchinensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Apus pacificus",
+      "ja": "アマツバメ",
+      "part": "A",
+      "perch_scientific_name": "Apus pacificus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Apus nipalensis",
+      "ja": "ヒメアマツバメ",
+      "part": "A",
+      "perch_scientific_name": "Apus nipalensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Otis tarda",
+      "ja": "ノガン",
+      "part": "A",
+      "perch_scientific_name": "Otis tarda",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tetrax tetrax",
+      "ja": "ヒメノガン",
+      "part": "A",
+      "perch_scientific_name": "Tetrax tetrax",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Centropus bengalensis",
+      "ja": "バンケン",
+      "part": "A",
+      "perch_scientific_name": "Centropus bengalensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Clamator coromandus",
+      "ja": "カンムリカッコウ",
+      "part": "A",
+      "perch_scientific_name": "Clamator coromandus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Eudynamys scolopaceus",
+      "ja": "オニカッコウ",
+      "part": "A",
+      "perch_scientific_name": "Eudynamys scolopaceus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Urodynamis taitensis",
+      "ja": "キジカッコウ",
+      "part": "A",
+      "perch_scientific_name": "Urodynamis taitensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cacomantis merulinus",
+      "ja": "ヒメカッコウ",
+      "part": "A",
+      "perch_scientific_name": "Cacomantis merulinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hierococcyx sparverioides",
+      "ja": "オオジュウイチ",
+      "part": "A",
+      "perch_scientific_name": "Hierococcyx sparverioides",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hierococcyx hyperythrus",
+      "ja": "ジュウイチ",
+      "part": "A",
+      "perch_scientific_name": "Hierococcyx hyperythrus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cuculus poliocephalus",
+      "ja": "ホトトギス",
+      "part": "A",
+      "perch_scientific_name": "Cuculus poliocephalus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cuculus micropterus",
+      "ja": "セグロカッコウ",
+      "part": "A",
+      "perch_scientific_name": "Cuculus micropterus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cuculus optatus",
+      "ja": "ツツドリ",
+      "part": "A",
+      "perch_scientific_name": "Cuculus optatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cuculus canorus",
+      "ja": "カッコウ",
+      "part": "A",
+      "perch_scientific_name": "Cuculus canorus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Syrrhaptes paradoxus",
+      "ja": "サケイ",
+      "part": "A",
+      "perch_scientific_name": "Syrrhaptes paradoxus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Columba oenas",
+      "ja": "ヒメモリバト",
+      "part": "A",
+      "perch_scientific_name": "Columba oenas",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Columba janthina",
+      "ja": "カラスバト",
+      "part": "A",
+      "perch_scientific_name": "Columba janthina",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Streptopelia orientalis",
+      "ja": "キジバト",
+      "part": "A",
+      "perch_scientific_name": "Streptopelia orientalis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Streptopelia decaocto",
+      "ja": "シラコバト",
+      "part": "A",
+      "perch_scientific_name": "Streptopelia decaocto",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Streptopelia tranquebarica",
+      "ja": "ベニバト",
+      "part": "A",
+      "perch_scientific_name": "Streptopelia tranquebarica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chalcophaps indica",
+      "ja": "キンバト",
+      "part": "A",
+      "perch_scientific_name": "Chalcophaps indica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Treron sieboldii",
+      "ja": "アオバト",
+      "part": "A",
+      "perch_scientific_name": "Treron sieboldii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Treron formosae",
+      "ja": "ズアカアオバト",
+      "part": "A",
+      "perch_scientific_name": "Treron formosae",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ptilinopus leclancheri",
+      "ja": "クロアゴヒメアオバト",
+      "part": "A",
+      "perch_scientific_name": "Ptilinopus leclancheri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Rallus indicus",
+      "ja": "クイナ",
+      "part": "A",
+      "perch_scientific_name": "Rallus indicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Crex crex",
+      "ja": "ウズラクイナ",
+      "part": "A",
+      "perch_scientific_name": "Crex crex",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lewinia striata",
+      "ja": "ミナミクイナ",
+      "part": "A",
+      "perch_scientific_name": "Lewinia striata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hypotaenidia okinawae",
+      "ja": "ヤンバルクイナ",
+      "part": "A",
+      "perch_scientific_name": "Gallirallus okinawae",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Gallinula chloropus",
+      "ja": "バン",
+      "part": "A",
+      "perch_scientific_name": "Gallinula chloropus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Fulica atra",
+      "ja": "オオバン",
+      "part": "A",
+      "perch_scientific_name": "Fulica atra",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Coturnicops exquisitus",
+      "ja": "シマクイナ",
+      "part": "A",
+      "perch_scientific_name": "Coturnicops exquisitus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zapornia fusca",
+      "ja": "ヒクイナ",
+      "part": "A",
+      "perch_scientific_name": "Zapornia fusca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zapornia paykullii",
+      "ja": "コウライクイナ",
+      "part": "A",
+      "perch_scientific_name": "Zapornia paykullii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zapornia pusilla",
+      "ja": "ヒメクイナ",
+      "part": "A",
+      "perch_scientific_name": "Zapornia pusilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Rallina eurizonoides",
+      "ja": "オオクイナ",
+      "part": "A",
+      "perch_scientific_name": "Rallina eurizonoides",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Poliolimnas cinereus",
+      "ja": "マミジロクイナ",
+      "part": "A",
+      "perch_scientific_name": "Poliolimnas cinereus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gallicrex cinerea",
+      "ja": "ツルクイナ",
+      "part": "A",
+      "perch_scientific_name": "Gallicrex cinerea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Amaurornis phoenicurus",
+      "ja": "シロハラクイナ",
+      "part": "A",
+      "perch_scientific_name": "Amaurornis phoenicurus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Leucogeranus leucogeranus",
+      "ja": "ソデグロヅル",
+      "part": "A",
+      "perch_scientific_name": "Leucogeranus leucogeranus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Antigone canadensis",
+      "ja": "カナダヅル",
+      "part": "A",
+      "perch_scientific_name": "Antigone canadensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Antigone vipio",
+      "ja": "マナヅル",
+      "part": "A",
+      "perch_scientific_name": "Antigone vipio",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthropoides virgo",
+      "ja": "アネハヅル",
+      "part": "A",
+      "perch_scientific_name": "Anthropoides virgo",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Grus japonensis",
+      "ja": "タンチョウ",
+      "part": "A",
+      "perch_scientific_name": "Grus japonensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Grus grus",
+      "ja": "クロヅル",
+      "part": "A",
+      "perch_scientific_name": "Grus grus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Grus monacha",
+      "ja": "ナベヅル",
+      "part": "A",
+      "perch_scientific_name": "Grus monacha",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tachybaptus ruficollis",
+      "ja": "カイツブリ",
+      "part": "A",
+      "perch_scientific_name": "Tachybaptus ruficollis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Podiceps grisegena",
+      "ja": "アカエリカイツブリ",
+      "part": "A",
+      "perch_scientific_name": "Podiceps grisegena",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Podiceps cristatus",
+      "ja": "カンムリカイツブリ",
+      "part": "A",
+      "perch_scientific_name": "Podiceps cristatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Podiceps auritus",
+      "ja": "ミミカイツブリ",
+      "part": "A",
+      "perch_scientific_name": "Podiceps auritus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Podiceps nigricollis",
+      "ja": "ハジロカイツブリ",
+      "part": "A",
+      "perch_scientific_name": "Podiceps nigricollis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turnix suscitator",
+      "ja": "ミフウズラ",
+      "part": "A",
+      "perch_scientific_name": "Turnix suscitator",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Haematopus ostralegus",
+      "ja": "ミヤコドリ",
+      "part": "A",
+      "perch_scientific_name": "Haematopus ostralegus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Himantopus himantopus",
+      "ja": "セイタカシギ",
+      "part": "A",
+      "perch_scientific_name": "Himantopus himantopus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Himantopus leucocephalus",
+      "ja": "オーストラリアセイタカシギ",
+      "part": "A",
+      "perch_scientific_name": "Himantopus leucocephalus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Recurvirostra avosetta",
+      "ja": "ソリハシセイタカシギ",
+      "part": "A",
+      "perch_scientific_name": "Recurvirostra avosetta",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Vanellus vanellus",
+      "ja": "タゲリ",
+      "part": "A",
+      "perch_scientific_name": "Vanellus vanellus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Vanellus cinereus",
+      "ja": "ケリ",
+      "part": "A",
+      "perch_scientific_name": "Vanellus cinereus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pluvialis apricaria",
+      "ja": "ヨーロッパムナグロ",
+      "part": "A",
+      "perch_scientific_name": "Pluvialis apricaria",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pluvialis fulva",
+      "ja": "ムナグロ",
+      "part": "A",
+      "perch_scientific_name": "Pluvialis fulva",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pluvialis squatarola",
+      "ja": "ダイゼン",
+      "part": "A",
+      "perch_scientific_name": "Pluvialis squatarola",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Charadrius hiaticula",
+      "ja": "ハジロコチドリ",
+      "part": "A",
+      "perch_scientific_name": "Charadrius hiaticula",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Charadrius semipalmatus",
+      "ja": "ミズカキチドリ",
+      "part": "A",
+      "perch_scientific_name": "Charadrius semipalmatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Charadrius placidus",
+      "ja": "イカルチドリ",
+      "part": "A",
+      "perch_scientific_name": "Thinornis placidus",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Charadrius dubius",
+      "ja": "コチドリ",
+      "part": "A",
+      "perch_scientific_name": "Thinornis dubius",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Charadrius alexandrinus",
+      "ja": "シロチドリ",
+      "part": "A",
+      "perch_scientific_name": "Anarhynchus alexandrinus",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Charadrius leschenaultii",
+      "ja": "オオメダイチドリ",
+      "part": "A",
+      "perch_scientific_name": "Anarhynchus leschenaultii",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Charadrius mongolus",
+      "ja": "メダイチドリ",
+      "part": "A",
+      "perch_scientific_name": "Anarhynchus mongolus",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Charadrius veredus",
+      "ja": "オオチドリ",
+      "part": "A",
+      "perch_scientific_name": "Anarhynchus veredus",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Eudromias morinellus",
+      "ja": "コバシチドリ",
+      "part": "A",
+      "perch_scientific_name": "Eudromias morinellus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Rostratula benghalensis",
+      "ja": "タマシギ",
+      "part": "A",
+      "perch_scientific_name": "Rostratula benghalensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hydrophasianus chirurgus",
+      "ja": "レンカク",
+      "part": "A",
+      "perch_scientific_name": "Hydrophasianus chirurgus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Numenius tahitiensis",
+      "ja": "ハリモモチュウシャク",
+      "part": "A",
+      "perch_scientific_name": "Numenius tahitiensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Numenius phaeopus",
+      "ja": "チュウシャクシギ",
+      "part": "A",
+      "perch_scientific_name": "Numenius phaeopus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Numenius minutus",
+      "ja": "コシャクシギ",
+      "part": "A",
+      "perch_scientific_name": "Numenius minutus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Numenius madagascariensis",
+      "ja": "ホウロクシギ",
+      "part": "A",
+      "perch_scientific_name": "Numenius madagascariensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Numenius tenuirostris",
+      "ja": "シロハラチュウシャクシギ",
+      "part": "A",
+      "perch_scientific_name": "Numenius tenuirostris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Numenius arquata",
+      "ja": "ダイシャクシギ",
+      "part": "A",
+      "perch_scientific_name": "Numenius arquata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Limosa lapponica",
+      "ja": "オオソリハシシギ",
+      "part": "A",
+      "perch_scientific_name": "Limosa lapponica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Limosa limosa",
+      "ja": "オグロシギ",
+      "part": "A",
+      "perch_scientific_name": "Limosa limosa",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Limosa haemastica",
+      "ja": "アメリカオグロシギ",
+      "part": "A",
+      "perch_scientific_name": "Limosa haemastica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Arenaria interpres",
+      "ja": "キョウジョシギ",
+      "part": "A",
+      "perch_scientific_name": "Arenaria interpres",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris tenuirostris",
+      "ja": "オバシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris tenuirostris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris canutus",
+      "ja": "コオバシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris canutus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris pugnax",
+      "ja": "エリマキシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris pugnax",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris falcinellus",
+      "ja": "キリアイ",
+      "part": "A",
+      "perch_scientific_name": "Calidris falcinellus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris acuminata",
+      "ja": "ウズラシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris acuminata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris himantopus",
+      "ja": "アシナガシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris himantopus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris ferruginea",
+      "ja": "サルハマシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris ferruginea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris temminckii",
+      "ja": "オジロトウネン",
+      "part": "A",
+      "perch_scientific_name": "Calidris temminckii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris subminuta",
+      "ja": "ヒバリシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris subminuta",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris pygmaea",
+      "ja": "ヘラシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris pygmaea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris ruficollis",
+      "ja": "トウネン",
+      "part": "A",
+      "perch_scientific_name": "Calidris ruficollis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris alba",
+      "ja": "ミユビシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris alba",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris alpina",
+      "ja": "ハマシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris alpina",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris ptilocnemis",
+      "ja": "チシマシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris ptilocnemis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris bairdii",
+      "ja": "ヒメウズラシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris bairdii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris minuta",
+      "ja": "ヨーロッパトウネン",
+      "part": "A",
+      "perch_scientific_name": "Calidris minuta",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris fuscicollis",
+      "ja": "コシジロウズラシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris fuscicollis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris subruficollis",
+      "ja": "コモンシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris subruficollis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris melanotos",
+      "ja": "アメリカウズラシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris melanotos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calidris mauri",
+      "ja": "ヒメハマシギ",
+      "part": "A",
+      "perch_scientific_name": "Calidris mauri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Limnodromus semipalmatus",
+      "ja": "シベリアオオハシシギ",
+      "part": "A",
+      "perch_scientific_name": "Limnodromus semipalmatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Limnodromus scolopaceus",
+      "ja": "オオハシシギ",
+      "part": "A",
+      "perch_scientific_name": "Limnodromus scolopaceus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Limnodromus griseus",
+      "ja": "アメリカオオハシシギ",
+      "part": "A",
+      "perch_scientific_name": "Limnodromus griseus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Scolopax rusticola",
+      "ja": "ヤマシギ",
+      "part": "A",
+      "perch_scientific_name": "Scolopax rusticola",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Scolopax mira",
+      "ja": "アマミヤマシギ",
+      "part": "A",
+      "perch_scientific_name": "Scolopax mira",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lymnocryptes minimus",
+      "ja": "コシギ",
+      "part": "A",
+      "perch_scientific_name": "Lymnocryptes minimus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gallinago solitaria",
+      "ja": "アオシギ",
+      "part": "A",
+      "perch_scientific_name": "Gallinago solitaria",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gallinago hardwickii",
+      "ja": "オオジシギ",
+      "part": "A",
+      "perch_scientific_name": "Gallinago hardwickii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gallinago stenura",
+      "ja": "ハリオシギ",
+      "part": "A",
+      "perch_scientific_name": "Gallinago stenura",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gallinago megala",
+      "ja": "チュウジシギ",
+      "part": "A",
+      "perch_scientific_name": "Gallinago megala",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gallinago gallinago",
+      "ja": "タシギ",
+      "part": "A",
+      "perch_scientific_name": "Gallinago gallinago",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Xenus cinereus",
+      "ja": "ソリハシシギ",
+      "part": "A",
+      "perch_scientific_name": "Xenus cinereus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phalaropus tricolor",
+      "ja": "アメリカヒレアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Phalaropus tricolor",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phalaropus lobatus",
+      "ja": "アカエリヒレアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Phalaropus lobatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phalaropus fulicarius",
+      "ja": "ハイイロヒレアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Phalaropus fulicarius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Actitis hypoleucos",
+      "ja": "イソシギ",
+      "part": "A",
+      "perch_scientific_name": "Actitis hypoleucos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Actitis macularius",
+      "ja": "アメリカイソシギ",
+      "part": "A",
+      "perch_scientific_name": "Actitis macularius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa ochropus",
+      "ja": "クサシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa ochropus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa incana",
+      "ja": "メリケンキアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa incana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa brevipes",
+      "ja": "キアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa brevipes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa flavipes",
+      "ja": "コキアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa flavipes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa totanus",
+      "ja": "アカアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa totanus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa stagnatilis",
+      "ja": "コアオアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa stagnatilis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa glareola",
+      "ja": "タカブシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa glareola",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa erythropus",
+      "ja": "ツルシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa erythropus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa nebularia",
+      "ja": "アオアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa nebularia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa guttifer",
+      "ja": "カラフトアオアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa guttifer",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tringa melanoleuca",
+      "ja": "オオキアシシギ",
+      "part": "A",
+      "perch_scientific_name": "Tringa melanoleuca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Glareola maldivarum",
+      "ja": "ツバメチドリ",
+      "part": "A",
+      "perch_scientific_name": "Glareola maldivarum",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anous stolidus",
+      "ja": "クロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Anous stolidus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anous minutus",
+      "ja": "ヒメクロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Anous minutus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anous ceruleus",
+      "ja": "ハイイロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Anous ceruleus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gygis alba",
+      "ja": "シロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Gygis alba",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Rissa tridactyla",
+      "ja": "ミツユビカモメ",
+      "part": "A",
+      "perch_scientific_name": "Rissa tridactyla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Rissa brevirostris",
+      "ja": "アカアシミツユビカモメ",
+      "part": "A",
+      "perch_scientific_name": "Rissa brevirostris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pagophila eburnea",
+      "ja": "ゾウゲカモメ",
+      "part": "A",
+      "perch_scientific_name": "Pagophila eburnea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Xema sabini",
+      "ja": "クビワカモメ",
+      "part": "A",
+      "perch_scientific_name": "Xema sabini",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chroicocephalus genei",
+      "ja": "ハシボソカモメ",
+      "part": "A",
+      "perch_scientific_name": "Chroicocephalus genei",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chroicocephalus philadelphia",
+      "ja": "ボナパルトカモメ",
+      "part": "A",
+      "perch_scientific_name": "Chroicocephalus philadelphia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chroicocephalus brunnicephalus",
+      "ja": "チャガシラカモメ",
+      "part": "A",
+      "perch_scientific_name": "Chroicocephalus brunnicephalus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chroicocephalus ridibundus",
+      "ja": "ユリカモメ",
+      "part": "A",
+      "perch_scientific_name": "Chroicocephalus ridibundus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Saundersilarus saundersi",
+      "ja": "ズグロカモメ",
+      "part": "A",
+      "perch_scientific_name": "Saundersilarus saundersi",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hydrocoloeus minutus",
+      "ja": "ヒメカモメ",
+      "part": "A",
+      "perch_scientific_name": "Hydrocoloeus minutus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Rhodostethia rosea",
+      "ja": "ヒメクビワカモメ",
+      "part": "A",
+      "perch_scientific_name": "Rhodostethia rosea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Leucophaeus atricilla",
+      "ja": "ワライカモメ",
+      "part": "A",
+      "perch_scientific_name": "Leucophaeus atricilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Leucophaeus pipixcan",
+      "ja": "アメリカズグロカモメ",
+      "part": "A",
+      "perch_scientific_name": "Leucophaeus pipixcan",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ichthyaetus relictus",
+      "ja": "ゴビズキンカモメ",
+      "part": "A",
+      "perch_scientific_name": "Ichthyaetus relictus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ichthyaetus ichthyaetus",
+      "ja": "オオズグロカモメ",
+      "part": "A",
+      "perch_scientific_name": "Ichthyaetus ichthyaetus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larus crassirostris",
+      "ja": "ウミネコ",
+      "part": "A",
+      "perch_scientific_name": "Larus crassirostris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larus canus",
+      "ja": "カモメ",
+      "part": "A",
+      "perch_scientific_name": "Larus canus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larus glaucescens",
+      "ja": "ワシカモメ",
+      "part": "A",
+      "perch_scientific_name": "Larus glaucescens",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larus hyperboreus",
+      "ja": "シロカモメ",
+      "part": "A",
+      "perch_scientific_name": "Larus hyperboreus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larus glaucoides",
+      "ja": "アイスランドカモメ",
+      "part": "A",
+      "perch_scientific_name": "Larus glaucoides",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larus vegae",
+      "ja": "セグロカモメ",
+      "part": "A",
+      "perch_scientific_name": "Larus vegae",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larus schistisagus",
+      "ja": "オオセグロカモメ",
+      "part": "A",
+      "perch_scientific_name": "Larus schistisagus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larus fuscus",
+      "ja": "ニシセグロカモメ",
+      "part": "A",
+      "perch_scientific_name": "Larus fuscus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gelochelidon nilotica",
+      "ja": "ハシブトアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Gelochelidon nilotica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hydroprogne caspia",
+      "ja": "オニアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Hydroprogne caspia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Thalasseus bergii",
+      "ja": "オオアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Thalasseus bergii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Thalasseus bengalensis",
+      "ja": "ベンガルアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Thalasseus bengalensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sternula albifrons",
+      "ja": "コアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Sternula albifrons",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sternula antillarum",
+      "ja": "アメリカコアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Sternula antillarum",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Onychoprion aleuticus",
+      "ja": "コシジロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Onychoprion aleuticus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Onychoprion lunatus",
+      "ja": "ナンヨウマミジロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Onychoprion lunatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Onychoprion anaethetus",
+      "ja": "マミジロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Onychoprion anaethetus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Onychoprion fuscatus",
+      "ja": "セグロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Onychoprion fuscatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sterna dougallii",
+      "ja": "ベニアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Sterna dougallii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sterna sumatrana",
+      "ja": "エリグロアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Sterna sumatrana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sterna hirundo",
+      "ja": "アジサシ",
+      "part": "A",
+      "perch_scientific_name": "Sterna hirundo",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sterna paradisaea",
+      "ja": "キョクアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Sterna paradisaea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chlidonias hybrida",
+      "ja": "クロハラアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Chlidonias hybrida",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chlidonias leucopterus",
+      "ja": "ハジロクロハラアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Chlidonias leucopterus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chlidonias niger",
+      "ja": "ハシグロクロハラアジサシ",
+      "part": "A",
+      "perch_scientific_name": "Chlidonias niger",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Stercorarius maccormicki",
+      "ja": "オオトウゾクカモメ",
+      "part": "A",
+      "perch_scientific_name": "Stercorarius maccormicki",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Stercorarius pomarinus",
+      "ja": "トウゾクカモメ",
+      "part": "A",
+      "perch_scientific_name": "Stercorarius pomarinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Stercorarius parasiticus",
+      "ja": "クロトウゾクカモメ",
+      "part": "A",
+      "perch_scientific_name": "Stercorarius parasiticus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Stercorarius longicaudus",
+      "ja": "シロハラトウゾクカモメ",
+      "part": "A",
+      "perch_scientific_name": "Stercorarius longicaudus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Alle alle",
+      "ja": "ヒメウミスズメ",
+      "part": "A",
+      "perch_scientific_name": "Alle alle",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Uria lomvia",
+      "ja": "ハシブトウミガラス",
+      "part": "A",
+      "perch_scientific_name": "Uria lomvia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Uria aalge",
+      "ja": "ウミガラス",
+      "part": "A",
+      "perch_scientific_name": "Uria aalge",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cepphus columba",
+      "ja": "ウミバト",
+      "part": "A",
+      "perch_scientific_name": "Cepphus columba",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Synthliboramphus antiquus",
+      "ja": "ウミスズメ",
+      "part": "A",
+      "perch_scientific_name": "Synthliboramphus antiquus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Synthliboramphus wumizusume",
+      "ja": "カンムリウミスズメ",
+      "part": "A",
+      "perch_scientific_name": "Synthliboramphus wumizusume",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ptychoramphus aleuticus",
+      "ja": "アメリカウミスズメ",
+      "part": "A",
+      "perch_scientific_name": "Ptychoramphus aleuticus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aethia psittacula",
+      "ja": "ウミオウム",
+      "part": "A",
+      "perch_scientific_name": "Aethia psittacula",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aethia pusilla",
+      "ja": "コウミスズメ",
+      "part": "A",
+      "perch_scientific_name": "Aethia pusilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aethia pygmaea",
+      "ja": "シラヒゲウミスズメ",
+      "part": "A",
+      "perch_scientific_name": "Aethia pygmaea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aethia cristatella",
+      "ja": "エトロフウミスズメ",
+      "part": "A",
+      "perch_scientific_name": "Aethia cristatella",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cerorhinca monocerata",
+      "ja": "ウトウ",
+      "part": "A",
+      "perch_scientific_name": "Cerorhinca monocerata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Fratercula corniculata",
+      "ja": "ツノメドリ",
+      "part": "A",
+      "perch_scientific_name": "Fratercula corniculata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phaethon rubricauda",
+      "ja": "アカオネッタイチョウ",
+      "part": "A",
+      "perch_scientific_name": "Phaethon rubricauda",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phaethon lepturus",
+      "ja": "シラオネッタイチョウ",
+      "part": "A",
+      "perch_scientific_name": "Phaethon lepturus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gavia stellata",
+      "ja": "アビ",
+      "part": "A",
+      "perch_scientific_name": "Gavia stellata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gavia arctica",
+      "ja": "オオハム",
+      "part": "A",
+      "perch_scientific_name": "Gavia arctica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gavia pacifica",
+      "ja": "シロエリオオハム",
+      "part": "A",
+      "perch_scientific_name": "Gavia pacifica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gavia immer",
+      "ja": "ハシグロアビ",
+      "part": "A",
+      "perch_scientific_name": "Gavia immer",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gavia adamsii",
+      "ja": "ハシジロアビ",
+      "part": "A",
+      "perch_scientific_name": "Gavia adamsii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Oceanites oceanicus",
+      "ja": "アシナガウミツバメ",
+      "part": "A",
+      "perch_scientific_name": "Oceanites oceanicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phoebastria immutabilis",
+      "ja": "コアホウドリ",
+      "part": "A",
+      "perch_scientific_name": "Phoebastria immutabilis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phoebastria nigripes",
+      "ja": "クロアシアホウドリ",
+      "part": "A",
+      "perch_scientific_name": "Phoebastria nigripes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hydrobates furcatus",
+      "ja": "ハイイロウミツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hydrobates furcatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hydrobates monorhis",
+      "ja": "ヒメクロウミツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hydrobates monorhis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hydrobates leucorhous",
+      "ja": "コシジロウミツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hydrobates leucorhous",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hydrobates castro",
+      "ja": "クロコシジロウミツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hydrobates castro",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hydrobates tristrami",
+      "ja": "オーストンウミツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hydrobates tristrami",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Fulmarus glacialis",
+      "ja": "フルマカモメ",
+      "part": "A",
+      "perch_scientific_name": "Fulmarus glacialis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterodroma solandri",
+      "ja": "ハジロミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Pterodroma solandri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterodroma externa",
+      "ja": "オオシロハラミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Pterodroma externa",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterodroma neglecta",
+      "ja": "カワリシロハラミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Pterodroma neglecta",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterodroma sandwichensis",
+      "ja": "ハワイシロハラミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Pterodroma sandwichensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterodroma inexpectata",
+      "ja": "マダラシロハラミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Pterodroma inexpectata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterodroma cervicalis",
+      "ja": "クビワオオシロハラミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Pterodroma cervicalis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterodroma nigripennis",
+      "ja": "ハグロシロハラミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Pterodroma nigripennis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterodroma hypoleuca",
+      "ja": "シロハラミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Pterodroma hypoleuca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calonectris leucomelas",
+      "ja": "オオミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Calonectris leucomelas",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardenna pacifica",
+      "ja": "オナガミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Ardenna pacifica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardenna bulleri",
+      "ja": "ミナミオナガミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Ardenna bulleri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardenna grisea",
+      "ja": "ハイイロミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Ardenna grisea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardenna tenuirostris",
+      "ja": "ハシボソミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Ardenna tenuirostris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardenna creatopus",
+      "ja": "シロハラアカアシミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Ardenna creatopus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardenna carneipes",
+      "ja": "アカアシミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Ardenna carneipes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Puffinus nativitatis",
+      "ja": "コミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Puffinus nativitatis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Puffinus newelli",
+      "ja": "ハワイセグロミズナギドリ",
+      "part": "A",
+      "perch_scientific_name": "Puffinus newelli",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bulweria bulwerii",
+      "ja": "アナドリ",
+      "part": "A",
+      "perch_scientific_name": "Bulweria bulwerii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ciconia nigra",
+      "ja": "ナベコウ",
+      "part": "A",
+      "perch_scientific_name": "Ciconia nigra",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ciconia boyciana",
+      "ja": "コウノトリ",
+      "part": "A",
+      "perch_scientific_name": "Ciconia boyciana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Fregata minor",
+      "ja": "オオグンカンドリ",
+      "part": "A",
+      "perch_scientific_name": "Fregata minor",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sula dactylatra",
+      "ja": "アオツラカツオドリ",
+      "part": "A",
+      "perch_scientific_name": "Sula dactylatra",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sula sula",
+      "ja": "アカアシカツオドリ",
+      "part": "A",
+      "perch_scientific_name": "Sula sula",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sula leucogaster",
+      "ja": "カツオドリ",
+      "part": "A",
+      "perch_scientific_name": "Sula leucogaster",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Urile urile",
+      "ja": "チシマウガラス",
+      "part": "A",
+      "perch_scientific_name": "Urile urile",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Urile pelagicus",
+      "ja": "ヒメウ",
+      "part": "A",
+      "perch_scientific_name": "Urile pelagicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phalacrocorax carbo",
+      "ja": "カワウ",
+      "part": "A",
+      "perch_scientific_name": "Phalacrocorax carbo",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Threskiornis melanocephalus",
+      "ja": "クロトキ",
+      "part": "A",
+      "perch_scientific_name": "Threskiornis melanocephalus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Nipponia nippon",
+      "ja": "トキ",
+      "part": "A",
+      "perch_scientific_name": "Nipponia nippon",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Plegadis falcinellus",
+      "ja": "ブロンズトキ",
+      "part": "A",
+      "perch_scientific_name": "Plegadis falcinellus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Platalea leucorodia",
+      "ja": "ヘラサギ",
+      "part": "A",
+      "perch_scientific_name": "Platalea leucorodia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Platalea minor",
+      "ja": "クロツラヘラサギ",
+      "part": "A",
+      "perch_scientific_name": "Platalea minor",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Botaurus stellaris",
+      "ja": "サンカノゴイ",
+      "part": "A",
+      "perch_scientific_name": "Botaurus stellaris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ixobrychus sinensis",
+      "ja": "ヨシゴイ",
+      "part": "A",
+      "perch_scientific_name": "Botaurus sinensis",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Ixobrychus eurhythmus",
+      "ja": "オオヨシゴイ",
+      "part": "A",
+      "perch_scientific_name": "Botaurus eurhythmus",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Ixobrychus cinnamomeus",
+      "ja": "リュウキュウヨシゴイ",
+      "part": "A",
+      "perch_scientific_name": "Botaurus cinnamomeus",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Ixobrychus flavicollis",
+      "ja": "タカサゴクロサギ",
+      "part": "A",
+      "perch_scientific_name": "Botaurus flavicollis",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Gorsachius goisagi",
+      "ja": "ミゾゴイ",
+      "part": "A",
+      "perch_scientific_name": "Gorsachius goisagi",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Gorsachius melanolophus",
+      "ja": "ズグロミゾゴイ",
+      "part": "A",
+      "perch_scientific_name": "Gorsachius melanolophus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Nycticorax nycticorax",
+      "ja": "ゴイサギ",
+      "part": "A",
+      "perch_scientific_name": "Nycticorax nycticorax",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Nycticorax caledonicus",
+      "ja": "ハシブトゴイ",
+      "part": "A",
+      "perch_scientific_name": "Nycticorax caledonicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Butorides striata",
+      "ja": "ササゴイ",
+      "part": "A",
+      "perch_scientific_name": "Butorides striata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardeola bacchus",
+      "ja": "アカガシラサギ",
+      "part": "A",
+      "perch_scientific_name": "Ardeola bacchus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bubulcus ibis",
+      "ja": "アマサギ",
+      "part": "A",
+      "perch_scientific_name": "Ardea ibis",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Ardea cinerea",
+      "ja": "アオサギ",
+      "part": "A",
+      "perch_scientific_name": "Ardea cinerea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardea purpurea",
+      "ja": "ムラサキサギ",
+      "part": "A",
+      "perch_scientific_name": "Ardea purpurea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardea alba",
+      "ja": "ダイサギ",
+      "part": "A",
+      "perch_scientific_name": "Ardea alba",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ardea intermedia",
+      "ja": "チュウサギ",
+      "part": "A",
+      "perch_scientific_name": "Ardea intermedia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Egretta garzetta",
+      "ja": "コサギ",
+      "part": "A",
+      "perch_scientific_name": "Egretta garzetta",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Egretta sacra",
+      "ja": "クロサギ",
+      "part": "A",
+      "perch_scientific_name": "Egretta sacra",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pelecanus onocrotalus",
+      "ja": "モモイロペリカン",
+      "part": "A",
+      "perch_scientific_name": "Pelecanus onocrotalus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pelecanus philippensis",
+      "ja": "ホシバシペリカン",
+      "part": "A",
+      "perch_scientific_name": "Pelecanus philippensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pelecanus crispus",
+      "ja": "ハイイロペリカン",
+      "part": "A",
+      "perch_scientific_name": "Pelecanus crispus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pandion haliaetus",
+      "ja": "ミサゴ",
+      "part": "A",
+      "perch_scientific_name": "Pandion haliaetus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pernis ptilorhynchus",
+      "ja": "ハチクマ",
+      "part": "A",
+      "perch_scientific_name": "Pernis ptilorhynchus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aegypius monachus",
+      "ja": "クロハゲワシ",
+      "part": "A",
+      "perch_scientific_name": "Aegypius monachus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Spilornis cheela",
+      "ja": "カンムリワシ",
+      "part": "A",
+      "perch_scientific_name": "Spilornis cheela",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Nisaetus nipalensis",
+      "ja": "クマタカ",
+      "part": "A",
+      "perch_scientific_name": "Nisaetus nipalensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Clanga clanga",
+      "ja": "カラフトワシ",
+      "part": "A",
+      "perch_scientific_name": "Clanga clanga",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aquila heliaca",
+      "ja": "カタシロワシ",
+      "part": "A",
+      "perch_scientific_name": "Aquila heliaca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aquila chrysaetos",
+      "ja": "イヌワシ",
+      "part": "A",
+      "perch_scientific_name": "Aquila chrysaetos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Accipiter soloensis",
+      "ja": "アカハラダカ",
+      "part": "A",
+      "perch_scientific_name": "Tachyspiza soloensis",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Accipiter gularis",
+      "ja": "ツミ",
+      "part": "A",
+      "perch_scientific_name": "Tachyspiza gularis",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Accipiter nisus",
+      "ja": "ハイタカ",
+      "part": "A",
+      "perch_scientific_name": "Accipiter nisus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Accipiter gentilis",
+      "ja": "オオタカ",
+      "part": "A",
+      "perch_scientific_name": "Astur gentilis",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Circus spilonotus",
+      "ja": "チュウヒ",
+      "part": "A",
+      "perch_scientific_name": "Circus spilonotus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Circus cyaneus",
+      "ja": "ハイイロチュウヒ",
+      "part": "A",
+      "perch_scientific_name": "Circus cyaneus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Circus hudsonius",
+      "ja": "アメリカハイイロチュウヒ",
+      "part": "A",
+      "perch_scientific_name": "Circus hudsonius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Circus melanoleucos",
+      "ja": "マダラチュウヒ",
+      "part": "A",
+      "perch_scientific_name": "Circus melanoleucos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Milvus migrans",
+      "ja": "トビ",
+      "part": "A",
+      "perch_scientific_name": "Milvus migrans",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Haliaeetus pelagicus",
+      "ja": "オオワシ",
+      "part": "A",
+      "perch_scientific_name": "Haliaeetus pelagicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Haliaeetus albicilla",
+      "ja": "オジロワシ",
+      "part": "A",
+      "perch_scientific_name": "Haliaeetus albicilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Haliaeetus leucocephalus",
+      "ja": "ハクトウワシ",
+      "part": "A",
+      "perch_scientific_name": "Haliaeetus leucocephalus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Butastur indicus",
+      "ja": "サシバ",
+      "part": "A",
+      "perch_scientific_name": "Butastur indicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Buteo lagopus",
+      "ja": "ケアシノスリ",
+      "part": "A",
+      "perch_scientific_name": "Buteo lagopus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Buteo hemilasius",
+      "ja": "オオノスリ",
+      "part": "A",
+      "perch_scientific_name": "Buteo hemilasius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Buteo japonicus",
+      "ja": "ノスリ",
+      "part": "A",
+      "perch_scientific_name": "Buteo japonicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ninox japonica",
+      "ja": "アオバズク",
+      "part": "A",
+      "perch_scientific_name": "Ninox japonica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aegolius funereus",
+      "ja": "キンメフクロウ",
+      "part": "A",
+      "perch_scientific_name": "Aegolius funereus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Otus sunia",
+      "ja": "コノハズク",
+      "part": "A",
+      "perch_scientific_name": "Otus sunia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Otus elegans",
+      "ja": "リュウキュウコノハズク",
+      "part": "A",
+      "perch_scientific_name": "Otus elegans",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Otus semitorques",
+      "ja": "オオコノハズク",
+      "part": "A",
+      "perch_scientific_name": "Otus semitorques",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Asio otus",
+      "ja": "トラフズク",
+      "part": "A",
+      "perch_scientific_name": "Asio otus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Asio flammeus",
+      "ja": "コミミズク",
+      "part": "A",
+      "perch_scientific_name": "Asio flammeus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bubo scandiacus",
+      "ja": "シロフクロウ",
+      "part": "A",
+      "perch_scientific_name": "Bubo scandiacus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bubo bubo",
+      "ja": "ワシミミズク",
+      "part": "A",
+      "perch_scientific_name": "Bubo bubo",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ketupa blakistoni",
+      "ja": "シマフクロウ",
+      "part": "A",
+      "perch_scientific_name": "Ketupa blakistoni",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Strix uralensis",
+      "ja": "フクロウ",
+      "part": "A",
+      "perch_scientific_name": "Strix uralensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Upupa epops",
+      "ja": "ヤツガシラ",
+      "part": "A",
+      "perch_scientific_name": "Upupa epops",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Eurystomus orientalis",
+      "ja": "ブッポウソウ",
+      "part": "A",
+      "perch_scientific_name": "Eurystomus orientalis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Halcyon coromanda",
+      "ja": "アカショウビン",
+      "part": "A",
+      "perch_scientific_name": "Halcyon coromanda",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Halcyon pileata",
+      "ja": "ヤマショウビン",
+      "part": "A",
+      "perch_scientific_name": "Halcyon pileata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Todiramphus chloris",
+      "ja": "ナンヨウショウビン",
+      "part": "A",
+      "perch_scientific_name": "Todiramphus chloris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Alcedo atthis",
+      "ja": "カワセミ",
+      "part": "A",
+      "perch_scientific_name": "Alcedo atthis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ceyx erithaca",
+      "ja": "ミツユビカワセミ",
+      "part": "A",
+      "perch_scientific_name": "Ceyx erithaca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Megaceryle lugubris",
+      "ja": "ヤマセミ",
+      "part": "A",
+      "perch_scientific_name": "Megaceryle lugubris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Merops philippinus",
+      "ja": "ルリオハチクイ",
+      "part": "A",
+      "perch_scientific_name": "Merops philippinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Merops ornatus",
+      "ja": "ハチクイ",
+      "part": "A",
+      "perch_scientific_name": "Merops ornatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Jynx torquilla",
+      "ja": "アリスイ",
+      "part": "A",
+      "perch_scientific_name": "Jynx torquilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Yungipicus kizuki",
+      "ja": "コゲラ",
+      "part": "A",
+      "perch_scientific_name": "Yungipicus kizuki",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Picoides tridactylus",
+      "ja": "ミユビゲラ",
+      "part": "A",
+      "perch_scientific_name": "Picoides tridactylus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dryobates minor",
+      "ja": "コアカゲラ",
+      "part": "A",
+      "perch_scientific_name": "Dryobates minor",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dendrocopos hyperythrus",
+      "ja": "チャバラアカゲラ",
+      "part": "A",
+      "perch_scientific_name": "Dendrocopos hyperythrus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dendrocopos major",
+      "ja": "アカゲラ",
+      "part": "A",
+      "perch_scientific_name": "Dendrocopos major",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dendrocopos noguchii",
+      "ja": "ノグチゲラ",
+      "part": "A",
+      "perch_scientific_name": "Dendrocopos noguchii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dendrocopos leucotos",
+      "ja": "オオアカゲラ",
+      "part": "A",
+      "perch_scientific_name": "Dendrocopos leucotos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dryocopus javensis",
+      "ja": "キタタキ",
+      "part": "A",
+      "perch_scientific_name": "Dryocopus javensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dryocopus martius",
+      "ja": "クマゲラ",
+      "part": "A",
+      "perch_scientific_name": "Dryocopus martius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Picus awokera",
+      "ja": "アオゲラ",
+      "part": "A",
+      "perch_scientific_name": "Picus awokera",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Picus canus",
+      "ja": "ヤマゲラ",
+      "part": "A",
+      "perch_scientific_name": "Picus canus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Falco naumanni",
+      "ja": "ヒメチョウゲンボウ",
+      "part": "A",
+      "perch_scientific_name": "Falco naumanni",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Falco tinnunculus",
+      "ja": "チョウゲンボウ",
+      "part": "A",
+      "perch_scientific_name": "Falco tinnunculus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Falco amurensis",
+      "ja": "アカアシチョウゲンボウ",
+      "part": "A",
+      "perch_scientific_name": "Falco amurensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Falco columbarius",
+      "ja": "コチョウゲンボウ",
+      "part": "A",
+      "perch_scientific_name": "Falco columbarius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Falco subbuteo",
+      "ja": "チゴハヤブサ",
+      "part": "A",
+      "perch_scientific_name": "Falco subbuteo",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Falco rusticolus",
+      "ja": "シロハヤブサ",
+      "part": "A",
+      "perch_scientific_name": "Falco rusticolus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Falco peregrinus",
+      "ja": "ハヤブサ",
+      "part": "A",
+      "perch_scientific_name": "Falco peregrinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pitta sordida",
+      "ja": "ズグロヤイロチョウ",
+      "part": "A",
+      "perch_scientific_name": "Pitta sordida",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pitta nympha",
+      "ja": "ヤイロチョウ",
+      "part": "A",
+      "perch_scientific_name": "Pitta nympha",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Artamus leucorynchus",
+      "ja": "モリツバメ",
+      "part": "A",
+      "perch_scientific_name": "Artamus leucorynchus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pericrocotus divaricatus",
+      "ja": "サンショウクイ",
+      "part": "A",
+      "perch_scientific_name": "Pericrocotus divaricatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pericrocotus tegimae",
+      "ja": "リュウキュウサンショウクイ",
+      "part": "A",
+      "perch_scientific_name": "Pericrocotus tegimae",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lalage melaschistos",
+      "ja": "アサクラサンショウクイ",
+      "part": "A",
+      "perch_scientific_name": "Lalage melaschistos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Oriolus chinensis",
+      "ja": "コウライウグイス",
+      "part": "A",
+      "perch_scientific_name": "Oriolus chinensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dicrurus hottentottus",
+      "ja": "カンムリオウチュウ",
+      "part": "A",
+      "perch_scientific_name": "Dicrurus hottentottus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dicrurus leucophaeus",
+      "ja": "ハイイロオウチュウ",
+      "part": "A",
+      "perch_scientific_name": "Dicrurus leucophaeus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dicrurus macrocercus",
+      "ja": "オウチュウ",
+      "part": "A",
+      "perch_scientific_name": "Dicrurus macrocercus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hypothymis azurea",
+      "ja": "クロエリヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Hypothymis azurea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Terpsiphone atrocaudata",
+      "ja": "サンコウチョウ",
+      "part": "A",
+      "perch_scientific_name": "Terpsiphone atrocaudata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lanius sphenocercus",
+      "ja": "オオカラモズ",
+      "part": "A",
+      "perch_scientific_name": "Lanius sphenocercus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lanius borealis",
+      "ja": "オオモズ",
+      "part": "A",
+      "perch_scientific_name": "Lanius borealis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lanius tigrinus",
+      "ja": "チゴモズ",
+      "part": "A",
+      "perch_scientific_name": "Lanius tigrinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lanius collurio",
+      "ja": "セアカモズ",
+      "part": "A",
+      "perch_scientific_name": "Lanius collurio",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lanius cristatus",
+      "ja": "アカモズ",
+      "part": "A",
+      "perch_scientific_name": "Lanius cristatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lanius bucephalus",
+      "ja": "モズ",
+      "part": "A",
+      "perch_scientific_name": "Lanius bucephalus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lanius schach",
+      "ja": "タカサゴモズ",
+      "part": "A",
+      "perch_scientific_name": "Lanius schach",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Garrulus glandarius",
+      "ja": "カケス",
+      "part": "A",
+      "perch_scientific_name": "Garrulus glandarius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Garrulus lidthi",
+      "ja": "ルリカケス",
+      "part": "A",
+      "perch_scientific_name": "Garrulus lidthi",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cyanopica cyanus",
+      "ja": "オナガ",
+      "part": "A",
+      "perch_scientific_name": "Cyanopica cyanus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pica serica",
+      "ja": "カササギ",
+      "part": "A",
+      "perch_scientific_name": "Pica serica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Nucifraga caryocatactes",
+      "ja": "ホシガラス",
+      "part": "A",
+      "perch_scientific_name": "Nucifraga caryocatactes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Corvus monedula",
+      "ja": "ニシコクマルガラス",
+      "part": "A",
+      "perch_scientific_name": "Coloeus monedula",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Corvus dauuricus",
+      "ja": "コクマルガラス",
+      "part": "A",
+      "perch_scientific_name": "Coloeus dauuricus",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Corvus frugilegus",
+      "ja": "ミヤマガラス",
+      "part": "A",
+      "perch_scientific_name": "Corvus frugilegus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Corvus corone",
+      "ja": "ハシボソガラス",
+      "part": "A",
+      "perch_scientific_name": "Corvus corone",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Corvus macrorhynchos",
+      "ja": "ハシブトガラス",
+      "part": "A",
+      "perch_scientific_name": "Corvus macrorhynchos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Corvus corax",
+      "ja": "ワタリガラス",
+      "part": "A",
+      "perch_scientific_name": "Corvus corax",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bombycilla garrulus",
+      "ja": "キレンジャク",
+      "part": "A",
+      "perch_scientific_name": "Bombycilla garrulus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bombycilla japonica",
+      "ja": "ヒレンジャク",
+      "part": "A",
+      "perch_scientific_name": "Bombycilla japonica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Periparus ater",
+      "ja": "ヒガラ",
+      "part": "A",
+      "perch_scientific_name": "Periparus ater",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pardaliparus venustulus",
+      "ja": "キバラガラ",
+      "part": "A",
+      "perch_scientific_name": "Periparus venustulus",
+      "method": "manual"
+    },
+    {
+      "scientific_name": "Sittiparus varius",
+      "ja": "ヤマガラ",
+      "part": "A",
+      "perch_scientific_name": "Sittiparus varius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sittiparus olivaceus",
+      "ja": "オリイヤマガラ",
+      "part": "A",
+      "perch_scientific_name": "Sittiparus olivaceus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Poecile palustris",
+      "ja": "ハシブトガラ",
+      "part": "A",
+      "perch_scientific_name": "Poecile palustris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Poecile montanus",
+      "ja": "コガラ",
+      "part": "A",
+      "perch_scientific_name": "Poecile montanus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cyanistes cyanus",
+      "ja": "ルリガラ",
+      "part": "A",
+      "perch_scientific_name": "Cyanistes cyanus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Parus cinereus",
+      "ja": "シジュウカラ",
+      "part": "A",
+      "perch_scientific_name": "Parus cinereus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Remiz consobrinus",
+      "ja": "ツリスガラ",
+      "part": "A",
+      "perch_scientific_name": "Remiz consobrinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Panurus biarmicus",
+      "ja": "ヒゲガラ",
+      "part": "A",
+      "perch_scientific_name": "Panurus biarmicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Alauda arvensis",
+      "ja": "ヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Alauda arvensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Eremophila alpestris",
+      "ja": "ハマヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Eremophila alpestris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calandrella brachydactyla",
+      "ja": "ヒメコウテンシ",
+      "part": "A",
+      "perch_scientific_name": "Calandrella brachydactyla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Melanocorypha bimaculata",
+      "ja": "クビワコウテンシ",
+      "part": "A",
+      "perch_scientific_name": "Melanocorypha bimaculata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Melanocorypha mongolica",
+      "ja": "コウテンシ",
+      "part": "A",
+      "perch_scientific_name": "Melanocorypha mongolica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Alaudala cheleensis",
+      "ja": "コヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Alaudala cheleensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hypsipetes amaurotis",
+      "ja": "ヒヨドリ",
+      "part": "A",
+      "perch_scientific_name": "Hypsipetes amaurotis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pycnonotus sinensis",
+      "ja": "シロガシラ",
+      "part": "A",
+      "perch_scientific_name": "Pycnonotus sinensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Riparia riparia",
+      "ja": "ショウドウツバメ",
+      "part": "A",
+      "perch_scientific_name": "Riparia riparia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Riparia paludicola",
+      "ja": "タイワンショウドウツバメ",
+      "part": "A",
+      "perch_scientific_name": "Riparia paludicola",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hirundo tahitica",
+      "ja": "リュウキュウツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hirundo tahitica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Hirundo rustica",
+      "ja": "ツバメ",
+      "part": "A",
+      "perch_scientific_name": "Hirundo rustica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Delichon dasypus",
+      "ja": "イワツバメ",
+      "part": "A",
+      "perch_scientific_name": "Delichon dasypus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cecropis daurica",
+      "ja": "コシアカツバメ",
+      "part": "A",
+      "perch_scientific_name": "Cecropis daurica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Horornis diphone",
+      "ja": "ウグイス",
+      "part": "A",
+      "perch_scientific_name": "Horornis diphone",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Horornis canturians",
+      "ja": "チョウセンウグイス",
+      "part": "A",
+      "perch_scientific_name": "Horornis canturians",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Urosphena squameiceps",
+      "ja": "ヤブサメ",
+      "part": "A",
+      "perch_scientific_name": "Urosphena squameiceps",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Aegithalos caudatus",
+      "ja": "エナガ",
+      "part": "A",
+      "perch_scientific_name": "Aegithalos caudatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus sibilatrix",
+      "ja": "モリムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus sibilatrix",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus inornatus",
+      "ja": "キマユムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus inornatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus yunnanensis",
+      "ja": "シセンムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus yunnanensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus proregulus",
+      "ja": "カラフトムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus proregulus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus schwarzi",
+      "ja": "カラフトムジセッカ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus schwarzi",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus fuscatus",
+      "ja": "ムジセッカ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus fuscatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus trochilus",
+      "ja": "キタヤナギムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus trochilus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus collybita",
+      "ja": "チフチャフ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus collybita",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus coronatus",
+      "ja": "センダイムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus coronatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus ijimae",
+      "ja": "イイジマムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus ijimae",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus plumbeitarsus",
+      "ja": "ヤナギムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus plumbeitarsus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus borealoides",
+      "ja": "エゾムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus borealoides",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus tenellipes",
+      "ja": "アムールムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus tenellipes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus xanthodryas",
+      "ja": "メボソムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus xanthodryas",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus examinandus",
+      "ja": "オオムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus examinandus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phylloscopus borealis",
+      "ja": "コムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Phylloscopus borealis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acrocephalus orientalis",
+      "ja": "オオヨシキリ",
+      "part": "A",
+      "perch_scientific_name": "Acrocephalus orientalis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acrocephalus bistrigiceps",
+      "ja": "コヨシキリ",
+      "part": "A",
+      "perch_scientific_name": "Acrocephalus bistrigiceps",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acrocephalus schoenobaenus",
+      "ja": "スゲヨシキリ",
+      "part": "A",
+      "perch_scientific_name": "Acrocephalus schoenobaenus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acrocephalus tangorum",
+      "ja": "マンシュウイナダヨシキリ",
+      "part": "A",
+      "perch_scientific_name": "Acrocephalus tangorum",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acrocephalus dumetorum",
+      "ja": "ヤブヨシキリ",
+      "part": "A",
+      "perch_scientific_name": "Acrocephalus dumetorum",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Arundinax aedon",
+      "ja": "ハシブトオオヨシキリ",
+      "part": "A",
+      "perch_scientific_name": "Arundinax aedon",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Iduna caligata",
+      "ja": "ヒメウタイムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Iduna caligata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Locustella amnicola",
+      "ja": "エゾセンニュウ",
+      "part": "A",
+      "perch_scientific_name": "Helopsaltes amnicola",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Locustella pryeri",
+      "ja": "オオセッカ",
+      "part": "A",
+      "perch_scientific_name": "Helopsaltes pryeri",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Locustella certhiola",
+      "ja": "シベリアセンニュウ",
+      "part": "A",
+      "perch_scientific_name": "Helopsaltes certhiola",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Locustella ochotensis",
+      "ja": "シマセンニュウ",
+      "part": "A",
+      "perch_scientific_name": "Helopsaltes ochotensis",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Locustella pleskei",
+      "ja": "ウチヤマセンニュウ",
+      "part": "A",
+      "perch_scientific_name": "Helopsaltes pleskei",
+      "method": "wikidata"
+    },
+    {
+      "scientific_name": "Locustella lanceolata",
+      "ja": "マキノセンニュウ",
+      "part": "A",
+      "perch_scientific_name": "Locustella lanceolata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cisticola juncidis",
+      "ja": "セッカ",
+      "part": "A",
+      "perch_scientific_name": "Cisticola juncidis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Curruca curruca",
+      "ja": "コノドジロムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Curruca curruca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Apalopteron familiare",
+      "ja": "メグロ",
+      "part": "A",
+      "perch_scientific_name": "Apalopteron familiare",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zosterops erythropleurus",
+      "ja": "チョウセンメジロ",
+      "part": "A",
+      "perch_scientific_name": "Zosterops erythropleurus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zosterops japonicus",
+      "ja": "メジロ",
+      "part": "A",
+      "perch_scientific_name": "Zosterops japonicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Regulus regulus",
+      "ja": "キクイタダキ",
+      "part": "A",
+      "perch_scientific_name": "Regulus regulus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Troglodytes troglodytes",
+      "ja": "ミソサザイ",
+      "part": "A",
+      "perch_scientific_name": "Troglodytes troglodytes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sitta europaea",
+      "ja": "ゴジュウカラ",
+      "part": "A",
+      "perch_scientific_name": "Sitta europaea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Certhia familiaris",
+      "ja": "キバシリ",
+      "part": "A",
+      "perch_scientific_name": "Certhia familiaris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Spodiopsar sericeus",
+      "ja": "ギンムクドリ",
+      "part": "A",
+      "perch_scientific_name": "Spodiopsar sericeus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Spodiopsar cineraceus",
+      "ja": "ムクドリ",
+      "part": "A",
+      "perch_scientific_name": "Spodiopsar cineraceus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Agropsar sturninus",
+      "ja": "シベリアムクドリ",
+      "part": "A",
+      "perch_scientific_name": "Agropsar sturninus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Agropsar philippensis",
+      "ja": "コムクドリ",
+      "part": "A",
+      "perch_scientific_name": "Agropsar philippensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sturnia sinensis",
+      "ja": "カラムクドリ",
+      "part": "A",
+      "perch_scientific_name": "Sturnia sinensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pastor roseus",
+      "ja": "バライロムクドリ",
+      "part": "A",
+      "perch_scientific_name": "Pastor roseus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Sturnus vulgaris",
+      "ja": "ホシムクドリ",
+      "part": "A",
+      "perch_scientific_name": "Sturnus vulgaris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Catharus minimus",
+      "ja": "ハイイロチャツグミ",
+      "part": "A",
+      "perch_scientific_name": "Catharus minimus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zoothera aurea",
+      "ja": "トラツグミ",
+      "part": "A",
+      "perch_scientific_name": "Zoothera aurea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zoothera dauma",
+      "ja": "ミナミトラツグミ",
+      "part": "A",
+      "perch_scientific_name": "Zoothera dauma",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Geokichla sibirica",
+      "ja": "マミジロ",
+      "part": "A",
+      "perch_scientific_name": "Geokichla sibirica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Geokichla citrina",
+      "ja": "オレンジジツグミ",
+      "part": "A",
+      "perch_scientific_name": "Geokichla citrina",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus philomelos",
+      "ja": "ウタツグミ",
+      "part": "A",
+      "perch_scientific_name": "Turdus philomelos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus viscivorus",
+      "ja": "ヤドリギツグミ",
+      "part": "A",
+      "perch_scientific_name": "Turdus viscivorus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus mandarinus",
+      "ja": "クロウタドリ",
+      "part": "A",
+      "perch_scientific_name": "Turdus mandarinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus iliacus",
+      "ja": "ワキアカツグミ",
+      "part": "A",
+      "perch_scientific_name": "Turdus iliacus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus cardis",
+      "ja": "クロツグミ",
+      "part": "A",
+      "perch_scientific_name": "Turdus cardis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus hortulorum",
+      "ja": "カラアカハラ",
+      "part": "A",
+      "perch_scientific_name": "Turdus hortulorum",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus obscurus",
+      "ja": "マミチャジナイ",
+      "part": "A",
+      "perch_scientific_name": "Turdus obscurus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus pallidus",
+      "ja": "シロハラ",
+      "part": "A",
+      "perch_scientific_name": "Turdus pallidus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus chrysolaus",
+      "ja": "アカハラ",
+      "part": "A",
+      "perch_scientific_name": "Turdus chrysolaus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus celaenops",
+      "ja": "アカコッコ",
+      "part": "A",
+      "perch_scientific_name": "Turdus celaenops",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus pilaris",
+      "ja": "ノハラツグミ",
+      "part": "A",
+      "perch_scientific_name": "Turdus pilaris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus atrogularis",
+      "ja": "ノドグロツグミ",
+      "part": "A",
+      "perch_scientific_name": "Turdus atrogularis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus eunomus",
+      "ja": "ツグミ",
+      "part": "A",
+      "perch_scientific_name": "Turdus eunomus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Turdus naumanni",
+      "ja": "ハチジョウツグミ",
+      "part": "A",
+      "perch_scientific_name": "Turdus naumanni",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Muscicapa griseisticta",
+      "ja": "エゾビタキ",
+      "part": "A",
+      "perch_scientific_name": "Muscicapa griseisticta",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Muscicapa sibirica",
+      "ja": "サメビタキ",
+      "part": "A",
+      "perch_scientific_name": "Muscicapa sibirica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Muscicapa ferruginea",
+      "ja": "ミヤマヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Muscicapa ferruginea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Muscicapa muttui",
+      "ja": "チャムネサメビタキ",
+      "part": "A",
+      "perch_scientific_name": "Muscicapa muttui",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Muscicapa dauurica",
+      "ja": "コサメビタキ",
+      "part": "A",
+      "perch_scientific_name": "Muscicapa dauurica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Muscicapa striata",
+      "ja": "ムナフヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Muscicapa striata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cyanoptila cyanomelana",
+      "ja": "オオルリ",
+      "part": "A",
+      "perch_scientific_name": "Cyanoptila cyanomelana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Eumyias thalassinus",
+      "ja": "ロクショウヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Eumyias thalassinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Erithacus rubecula",
+      "ja": "ヨーロッパコマドリ",
+      "part": "A",
+      "perch_scientific_name": "Erithacus rubecula",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Luscinia svecica",
+      "ja": "オガワコマドリ",
+      "part": "A",
+      "perch_scientific_name": "Luscinia svecica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calliope calliope",
+      "ja": "ノゴマ",
+      "part": "A",
+      "perch_scientific_name": "Calliope calliope",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larvivora cyane",
+      "ja": "コルリ",
+      "part": "A",
+      "perch_scientific_name": "Larvivora cyane",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larvivora akahige",
+      "ja": "コマドリ",
+      "part": "A",
+      "perch_scientific_name": "Larvivora akahige",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larvivora komadori",
+      "ja": "アカヒゲ",
+      "part": "A",
+      "perch_scientific_name": "Larvivora komadori",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larvivora namiyei",
+      "ja": "ホントウアカヒゲ",
+      "part": "A",
+      "perch_scientific_name": "Larvivora namiyei",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Larvivora sibilans",
+      "ja": "シマゴマ",
+      "part": "A",
+      "perch_scientific_name": "Larvivora sibilans",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ficedula zanthopygia",
+      "ja": "マミジロキビタキ",
+      "part": "A",
+      "perch_scientific_name": "Ficedula zanthopygia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ficedula narcissina",
+      "ja": "キビタキ",
+      "part": "A",
+      "perch_scientific_name": "Ficedula narcissina",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ficedula owstoni",
+      "ja": "リュウキュウキビタキ",
+      "part": "A",
+      "perch_scientific_name": "Ficedula owstoni",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ficedula mugimaki",
+      "ja": "ムギマキ",
+      "part": "A",
+      "perch_scientific_name": "Ficedula mugimaki",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ficedula parva",
+      "ja": "ニシオジロビタキ",
+      "part": "A",
+      "perch_scientific_name": "Ficedula parva",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ficedula albicilla",
+      "ja": "オジロビタキ",
+      "part": "A",
+      "perch_scientific_name": "Ficedula albicilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ficedula hypoleuca",
+      "ja": "マダラヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Ficedula hypoleuca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Tarsiger cyanurus",
+      "ja": "ルリビタキ",
+      "part": "A",
+      "perch_scientific_name": "Tarsiger cyanurus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phoenicurus erythronotus",
+      "ja": "セアカジョウビタキ",
+      "part": "A",
+      "perch_scientific_name": "Phoenicurus erythronotus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phoenicurus fuliginosus",
+      "ja": "カワビタキ",
+      "part": "A",
+      "perch_scientific_name": "Phoenicurus fuliginosus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phoenicurus ochruros",
+      "ja": "クロジョウビタキ",
+      "part": "A",
+      "perch_scientific_name": "Phoenicurus ochruros",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phoenicurus phoenicurus",
+      "ja": "シロビタイジョウビタキ",
+      "part": "A",
+      "perch_scientific_name": "Phoenicurus phoenicurus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phoenicurus auroreus",
+      "ja": "ジョウビタキ",
+      "part": "A",
+      "perch_scientific_name": "Phoenicurus auroreus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Monticola gularis",
+      "ja": "ヒメイソヒヨ",
+      "part": "A",
+      "perch_scientific_name": "Monticola gularis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Monticola saxatilis",
+      "ja": "コシジロイソヒヨドリ",
+      "part": "A",
+      "perch_scientific_name": "Monticola saxatilis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Monticola solitarius",
+      "ja": "イソヒヨドリ",
+      "part": "A",
+      "perch_scientific_name": "Monticola solitarius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Saxicola ferreus",
+      "ja": "ヤマザキヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Saxicola ferreus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Saxicola rubetra",
+      "ja": "マミジロノビタキ",
+      "part": "A",
+      "perch_scientific_name": "Saxicola rubetra",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Saxicola caprata",
+      "ja": "クロノビタキ",
+      "part": "A",
+      "perch_scientific_name": "Saxicola caprata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Saxicola stejnegeri",
+      "ja": "ノビタキ",
+      "part": "A",
+      "perch_scientific_name": "Saxicola stejnegeri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Oenanthe oenanthe",
+      "ja": "ハシグロヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Oenanthe oenanthe",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Oenanthe isabellina",
+      "ja": "イナバヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Oenanthe isabellina",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Oenanthe deserti",
+      "ja": "サバクヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Oenanthe deserti",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Oenanthe pleschanka",
+      "ja": "セグロサバクヒタキ",
+      "part": "A",
+      "perch_scientific_name": "Oenanthe pleschanka",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cinclus pallasii",
+      "ja": "カワガラス",
+      "part": "A",
+      "perch_scientific_name": "Cinclus pallasii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Passer cinnamomeus",
+      "ja": "ニュウナイスズメ",
+      "part": "A",
+      "perch_scientific_name": "Passer cinnamomeus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Passer montanus",
+      "ja": "スズメ",
+      "part": "A",
+      "perch_scientific_name": "Passer montanus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Passer domesticus",
+      "ja": "イエスズメ",
+      "part": "A",
+      "perch_scientific_name": "Passer domesticus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Prunella collaris",
+      "ja": "イワヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Prunella collaris",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Prunella montanella",
+      "ja": "ヤマヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Prunella montanella",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Prunella rubida",
+      "ja": "カヤクグリ",
+      "part": "A",
+      "perch_scientific_name": "Prunella rubida",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Dendronanthus indicus",
+      "ja": "イワミセキレイ",
+      "part": "A",
+      "perch_scientific_name": "Dendronanthus indicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Motacilla flava",
+      "ja": "ニシツメナガセキレイ",
+      "part": "A",
+      "perch_scientific_name": "Motacilla flava",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Motacilla tschutschensis",
+      "ja": "ツメナガセキレイ",
+      "part": "A",
+      "perch_scientific_name": "Motacilla tschutschensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Motacilla citreola",
+      "ja": "キガシラセキレイ",
+      "part": "A",
+      "perch_scientific_name": "Motacilla citreola",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Motacilla cinerea",
+      "ja": "キセキレイ",
+      "part": "A",
+      "perch_scientific_name": "Motacilla cinerea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Motacilla alba",
+      "ja": "ハクセキレイ",
+      "part": "A",
+      "perch_scientific_name": "Motacilla alba",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Motacilla grandis",
+      "ja": "セグロセキレイ",
+      "part": "A",
+      "perch_scientific_name": "Motacilla grandis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus richardi",
+      "ja": "マミジロタヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Anthus richardi",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus godlewskii",
+      "ja": "コマミジロタヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Anthus godlewskii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus pratensis",
+      "ja": "マキバタヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Anthus pratensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus trivialis",
+      "ja": "ヨーロッパビンズイ",
+      "part": "A",
+      "perch_scientific_name": "Anthus trivialis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus hodgsoni",
+      "ja": "ビンズイ",
+      "part": "A",
+      "perch_scientific_name": "Anthus hodgsoni",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus gustavi",
+      "ja": "セジロタヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Anthus gustavi",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus roseatus",
+      "ja": "ウスベニタヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Anthus roseatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus cervinus",
+      "ja": "ムネアカタヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Anthus cervinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Anthus rubescens",
+      "ja": "タヒバリ",
+      "part": "A",
+      "perch_scientific_name": "Anthus rubescens",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Fringilla coelebs",
+      "ja": "ズアオアトリ",
+      "part": "A",
+      "perch_scientific_name": "Fringilla coelebs",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Fringilla montifringilla",
+      "ja": "アトリ",
+      "part": "A",
+      "perch_scientific_name": "Fringilla montifringilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Coccothraustes coccothraustes",
+      "ja": "シメ",
+      "part": "A",
+      "perch_scientific_name": "Coccothraustes coccothraustes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Eophona migratoria",
+      "ja": "コイカル",
+      "part": "A",
+      "perch_scientific_name": "Eophona migratoria",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Eophona personata",
+      "ja": "イカル",
+      "part": "A",
+      "perch_scientific_name": "Eophona personata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pinicola enucleator",
+      "ja": "ギンザンマシコ",
+      "part": "A",
+      "perch_scientific_name": "Pinicola enucleator",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pyrrhula pyrrhula",
+      "ja": "ウソ",
+      "part": "A",
+      "perch_scientific_name": "Pyrrhula pyrrhula",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Leucosticte arctoa",
+      "ja": "ハギマシコ",
+      "part": "A",
+      "perch_scientific_name": "Leucosticte arctoa",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Carpodacus erythrinus",
+      "ja": "アカマシコ",
+      "part": "A",
+      "perch_scientific_name": "Carpodacus erythrinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Carpodacus sibiricus",
+      "ja": "ベニマシコ",
+      "part": "A",
+      "perch_scientific_name": "Carpodacus sibiricus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Carpodacus roseus",
+      "ja": "オオマシコ",
+      "part": "A",
+      "perch_scientific_name": "Carpodacus roseus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Chloris sinica",
+      "ja": "カワラヒワ",
+      "part": "A",
+      "perch_scientific_name": "Chloris sinica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acanthis flammea",
+      "ja": "ベニヒワ",
+      "part": "A",
+      "perch_scientific_name": "Acanthis flammea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Loxia curvirostra",
+      "ja": "イスカ",
+      "part": "A",
+      "perch_scientific_name": "Loxia curvirostra",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Loxia leucoptera",
+      "ja": "ナキイスカ",
+      "part": "A",
+      "perch_scientific_name": "Loxia leucoptera",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Spinus spinus",
+      "ja": "マヒワ",
+      "part": "A",
+      "perch_scientific_name": "Spinus spinus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Calcarius lapponicus",
+      "ja": "ツメナガホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Calcarius lapponicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Plectrophenax nivalis",
+      "ja": "ユキホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Plectrophenax nivalis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza citrinella",
+      "ja": "キアオジ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza citrinella",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza leucocephalos",
+      "ja": "シラガホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza leucocephalos",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza cioides",
+      "ja": "ホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza cioides",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza buchanani",
+      "ja": "イワバホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza buchanani",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza hortulana",
+      "ja": "ズアオホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza hortulana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza tristrami",
+      "ja": "シロハラホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza tristrami",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza fucata",
+      "ja": "ホオアカ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza fucata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza pusilla",
+      "ja": "コホオアカ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza pusilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza chrysophrys",
+      "ja": "キマユホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza chrysophrys",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza rustica",
+      "ja": "カシラダカ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza rustica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza elegans",
+      "ja": "ミヤマホオジロ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza elegans",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza aureola",
+      "ja": "シマアオジ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza aureola",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza rutila",
+      "ja": "シマノジコ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza rutila",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza melanocephala",
+      "ja": "ズグロチャキンチョウ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza melanocephala",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza bruniceps",
+      "ja": "チャキンチョウ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza bruniceps",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza sulphurata",
+      "ja": "ノジコ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza sulphurata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza spodocephala",
+      "ja": "シベリアアオジ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza spodocephala",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza personata",
+      "ja": "アオジ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza personata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza variabilis",
+      "ja": "クロジ",
+      "part": "A",
+      "perch_scientific_name": "Emberiza variabilis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza pallasi",
+      "ja": "シベリアジュリン",
+      "part": "A",
+      "perch_scientific_name": "Emberiza pallasi",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza yessoensis",
+      "ja": "コジュリン",
+      "part": "A",
+      "perch_scientific_name": "Emberiza yessoensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Emberiza schoeniclus",
+      "ja": "オオジュリン",
+      "part": "A",
+      "perch_scientific_name": "Emberiza schoeniclus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Passerella iliaca",
+      "ja": "ゴマフスズメ",
+      "part": "A",
+      "perch_scientific_name": "Passerella iliaca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zonotrichia leucophrys",
+      "ja": "ミヤマシトド",
+      "part": "A",
+      "perch_scientific_name": "Zonotrichia leucophrys",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zonotrichia atricapilla",
+      "ja": "キガシラシトド",
+      "part": "A",
+      "perch_scientific_name": "Zonotrichia atricapilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Passerculus sandwichensis",
+      "ja": "サバンナシトド",
+      "part": "A",
+      "perch_scientific_name": "Passerculus sandwichensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Melospiza melodia",
+      "ja": "ウタスズメ",
+      "part": "A",
+      "perch_scientific_name": "Melospiza melodia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Geothlypis trichas",
+      "ja": "カオグロアメリカムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Geothlypis trichas",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Setophaga coronata",
+      "ja": "キヅタアメリカムシクイ",
+      "part": "A",
+      "perch_scientific_name": "Setophaga coronata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Branta canadensis",
+      "ja": "カナダガン",
+      "part": "B",
+      "perch_scientific_name": "Branta canadensis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cygnus atratus",
+      "ja": "コクチョウ",
+      "part": "B",
+      "perch_scientific_name": "Cygnus atratus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Cygnus olor",
+      "ja": "コブハクチョウ",
+      "part": "B",
+      "perch_scientific_name": "Cygnus olor",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Colinus virginianus",
+      "ja": "コリンウズラ",
+      "part": "B",
+      "perch_scientific_name": "Colinus virginianus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Syrmaticus soemmerringii",
+      "ja": "ヤマドリ",
+      "part": "B",
+      "perch_scientific_name": "Syrmaticus soemmerringii",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phasianus colchicus",
+      "ja": "タイリクキジ",
+      "part": "B",
+      "perch_scientific_name": "Phasianus colchicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Phasianus versicolor",
+      "ja": "キジ",
+      "part": "B",
+      "perch_scientific_name": "Phasianus versicolor",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pavo cristatus",
+      "ja": "インドクジャク",
+      "part": "B",
+      "perch_scientific_name": "Pavo cristatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bambusicola thoracicus",
+      "ja": "コジュケイ",
+      "part": "B",
+      "perch_scientific_name": "Bambusicola thoracicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Bambusicola sonorivox",
+      "ja": "テッケイ",
+      "part": "B",
+      "perch_scientific_name": "Bambusicola sonorivox",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Columba livia",
+      "ja": "カワラバト（ドバト）",
+      "part": "B",
+      "perch_scientific_name": "Columba livia",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Streptopelia decaocto",
+      "ja": "シラコバト",
+      "part": "B",
+      "perch_scientific_name": "Streptopelia decaocto",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Himantopus mexicanus",
+      "ja": "クロエリセイタカシギ",
+      "part": "B",
+      "perch_scientific_name": "Himantopus mexicanus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ciconia boyciana",
+      "ja": "コウノトリ",
+      "part": "B",
+      "perch_scientific_name": "Ciconia boyciana",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Nipponia nippon",
+      "ja": "トキ",
+      "part": "B",
+      "perch_scientific_name": "Nipponia nippon",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Myiopsitta monachus",
+      "ja": "オキナインコ",
+      "part": "B",
+      "perch_scientific_name": "Myiopsitta monachus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Psittacula alexandri",
+      "ja": "ダルマインコ",
+      "part": "B",
+      "perch_scientific_name": "Psittacula alexandri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Psittacula eupatria",
+      "ja": "オオホンセイインコ",
+      "part": "B",
+      "perch_scientific_name": "Psittacula eupatria",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Psittacula krameri",
+      "ja": "ホンセイインコ",
+      "part": "B",
+      "perch_scientific_name": "Psittacula krameri",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Melopsittacus undulatus",
+      "ja": "セキセイインコ",
+      "part": "B",
+      "perch_scientific_name": "Melopsittacus undulatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Urocissa caerulea",
+      "ja": "ヤマムスメ",
+      "part": "B",
+      "perch_scientific_name": "Urocissa caerulea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Urocissa erythroryncha",
+      "ja": "サンジャク",
+      "part": "B",
+      "perch_scientific_name": "Urocissa erythroryncha",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pica serica",
+      "ja": "カササギ",
+      "part": "B",
+      "perch_scientific_name": "Pica serica",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Zosterops japonicus",
+      "ja": "メジロ",
+      "part": "B",
+      "perch_scientific_name": "Zosterops japonicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Leiothrix lutea",
+      "ja": "ソウシチョウ",
+      "part": "B",
+      "perch_scientific_name": "Leiothrix lutea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Garrulax canorus",
+      "ja": "ガビチョウ",
+      "part": "B",
+      "perch_scientific_name": "Garrulax canorus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterorhinus sannio",
+      "ja": "カオジロガビチョウ",
+      "part": "B",
+      "perch_scientific_name": "Pterorhinus sannio",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Pterorhinus perspicillatus",
+      "ja": "カオグロガビチョウ",
+      "part": "B",
+      "perch_scientific_name": "Pterorhinus perspicillatus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acridotheres cristatellus",
+      "ja": "ハッカチョウ",
+      "part": "B",
+      "perch_scientific_name": "Acridotheres cristatellus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acridotheres javanicus",
+      "ja": "ジャワハッカ",
+      "part": "B",
+      "perch_scientific_name": "Acridotheres javanicus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acridotheres ginginianus",
+      "ja": "ハイイロハッカ",
+      "part": "B",
+      "perch_scientific_name": "Acridotheres ginginianus",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Acridotheres tristis",
+      "ja": "インドハッカ",
+      "part": "B",
+      "perch_scientific_name": "Acridotheres tristis",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Ploceus intermedius",
+      "ja": "メンハタオリドリ",
+      "part": "B",
+      "perch_scientific_name": "Ploceus intermedius",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Euplectes orix",
+      "ja": "オオキンランチョウ",
+      "part": "B",
+      "perch_scientific_name": "Euplectes orix",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Padda oryzivora",
+      "ja": "ブンチョウ",
+      "part": "B",
+      "perch_scientific_name": "Padda oryzivora",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lonchura punctulata",
+      "ja": "シマキンパラ",
+      "part": "B",
+      "perch_scientific_name": "Lonchura punctulata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lonchura striata",
+      "ja": "コシジロキンパラ",
+      "part": "B",
+      "perch_scientific_name": "Lonchura striata",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lonchura malacca",
+      "ja": "ギンパラ",
+      "part": "B",
+      "perch_scientific_name": "Lonchura malacca",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lonchura atricapilla",
+      "ja": "キンパラ",
+      "part": "B",
+      "perch_scientific_name": "Lonchura atricapilla",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Lonchura maja",
+      "ja": "ヘキチョウ",
+      "part": "B",
+      "perch_scientific_name": "Lonchura maja",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Estrilda melpoda",
+      "ja": "ホオアカカエデチョウ",
+      "part": "B",
+      "perch_scientific_name": "Estrilda melpoda",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Estrilda troglodytes",
+      "ja": "カエデチョウ",
+      "part": "B",
+      "perch_scientific_name": "Estrilda troglodytes",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Amandava amandava",
+      "ja": "ベニスズメ",
+      "part": "B",
+      "perch_scientific_name": "Amandava amandava",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Vidua paradisaea",
+      "ja": "ホウオウジャク",
+      "part": "B",
+      "perch_scientific_name": "Vidua paradisaea",
+      "method": "exact"
+    },
+    {
+      "scientific_name": "Paroaria coronata",
+      "ja": "コウカンチョウ",
+      "part": "B",
+      "perch_scientific_name": "Paroaria coronata",
+      "method": "exact"
+    }
+  ],
+  "unmatched": [
+    {
+      "scientific_name": "Tadorna cristata",
+      "ja": "カンムリツクシガモ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Aythya baeri",
+      "ja": "アカハジロ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Columba versicolor",
+      "ja": "オガサワラカラスバト",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Columba jouyi",
+      "ja": "リュウキュウカラスバト",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Cepphus carbo",
+      "ja": "ケイマフリ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Brachyramphus perdix",
+      "ja": "マダラウミスズメ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Fratercula cirrhata",
+      "ja": "エトピリカ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Phoebastria albatrus",
+      "ja": "アホウドリ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Hydrobates matsudairae",
+      "ja": "クロウミツバメ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Pterodroma longirostris",
+      "ja": "ヒメシロハラミズナギドリ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Puffinus bryani",
+      "ja": "オガサワラヒメミズナギドリ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Puffinus bannermani",
+      "ja": "オガサワラミズナギドリ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Fregata ariel",
+      "ja": "コグンカンドリ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Phalacrocorax capillatus",
+      "ja": "ウミウ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Egretta eulophotes",
+      "ja": "カラシラサギ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Todiramphus miyakoensis",
+      "ja": "ミヤコショウビン",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Cichlopasser terrestris",
+      "ja": "オガサワラガビチョウ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Carpodacus ferreorostris",
+      "ja": "オガサワラマシコ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Chloris kittlitzi",
+      "ja": "オガサワラカワラヒワ",
+      "part": "A"
+    },
+    {
+      "scientific_name": "Ianthocincla cineracea",
+      "ja": "ヒゲガビチョウ",
+      "part": "B"
+    }
+  ]
+}
