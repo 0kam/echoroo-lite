@@ -67,7 +67,7 @@ def calendar_cells(records, zone, first, last):
         raise CatalogError('report_range')
     cells = {(day.isoformat(), hour): {'date': day.isoformat(), 'hour': hour, 'recorded_seconds': 0.0,
             'analysed_seconds': 0.0, 'effective_seconds': 0.0, 'eligible_windows': 0,
-            'candidate_windows': 0, 'confirmed_windows': 0, 'similarity_sum': 0.0, 'max_similarity': None}
+            'candidate_windows': 0}
              for i in range((last - first).days + 1) for day in [first + timedelta(days=i)] for hour in range(24)}
     for r in records:
         for key, seconds in effort(r, zone):
@@ -98,8 +98,6 @@ def finalize_cells(cells, threshold):
     for cell in cells.values():
         n = cell['eligible_windows']
         cell['candidate_rate'] = cell['candidate_windows'] / n if n and threshold is not None else None
-        similarity_sum = cell.pop('similarity_sum')
-        cell['mean_similarity'] = similarity_sum / n if n and cell['max_similarity'] is not None else None
         cell['status'] = ('no_recording' if cell['recorded_seconds'] == 0 else 'unanalysed' if cell['analysed_seconds'] == 0
                           else 'not_evaluated' if n == 0 else 'partial' if cell['analysed_seconds'] + .001 < cell['recorded_seconds'] else 'analysed')
         if threshold is None:
@@ -310,7 +308,7 @@ def detection(root, body, *, persist=True):
                     item = stats.setdefault(str(label), {'eligible_windows': 0, 'candidate_windows': 0, 'days': set(), 'candidate_days': set()})
                     item['eligible_windows'] += 1
                     item['days'].add(key[0])
-                    if scores[i, j] >= body.threshold:
+                    if body.threshold is not None and scores[i, j] >= body.threshold:
                         item['candidate_windows'] += 1
                         item['candidate_days'].add(key[0])
                 if selected_index is None:
@@ -319,7 +317,7 @@ def detection(root, body, *, persist=True):
                 cell = cells[key]
                 cell['eligible_windows'] += 1
                 cell['effective_seconds'] += 15
-                if scores[i, j] >= body.threshold:
+                if body.threshold is not None and scores[i, j] >= body.threshold:
                     cell['candidate_windows'] += 1
                     native_start = float(best_starts[i, j])
                     evidence.append({'recording_id': record['id'], 'analysis_id': analysis['id'], 'start_s': native_start,
@@ -332,10 +330,13 @@ def detection(root, body, *, persist=True):
         for label, item in stats.items():
             if item['candidate_windows'] or label == wanted:
                 taxon = species_rows.get(label, {'id': None, 'scientific_name': label, 'common_names': {}})
-                summaries.append({'species': taxon, 'eligible_windows': item['eligible_windows'], 'candidate_windows': item['candidate_windows'],
-                    'candidate_rate': item['candidate_windows'] / item['eligible_windows'], 'recorded_days': len(item['days']),
-                    'candidate_days': len(item['candidate_days']), 'quality': 'not_evaluated'})
-        summaries.sort(key=lambda r: (-r['candidate_windows'], r['species']['scientific_name']))
+                counted = body.threshold is not None
+                # No threshold (① could not decide one): nothing is counted rather than using a default.
+                summaries.append({'species': taxon, 'eligible_windows': item['eligible_windows'],
+                    'candidate_windows': item['candidate_windows'] if counted else None,
+                    'candidate_rate': item['candidate_windows'] / item['eligible_windows'] if counted else None, 'recorded_days': len(item['days']),
+                    'candidate_days': len(item['candidate_days']) if counted else None, 'quality': 'not_evaluated'})
+        summaries.sort(key=lambda r: (-(r['candidate_windows'] or 0), r['species']['scientific_name']))
         snapshot = {'kind': 'detection', 'dataset': dataset, 'site': site, 'engine': body.engine, 'model_sha256': body.model_sha256,
                     'analysis_ids': analysis_ids, 'missing_region': missing_region, 'threshold': body.threshold,
                     'start_date': body.start_date.isoformat(), 'end_date': body.end_date.isoformat(), 'window_s': 15,
@@ -347,98 +348,6 @@ def detection(root, body, *, persist=True):
         if not persist:
             return snapshot
         report_id = save_report(db, body.dataset_id, 'detection', snapshot)
-    return get_report(root, report_id)
-
-
-def search_report(root, body, *, persist=True):
-    with connect(root) as db:
-        run = db.execute('SELECT * FROM search_runs WHERE id=?', (body.run_id,)).fetchone()
-        if run is None:
-            raise CatalogError('not_found')
-        original = json.loads(run['snapshot'])
-        dataset, site, records = dataset_context(db, run['dataset_id'])
-        # Search uses the original site settings; later imports do not add searched intervals.
-        site = original['site']
-        zone = ZoneInfo(site['timezone'])
-        records=scope_records(records,zone,body.start_date,body.end_date)
-        cells = calendar_cells(records, zone, body.start_date, body.end_date)
-        indexed = {r['id']: r for r in records}
-        cutoff = db.execute('SELECT COALESCE(MAX(id),0) FROM search_judgements').fetchone()[0]
-        analysis_ids = original.get('analysis_ids', [a['analysis_id'] for a in original.get('analyses', [])])
-        recorded_ids = set()
-        for aid in analysis_ids:
-            row = db.execute('SELECT recording_id FROM analyses WHERE id=?', (aid,)).fetchone()
-            recorded_ids.add(row[0])
-        for rid in recorded_ids:
-            if rid not in indexed:continue
-            checked_source(indexed[rid])
-            for key, duration in effort(indexed[rid], zone):
-                if key in cells:
-                    cells[key]['analysed_seconds'] += duration
-        hits = db.execute('''SELECT h.*,s.start_s,s.end_s,s.analysis_id,a.recording_id,j.verdict,j.id AS judgement_id,j.created_at AS judged_at
-            FROM search_hits h JOIN segments s ON s.id=h.segment_id JOIN analyses a ON a.id=s.analysis_id
-            LEFT JOIN search_judgements j ON j.id=(SELECT MAX(id) FROM search_judgements
-                WHERE species_id=? AND segment_id=h.segment_id AND id<=?) WHERE h.run_id=? ORDER BY h.segment_id''',
-                          (run['species_id'], cutoff, body.run_id))
-        evidence, eligible_days, candidate_days = [], set(), set()
-        counts = {'target': 0, 'other': 0, 'unknown': 0, 'unreviewed': 0}
-        labelled_scores = {'target': [], 'other': []}
-        distribution = [{'low': -1 + i / 10, 'high': -1 + (i + 1) / 10, 'count': 0, 'target': 0, 'other': 0, 'unknown': 0} for i in range(20)]
-        for hit in hits:
-            record = indexed.get(hit['recording_id'])
-            if record is None or hit['end_s']>record['seconds'] or abs(hit['end_s']-hit['start_s']-5)>1e-6:continue
-            if not window_in_scope(record,hit['start_s'],hit['end_s'],zone,body.start_date,body.end_date):continue
-            key, local = window_key(record, hit['start_s'], zone)
-            if key not in cells:
-                continue
-            cell = cells[key]
-            cell['eligible_windows'] += 1
-            cell['effective_seconds'] += hit['end_s'] - hit['start_s']
-            cell['similarity_sum'] += hit['similarity']
-            cell['max_similarity'] = max(cell['max_similarity'] if cell['max_similarity'] is not None else -1, hit['similarity'])
-            candidate = body.threshold is not None and hit['similarity'] >= body.threshold
-            cell['candidate_windows'] += int(candidate)
-            cell['confirmed_windows'] += int(hit['verdict'] == 'target')
-            eligible_days.add(key[0])
-            if candidate:
-                candidate_days.add(key[0])
-            verdict = hit['verdict'] or 'unreviewed'
-            counts[verdict] += 1
-            if verdict in labelled_scores:
-                labelled_scores[verdict].append(hit['similarity'])
-            band = distribution[min(19, max(0, int((hit['similarity'] + 1) * 10)))]
-            band['count'] += 1
-            if verdict != 'unreviewed':
-                band[verdict] += 1
-            # Keep every candidate and every reviewed interval, including positives below threshold.
-            if candidate or hit['verdict'] or body.threshold is None:
-                evidence.append({**dict(hit), 'score': hit['similarity'], 'local_time': local,
-                    'date': key[0], 'hour': key[1], 'status': verdict, 'threshold_exceeded': candidate})
-        n = sum(c['eligible_windows'] for c in cells.values())
-        positives = sum(c['candidate_windows'] for c in cells.values()) if body.threshold is not None else None
-        species = names_for(db.execute('SELECT * FROM species WHERE id=?', (run['species_id'],)).fetchone())
-        suggestion = None
-        if all(len(values) >= 3 for values in labelled_scores.values()):
-            positive, negative = (float(np.median(labelled_scores[key])) for key in ('target', 'other'))
-            if positive > negative:
-                suggestion = {'threshold': (positive + negative) / 2, 'positive_median': positive, 'negative_median': negative,
-                              'positive_count': len(labelled_scores['target']), 'negative_count': len(labelled_scores['other']),
-                              'method': 'midpoint_of_labelled_class_medians', 'purpose': 'exploration_only'}
-        analysis_ids=[aid for aid in analysis_ids if db.execute('SELECT recording_id FROM analyses WHERE id=?',(aid,)).fetchone()[0] in indexed]
-        snapshot = {'kind': 'search', 'dataset': dataset, 'site': site, 'run_id': body.run_id, 'search_snapshot': original,
-                    'analysis_ids': analysis_ids, 'model_sha256': original['model_sha256'], 'threshold': body.threshold,
-                    'start_date': body.start_date.isoformat(), 'end_date': body.end_date.isoformat(), 'window_s': 5,
-                    'judgement_cutoff': cutoff, 'species': species, 'quality': 'not_evaluated', 'judgements': counts,
-                    'distribution': distribution, 'threshold_suggestion': suggestion,
-                    'cells': finalize_cells(cells, body.threshold), 'evidence': evidence,
-                    'summaries': [{'species': species, 'eligible_windows': n, 'candidate_windows': positives,
-                        'candidate_rate': positives / n if n and positives is not None else None, 'recorded_days': len(eligible_days),
-                        'candidate_days': len(candidate_days) if body.threshold is not None else None,
-                        'confirmed_windows': counts['target'], 'quality': 'not_evaluated'}]}
-        snapshot['recording_ids'] = [r['id'] for r in records]
-        if not persist:
-            return snapshot
-        report_id = save_report(db, run['dataset_id'], 'search', snapshot)
     return get_report(root, report_id)
 
 
@@ -454,7 +363,7 @@ def get_report(root, report_id, cell_date=None, hour=None):
 def snapshot_view(db, snapshot, report_id=0, created_at='', cell_date=None, hour=None):
     evidence = snapshot['evidence']
     filtered = [e for e in evidence if (cell_date is None or e['date'] == cell_date) and (hour is None or e['hour'] == hour)]
-    filtered.sort(key=lambda e: (e['status'] != 'target', -e['score'], e['recording_id'], e['start_s']))
+    filtered.sort(key=lambda e: (-e['score'], e['recording_id'], e['start_s']))
     selected = []
     records = {}
     for e in filtered[:100]:
@@ -488,10 +397,8 @@ def export_report(root, report_id, folder, svg=None, png=None, audio=(), cancel=
     common = {'report_id': report_id, 'kind': row['kind'], 'site_id': snapshot['site']['id'], 'site_name': snapshot['site']['name'],
               'dataset_id': row['dataset_id'], 'dataset_name': snapshot['dataset']['name'], 'timezone': snapshot['site']['timezone'],
               'start_date': snapshot['start_date'], 'end_date': snapshot['end_date'], 'window_s': snapshot['window_s'],
-              'threshold': snapshot['threshold'], 'model_sha256': snapshot['model_sha256'], 'search_run_id': snapshot.get('run_id'),
+              'threshold': snapshot['threshold'], 'model_sha256': snapshot['model_sha256'],
               'engine': snapshot.get('engine', 'perch'), 'quality': 'not_evaluated'}
-    if snapshot.get('search_snapshot', {}).get('date_scope'):
-        common.update({f'search_{key}': snapshot['search_snapshot'].get(key) for key in ('start_date', 'end_date', 'date_scope')})
     def taxon(species):
         return {'species_id': species['id'], 'scientific_name': species['scientific_name'],
                 'common_name_ja': species['common_names'].get('ja', ''), 'common_name_en': species['common_names'].get('en', '')} if species else {}
@@ -519,9 +426,9 @@ def export_report(root, report_id, folder, svg=None, png=None, audio=(), cancel=
     with path.open('xb') as stream:
         try:
             with zipfile.ZipFile(stream, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-                for filename, values, required in [('species.csv', summaries, ['eligible_windows','candidate_windows','candidate_rate','recorded_days','candidate_days','confirmed_windows']),
-                    ('hourly.csv', cells, ['date','hour','recorded_seconds','analysed_seconds','effective_seconds','eligible_windows','candidate_windows','candidate_rate','max_similarity','mean_similarity','confirmed_windows','status']),
-                    ('evidence.csv', evidence, ['recording_id','analysis_id','segment_id','path','recorded_at','local_time','start_s','end_s','score','status','judgement_id','judged_at'])]:
+                for filename, values, required in [('species.csv', summaries, ['eligible_windows','candidate_windows','candidate_rate','recorded_days','candidate_days']),
+                    ('hourly.csv', cells, ['date','hour','recorded_seconds','analysed_seconds','effective_seconds','eligible_windows','candidate_windows','candidate_rate','status']),
+                    ('evidence.csv', evidence, ['recording_id','analysis_id','path','recorded_at','local_time','start_s','end_s','score','status'])]:
                     if cancel and cancel.is_set():raise CatalogError('cancelled')
                     fields = list(dict.fromkeys([*common, *taxon(snapshot['species']), *required, *(key for value in values for key in value)]))
                     archive.writestr(filename, csv_bytes(values, fields))

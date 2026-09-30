@@ -21,10 +21,10 @@
 {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
 {#if report.species}
   <div class="result-listen">
-    <div><h2>{t(report.kind==='search'?'rSearchTiming':'wSeason')}</h2><p>{t('uEvidenceHint')}</p>
+    <div><h2>{t('wSeason')}</h2><p>{t('uEvidenceHint')}</p>
       {#if report.cells.length}<SpiralPlot {report} compact onselect={select}/>{/if}
     </div>
-    <section><h2>{t(report.kind==='search'?'rSearchSounds':'evidenceAudio')}</h2>
+    <section><h2>{t('evidenceAudio')}</h2>
       {#if filter}<p>{filter.date} · {filter.hour}:00 <Button onclick={()=>select(null)}>{t('uAllSounds')}</Button></p>{/if}
       {#if loading}<p role="status">{t('loading')}</p>
       {:else if hit}

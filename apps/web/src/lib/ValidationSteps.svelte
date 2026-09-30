@@ -4,9 +4,7 @@
   /** Shows where the user is in setting the threshold → checking accuracy → optional missed-call check, with each step's sound count. */
   let { validation, review = false }: { validation: Validation | null; review?: boolean } = $props();
   type Step = 'calibration' | 'evaluation' | 'recall';
-  const steps = $derived<Step[]>([
-    ...(validation?.kind === 'custom' || validation && !validation.counts.calibration.total ? [] : ['calibration' as Step]),
-    'evaluation', ...(!validation || validation.method === 'fixed_precision_audit_v1' ? ['recall' as Step] : [])]);
+  const steps: Step[] = ['calibration', 'evaluation', 'recall'];
   function state(step: Step) {
     if (!validation) return 'todo';
     if (review && validation.question) {
@@ -14,6 +12,8 @@
         : validation.question.samples.some(sample => sample.sample === (step === 'recall' ? 'recall' : step === 'evaluation' ? 'precision' : ''));
       return current ? 'current' : 'todo';
     }
+    // Without a threshold, ② and ③ never start.
+    if (validation.status === 'undecided' && step !== 'calibration') return 'todo';
     const precisionDone = validation.stage === 'complete' || validation.audit_step === 'recall';
     if (step === 'calibration') return validation.stage === 'calibration' ? 'current' : 'done';
     if (step === 'evaluation') return validation.stage === 'calibration' ? 'todo' : precisionDone ? 'done' : 'current';
@@ -21,7 +21,7 @@
     return validation.audit_step !== 'recall' ? 'todo' : recall?.total && recall.answered === recall.total ? 'done' : 'current';
   }
   const label = { calibration: 'vStepAdjust', evaluation: 'vStepPrecision', recall: 'vStepRecall' };
-  // The real number of sounds; two AIs' fixed samples overlap, so it is rarely exactly 30.
+  // The real number of sounds: fewer when a model has fewer windows.
   const count = (step: Step) => validation?.counts[step]?.total || 0;
 </script>
 <ol class="validation-steps" aria-label={t('vSteps')}>{#each steps as step, index}{@const current = state(step)}

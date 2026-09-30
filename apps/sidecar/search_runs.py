@@ -1,6 +1,5 @@
-"""Immutable multi-reference searches, random review samples, and append-only judgements."""
+"""One saved multi-reference search per species and site; deleting it removes what was built on it."""
 import json
-import random
 import secrets
 
 import numpy as np
@@ -12,12 +11,20 @@ from species import names_for
 from storage import CatalogError, checked_source, connect
 
 
-def create_runs(root, models, body, cancel=None):
+def site_run(db, site_id, species_id):
+    return db.execute('''SELECT r.* FROM search_runs r JOIN datasets d ON d.id=r.dataset_id
+        WHERE d.site_id=? AND r.species_id=? ORDER BY r.id DESC''', (site_id, species_id)).fetchone()
+
+
+def create_run(root, models, body, cancel=None):
     loaded = load_perch(models)
     with connect(root) as db:
         dataset = db.execute('SELECT * FROM datasets WHERE id=?', (body.dataset_id,)).fetchone()
-        if dataset is None:
+        species = db.execute('SELECT * FROM species WHERE id=?', (body.species_id,)).fetchone()
+        if dataset is None or species is None:
             raise CatalogError('not_found')
+        if site_run(db, dataset['site_id'], body.species_id):
+            raise CatalogError('search_exists')
         site = db.execute('SELECT * FROM sites WHERE id=?', (dataset['site_id'],)).fetchone()
         compatible, total = search_context(db, body.dataset_id, loaded[1], body.start_date, body.end_date)
         if not compatible:
@@ -30,129 +37,95 @@ def create_runs(root, models, body, cancel=None):
         coverage = {'total_recordings': total, 'searched_recordings': len(compatible),
                     'unsearched_recordings': total - len(compatible),
                     'searched_segments': db.execute('SELECT COUNT(*) FROM segments WHERE analysis_id IN target_analyses').fetchone()[0]}
-        ids, searches = [], []
-        group = secrets.token_hex(16)
-        for target in body.targets:
-            if cancel and cancel.is_set():raise CatalogError('cancelled')
-            species = db.execute('SELECT * FROM species WHERE id=?', (target.species_id,)).fetchone()
-            if species is None:
-                raise CatalogError('not_found')
-            references, vectors, owners = [], [], []
-            for index, clip in enumerate(target.clips):
-                row = source(root, clip.source_kind, clip.source_id)
-                embedded, query = query_embeddings(models, row, clip.start_s, clip.end_s, loaded, cancel)
-                references.append({'source': row, 'query': query})
-                vectors.extend(embedded)
-                owners.extend((index, window) for window in range(len(embedded)))
-            queries = np.stack(vectors)
-            queries /= np.linalg.norm(queries, axis=1, keepdims=True)
-            snapshot = {'group':group, 'species': names_for(species), 'dataset': dict(dataset), 'site': dict(site),
-                        'start_date': body.start_date.isoformat() if body.start_date else None,
-                        'end_date': body.end_date.isoformat() if body.end_date else None, 'date_scope': 'recording_start_local',
-                        'model_sha256': loaded[1], 'aggregation': 'maximum_cosine', 'references': references,
-                        'analysis_ids': [r['analysis_id'] for r in compatible], **coverage}
-            run_id = db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',
-                                (body.dataset_id, target.species_id, json.dumps(snapshot, ensure_ascii=False))).lastrowid
-            ids.append(run_id)
-            searches.append((run_id, references, queries, owners))
+        references, vectors, owners = [], [], []
+        for index, clip in enumerate(body.clips):
+            if cancel and cancel.is_set():
+                raise CatalogError('cancelled')
+            row = source(root, clip.source_kind, clip.source_id)
+            embedded, query = query_embeddings(models, row, clip.start_s, clip.end_s, loaded, cancel)
+            references.append({'source': row, 'query': query})
+            vectors.extend(embedded)
+            owners.extend((index, window) for window in range(len(embedded)))
+        queries = np.stack(vectors)
+        queries /= np.linalg.norm(queries, axis=1, keepdims=True)
+        snapshot = {'group': secrets.token_hex(16), 'species': names_for(species), 'dataset': dict(dataset), 'site': dict(site),
+                    'start_date': body.start_date.isoformat() if body.start_date else None,
+                    'end_date': body.end_date.isoformat() if body.end_date else None, 'date_scope': 'recording_start_local',
+                    'model_sha256': loaded[1], 'aggregation': 'maximum_cosine', 'references': references,
+                    'analysis_ids': [r['analysis_id'] for r in compatible], **coverage}
+        run_id = db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',
+                            (body.dataset_id, body.species_id, json.dumps(snapshot, ensure_ascii=False))).lastrowid
         rows = db.execute('''SELECT s.*, r.path, v.embedding FROM segments s
             JOIN vectors v ON v.rowid=s.id JOIN analyses a ON a.id=s.analysis_id
             JOIN recordings r ON r.id=a.recording_id WHERE s.analysis_id IN target_analyses ORDER BY s.id''')
         # ponytail: scan in 256-vector blocks; add a partitioned vector index if annual-scale search needs it.
         while batch := rows.fetchmany(256):
-            if cancel and cancel.is_set():raise CatalogError('cancelled')
+            if cancel and cancel.is_set():
+                raise CatalogError('cancelled')
             matrix = np.stack([np.frombuffer(r['embedding'], dtype='<f4') for r in batch])
             norms = np.linalg.norm(matrix, axis=1, keepdims=True)
             if not np.isfinite(matrix).all() or np.any(norms == 0):
                 raise CatalogError('invalid_scores')
             matrix /= norms
-            for run_id, references, queries, owners in searches:
-                similarities = np.clip(matrix @ queries.T, -1, 1)
-                winners = similarities.argmax(axis=1)
-                hits = []
-                for i, row in enumerate(batch):
-                    if any(row['path'] == ref['source']['path'] and row['start_s'] < ref['query']['end_s']
-                           and row['end_s'] > ref['query']['start_s'] for ref in references):
-                        continue
-                    winner = int(winners[i])
-                    hits.append((run_id, row['id'], float(similarities[i, winner]), *owners[winner]))
-                db.executemany('INSERT INTO search_hits VALUES(?,?,?,?,?)', hits)
+            similarities = np.clip(matrix @ queries.T, -1, 1)
+            winners = similarities.argmax(axis=1)
+            db.executemany('INSERT INTO search_hits VALUES(?,?,?,?,?)', [
+                (run_id, row['id'], float(similarities[i, winners[i]]), *owners[int(winners[i])]) for i, row in enumerate(batch)
+                if not any(row['path'] == ref['source']['path'] and row['start_s'] < ref['query']['end_s']
+                           and row['end_s'] > ref['query']['start_s'] for ref in references)])
         for row in compatible:
-            if cancel and cancel.is_set():raise CatalogError('cancelled')
             checked_source(row)
-        for _, references, _, _ in searches:
-            for ref in references:
-                checked_source(ref['source'])
-    return [get_run(root, run_id) for run_id in ids]
+        for ref in references:
+            checked_source(ref['source'])
+    return get_run(root, run_id)
 
 
-def list_runs(root, dataset_id):
-    with connect(root) as db:
-        rows = db.execute('SELECT id,species_id,created_at FROM search_runs WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC', (dataset_id,)).fetchall()
-        return [{**dict(r), 'species': names_for(db.execute('SELECT * FROM species WHERE id=?', (r['species_id'],)).fetchone())} for r in rows]
-
-
-def get_run(root, run_id, sample_id=None, limit=30):
+def get_run(root, run_id):
     with connect(root) as db:
         run = db.execute('SELECT * FROM search_runs WHERE id=?', (run_id,)).fetchone()
         if run is None:
             raise CatalogError('not_found')
-        samples = [{**dict(r), 'seed': str(r['seed'])} for r in db.execute('''SELECT s.*, COUNT(i.segment_id) AS count FROM search_samples s
-            LEFT JOIN search_sample_items i ON i.sample_id=s.id WHERE run_id=? GROUP BY s.id ORDER BY s.id DESC''', (run_id,))]
-        if sample_id is not None and sample_id not in [s['id'] for s in samples]:
-            raise CatalogError('not_found')
-        hits = db.execute('''SELECT h.*, s.start_s,s.end_s,s.analysis_id,
-            r.id AS recording_id,r.path,r.seconds,r.recorded_at,r.timezone,
-            j.verdict,j.note,j.id AS judgement_id,j.created_at AS judged_at
-            FROM search_hits h JOIN segments s ON s.id=h.segment_id
-            JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
-            LEFT JOIN search_judgements j ON j.id=(SELECT MAX(id) FROM search_judgements
-                WHERE species_id=? AND segment_id=h.segment_id)
-            WHERE h.run_id=? AND (? IS NULL OR h.segment_id IN
-                (SELECT segment_id FROM search_sample_items WHERE sample_id=?))
-            ORDER BY h.similarity DESC,h.segment_id LIMIT ?''',
-                          (run['species_id'], run_id, sample_id, sample_id, limit if sample_id is None else 200)).fetchall()
-        distribution = [{'low': -1 + i / 10, 'high': -1 + (i + 1) / 10, 'count': 0, 'target': 0, 'other': 0, 'unknown': 0} for i in range(20)]
-        for band in db.execute('''SELECT min(19, max(0, CAST((h.similarity+1)*10 AS INTEGER))) AS band,
-            COUNT(*) AS count, COALESCE(SUM(j.verdict='target'),0) AS target,
-            COALESCE(SUM(j.verdict='other'),0) AS other, COALESCE(SUM(j.verdict='unknown'),0) AS unknown
-            FROM search_hits h LEFT JOIN search_judgements j ON j.id=(SELECT MAX(id) FROM search_judgements
-                WHERE species_id=? AND segment_id=h.segment_id)
-            WHERE h.run_id=? GROUP BY band''', (run['species_id'], run_id)):
-            distribution[band['band']].update({k: band[k] for k in ('count', 'target', 'other', 'unknown')})
-        count = sum(band['count'] for band in distribution)
-        snapshot=json.loads(run['snapshot'])
-        related=[{'id':r['id'],'species':names_for(db.execute('SELECT * FROM species WHERE id=?',(r['species_id'],)).fetchone())} for r in db.execute("SELECT id,species_id FROM search_runs WHERE dataset_id=? AND json_extract(snapshot,'$.group')=? ORDER BY id",(run['dataset_id'],snapshot.get('group')))]
-        return {**dict(run), 'snapshot': snapshot, 'related':related, 'hits': [dict(h) for h in hits],
-                'hit_count': count, 'samples': samples, 'sample_id': sample_id, 'distribution': distribution}
+        return {**dict(run), 'snapshot': json.loads(run['snapshot'])}
 
 
-def draw_sample(root, run_id, low, high, count):
-    if low > high:
-        raise CatalogError('invalid_input')
+def top_hits(db, run_id, limit, offset=0):
+    return [dict(r) for r in db.execute('''SELECT h.segment_id,h.similarity,s.start_s,s.end_s,
+        r.id AS recording_id,r.path,r.seconds,r.recorded_at,r.timezone
+        FROM search_hits h JOIN segments s ON s.id=h.segment_id JOIN analyses a ON a.id=s.analysis_id
+        JOIN recordings r ON r.id=a.recording_id WHERE h.run_id=? ORDER BY h.similarity DESC,h.segment_id LIMIT ? OFFSET ?''',
+        (run_id, limit, offset))]
+
+
+def deletion(db, run_id):
+    run = db.execute('SELECT r.*,d.site_id FROM search_runs r JOIN datasets d ON d.id=r.dataset_id WHERE r.id=?', (run_id,)).fetchone()
+    if run is None:
+        raise CatalogError('not_found')
+    models = [r[0] for r in db.execute('SELECT id FROM custom_models WHERE run_id=? ORDER BY id', (run_id,))]
+    return run, {'marks': db.execute('SELECT COUNT(*) FROM presence_marks WHERE run_id=?', (run_id,)).fetchone()[0],
+                 'labels': db.execute('SELECT COUNT(*) FROM model_labels WHERE run_id=?', (run_id,)).fetchone()[0],
+                 'custom_models': len(models), 'model_ids': models,
+                 'checks': db.execute('SELECT COUNT(*) FROM validation_sessions WHERE model IN (SELECT value FROM json_each(?))',
+                                      (json.dumps([f'custom:{m}' for m in models]),)).fetchone()[0]}
+
+
+def delete_preview(root, run_id):
     with connect(root) as db:
-        if db.execute('SELECT 1 FROM search_runs WHERE id=?', (run_id,)).fetchone() is None:
-            raise CatalogError('not_found')
-        population = [r[0] for r in db.execute('SELECT segment_id FROM search_hits WHERE run_id=? AND similarity BETWEEN ? AND ? ORDER BY segment_id', (run_id, low, high))]
-        if not population:
-            raise CatalogError('empty_similarity_band')
-        seed = secrets.randbits(63)
-        chosen = random.Random(seed).sample(population, min(count, len(population)))
-        sample = db.execute('INSERT INTO search_samples(run_id,low,high,population,requested_count,seed) VALUES(?,?,?,?,?,?)',
-                            (run_id, low, high, len(population), count, seed)).lastrowid
-        db.executemany('INSERT INTO search_sample_items VALUES(?,?,?)', ((sample, sid, i) for i, sid in enumerate(chosen)))
-    return get_run(root, run_id, sample)
+        return deletion(db, run_id)[1]
 
 
-def judge(root, run_id, segment_id, verdict, note, examples=None):
+def delete_run(root, run_id):
+    """The search, its presence marks, not-found records, model labels, and custom models built from it."""
+    from custom_models import delete_model
     with connect(root) as db:
-        hit = db.execute('''SELECT r.species_id FROM search_hits h JOIN search_runs r ON r.id=h.run_id
-            WHERE h.run_id=? AND h.segment_id=?''', (run_id, segment_id)).fetchone()
-        if hit is None:
-            raise CatalogError('not_found')
-        from quiz import report_results
-        quiz=json.dumps(report_results(db,[hit['species_id']]))
-        jid = db.execute('INSERT INTO search_judgements(run_id,species_id,segment_id,verdict,note,quiz_snapshot,examples_snapshot) VALUES(?,?,?,?,?,?,?)',
-                         (run_id, hit['species_id'], segment_id, verdict, note, quiz,
-                          json.dumps(examples) if examples is not None else None)).lastrowid
-        return dict(db.execute('SELECT * FROM search_judgements WHERE id=?', (jid,)).fetchone())
+        run, plan = deletion(db, run_id)
+    for model_id in plan['model_ids']:
+        delete_model(root, model_id)
+    with connect(root) as db:
+        db.execute('BEGIN IMMEDIATE')
+        for table in ('presence_marks', 'model_labels', 'search_hits'):
+            db.execute(f'DELETE FROM {table} WHERE run_id=?', (run_id,))
+        db.execute('''DELETE FROM presence_misses WHERE source='search' AND species_id=?
+            AND dataset_id IN (SELECT id FROM datasets WHERE site_id=?)''', (run['species_id'], run['site_id']))
+        db.execute('DELETE FROM search_runs WHERE id=?', (run_id,))
+        db.execute('DELETE FROM workflow_cache')
+    return plan

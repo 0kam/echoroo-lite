@@ -6,86 +6,73 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { customName,fill,listenLabel,qualityLines,type CustomModelReadiness,type Overview,type Validation } from '$lib/workflow';
-  import type { CallRange } from '$lib/annotations';
+  import { customName,fill,type CustomModel,type CustomModelReadiness,type SearchHit,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
-  import RangeEditor from '$lib/RangeEditor.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  type Model = CustomModelReadiness['models'][number];
-  type Waiting = CustomModelReadiness['needs_range'][number];
   const id=Number(page.params.id),speciesId=page.params.species!;
-  const range=new URL(page.url.hash.slice(1),page.url).searchParams;
-  const scope:{dataset_id:number;start_date:string|null;end_date:string|null}={dataset_id:id,start_date:range.get('start_date'),end_date:range.get('end_date')};
-  let ready=$state<CustomModelReadiness|null>(null),error=$state(''),open=$state(''),marking=$state<number|null>(null),marks=$state<CallRange[]>([]),confirming=$state<number|null>(null);
+  const range=new URLSearchParams([...new URL(page.url.hash.slice(1),page.url).searchParams].filter(([key])=>key.endsWith('_date')));
+  const draftKey=`echoroo-model:${id}:${speciesId}:${range}`;
+  let ready=$state<CustomModelReadiness|null>(null),error=$state(''),confirming=$state<number|null>(null),shown=$state(10);
+  try{shown=Number(sessionStorage.getItem(draftKey))||10;}catch{/* The list position is only a convenience. */}
+  $effect(()=>{try{sessionStorage.setItem(draftKey,String(shown));}catch{/* Private windows may refuse storage. */}});
   async function load(){
-    try{if(!scope.start_date||!scope.end_date){const overview=await api<Overview>(`/datasets/${id}/overview`);scope.start_date=overview.start_date;scope.end_date=overview.end_date;}
-      const session=await api<{id:number}>('/annotations',scope);
-      ready=await api<CustomModelReadiness>(`/annotations/${session.id}/custom-model-readiness?species_id=${encodeURIComponent(speciesId)}`);}
+    try{ready=await api<CustomModelReadiness>(`/datasets/${id}/species/${speciesId}/custom-model?${range}&limit=${Math.max(30,shown)}`);}
     catch(e){error=e instanceof Error?e.message:'unknown_error';}
   }
   onMount(()=>void load());
-  const time=(value:{local_time:string})=>value.local_time.slice(0,19).replace('T',' ');
-  // New marks are saved on the original "heard" answer; other species' marks on that sound are kept.
-  const saveMarks=createTask(async(item:Waiting)=>{
-    await api<Validation>(`/validations/${item.validation_id}/answers`,{item_id:item.item_id,verdict:'target',version:item.version,
-      ranges:[...item.ranges.filter(value=>value.species_id!==speciesId),...marks]});
-    marking=null;await load();
+  const label=createTask(async(hit:SearchHit,value:'target'|'other')=>{
+    await api(`/search-runs/${ready!.run_id}/labels`,{segment_id:hit.segment_id,label:hit.label===value?null:value});await load();
   },{toast:true});
-  const build=createTask(async()=>{if(!ready)return;await api('/custom-models',{annotation_session_id:ready.annotation_session_id,species_id:speciesId});await load();});
+  const build=createTask(async()=>{if(!ready)return;await api('/custom-models',{dataset_id:id,species_id:speciesId,
+    start_date:range.get('start_date'),end_date:range.get('end_date')});await load();});
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
-  const check=createTask(async(model:Model)=>{
-    const validation=model.validation?.applicable?model.validation:await api<Validation>('/validations',{model_id:model.id});
+  const check=createTask(async(model:CustomModel)=>{
+    const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,start_date:model.scope.start_date,end_date:model.scope.end_date,model:'custom',model_id:model.id});
     await goto(resolve(`/datasets/${id}/validation/${validation.id}`));
   },{toast:true});
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=null;await load();},{toast:true});
-  const usable=(model:Model)=>model.applicable&&model.status==='ready';
-  const latest=$derived(ready?.models.find(usable)??ready?.models[0]);
-  // Back to the built AI's tab once one exists; the current list means a deleted model is never linked.
+  const latest=$derived(ready?.models.find(model=>model.applicable));
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${latest?`&engine=custom&model_id=${latest.id}`:''}`);
-  const status=(model:Model)=>usable(model)?qualityLines(model.validation).join(' / '):t(model.applicable?'custom_threshold_unavailable':model.reason??'custom_model_scope_changed');
+  const time=(hit:SearchHit)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium'}).format(new Date(hit.local_time));
 </script>
-<div class="page">
+<div class="page model-page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   <h1>{t('customModelTitle')}</h1>
-  {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
+  {#if error}<p class="error" role="alert">{t(error)}</p>{#if error==='custom_search_needed'}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>{/if}{/if}
   {#if ready}
     <p class="species">{commonName(ready.species,app.locale)} <i class="sci">{ready.species.scientific_name}</i></p>
-    <section class="panel"><h2>{t('customModelMaterials')}</h2>
-      {#each [['target','customModelPositive'],['other','customModelNegative']] as [label,title]}
-        {@const list=ready.materials.filter(item=>item.label===label)}
-        <h3>{t(title)}: {list.length}</h3>
-        {#each list as item,index}{@const key=`${label}-${index}`}<div class="sound"><Button active={open===key} onclick={()=>open=open===key?'':key}>{time(item)} · {t(item.origin==='search'?'modelFromSearch':'modelFromListening')}</Button>
-          {#if open===key}<AudioRegion source={item.source} fixedRange start={item.start_s} end={item.end_s}/>{/if}</div>{/each}
-      {/each}
-      {#if ready.needs_range.length}<h3>{fill('modelNeedsMarks',{n:ready.needs_range.length})}</h3><p class="muted">{t('modelNeedsMarksHint')}</p>
-        {#each ready.needs_range as item,index}<div class="sound">
-          {#if marking===index}<RangeEditor source={item.source} start={item.start_s} end={item.end_s} target={ready.species} bind:ranges={marks} storageKey={`echoroo-model-mark:${item.validation_id}:${item.item_id}`} disabled={saveMarks.pending}/>
-            <div class="actions"><Button variant="primary" pending={saveMarks.pending} disabled={!marks.length} onclick={()=>saveMarks.run(item)}>{t('modelSaveMarks')}</Button><Button disabled={saveMarks.pending} onclick={()=>marking=null}>{t('mCancel')}</Button></div>
-          {:else}<span>{time(item)}</span><Button disabled={saveMarks.pending} onclick={()=>{marking=index;marks=[];}}>{t('modelMark')}</Button>{/if}
-        </div>{/each}{/if}
-      <p>{t('customModelIntro')}</p>
+    <p>{t('customModelIntro')}</p>
+    <section class="panel"><h2>{t('pSourceSearch')}</h2>
+      <p><strong>{fill('mdCounts',{positive:ready.examples.positive_5s,negative:ready.examples.negative_5s,checks:ready.examples.negative_from_checks})}</strong></p>
+      <p class="muted">{fill('mdNeed',{n:ready.requirements.positive_5s})}</p>
+      {#each ready.hits.slice(0,shown) as hit,index (hit.segment_id)}<article class="row">
+        <div class="row-head"><span class="rank">{index+1}</span><span>{time(hit)}</span><span class="muted">{fill('pSimilarity',{value:hit.similarity.toFixed(2)})}</span></div>
+        <AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange compact start={hit.start_s} end={hit.end_s}/>
+        <div class="actions" role="group" aria-label={t('customModelTitle')}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
+          <Button active={hit.label===value} aria-pressed={hit.label===value} pending={label.pending} onclick={()=>label.run(hit,value as 'target'|'other')}>{hit.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>
+      </article>{/each}
+      {#if shown<ready.hit_count}<Button onclick={()=>{shown+=10;if(shown>ready!.hits.length)void load();}}>{t('pMore')}</Button>{/if}
+    </section>
+    <section class="panel">
       {#if ready.can_train}<Button variant={latest?'default':'primary'} pending={build.pending} onclick={()=>build.run()}>{t('customModelCreate')}</Button>
-        {#if build.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
-        {#if build.pending}<p role="status"><Spinner/> {t('customModelPreparing')}</p>{/if}
+        {#if build.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button><p role="status"><Spinner/> {t('customModelPreparing')}</p>{/if}
       {:else}{#each ready.reasons as reason}<p class="notice">{t(reason)}</p>{/each}{/if}
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
     </section>
-    {#if latest}<section class="panel"><h2>{customName(latest)}</h2>
-      {#if !usable(latest)}<p class="notice">{status(latest)}</p>
-      {:else}<p>{fill('modelDetections',{n:(latest.detections??0).toLocaleString(app.locale)})}</p>
-        {#each qualityLines(latest.validation) as line}<p><strong>{line}</strong></p>{/each}
-        <Button variant="primary" pending={check.pending} onclick={()=>check.run(latest)}>{listenLabel(latest.validation,'modelCheck30')}</Button>
-        {#if latest.cv.reference_precision&&latest.cv.reference_recall}<details><summary>{t('customModelCv')}</summary><p class="muted">{t('customModelCvHint')}</p>
-          <p>{t('wPrecision')}: {Math.round((latest.cv.reference_precision.value??0)*100)}% ({latest.cv.reference_precision.positive} / {latest.cv.reference_precision.predicted})</p>
-          <p>{t('wRecall')}: {Math.round((latest.cv.reference_recall.value??0)*100)}% ({latest.cv.reference_recall.found} / {latest.cv.reference_recall.present})</p></details>{/if}
-      {/if}</section>{/if}
     {#if ready.models.length}<section class="panel"><h2>{t('modelList')}</h2>
-      {#each ready.models as model}<div class="model-row"><div><strong>{customName(model)}</strong><div class="muted">{status(model)}</div></div>
-        {#if confirming===model.id}<p>{t('modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=null}>{t('mCancel')}</Button><Button variant="danger" pending={remove.pending} onclick={()=>remove.run(model.id)}>{t('modelDeleteYes')}</Button></div>
-        {:else}<Button onclick={()=>confirming=model.id}>{t('modelDelete')}</Button>{/if}</div>{/each}
+      {#each ready.models as model (model.id)}<div class="model-row"><div><strong>{customName(model)}</strong>
+          <div class="muted">{model.applicable?fill('mdCounts',{positive:model.training.positive_5s,negative:model.training.negative_5s,checks:model.training.negative_from_checks}):t(model.reason??'custom_model_scope_changed')}</div></div>
+        <div class="actions">{#if model.applicable}<Button variant="primary" pending={check.pending} onclick={()=>check.run(model)}>{t('mdCheck')}</Button>{/if}
+          <Button variant="ghost" onclick={()=>confirming=confirming===model.id?null:model.id}>{t('modelDelete')}</Button></div>
+        {#if confirming===model.id}<div class="confirm"><p>{t('modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=null}>{t('mCancel')}</Button><Button variant="danger" pending={remove.pending} onclick={()=>remove.run(model.id)}>{t('modelDeleteYes')}</Button></div></div>{/if}
+      </div>{/each}
     </section>{/if}
+    <div class="actions"><Button href={back}>{t('wBackSpecies')}</Button></div>
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>h3{font-size:16px;margin:20px 0 8px}.sound{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 0;border-top:1px solid rgb(var(--stone-200))}.sound>:global(.audio),.sound>:global(div){flex-basis:100%}.model-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid rgb(var(--stone-200))}section p{margin:12px 0}.species{margin:0}</style>
+<style>.model-page{max-width:1050px}h1{margin:12px 0}section p{margin:10px 0}.species{margin:0}.row{display:flex;flex-direction:column;gap:8px;padding:14px 0;border-top:1px solid rgb(var(--stone-300))}
+  .row-head{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}.rank{font-weight:700}
+  .model-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid rgb(var(--stone-200))}
+  .confirm{flex-basis:100%;padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}</style>

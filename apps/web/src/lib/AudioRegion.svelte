@@ -14,12 +14,11 @@
   import Button from './ui/Button.svelte';
   import { roseus } from './roseus';
   import ZoomSpectrogram from './ZoomSpectrogram.svelte';
-  import type { CallRange } from './annotations';
   import { seekInterval } from './annotation-geometry.js';
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, marks=[], onrange, marking=$bindable(false), storageKey }:
+    zoomable=false, storageKey, onplaying }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;marks?:CallRange[];onrange?:(start:number,end:number)=>void;marking?:boolean;storageKey?:string } = $props();
+      zoomable?:boolean;storageKey?:string;onplaying?:()=>void } = $props();
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
   let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
   let viewStart = $state(0), span = $state(30), loading = $state(true), error = $state('');
@@ -143,11 +142,13 @@
     <Button disabled={viewEnd>=source.seconds} onclick={()=>navigate(viewStart+span)}>{t('nextView')} ›</Button>
   </div>{/if}
   {#if zoomable&&initialized&&viewEnd>viewStart}
-    <ZoomSpectrogram {mediaPath} start={viewStart} end={viewEnd} {marks} cursor={status === 'idle' ? playhead : cursor} {onrange} bind:marking {storageKey}
+    <ZoomSpectrogram {mediaPath} start={viewStart} end={viewEnd} cursor={status === 'idle' ? playhead : cursor} {storageKey}
       onseek={seek} onplay={toggle} controls={playbackButton}/>
   {:else}<div class="spectrogram-grid">
     <div class="frequencies"><span>{+(frequencyMax / 1000).toFixed(2)} kHz</span><span>{+(frequencyMax / 2000).toFixed(2)} kHz</span><span>0</span></div>
+    <!-- Double-clicking a fixed clip plays from that point, like the zoomable view. -->
     <div class="spectrogram" class:fixed={fixedRange} role="group" aria-label={t('spectrogram')}
+      ondblclick={event => { if (fixedRange && !loading && !error) void play(Math.min(pointerTime(event as unknown as PointerEvent), end - .05), end); }}
       onpointerdown={event => { if (fixedRange || loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
       onpointermove={select} onpointerup={event => { select(event); anchor = null; }} onpointercancel={() => anchor = null}>
       <canvas bind:this={canvas} aria-label={t('spectrogram')}></canvas>
@@ -168,7 +169,7 @@
   <!-- Field recordings have no speech transcript. -->
   <!-- svelte-ignore a11y_media_has_caption -->
   <audio bind:this={audio} preload="metadata" src={mediaURL(`${mediaPath}/audio`)} aria-label={t('audio')}
-    onerror={() => { error = 'unreadable_audio'; status = 'idle'; }} onplaying={() => { if (!audio.paused) { status = 'playing'; scheduleStop(); } }}
+    onerror={() => { error = 'unreadable_audio'; status = 'idle'; }} onplaying={() => { if (!audio.paused) { status = 'playing'; scheduleStop(); onplaying?.(); } }}
     onwaiting={() => { if (status === 'playing') status = 'loading'; }}
     onpause={() => { if (audio.paused && (status !== 'loading' || stopAt !== null)) { status = 'idle'; clearTimeout(stopTimer); } }} onended={stop} onseeked={scheduleStop} onratechange={scheduleStop}
     ontimeupdate={() => cursor = audio.currentTime}></audio>

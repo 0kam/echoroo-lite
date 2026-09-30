@@ -178,15 +178,12 @@ def run(args):
         assert quick['searched_recordings'] == args.count and quick['searched_segments'] == args.count * 12
         results['timings_s']['quick_search'] = time.perf_counter() - started
         started = stage('saved_multi_reference_search')
-        runs = api('/search-runs', {'dataset_id': dataset, 'targets': targets})
-        assert len(runs) == 2 and all(r['hit_count'] == args.count * 12 for r in runs)
+        runs = [api('/search-runs', {'dataset_id': dataset, **target}) for target in targets]
         results['timings_s']['saved_multi_reference_search'] = time.perf_counter() - started
-        started = stage('sample')
-        sample = api(f"/search-runs/{runs[0]['id']}/samples", {'low': -1, 'high': 1, 'count': 30})
-        assert len(sample['hits']) == 30
-        hit = sample['hits'][0]
-        api(f"/search-runs/{runs[0]['id']}/judgements", {'segment_id': hit['segment_id'], 'verdict': 'unknown', 'note': 'Performance check only'})
-        results['timings_s']['sample'] = time.perf_counter() - started
+        started = stage('presence_list')
+        listed = api(f"/datasets/{dataset}/species/{targets[0]['species_id']}/presence?source=search")
+        assert listed['rows'] and listed['run_id'] == runs[0]['id']
+        results['timings_s']['presence_list'] = time.perf_counter() - started
         options = api(f'/reports/options?dataset_id={dataset}')
         dates = {k: options[v] for k, v in [('start_date', 'first_date'), ('end_date', 'last_date')]}
         reports = []
@@ -197,16 +194,10 @@ def run(args):
             assert sum(c['eligible_windows'] for c in report['cells']) == args.count * 4
             reports.append(report)
             results['timings_s'][results['stage']] = time.perf_counter() - started
-        started = stage('report_search')
-        report = api('/reports/search', {**dates, 'run_id': runs[0]['id'], 'threshold': .4})
-        assert report['summaries'][0]['eligible_windows'] == args.count * 12
-        reports.append(report)
-        results['timings_s']['report_search'] = time.perf_counter() - started
         started = stage('export')
         exports = output / 'exports'; exports.mkdir()
         for report in reports:
-            audio = [{k: hit[k] for k in ('recording_id', 'start_s', 'end_s')}] if report['kind'] == 'search' else []
-            exported = api(f"/reports/{report['id']}/export", {'folder': str(exports), 'audio': audio})
+            exported = api(f"/reports/{report['id']}/export", {'folder': str(exports), 'audio': []})
             with zipfile.ZipFile(exported['path']) as archive:
                 assert {'species.csv', 'hourly.csv', 'evidence.csv', 'quality.csv'} <= set(archive.namelist())
                 assert len(archive.read('hourly.csv')) > 100

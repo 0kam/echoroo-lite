@@ -84,27 +84,17 @@ class ClipRequest(BaseModel):
     end_s: float = Field(gt=0, allow_inf_nan=False)
 
 
-class SearchTarget(BaseModel):
-    species_id: str
-    clips: list[ClipRequest] = Field(min_length=1, max_length=20)
-
-
 class SearchRunRequest(BaseModel):
     dataset_id: int
+    species_id: str
     start_date: date | None = None
     end_date: date | None = None
-    targets: list[SearchTarget] = Field(min_length=1, max_length=20)
-
-
-class SampleRequest(BaseModel):
-    low: float = Field(ge=-1, le=1, allow_inf_nan=False)
-    high: float = Field(ge=-1, le=1, allow_inf_nan=False)
-    count: int = Field(default=20, ge=1, le=200)
+    clips: list[ClipRequest] = Field(min_length=1, max_length=20)
 
 
 class ExampleRef(BaseModel):
     kind: Literal['named', 'confirmed']
-    origin: Literal['quiz', 'xeno-canto', 'search-reference', 'annotation', 'validation', 'search-judgement']
+    origin: Literal['quiz', 'xeno-canto', 'search-reference', 'presence', 'validation']
     id: int | Annotated[str, Field(max_length=100)]
 
 
@@ -115,15 +105,6 @@ ExamplesSnapshot = Annotated[list[ExampleRef] | None, Field(max_length=50)]
 class ExamplesRequest(BaseModel):
     dataset_id: int
     validation_id: int | None = None
-    run_id: int | None = None
-    sample_id: int | None = None
-
-
-class JudgementRequest(BaseModel):
-    segment_id: int
-    verdict: Literal['target', 'other', 'unknown']
-    note: str = Field(default='', max_length=2000)
-    examples_snapshot: ExamplesSnapshot = None
 
 
 class XCKeyRequest(BaseModel):
@@ -141,50 +122,43 @@ class DetectionReportRequest(BaseModel):
     base_report_id: int | None = None
 
 
-class SearchReportRequest(BaseModel):
-    run_id: int
-    start_date: date
-    end_date: date
-    threshold: float | None = Field(default=None, ge=-1, le=1, allow_inf_nan=False)
-
-
-class ValidationRequest(BaseModel):
+class ScopeRequest(BaseModel):
     dataset_id: int
     species_id: str
     start_date: date
     end_date: date
-    run_id: int | None = None
 
 
-class CustomValidationRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    model_id: int = Field(ge=1)
-
-
-class CustomModelRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    annotation_session_id: int = Field(ge=1)
-    species_id: str
-
-
-class AnnotationRange(BaseModel):
-    species_id: str | None
-    start_s: float = Field(ge=0, allow_inf_nan=False)
-    end_s: float = Field(gt=0, allow_inf_nan=False)
-
-
-class AnnotationRequest(BaseModel):
-    dataset_id: int
-    start_date: date
-    end_date: date
+class ValidationRequest(ScopeRequest):
+    model: Literal['birdnet', 'perch', 'custom']
+    model_id: int | None = Field(default=None, ge=1)
 
 
 class ValidationAnswer(BaseModel):
     item_id: int
     verdict: Literal['target', 'other', 'unknown']
-    ranges: list[AnnotationRange] | None = Field(default=None, max_length=200)
     version: int | None = Field(default=None, ge=0)
     examples_snapshot: ExamplesSnapshot = None
+
+
+class PresenceMark(BaseModel):
+    dataset_id: int
+    species_id: str
+    recording_id: int
+    start_s: float = Field(ge=0, allow_inf_nan=False)
+    end_s: float = Field(gt=0, allow_inf_nan=False)
+    run_id: int | None = None
+    marked: bool
+
+
+class PresenceMiss(ScopeRequest):
+    source: Literal['ai', 'search']
+    listened: int = Field(ge=1, le=1000)
+
+
+class ModelLabel(BaseModel):
+    segment_id: int
+    label: Literal['target', 'other'] | None
 
 
 class EvidenceSelection(BaseModel):
@@ -322,12 +296,12 @@ def create_app(root, models, token):
 
     @app.get('/datasets/{dataset_id}/species/{species_id}')
     def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
-                         engine: Literal['birdnet','perch','custom','auto'] = 'auto', run_id: int | None = None,
+                         engine: Literal['birdnet','perch','custom','auto'] = 'auto',
                          model_id: int | None = Query(default=None,ge=1),
                          cell_date: date | None = None, hour: int | None = Query(default=None,ge=0,le=23)):
         from results_workflow import species_result
         return species_result(root,dataset_id,species_id,start_date.isoformat() if start_date else None,
-            end_date.isoformat() if end_date else None,engine,run_id,cell_date.isoformat() if cell_date else None,hour,model_id)
+            end_date.isoformat() if end_date else None,engine,cell_date.isoformat() if cell_date else None,hour,model_id)
 
     @app.get('/datasets/{dataset_id}/exports')
     def workflow_exports(dataset_id: int):
@@ -353,25 +327,46 @@ def create_app(root, models, token):
         from workflow_export import open_export
         return open_export(root,export_id,kind)
 
-    @app.post('/annotations')
-    def annotation_start(body: AnnotationRequest):
-        from annotations import start_session
-        with lock:
-            return {'id': start_session(root, body)}
+    @app.get('/datasets/{dataset_id}/species/{species_id}/presence')
+    def presence_list(dataset_id: int, species_id: str, source: Literal['ai', 'search'] = 'ai',
+                      start_date: date | None = None, end_date: date | None = None):
+        from presence import candidates
+        return candidates(root, dataset_id, species_id, source, start_date.isoformat() if start_date else None,
+                          end_date.isoformat() if end_date else None)
 
-    @app.get('/annotations/{session_id}/custom-model-readiness')
-    def custom_model_readiness(session_id: int, species_id: str):
+    @app.post('/presence/marks')
+    def presence_mark(body: PresenceMark):
+        from presence import set_mark
+        return set_mark(root, body)
+
+    @app.post('/presence/misses')
+    def presence_miss(body: PresenceMiss):
+        from presence import record_miss
+        return record_miss(root, body)
+
+    @app.get('/datasets/{dataset_id}/species/{species_id}/custom-model')
+    def custom_model_readiness(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
+                               limit: int = Query(default=30, ge=0, le=200), offset: int = Query(default=0, ge=0)):
         from custom_models import readiness
-        return readiness(root,session_id,species_id)
+        from results_workflow import context
+        ctx = context(root, dataset_id, start_date.isoformat() if start_date else None, end_date.isoformat() if end_date else None)
+        return readiness(root, ctx, species_id, limit, offset)
+
+    @app.post('/search-runs/{run_id}/labels')
+    def custom_model_label(run_id: int, body: ModelLabel):
+        from custom_models import set_label
+        return set_label(root, run_id, body.segment_id, body.label)
 
     @app.post('/custom-models')
-    def custom_model_create(body: CustomModelRequest):
+    def custom_model_create(body: ScopeRequest):
         from custom_models import create
+        from results_workflow import context
         with lock:
             if worker and worker.is_alive():
                 raise HTTPException(409,'job_busy')
             operation_cancel.clear()
-            return create(root,body.annotation_session_id,body.species_id,operation_cancel)
+            return create(root, context(root, body.dataset_id, body.start_date.isoformat(), body.end_date.isoformat()),
+                          body.species_id, operation_cancel)
 
     @app.get('/custom-models/{model_id}')
     def custom_model_detail(model_id: int):
@@ -385,8 +380,10 @@ def create_app(root, models, token):
             return delete_model(root,model_id)
 
     @app.post('/validations')
-    def validation_start(body: ValidationRequest | CustomValidationRequest):
+    def validation_start(body: ValidationRequest):
         from validation import start_session
+        if (body.model == 'custom') != (body.model_id is not None):
+            raise CatalogError('invalid_input')
         with lock:
             return start_session(root,body)
 
@@ -411,9 +408,14 @@ def create_app(root, models, token):
     def validation_answer(session_id: int,body: ValidationAnswer):
         from validation import answer
         with lock:
-            return answer(root,session_id,body.item_id,body.verdict,
-                          [r.model_dump() for r in body.ranges] if body.ranges is not None else None, body.version,
+            return answer(root,session_id,body.item_id,body.verdict,body.version,
                           [r.model_dump() for r in body.examples_snapshot] if body.examples_snapshot is not None else None)
+
+    @app.post('/validations/{session_id}/delete')
+    def validation_delete(session_id: int):
+        from validation import delete_check
+        with lock:
+            return delete_check(root,session_id)
 
     @app.get("/catalog")
     def catalog():
@@ -465,20 +467,19 @@ def create_app(root, models, token):
             return {**names_for(row), 'ebird_code': ebird_codes().get(row['scientific_name'])}
 
     @app.get('/species/{species_id}/examples')
-    def species_examples(species_id: str, dataset_id: int, validation_id: int | None = None,
-                         run_id: int | None = None, sample_id: int | None = None):
+    def species_examples(species_id: str, dataset_id: int, validation_id: int | None = None):
         from examples import examples
         from quiz import initialize_quiz
         with lock:
             initialize_quiz(root)
-        return examples(root, species_id, dataset_id, validation_id, run_id, sample_id)
+        return examples(root, species_id, dataset_id, validation_id)
 
     @app.post('/species/{species_id}/examples/xeno-canto')
     def species_examples_xc(species_id: str, body: ExamplesRequest):
         from examples import examples, fetch_xeno_canto
         with lock:
             fetch_xeno_canto(root, species_id)
-        return examples(root, species_id, body.dataset_id, body.validation_id, body.run_id, body.sample_id)
+        return examples(root, species_id, body.dataset_id, body.validation_id)
 
     @app.post("/species")
     def update_species(body: SpeciesRequest):
@@ -604,35 +605,25 @@ def create_app(root, models, token):
             operation_cancel.clear()
             return search(root, models, body, operation_cancel)
 
-    @app.get('/search-runs')
-    def saved_searches(dataset_id: int):
-        from search_runs import list_runs
-        return list_runs(root, dataset_id)
-
     @app.post('/search-runs')
     def saved_search(body: SearchRunRequest):
-        from search_runs import create_runs
+        from search_runs import create_run
         with lock:
             if worker and worker.is_alive():
                 raise HTTPException(409, 'job_busy')
             operation_cancel.clear()
-            return create_runs(root, models, body, operation_cancel)
+            return create_run(root, models, body, operation_cancel)
 
-    @app.get('/search-runs/{run_id}')
-    def saved_search_detail(run_id: int, sample_id: int | None = None):
-        from search_runs import get_run
-        return get_run(root, run_id, sample_id)
+    @app.get('/search-runs/{run_id}/delete-preview')
+    def search_delete_preview(run_id: int):
+        from search_runs import delete_preview
+        return delete_preview(root, run_id)
 
-    @app.post('/search-runs/{run_id}/samples')
-    def sample_search(run_id: int, body: SampleRequest):
-        from search_runs import draw_sample
-        return draw_sample(root, run_id, body.low, body.high, body.count)
-
-    @app.post('/search-runs/{run_id}/judgements')
-    def judge_search(run_id: int, body: JudgementRequest):
-        from search_runs import judge
-        return judge(root, run_id, body.segment_id, body.verdict, body.note,
-                     [r.model_dump() for r in body.examples_snapshot] if body.examples_snapshot is not None else None)
+    @app.post('/search-runs/{run_id}/delete')
+    def search_delete(run_id: int):
+        from search_runs import delete_run
+        with management_change():
+            return delete_run(root, run_id)
 
     @app.get('/reports/options')
     def report_options(dataset_id: int):
@@ -648,11 +639,6 @@ def create_app(root, models, token):
     def detection_report(body: DetectionReportRequest):
         from reports import detection
         return detection(root, body)
-
-    @app.post('/reports/search')
-    def similarity_report(body: SearchReportRequest):
-        from reports import search_report
-        return search_report(root, body)
 
     @app.get('/reports/{report_id}')
     def report(report_id: int, cell_date: date | None = None, hour: int | None = Query(default=None, ge=0, le=23)):

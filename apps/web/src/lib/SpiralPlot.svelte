@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { qualityText } from './workflow';
+  import { checkText } from './workflow';
   import { commonName } from './species';
   import { percent, type Cell, type Report } from './reports';
   import { app, t } from './app.svelte';
@@ -7,29 +7,23 @@
   let element = $state<SVGSVGElement>(null!), zoom = $state(100), focusIndex = $state(0);
   const uid = $props.id();
   const days = $derived(Math.round((Date.parse(report.end_date) - Date.parse(report.start_date)) / 86400000) + 1);
-  const searchPeriod = $derived(report.search_snapshot?.start_date || report.search_snapshot?.end_date
-    ? `${t('searchRecordingDates')}: ${report.search_snapshot.start_date ?? t('noDateLimit')}–${report.search_snapshot.end_date ?? t('noDateLimit')}` : '');
-  const siteLines = $derived([`${report.site.name}`, ...(searchPeriod ? [searchPeriod] : [])]
+  const siteLines = $derived([`${report.site.name}`]
     .flatMap(line => Array.from(line).join('').match(new RegExp(`.{1,${app.locale === 'ja' ? 48 : 90}}`, 'gu')) || []));
   const header = $derived(132 + siteLines.length * 20);
   const cx = 480, outer = 330, inner = 60;
-  const quality = $derived(report.validation?.applicable ? report.validation.results[report.kind==='search'?'search':report.engine??''] : null);
+  const quality = $derived(report.validation?.applicable ? report.validation : null);
   const cy = $derived(header + 360), height = $derived(header + 900);
   const ring = $derived((outer - inner) / days);
   const dateTicks = $derived([...new Set([0,1,2,3].map(i => Math.round((days-1)*i/3)))]);
-  const metric = $derived(t(report.kind === 'search' ? 'maximumSimilarity' : 'candidateRate'));
-  const scaleMin = $derived(report.kind === 'search' ? report.threshold ?? -1 : 0);
-  const condition = $derived(report.kind === 'search' ? `${t('searchHistory')} #${report.run_id}` : `${report.engine === 'birdnet' ? 'BirdNET' : report.engine === 'perch' ? 'Perch' : report.model_name??t('customModel')} · ${report.model_sha256.slice(0, 12)}`);
+  const metric = $derived(t('candidateRate'));
+  const condition = $derived(`${report.engine === 'birdnet' ? 'BirdNET' : report.engine === 'perch' ? 'Perch' : t('customModel')} · ${report.model_sha256.slice(0, 12)}`);
   const color = (cell: Cell) => {
     if (cell.status === 'no_recording') return 'transparent';
     if (cell.status === 'unanalysed' || cell.status === 'not_evaluated') return `url(#${uid}-missing)`;
-    const value = report.kind === 'search' ? cell.max_similarity : cell.candidate_rate;
+    const value = cell.candidate_rate;
     if (value === null) return '#f1f0f2';
-    if(report.kind==='detection' && value===0)return '#fff';
-    if(report.kind==='search' && report.threshold===null && cell.confirmed_windows===0)return '#e0dfe4';
-    if(value<scaleMin)return '#e0dfe4';
-    const raw = scaleMin === 1 ? 1 : Math.min(1, Math.max(0, (value - scaleMin) / (1 - scaleMin)));
-    const fraction = report.kind==='detection' ? .25 + .75*raw : raw;
+    if(value===0)return '#fff';
+    const fraction = .25 + .75*Math.min(1, Math.max(0, value));
     return `rgb(${[248, 224, 222].map((start, i) => Math.round(start + ([160,80,76][i] - start) * fraction)).join(',')})`;
   };
   function point(radius: number, hour: number) {
@@ -42,7 +36,7 @@
     return `M${point(r0,hour)} A${r0},${r0} 0 0 1 ${point(r0,hour+1)} L${point(r1,hour+1)} A${r1},${r1} 0 0 0 ${point(r1,hour)} Z`;
   }
   function describe(cell: Cell) {
-    const value = report.kind === 'search' ? cell.max_similarity?.toFixed(3) ?? '—' : percent(cell.candidate_rate);
+    const value = percent(cell.candidate_rate);
     return `${cell.date} ${cell.hour}:00 · ${t(`cell_${cell.status}`)} · ${metric}: ${value}`;
   }
   function navigate(event: KeyboardEvent, index: number) {
@@ -75,7 +69,7 @@
   <desc>{t('spiralMeaning')} {report.site.timezone} · {report.start_date}–{report.end_date}</desc>
   <defs><pattern id={`${uid}-missing`} width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="#fafafa"/><path d="M-2,2 L2,-2 M0,7 L7,0 M5,9 L9,5" stroke="#aeacb8" stroke-width="1"/></pattern>
     <pattern id={`${uid}-partial`} width="9" height="9" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1" fill="#494454"/></pattern>
-    <linearGradient id={`${uid}-gradient`}><stop offset="0%" stop-color={report.kind==='detection'?'#e2bcba':'#f8e0de'}/><stop offset="100%" stop-color="#a0504c"/></linearGradient>
+    <linearGradient id={`${uid}-gradient`}><stop offset="0%" stop-color="#e2bcba"/><stop offset="100%" stop-color="#a0504c"/></linearGradient>
   </defs>
   <rect width="960" height={height} fill="#fff"/>
   <text aria-hidden={compact} x="36" y="38" font-size="26" font-weight="600" fill="#373450">{report.species ? commonName(report.species, app.locale) || t('commonNameMissing') : ''}</text>
@@ -89,8 +83,6 @@
       aria-label={describe(cell)} onclick={() => onselect(cell)} onkeydown={event => navigate(event,index)} onfocus={() => focusIndex=index}>
       <title>{describe(cell)}</title></path>
     {#if cell.status === 'partial'}<path d={wedge(Math.floor(index/24),cell.hour)} fill={`url(#${uid}-partial)`} pointer-events="none"/>{/if}
-    {#if cell.confirmed_windows > 0}{@const p = point(inner+(Math.floor(index/24)+.5)*ring, cell.hour+.5)}
-      <circle cx={p[0]} cy={p[1]} r={Math.max(1.4,Math.min(4,ring*.35))} fill="#222" stroke="#fff" stroke-width=".7" pointer-events="none"/>{/if}
   {/each}
   {#each [0,3,6,9,12,15,18,21] as hour}{@const p=point(outer+28,hour)}<text x={p[0]} y={p[1]+5} text-anchor="middle" font-size="17" fill="#575279">{String(hour).padStart(2,'0')}:00</text>{/each}
   {#if days>1}{#each dateTicks as day}{@const p=point(inner+(day+.5)*ring,16.5)}
@@ -101,19 +93,15 @@
   <text x={cx} y={cy+15} text-anchor="middle" font-size="13" fill="#575279">{days} {t('days')}</text>
   <text x="70" y={cy+395} font-size="16" fill="#373450">{metric}</text>
   <rect x="370" y={cy+379} width="300" height="18" fill={`url(#${uid}-gradient)`}/>
-  <text x="362" y={cy+395} text-anchor="end" font-size="14" fill="#575279">{report.kind==='search' ? scaleMin.toFixed(2) : '>0%'}</text>
-  <text x="682" y={cy+395} font-size="14" fill="#575279">{report.kind==='search' ? '1.00' : '100%'}</text>
+  <text x="362" y={cy+395} text-anchor="end" font-size="14" fill="#575279">&gt;0%</text>
+  <text x="682" y={cy+395} font-size="14" fill="#575279">100%</text>
   {#each [{fill:'#f1f0f2',key:'cell_no_recording'},{fill:`url(#${uid}-missing)`,key:'missingAnalysis'},
     {fill:`url(#${uid}-partial)`,key:'cell_partial'}] as item,i}
     <rect x={70+i*285} y={cy+419} width="20" height="16" fill={item.fill} stroke="#aeacb8" stroke-width=".5"/>
     <text x={100+i*285} y={cy+432} font-size="14" fill="#575279">{t(item.key)}</text>{/each}
-  {#if report.kind==='detection'}<rect x="70" y={cy+450} width="20" height="16" fill="#fff" stroke="#aeacb8"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t('uZeroCalls')}</text>{/if}
-  {#if report.kind==='search'}
-    <rect x="70" y={cy+450} width="20" height="16" fill="#e0dfe4"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t(report.threshold===null?'searchNotHeard':'belowThreshold')}</text>
-    <circle cx="363" cy={cy+458} r="4" fill="#222"/><text x="382" y={cy+463} font-size="14" fill="#575279">{t('confirmedEvidence')}</text>
-  {/if}
-  <text aria-hidden={compact} x="70" y={cy+494} font-size="14" fill="#575279">{t(report.kind==='search' ? 'searchFigureCaution' : quality ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
-{#if quality}<text aria-hidden={compact} x="70" y={cy+523} font-size="14" fill="#575279">{t('wQuality')}: {qualityText(report.validation??null,quality)}</text>{/if}
+  <rect x="70" y={cy+450} width="20" height="16" fill="#fff" stroke="#aeacb8"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t('uZeroCalls')}</text>
+  <text aria-hidden={compact} x="70" y={cy+494} font-size="14" fill="#575279">{t(quality ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
+{#if quality}<text aria-hidden={compact} x="70" y={cy+523} font-size="14" fill="#575279">{t('wQuality')}: {checkText(quality)}</text>{/if}
 </svg>
 </div>
 

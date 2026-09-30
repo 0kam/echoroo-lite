@@ -1,7 +1,7 @@
 """Examples of a species' sounds shown beside a question: named recordings, then sounds confirmed at this site.
 
 AI scores are never used here. Every window the reviewer is or will be asked about
-in the current validation (all phases) or search sample is excluded.
+in the current check (all steps) is excluded.
 """
 import json
 from zoneinfo import ZoneInfo
@@ -12,7 +12,6 @@ from storage import CatalogError, checked_source, connect
 
 LIMIT = 12
 NAMED_S = 15  # Same width as a detection validation window.
-CONFIRMED_MIN_S = 5  # Short marked calls get context, like a search hit.
 
 
 def _example(kind, row, source_kind, start, end, label):
@@ -20,26 +19,22 @@ def _example(kind, row, source_kind, start, end, label):
             'start_s': float(start), 'end_s': float(min(end, row['seconds'])), 'label': label, '_row': row}
 
 
-def _question_windows(root, db, validation_id, run_id, sample_id):
-    if validation_id is not None:
-        width = db.execute("SELECT json_extract(snapshot,'$.window_s') FROM validation_sessions WHERE id=?", (validation_id,)).fetchone()
-        if width is None:
-            raise CatalogError('not_found')
-        return [('recording', r[0], r[1], r[1] + width[0]) for r in
-                db.execute('SELECT recording_id,start_s FROM validation_items WHERE session_id=?', (validation_id,))]
-    if run_id is not None:
-        from search_runs import get_run
-        return [('recording', h['recording_id'], h['start_s'], h['end_s']) for h in get_run(root, run_id, sample_id)['hits']]
-    return []
+def _question_windows(db, validation_id):
+    if validation_id is None:
+        return []
+    if not db.execute('SELECT 1 FROM validation_sessions WHERE id=?', (validation_id,)).fetchone():
+        raise CatalogError('not_found')
+    return [('recording', r[0], r[1], r[1] + 15) for r in
+            db.execute('SELECT recording_id,start_s FROM validation_items WHERE session_id=?', (validation_id,))]
 
 
-def examples(root, species_id, dataset_id, validation_id=None, run_id=None, sample_id=None):
+def examples(root, species_id, dataset_id, validation_id=None):
     with connect(root) as db:
         taxon = db.execute('SELECT * FROM species WHERE id=?', (species_id,)).fetchone()
         site = db.execute('SELECT s.* FROM sites s JOIN datasets d ON d.site_id=s.id WHERE d.id=?', (dataset_id,)).fetchone()
         if taxon is None or site is None:
             raise CatalogError('not_found')
-        taken = _question_windows(root, db, validation_id, run_id, sample_id)
+        taken = _question_windows(db, validation_id)
         zone = ZoneInfo(site['timezone'])
         records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))}
         local = lambda record, start: window_key(record, start, zone)[1]
@@ -69,29 +64,16 @@ def examples(root, species_id, dataset_id, validation_id=None, run_id=None, samp
                 if row['kind'] == 'recording' and row['id'] in records:
                     label['local_time'] = local(records[row['id']], ref['query']['start_s'])
                 search_named.append(_example('named', row, row['kind'], ref['query']['start_s'], ref['query']['end_s'], label))
-        for row in db.execute('''SELECT a.id,a.ranges,a.created_at,i.recording_id FROM annotation_items i
-                JOIN annotation_answers a ON a.id=(SELECT MAX(id) FROM annotation_answers WHERE item_id=i.id) WHERE a.complete=1'''):
-            record = records.get(row['recording_id'])
-            for value in json.loads(row['ranges']) if record else []:
-                if value['species_id'] != species_id:
-                    continue
-                a, b = value['start_s'], value['end_s']
-                start = max(0.0, min((a + b - CONFIRMED_MIN_S) / 2, a))
-                confirmed.append((row['created_at'], _example('confirmed', record, 'recording', start, max(start + CONFIRMED_MIN_S, b),
-                                  {'origin': 'annotation', 'id': row['id'], 'local_time': local(record, a)})))
-        widths = dict(db.execute("SELECT id,json_extract(snapshot,'$.window_s') FROM validation_sessions WHERE species_id=?", (species_id,)).fetchall())
-        for row in db.execute(f'''SELECT a.id,a.created_at,i.recording_id,i.start_s,i.session_id FROM validation_items i
-                JOIN validation_answers a ON a.id=(SELECT MAX(id) FROM validation_answers WHERE item_id=i.id)
-                WHERE a.verdict='target' AND i.session_id IN ({','.join('?' * len(widths))})''', list(widths)):
-            if record := records.get(row['recording_id']):
-                confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['start_s'] + widths[row['session_id']],
-                                  {'origin': 'validation', 'id': row['id'], 'local_time': local(record, row['start_s'])})))
-        for row in db.execute('''SELECT j.id,j.created_at,a.recording_id,s.start_s,s.end_s FROM search_judgements j
-                JOIN segments s ON s.id=j.segment_id JOIN analyses a ON a.id=s.analysis_id
-                WHERE j.id IN (SELECT MAX(id) FROM search_judgements WHERE species_id=? GROUP BY segment_id) AND j.verdict=?''', (species_id, 'target')):
+        for row in db.execute('''SELECT id,created_at,recording_id,start_s,end_s FROM presence_marks
+                WHERE species_id=? AND dataset_id IN (SELECT id FROM datasets WHERE site_id=?)''', (species_id, site['id'])):
             if record := records.get(row['recording_id']):
                 confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['end_s'],
-                                  {'origin': 'search-judgement', 'id': row['id'], 'local_time': local(record, row['start_s'])})))
+                                  {'origin': 'presence', 'id': row['id'], 'local_time': local(record, row['start_s'])})))
+        for row in db.execute('''SELECT a.id,a.created_at,a.recording_id,a.start_s FROM window_answers a
+                WHERE a.id IN (SELECT MAX(id) FROM window_answers WHERE species_id=? GROUP BY recording_id,start_s) AND a.verdict='target' ''', (species_id,)):
+            if record := records.get(row['recording_id']):
+                confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['start_s'] + 15,
+                                  {'origin': 'validation', 'id': row['id'], 'local_time': local(record, row['start_s'])})))
         in_quiz = bool(db.execute('SELECT 1 FROM quiz_clips WHERE species_id=? AND enabled=1', (species_id,)).fetchone())
     chosen = []
     confirmed.sort(key=lambda pair: (pair[0], pair[1]['label']['id']), reverse=True)

@@ -17,13 +17,13 @@
   type Example = { kind: ExampleRef['kind']; source: AudioSource; start_s: number; end_s: number;
     label: { origin: string; id: number | string; recordist?: string; license?: string; url?: string; local_time?: string; country?: string; quality?: string } };
   type Payload = { examples: Example[]; ebird_code: string | null; in_quiz: boolean };
-  let { species, datasetId, validationId, runId, sampleId, practice, onexamples }:
-    { species: Species; datasetId: number; validationId?: number; runId?: number; sampleId?: number | null; practice: string;
+  let { species, datasetId, validationId, practice, onexamples }:
+    { species: Species; datasetId: number; validationId?: number; practice: string;
       onexamples?: (examples: ExampleRef[]) => void } = $props();
   let data = $state<Payload | null>(null), index = $state(0), error = $state(''), fetched = $state(false), request = 0;
   // Primitive dependencies: a refreshed page object for the same species must not reload or reset the examples.
   const speciesId = $derived(species.id);
-  const scope = $derived({ dataset_id: datasetId, validation_id: validationId, run_id: runId, sample_id: sampleId ?? undefined });
+  const scope = $derived({ dataset_id: datasetId, validation_id: validationId });
   const example = $derived(data?.examples[index]);
   const named = $derived(data?.examples.some(e => e.kind === 'named') ?? false);
   const page = $derived(speciesPage(species, data?.ebird_code ?? null, app.locale));
@@ -74,6 +74,7 @@
   .examples h2 { font-size: 18px; margin: 0; }
   .examples > :global(.button) { align-self: flex-start; }
   .credit { overflow-wrap: anywhere; font-size: 14px; }
+  .actions :global(.button) { white-space: normal; text-align: left; }
   .between { justify-content: space-between; align-items: center; flex-wrap: nowrap; }
   p { margin: 4px 0; }
 </style>

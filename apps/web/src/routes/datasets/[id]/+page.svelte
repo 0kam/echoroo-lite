@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,duration,refreshCatalog } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { customName,fill,qualityLines,rangeQuery,speciesGroup,type Overview } from '$lib/workflow';
+  import { checkName,fill,presenceText,rangeQuery,reliableModels,speciesGroup,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
@@ -29,18 +29,17 @@
   type Row=Overview['species'][number];
   const groups=$derived((['confirmed','check','few'] as const).map(key=>({key,rows:result?.species.filter(row=>speciesGroup(row)===key)??[]})));
   const confirmed=$derived(groups[0].rows.length>0);
-  // The next step: the most-detected species whose check is not finished yet.
-  const next=$derived(groups[1].rows.find(row=>!row.validation?.applicable||row.validation.stage!=='complete'));
-  const speciesHref=(row:Row)=>`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=${row.models.find(m=>m.candidate_windows>0)?.engine??'auto'}`;
+  // The next step: the most-detected species nobody has listened to yet.
+  const next=$derived(groups[1].rows.find(row=>row.presence.status==='unchecked'));
+  const speciesHref=(row:Row)=>`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=${row.models.find(m=>(m.candidate_windows??0)>0)?.engine??'auto'}`;
   const reports=$derived(`${resolve(`/datasets/${id}/reports`)}${range}`);
   const titles={confirmed:'wGroupConfirmed',check:'wGroupCheck',few:'wGroupFew'};
 </script>
-{#snippet table(rows:Row[])}<div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wQuality')}</th></tr></thead><tbody>
-  {#each rows as row (row.species.id)}<tr><td><a href={speciesHref(row)}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
-    <td>{#each row.models as model}<div>{model.engine==='birdnet'?'BirdNET':'Perch'}: {model.candidate_windows.toLocaleString(app.locale)} {t('wDetectedWindows')} · {model.candidate_days} {t('wDays')}</div>{:else}—{/each}{#each row.custom_models??[] as model}<div><a href={`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=custom&model_id=${model.id}`}>{customName(model)}</a></div>{/each}</td>
-    <td>{#if row.models.length||!row.custom_models?.length}{#each qualityLines(row.validation) as line}<div>{line}</div>{/each}{/if}
-      {#each row.custom_models??[] as model}{#each qualityLines(model.validation) as line}<div>{customName(model)}: {line}</div>{/each}{/each}
-      {#each row.searches.filter(run=>run.validation) as run}{#each qualityLines(run.validation!) as line}<div>{t('wConfirmed')}: {line}</div>{/each}{/each}</td></tr>{/each}
+{#snippet table(rows:Row[])}<div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wPresence')}</th><th>{t('wActivity')}</th></tr></thead><tbody>
+  {#each rows as row (row.species.id)}{@const reliable=reliableModels(row.models)}<tr><td><a href={speciesHref(row)}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
+    <td>{#each row.models as model}<div>{checkName(model)}: {model.candidate_windows==null?'—':`${model.candidate_windows.toLocaleString(app.locale)} ${t('wDetectedWindows')} · ${model.candidate_days} ${t('wDays')}`}</div>{:else}—{/each}</td>
+    <td>{presenceText(row.presence)}</td>
+    <td>{reliable.length?fill('wReliable',{models:reliable.join(app.locale==='ja'?'・':', ')}):t('wNoReliable')}</td></tr>{/each}
 </tbody></table></div>{/snippet}
 <div class="page">
   <div class="page-header"><div><div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span>{result?.site.name}</div>

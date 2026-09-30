@@ -6,7 +6,7 @@ from datetime import date
 from functools import lru_cache
 from types import SimpleNamespace
 
-from reports import detection, options, search_report, snapshot_view
+from reports import detection, options, snapshot_view
 from species import names_for
 from storage import CatalogError, checked_source, connect
 
@@ -67,8 +67,9 @@ def context(root, dataset_id, first=None, last=None):
         result['start_date'] = date(date.fromisoformat(result['end_date']).year,1,1).isoformat()
     result['fingerprint'] = signature
     with connect(root) as db:
-        revision=[db.execute(f'SELECT COALESCE(MAX(id),0) FROM {table}').fetchone()[0] for table in
-                  ('search_runs','search_judgements','validation_answers','validation_sessions','annotation_answers','annotation_sessions','custom_models')]
+        # MAX and COUNT together notice new rows and deleted ones (undone marks, deleted checks).
+        revision=[tuple(db.execute(f'SELECT COALESCE(MAX(id),0),COUNT(*) FROM {table}').fetchone()) for table in
+                  ('search_runs','window_answers','validation_sessions','presence_marks','presence_misses','model_labels','custom_models')]
         revision.append([tuple(r) for r in db.execute("SELECT id,json_extract(snapshot,'$.stage') FROM validation_sessions ORDER BY id")])
         revision.append([tuple(r) for r in db.execute('SELECT id,names FROM species ORDER BY id')])
     result['names_revision']=hashlib.sha256(json.dumps(revision[-1]).encode()).hexdigest()
@@ -98,175 +99,144 @@ def detection_snapshot(root, ctx, model, species_id=None, threshold=.1):
     return cached(root, ['detection-site-v5', ctx['fingerprint'], ctx['names_revision'], ctx['site']['name'], ctx['dataset']['name'], vars(body)], lambda: detection(root, body, persist=False))
 
 
-def searches(root, dataset_id, species_id=None):
+def search_for(root, ctx, species_id):
+    from search_runs import site_run
     with connect(root) as db:
-        rows = db.execute('''SELECT r.id,r.species_id,r.created_at FROM search_runs r WHERE r.dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?))
-            AND (? IS NULL OR r.species_id=?) ORDER BY r.id DESC''', (dataset_id,species_id,species_id)).fetchall()
-        return [{**dict(r), 'species': names_for(db.execute('SELECT * FROM species WHERE id=?',(r['species_id'],)).fetchone())} for r in rows]
+        run = site_run(db, ctx['site']['id'], species_id)
+    return {'id': run['id'], 'created_at': run['created_at']} if run else None
 
 
-def search_snapshot(root, ctx, run_id):
-    with connect(root) as db:
-        run = db.execute('SELECT dataset_id,species_id FROM search_runs WHERE id=?',(run_id,)).fetchone()
-        if not run or not db.execute('SELECT 1 FROM datasets WHERE id=? AND site_id=?',(run[0],ctx['site']['id'])).fetchone():
-            raise CatalogError('not_found')
-        cutoff = db.execute('SELECT COALESCE(MAX(id),0) FROM search_judgements').fetchone()[0]
-    quality=current_validations(root,ctx,run_id=run_id).get(run['species_id'])
-    def build():
-        threshold=threshold_for(quality,{'engine':'search','model_sha256':quality['models']['search']}) if quality else None
-        body = SimpleNamespace(run_id=run_id, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']), threshold=threshold)
-        result = search_report(root, body, persist=False)
-        result['validation']=quality
-        return result
-    return cached(root, ['search-site-v5',ctx['revision'],run_id,ctx['start_date'],ctx['end_date'],cutoff], build)
-
-
-def custom_snapshot(root, ctx, model_id):
+def custom_snapshot(root, ctx, model):
     from custom_models import report_snapshot
+    quality = current_validations(root, ctx).get((model['species']['id'], f"custom:{model['id']}"))
+    threshold = threshold_for(quality, {'engine': 'custom', 'model_sha256': model['artifact_sha256']})
+
     def build():
-        result = report_snapshot(root, ctx, model_id)
-        result['validation'] = current_validations(root, ctx, model_id=model_id).get(result['species']['id'])
+        result = report_snapshot(root, ctx, model['id'], threshold)
+        result['validation'] = quality
         return result
-    return cached(root, ['custom-report-v1', ctx['revision'], ctx['start_date'], ctx['end_date'], model_id], build)
+    return cached(root, ['custom-report-v2', ctx['revision'], ctx['start_date'], ctx['end_date'], model['id']], build)
 
 
-def current_validations(root, ctx, run_id=None, model_id=None):
+def current_validations(root, ctx):
+    """The applicable check per (species, model key), else the latest one."""
     from validation import view_session
     with connect(root) as db:
-        rows = db.execute('SELECT id,species_id,snapshot,fingerprint FROM validation_sessions WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC', (ctx['dataset']['id'],)).fetchall()
-    chosen={}
+        rows = db.execute('SELECT v.id,v.species_id,v.model,v.snapshot,v.fingerprint FROM validation_sessions v '
+                          'JOIN datasets d ON d.id=v.dataset_id WHERE d.site_id=? ORDER BY v.id DESC', (ctx['site']['id'],)).fetchall()
+    chosen = {}
     for row in rows:
-        snap=json.loads(row['snapshot'])
-        if snap.get('run_id')!=run_id or snap.get('model_id')!=model_id:continue
-        sid=row['species_id']
-        if sid in chosen and chosen[sid]['applicable']:
+        key = (row['species_id'], row['model'])
+        if key in chosen and chosen[key]['applicable']:
             continue
-        applicable=not ctx.get('location_stale') and row['fingerprint']==ctx['fingerprint'] and (snap['start_date'],snap['end_date'])==(ctx['start_date'],ctx['end_date'])
-        if sid not in chosen or applicable:
-            chosen[sid]=view_session(root,row['id'],ctx=ctx,include_items=False)
+        snap = json.loads(row['snapshot'])
+        applicable = (not ctx.get('location_stale') and row['fingerprint'] == ctx['fingerprint']
+                      and (snap['start_date'], snap['end_date']) == (ctx['start_date'], ctx['end_date']))
+        if key not in chosen or applicable:
+            chosen[key] = view_session(root, row['id'], ctx=ctx, include_items=False)
     return chosen
 
 
 def threshold_for(quality, model):
-    if quality and quality['applicable']:
-        result = quality.get('results',{}).get(model['engine'])
-        if result and result['model_sha256']==model['model_sha256']:
-            return result['threshold']
-        if quality.get('models',{}).get(model['engine'])==model['model_sha256']:
-            adjusted=quality.get('thresholds',{}).get(model['engine'])
-            if adjusted:return adjusted['threshold']
-    return None if model['engine']=='search' else .1
+    """The checked threshold (None when ① could not decide one); the default while unchecked or in ①."""
+    from validation import default_threshold
+    if quality and quality['applicable'] and quality['models'].get(model['engine']) == model['model_sha256']:
+        chosen = quality['thresholds'].get(model['engine'])
+        if chosen:
+            return chosen['threshold']
+    return default_threshold(model['engine'])
 
 
 def overview(root, dataset_id, first=None, last=None):
-    ctx = context(root,dataset_id,first,last)
-    return cached(root, ['overview-v7', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
+    ctx = context(root, dataset_id, first, last)
+    return cached(root, ['overview-v8', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
                   lambda: build_overview(root, dataset_id, ctx))
 
 
 def build_overview(root, dataset_id, ctx):
-    quality = current_validations(root,ctx)
-    with connect(root) as db:
-        records = [dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?',(dataset_id,))]
-        named = {r['id']: names_for(r) for r in db.execute('SELECT * FROM species')}
-    from reports import scope_records,effort
     from zoneinfo import ZoneInfo
-    zone=ZoneInfo(ctx['site']['timezone'])
-    records=scope_records(records,zone,ctx['start_date'],ctx['end_date'])
+    from custom_models import list_models
+    from presence import empty, summaries
+    from reports import effort, scope_records
+    quality = current_validations(root, ctx)
+    presence = summaries(root, ctx)
+    with connect(root) as db:
+        records = [dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))]
+        named = {r['id']: names_for(r) for r in db.execute('SELECT * FROM species')}
+        searched = {r['species_id']: {'id': r['id'], 'created_at': r['created_at']} for r in db.execute(
+            'SELECT r.* FROM search_runs r JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=? ORDER BY r.id', (ctx['site']['id'],))}
+    zone = ZoneInfo(ctx['site']['timezone'])
+    records = scope_records(records, zone, ctx['start_date'], ctx['end_date'])
     rows = {}
+
     def add(taxon):
         sid = taxon['id']
         if sid not in rows:
-            rows[sid]={'species':named.get(sid,taxon),'models':[],'custom_models':[],'searches':[],'confirmed':0,'annotated':0,'validation':quality.get(sid)}
+            rows[sid] = {'species': named.get(sid, taxon), 'models': [], 'search': searched.get(sid), 'presence': presence.get(sid, empty())}
         return rows[sid]
     for model in ctx['models']:
-        snap = detection_snapshot(root,ctx,model)
-        summaries={s['species']['id']:s for s in snap['summaries']}
-        for sid in quality:
-            threshold=threshold_for(quality[sid],model)
-            if threshold != .1:
-                revised=detection_snapshot(root,ctx,model,sid,threshold)
-                summaries.update({s['species']['id']:s for s in revised['summaries'] if s['species']['id']==sid})
-        for summary in summaries.values():
-            item = add(summary['species'])
-            threshold = threshold_for(quality.get(summary['species']['id']),model)
-            item['models'].append({**summary,'species':None,**model,'threshold':threshold})
-    from custom_models import list_models
+        found = {s['species']['id']: s for s in detection_snapshot(root, ctx, model)['summaries']}
+        for sid, key in quality:
+            threshold = threshold_for(quality[sid, key], model)
+            if key == model['engine'] and threshold != .1:
+                found.update({s['species']['id']: s for s in detection_snapshot(root, ctx, model, sid, threshold)['summaries'] if s['species']['id'] == sid})
+        for summary in found.values():
+            sid = summary['species']['id']
+            add(summary['species'])['models'].append({**summary, 'species': None, **model, 'key': model['engine'], 'model_id': None,
+                'threshold': threshold_for(quality.get((sid, model['engine'])), model), 'validation': quality.get((sid, model['engine']))})
     for model in list_models(root, ctx):
-        item = add(model['species'])
-        entry = dict(model)
-        entry['validation'] = current_validations(root, ctx, model_id=model['id']).get(model['species']['id'])
-        if model['applicable'] and model['status']=='ready':
-            snap = custom_snapshot(root, ctx, model['id'])
-            if snap['summaries']:
-                entry.update({k:v for k,v in snap['summaries'][0].items() if k!='species'})
-        item['custom_models'].append(entry)
-    seen = {}
-    for run in searches(root,dataset_id):
-        snap = search_snapshot(root,ctx,run['id'])
-        # A met check of collected similar calls confirms the species just like an AI check does.
-        item = add(run['species']); item['searches'].append({**run,'validation':snap['validation']})
-        confirmed=seen.setdefault(run['species_id'],set())
-        confirmed.update((e['recording_id'],e['start_s'],e['end_s']) for e in snap['evidence'] if e['status']=='target')
-        item['confirmed']=len(confirmed)
-    for sid in quality:
+        entry = {'engine': 'custom', 'key': f"custom:{model['id']}", 'model_id': model['id'], 'created_at': model['created_at'],
+                 'applicable': model['applicable'], 'reason': model['reason'],
+                 'validation': quality.get((model['species']['id'], f"custom:{model['id']}"))}
+        if model['applicable']:
+            snap = custom_snapshot(root, ctx, model)
+            entry.update({k: v for k, v in snap['summaries'][0].items() if k != 'species'}, threshold=snap['threshold'])
+        add(model['species'])['models'].append(entry)
+    for sid in [*searched, *presence, *(sid for sid, _ in quality)]:
         if sid in named:
             add(named[sid])
-    from annotations import evidence
-    manual = {}
-    for entry in evidence(root,ctx):
-        if entry['species']:
-            item=add(entry['species'])
-            seen=manual.setdefault(entry['species_id'],set())
-            seen.add((entry['recording_id'],entry['review_start_s'],entry['review_end_s']))
-            item['annotated']=len(seen)
-    return {**ctx,'records':len(records),'recorded_seconds':sum(seconds for r in records for key,seconds in effort(r,zone) if ctx['start_date']<=key[0]<=ctx['end_date']),
-            'species': sorted(rows.values(),key=lambda r:(-max([m.get('candidate_windows') or 0 for m in [*r['models'],*r['custom_models']]] or [0]),-r['confirmed'],r['species']['scientific_name']))}
+    seconds = sum(value for r in records for key, value in effort(r, zone) if ctx['start_date'] <= key[0] <= ctx['end_date'])
+    return {**ctx, 'records': len(records), 'recorded_seconds': seconds,
+            'species': sorted(rows.values(), key=lambda r: (-max([m.get('candidate_windows') or 0 for m in r['models']] or [0]),
+                                                           -len(r['presence']['evidence']), r['species']['scientific_name']))}
 
 
-def species_result(root,dataset_id,species_id,first=None,last=None,engine='auto',run_id=None,cell_date=None,hour=None,model_id=None):
-    ctx=context(root,dataset_id,first,last)
+def species_result(root, dataset_id, species_id, first=None, last=None, engine='auto', cell_date=None, hour=None, model_id=None):
+    """One species: presence, each model's check, and the time chart of the chosen model."""
+    from custom_models import list_models
+    from presence import empty, summaries
+    ctx = context(root, dataset_id, first, last)
     with connect(root) as db:
-        row=db.execute('SELECT * FROM species WHERE id=?',(species_id,)).fetchone()
+        row = db.execute('SELECT * FROM species WHERE id=?', (species_id,)).fetchone()
         if not row:
             raise CatalogError('not_found')
-        taxon=names_for(row)
-    quality=current_validations(root,ctx).get(species_id)
-    runs=searches(root,dataset_id,species_id)
-    from custom_models import list_models
-    custom = list_models(root, ctx, species_id)
-    if engine == 'auto':
-        engine = next((m['engine'] for m in ctx['models'] if any(
-            row['species']['id'] == species_id and row['candidate_windows'] > 0
-            for row in detection_snapshot(root,ctx,m)['summaries'])), None)
-        if engine is None and model_id is None and run_id is None:
-            selected=next((m for m in custom if m['applicable'] and m['status']=='ready'),None)
-            if selected:model_id=selected['id'];engine='custom'
-        engine=engine or next((m['engine'] for m in ctx['models']), 'perch')
-    model=next((m for m in ctx['models'] if m['engine']==engine),None)
-    snap=None
-    if model_id is not None:
-        selected = next((m for m in custom if m['id']==model_id),None)
-        if not selected:
-            from custom_models import get_model
-            selected=get_model(root,model_id)
-            if selected['species']['id']!=species_id or selected['scope']['site_id']!=ctx['site']['id']:
-                raise CatalogError('not_found')
-            if (selected['scope']['start_date'],selected['scope']['end_date'])!=(ctx['start_date'],ctx['end_date']):
-                selected={**selected,'applicable':False,'reason':'custom_model_scope_changed'}
-            custom.append(selected)
-        quality=current_validations(root,ctx,model_id=model_id).get(species_id)
-        if selected['applicable'] and selected['status']=='ready':
-            snap=custom_snapshot(root,ctx,model_id)
-    elif run_id is not None:
-        if run_id not in [r['id'] for r in runs]:
-            raise CatalogError('not_found')
-        snap=search_snapshot(root,ctx,run_id)
-        quality=snap.get('validation')
-    elif model:
-        snap=detection_snapshot(root,ctx,model,species_id,threshold_for(quality,model))
-        snap['validation']=quality
+        taxon = names_for(row)
+    from reports import candidate_list
+    quality = current_validations(root, ctx)
+    custom = [m for m in list_models(root, ctx, species_id) if m['applicable']]
     with connect(root) as db:
-        report=snapshot_view(db,snap,cell_date=cell_date,hour=hour) if snap else None
-    from annotations import evidence
-    return {**ctx,'species':taxon,'validation':quality,'searches':runs,'custom_models':custom,'report':report,'annotations':evidence(root,ctx,species_id)}
+        # Only models whose species list includes this species can count it.
+        listed = [m for m in ctx['models'] if any(str(label).partition('_')[0] == taxon['scientific_name'] for label in
+                  candidate_list(db, db.execute('SELECT * FROM analyses WHERE id=?', (m['latest_analysis_id'],)).fetchone()) or [])]
+    checks = [{'engine': m['engine'], 'key': m['engine'], 'model_id': None, 'model_sha256': m['model_sha256'],
+               'validation': quality.get((species_id, m['engine']))} for m in listed]
+    checks += [{'engine': 'custom', 'key': f"custom:{m['id']}", 'model_id': m['id'], 'model_sha256': m['artifact_sha256'],
+                'created_at': m['created_at'], 'validation': quality.get((species_id, f"custom:{m['id']}"))} for m in custom]
+    if engine == 'auto':
+        engine = next((m['engine'] for m in listed if any(
+            s['species']['id'] == species_id and s['candidate_windows'] for s in detection_snapshot(root, ctx, m)['summaries'])), None)
+        if engine is None and custom and model_id is None:
+            engine, model_id = 'custom', custom[0]['id']
+        engine = engine or next((m['engine'] for m in listed), None)
+    selected = next((c for c in checks if c['engine'] == engine and (engine != 'custom' or c['model_id'] == model_id)), None)
+    snap = None
+    if selected and engine == 'custom':
+        snap = custom_snapshot(root, ctx, next(m for m in custom if m['id'] == model_id))
+    elif selected:
+        model = next(m for m in ctx['models'] if m['engine'] == engine)
+        snap = detection_snapshot(root, ctx, model, species_id, threshold_for(selected['validation'], model))
+        snap['validation'] = selected['validation']
+    with connect(root) as db:
+        report = snapshot_view(db, snap, cell_date=cell_date, hour=hour) if snap else None
+    return {**ctx, 'species': taxon, 'checks': checks, 'selected': selected['key'] if selected else None, 'report': report,
+            'search': search_for(root, ctx, species_id), 'presence': summaries(root, ctx, species_id).get(species_id, empty())}

@@ -79,7 +79,6 @@ def deletion_plan(db, site_id, dataset_id=None):
     runs = [r[0] for r in db.execute('''SELECT DISTINCT h.run_id FROM search_hits h JOIN segments s ON s.id=h.segment_id
         WHERE s.analysis_id IN (SELECT value FROM json_each(?))''',(json.dumps(sorted(aids)),))]
     validations = [r[0] for r in db.execute('SELECT DISTINCT session_id FROM validation_items WHERE recording_id IN (SELECT value FROM json_each(?))',(json.dumps(recordings),))]
-    annotations = [r[0] for r in db.execute('SELECT DISTINCT session_id FROM annotation_items WHERE recording_id IN (SELECT value FROM json_each(?))',(json.dumps(recordings),))]
     custom_models, reports, exports = [], [], []
     def depends(value):
         if isinstance(value, list):
@@ -91,11 +90,9 @@ def deletion_plan(db, site_id, dataset_id=None):
                 or value.get('model_id') in custom_models
                 or value.get('base_report_id') in reports or value.get('report_id') in reports
                 or value.get('validation_id') in validations
-                or value.get('annotation_session_id') in annotations
-                or value.get('annotation_source',{}).get('session_id') in annotations
                 or (value.get('kind')=='recording' and value.get('id') in rids)
                 or any(depends(v) for v in value.values() if isinstance(v,(dict,list))))
-    for table, chosen in [('search_runs',runs), ('annotation_sessions',annotations), ('custom_models',custom_models), ('validation_sessions',validations), ('reports',reports), ('workflow_exports',exports)]:
+    for table, chosen in [('search_runs',runs), ('custom_models',custom_models), ('validation_sessions',validations), ('reports',reports), ('workflow_exports',exports)]:
         for row in db.execute(f'SELECT t.*,d.site_id FROM {table} t JOIN datasets d ON d.id=t.dataset_id ORDER BY t.id'):
             related = depends(json.loads(row['snapshot']))
             if row['site_id'] != site_id:
@@ -106,12 +103,12 @@ def deletion_plan(db, site_id, dataset_id=None):
                 if row['id'] not in chosen:
                     chosen.append(row['id'])
     plan = {'site_id':site_id,'dataset_id':dataset_id,'name':site['name'] if dataset_id is None else selected[0]['name'],
-            'datasets':ids,'recordings':recordings,'analyses':analyses,'searches':runs,'validations':validations,'annotations':annotations,'custom_models':custom_models,'reports':reports,'exports':exports,
+            'datasets':ids,'recordings':recordings,'analyses':analyses,'searches':runs,'validations':validations,'custom_models':custom_models,'reports':reports,'exports':exports,
             'remaining_dataset_id':remaining[0] if remaining else None}
     # A stale confirmation must not silently delete newly added answers or records.
     revision = [db.execute('SELECT version FROM result_revision WHERE id=1').fetchone()[0],
                 *[db.execute(f'SELECT COALESCE(MAX(id),0) FROM {table}').fetchone()[0] for table in
-                  ('search_judgements','validation_answers','annotation_answers','search_samples','workflow_exports','custom_models')]]
+                  ('window_answers','presence_marks','presence_misses','model_labels','workflow_exports','custom_models')]]
     plan['revision'] = hashlib.sha256(json.dumps([plan,revision],sort_keys=True).encode()).hexdigest()
     return plan
 
@@ -133,17 +130,20 @@ def delete(root, site_id, dataset_id, revision):
         aids = [a['id'] for a in plan['analyses']]
         segments = 'SELECT id FROM segments WHERE analysis_id IN (SELECT value FROM json_each(?))'
         db.execute(f'DELETE FROM vectors WHERE rowid IN ({segments})', (json.dumps(aids),))
-        db.execute('DELETE FROM search_sample_items WHERE sample_id IN (SELECT id FROM search_samples WHERE run_id IN (SELECT value FROM json_each(?)))',(json.dumps(plan['searches']),))
-        for table in ('search_samples','search_judgements','search_hits'):
-            remove(table,'run_id',plan['searches'])
-        remove('search_runs','id',plan['searches'])
-        db.execute('DELETE FROM validation_answers WHERE item_id IN (SELECT id FROM validation_items WHERE session_id IN (SELECT value FROM json_each(?)))',(json.dumps(plan['validations']),))
-        remove('validation_items','session_id',plan['validations'])
+        # Human answers and marks about deleted recordings go with them; answers elsewhere stay.
+        db.execute('DELETE FROM validation_items WHERE session_id IN (SELECT value FROM json_each(?))',(json.dumps(plan['validations']),))
+        db.execute('UPDATE window_answers SET session_id=NULL WHERE session_id IN (SELECT value FROM json_each(?))',(json.dumps(plan['validations']),))
         remove('validation_sessions','id',plan['validations'])
+        remove('window_answers','recording_id',plan['recordings'])
         remove('custom_models','id',plan['custom_models'])
-        db.execute('DELETE FROM annotation_answers WHERE item_id IN (SELECT id FROM annotation_items WHERE session_id IN (SELECT value FROM json_each(?)))',(json.dumps(plan['annotations']),))
-        remove('annotation_items','session_id',plan['annotations'])
-        remove('annotation_sessions','id',plan['annotations'])
+        for table in ('presence_marks','model_labels','search_hits'):
+            remove(table,'run_id',plan['searches'])
+        remove('presence_marks','recording_id',plan['recordings'])
+        db.execute('DELETE FROM model_labels WHERE segment_id IN (SELECT id FROM segments WHERE analysis_id IN (SELECT value FROM json_each(?)))',(json.dumps(aids),))
+        remove('search_runs','id',plan['searches'])
+        if plan['remaining_dataset_id'] is None:
+            for table in ('presence_marks','presence_misses'):
+                remove(table,'dataset_id',plan['datasets'])
         remove('reports','id',plan['reports'])
         remove('workflow_exports','id',plan['exports'])
         for table in ('candidates','segments'):
@@ -153,7 +153,7 @@ def delete(root, site_id, dataset_id, revision):
         # A job anchored to the first import can also contain surviving recordings.
         db.execute('DELETE FROM jobs WHERE dataset_id IN (SELECT value FROM json_each(?)) AND id NOT IN (SELECT job_id FROM analyses)',(json.dumps(plan['datasets']),))
         if plan['remaining_dataset_id'] is not None:
-            for table in ('jobs','search_runs','validation_sessions','annotation_sessions','custom_models','reports','workflow_exports'):
+            for table in ('jobs','search_runs','validation_sessions','presence_marks','presence_misses','custom_models','reports','workflow_exports'):
                 db.execute(f'UPDATE {table} SET dataset_id=? WHERE dataset_id IN (SELECT value FROM json_each(?))',(plan['remaining_dataset_id'],json.dumps(plan['datasets'])))
         remove('datasets','id',plan['datasets'])
         if dataset_id is None:

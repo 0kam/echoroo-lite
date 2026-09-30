@@ -40,6 +40,8 @@ with ExitStack() as stack:
         folder.mkdir()
         args.recording = folder / 'SMOKE_20240808_060000.wav'
         sf.write(args.recording, samples[:rate * 30], rate, subtype='PCM_16')
+        # A second day gives the per-model check an evaluation day distinct from its calibration day.
+        sf.write(folder / 'SMOKE_20240809_060000.wav', samples[:rate * 30], rate, subtype='PCM_16')
     child = subprocess.Popen([args.binary, "--data", temp, "--models", str(args.models or Path(temp) / "models"), "--parent-stdin",
                               *(['--diagnostics'] if args.diagnostics else [])],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, errors='replace')
@@ -80,7 +82,7 @@ with ExitStack() as stack:
             records = api(f"/datasets/{imported['dataset_id']}/recordings")
             record = next(r for r in records if Path(r["path"]) == args.recording.resolve())
             started = time.perf_counter()
-            api("/jobs", {"dataset_id": imported["dataset_id"], "recording_id": record["id"]})
+            api("/jobs", {"dataset_id": imported["dataset_id"]})
             previous_stage = None
             while True:
                 job = api("/catalog")["jobs"][0]
@@ -103,25 +105,23 @@ with ExitStack() as stack:
             reference = api('/references', {'path': str(args.recording.resolve())})
             search = api('/search', dict(dataset_id=imported['dataset_id'], source_kind='reference',
                 source_id=reference['id'], start_s=0, end_s=min(3, record['seconds'])))
-            assert search['searched_recordings'] == 1 and search['hits']
-            assert all(-1 <= h['similarity'] <= 1 and h['start_s'] >= 3 for h in search['hits'])
+            assert search['searched_recordings'] == len(records) and search['hits']
+            assert all(-1 <= h['similarity'] <= 1 and (h['recording_id'] != record['id'] or h['start_s'] >= 3) for h in search['hits'])
             view = api(f"/sources/reference/{reference['id']}/spectrogram?start_s=0&end_s={min(30, record['seconds'])}")
             assert view['width'] <= 1000 and view['height'] == 385
             print(f"Frozen reference registration, spectrogram and real similarity search passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
-            runs = api('/search-runs', {'dataset_id': imported['dataset_id'], 'targets': [{
-                'species_id': target['id'], 'clips': [
-                    {'source_kind': 'reference', 'source_id': reference['id'], 'start_s': 0, 'end_s': 3},
-                    {'source_kind': 'reference', 'source_id': reference['id'], 'start_s': 5, 'end_s': 8}]}]})
-            run = runs[0]
-            assert len(run['snapshot']['references']) == 2 and run['hit_count'] > 0
-            sample = api(f"/search-runs/{run['id']}/samples", {'low': -1, 'high': 1, 'count': 3})
-            assert len(sample['hits']) == 3
-            hit = sample['hits'][0]
-            api(f"/search-runs/{run['id']}/judgements", {'segment_id': hit['segment_id'], 'verdict': 'unknown'})
-            restored = api(f"/search-runs/{run['id']}?sample_id={sample['sample_id']}")
-            assert next(h for h in restored['hits'] if h['segment_id'] == hit['segment_id'])['verdict'] == 'unknown'
-            print(f"Frozen multi-reference search, random sample and judgement persistence passed in {time.perf_counter() - started:.2f}s.")
+            run = api('/search-runs', {'dataset_id': imported['dataset_id'], 'species_id': target['id'], 'clips': [
+                {'source_kind': 'reference', 'source_id': reference['id'], 'start_s': 0, 'end_s': 3},
+                {'source_kind': 'reference', 'source_id': reference['id'], 'start_s': 5, 'end_s': 8}]})
+            assert len(run['snapshot']['references']) == 2
+            listed = api(f"/datasets/{imported['dataset_id']}/species/{target['id']}/presence?source=search")
+            hit = listed['rows'][0]
+            assert hit['end_s'] - hit['start_s'] == 5 and listed['run_id'] == run['id']
+            api('/presence/marks', {'dataset_id': imported['dataset_id'], 'species_id': target['id'], 'recording_id': hit['recording_id'],
+                'start_s': hit['start_s'], 'end_s': hit['end_s'], 'run_id': run['id'], 'marked': True})
+            assert api(f"/datasets/{imported['dataset_id']}/species/{target['id']}")['presence']['status'] == 'confirmed'
+            print(f"Frozen multi-reference search and presence mark passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
             options = api(f"/reports/options?dataset_id={imported['dataset_id']}")
             dates = {'start_date': options['first_date'], 'end_date': options['last_date']}
@@ -131,27 +131,23 @@ with ExitStack() as stack:
                     'model_sha256': model['model_sha256'], 'threshold': .1, 'species_id': target['id']})
                 assert report['window_s'] == 15 and report['quality'] == 'not_evaluated'
                 assert sum(c['recorded_seconds'] for c in report['cells']) > 0
-            report = api('/reports/search', {**dates, 'run_id': run['id'], 'threshold': .5})
-            assert report['summaries'][0]['eligible_windows'] == run['hit_count']
-            assert report['judgements']['unknown'] == 1
             exported = api(f"/reports/{report['id']}/export", {'folder': temp,
-                'audio': [{'recording_id': hit['recording_id'], 'start_s': hit['start_s'], 'end_s': hit['end_s']}]})
+                'audio': [{k: e[k] for k in ('recording_id', 'start_s', 'end_s')} for e in report['evidence'][:1]]})
             import zipfile
             with zipfile.ZipFile(exported['path']) as archive:
                 assert {'species.csv', 'hourly.csv', 'evidence.csv', 'quality.csv', 'report.json'} <= set(archive.namelist())
-                assert any(name.endswith('.wav') for name in archive.namelist())
-            print(f"Frozen detection/search reports and CSV/audio export passed in {time.perf_counter() - started:.2f}s.")
+                assert any(name.endswith('.wav') for name in archive.namelist()) or not report['evidence']
+            print(f"Frozen detection reports and CSV/audio export passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
-            annotation=api('/annotations',{**dates,'dataset_id':imported['dataset_id']})
-            question=annotation['question'];a=question['start_s']
-            assert annotation['total']>0 and 'scores' not in question
-            detail=api(f"/sources/recording/{record['id']}/spectrogram?start_s={a}&end_s={a+15}&detail=true")
-            assert detail['width']>1000
-            annotated=api(f"/annotations/{annotation['id']}/answers",{'item_id':question['id'],'version':question['version'],
-                'ranges':[{'species_id':target['id'],'start_s':a+1,'end_s':a+2},
-                          {'species_id':None,'start_s':a+5,'end_s':a+6}],'complete':True})
-            assert annotated['heard'][0]['species']['id']==target['id']
-            print(f"Frozen shared sampling, high-resolution spectrogram and versioned ranges passed in {time.perf_counter()-started:.2f}s.")
+            if len(records) > 1:  # A single recording has no separate evaluation day.
+                check=api('/validations',{**dates,'dataset_id':imported['dataset_id'],'species_id':target['id'],'model':'perch'})
+                question=check['question'];a=question['start_s']
+                assert check['counts']['calibration']['total']>0 and 'scores' not in question
+                detail=api(f"/sources/recording/{record['id']}/spectrogram?start_s={a}&end_s={a+15}&detail=true")
+                assert detail['width']>1000
+                answered=api(f"/validations/{check['id']}/answers",{'item_id':question['id'],'verdict':'unknown','version':question['version']})
+                assert answered['counts']['calibration']['answered']==1
+                print(f"Frozen per-model check, high-resolution spectrogram and saved answer passed in {time.perf_counter()-started:.2f}s.")
             started = time.perf_counter()
             overview = api(f"/datasets/{imported['dataset_id']}/overview")
             suite = api('/workflow-exports', {**dates, 'dataset_id': imported['dataset_id'],
@@ -159,14 +155,13 @@ with ExitStack() as stack:
             with zipfile.ZipFile(suite['path']) as archive:
                 assert archive.testzip() is None
                 manifest = json.loads(archive.read('manifest.json'))
-                assert manifest['format'] == 'html' and manifest['scope']['recording_ids'] == [record['id']]
+                assert manifest['format'] == 'html' and manifest['scope']['recording_ids'] == sorted(r['id'] for r in records)
                 assert '聞き分けクイズの補足記録' in archive.read('index.html').decode()
                 assert '図を保存' in archive.read('index.html').decode()
-                assert len(json.loads(archive.read('references.json'))) == 2
-                assert len(json.loads(archive.read('annotations/ranges.json')))==2
+                assert '聞いて確認した' in archive.read('index.html').decode() and 'presence.csv' in archive.namelist()
                 assert all(entry['bytes'] > 0 for name, entry in manifest['files'].items() if name.endswith('.png'))
             assert Path(suite['report_path']).is_file()
-            print(f"Frozen HTML report, Japanese figures, references, audio and data suite passed in {time.perf_counter() - started:.2f}s.")
+            print(f"Frozen HTML report, Japanese figures, presence audio and data suite passed in {time.perf_counter() - started:.2f}s.")
         if args.parent_eof:
             child.stdin.close()
         else:

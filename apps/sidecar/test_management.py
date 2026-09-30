@@ -51,12 +51,11 @@ class ManagementCheck(unittest.TestCase):
                     snap=json.dumps({'recording_ids':[rid],'analysis_ids':[aid]})
                     run=db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',(dataset,species,snap)).lastrowid
                     db.execute('INSERT INTO search_hits VALUES(?,?,.8,0,0)',(run,segment))
-                    sample=db.execute('INSERT INTO search_samples(run_id,low,high,population,requested_count,seed) VALUES(?,0,1,1,1,42)',(run,)).lastrowid
-                    db.execute('INSERT INTO search_sample_items VALUES(?,?,0)',(sample,segment))
-                    db.execute("INSERT INTO search_judgements(run_id,species_id,segment_id,verdict,note) VALUES(?,?,?,'target','')",(run,species,segment))
-                    validation=db.execute("INSERT INTO validation_sessions(dataset_id,species_id,fingerprint,snapshot) VALUES(?,?,'test',?)",(dataset,species,snap)).lastrowid
-                    item=db.execute("INSERT INTO validation_items(session_id,phase,position,recording_id,start_s,stratum,scores) VALUES(?,'calibration',0,?,0,'0','{}')",(validation,rid)).lastrowid
-                    db.execute("INSERT INTO validation_answers(item_id,verdict) VALUES(?,'target')",(item,))
+                    db.execute("INSERT INTO model_labels(run_id,segment_id,label) VALUES(?,?,'target')",(run,segment))
+                    db.execute('INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,run_id) VALUES(?,?,?,0,5,?)',(dataset,species,rid,run))
+                    validation=db.execute("INSERT INTO validation_sessions(dataset_id,species_id,model,fingerprint,snapshot) VALUES(?,?,'birdnet','test',?)",(dataset,species,snap)).lastrowid
+                    db.execute("INSERT INTO validation_items(session_id,phase,position,recording_id,start_s,stratum,scores) VALUES(?,'calibration',0,?,0,'0','{}')",(validation,rid))
+                    db.execute("INSERT INTO window_answers(species_id,recording_id,start_s,verdict,session_id) VALUES(?,?,0,'target',?)",(species,rid,validation))
                     report=db.execute("INSERT INTO reports(dataset_id,kind,snapshot) VALUES(?,'detection',?)",(dataset,snap)).lastrowid
                     db.execute("INSERT INTO reports(dataset_id,kind,snapshot) VALUES(?,'detection',?)",(dataset,json.dumps({'base_report_id':report})))
                     exported=root/f'export-{rid}.zip';exported.write_bytes(b'original export')
@@ -74,10 +73,8 @@ class ManagementCheck(unittest.TestCase):
                 species=self.populate(root,client)
                 with connect(root) as db:
                     for recording in (1,2):
-                        snap=json.dumps({'recording_ids':[recording]})
-                        annotation=db.execute("INSERT INTO annotation_sessions(dataset_id,fingerprint,snapshot) VALUES(1,'test',?)",(snap,)).lastrowid
-                        model=db.execute("""INSERT INTO custom_models(dataset_id,species_id,annotation_session_id,status,snapshot)
-                            VALUES(1,?,?,'ready',?)""",(species,annotation,json.dumps({'recording_ids':[recording],'annotation_session_id':annotation}))).lastrowid
+                        model=db.execute("""INSERT INTO custom_models(dataset_id,species_id,run_id,snapshot,artifact_path,artifact_sha256,scores_path,scores_sha256)
+                            VALUES(1,?,?,?,'','','','')""",(species,recording,json.dumps({'run_id':recording}))).lastrowid
                         folder=root/'custom-models'/str(model);folder.mkdir(parents=True)
                         (folder/'model.npz').write_bytes(b'generated model')
             originals={p:p.read_bytes() for p in [*root.glob('original-*/*.wav'),*root.glob('export-*.zip')]}
@@ -96,7 +93,7 @@ class ManagementCheck(unittest.TestCase):
                     self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
                     self.assertEqual([r[0] for r in db.execute('SELECT id FROM site_recordings WHERE scope_id=2')],[2])
                     self.assertEqual(db.execute('SELECT dataset_id FROM jobs WHERE id=1').fetchone()[0],2)
-                    for table in ('search_runs','validation_sessions','custom_models','reports','workflow_exports'):
+                    for table in ('search_runs','validation_sessions','custom_models','reports','workflow_exports','presence_marks'):
                         self.assertEqual(db.execute(f'SELECT COUNT(*) FROM {table} WHERE dataset_id=1').fetchone()[0],0)
                         self.assertGreater(db.execute(f'SELECT COUNT(*) FROM {table} WHERE dataset_id=2').fetchone()[0],0)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM vectors').fetchone()[0],3)
@@ -130,7 +127,7 @@ class ManagementCheck(unittest.TestCase):
                 species=self.populate(root,client)
                 # Synthetic history is not a real validation session; remove it before building real overviews.
                 with connect(root) as db:
-                    for table in ('validation_answers','validation_items','validation_sessions','search_sample_items','search_samples','search_judgements','search_hits','search_runs'):
+                    for table in ('window_answers','validation_items','validation_sessions','presence_marks','model_labels','search_hits','search_runs'):
                         db.execute(f'DELETE FROM {table}')
                     original_times=[tuple(r) for r in db.execute('SELECT original_time,timezone,recorded_at FROM recordings')]
                     saved_reports=[tuple(r) for r in db.execute('SELECT * FROM reports')]
@@ -147,7 +144,7 @@ class ManagementCheck(unittest.TestCase):
                 self.assertTrue(changed['location_stale'])
                 self.assertEqual(changed['analysed_recordings'],0)
                 self.assertNotEqual(changed['fingerprint'],before['fingerprint'])
-                response=client.post('/validations',json={'dataset_id':1,'species_id':species,'start_date':'2024-08-08','end_date':'2024-08-08'})
+                response=client.post('/validations',json={'dataset_id':1,'species_id':species,'start_date':'2024-08-08','end_date':'2024-08-08','model':'birdnet'})
                 self.assertEqual(response.json()['detail'],'location_reanalysis')
                 response=client.post('/workflow-exports',json={'dataset_id':1,'revision':changed['revision'],'species_ids':[species],
                     'start_date':'2024-08-08','end_date':'2024-08-08','folder':str(root),'locale':'ja','figures':[]})
@@ -176,7 +173,7 @@ class ManagementCheck(unittest.TestCase):
                 species=self.populate(root,client)
                 preview=client.get('/sites/1/delete-preview').json()
                 with connect(root) as db:
-                    db.execute("INSERT INTO validation_answers(item_id,verdict) VALUES(1,'other')")
+                    db.execute("INSERT INTO window_answers(species_id,recording_id,start_s,verdict) VALUES(?,1,0,'other')",(species,))
                 self.assertEqual(client.post('/sites/1/delete',json={'revision':preview['revision']}).json()['detail'],'management_changed')
                 with connect(root) as db:
                     db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(3,?,?)',

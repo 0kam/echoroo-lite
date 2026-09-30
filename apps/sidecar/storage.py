@@ -83,68 +83,56 @@ def initialize(root):
                 query_window INTEGER NOT NULL,
                 PRIMARY KEY(run_id, segment_id));
             CREATE INDEX IF NOT EXISTS search_ranking ON search_hits(run_id, similarity DESC);
-            CREATE TABLE IF NOT EXISTS search_samples (
-                id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES search_runs,
-                low REAL NOT NULL, high REAL NOT NULL, population INTEGER NOT NULL,
-                requested_count INTEGER NOT NULL, seed INTEGER NOT NULL,
-                method TEXT NOT NULL DEFAULT 'uniform_without_replacement_v1',
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS search_sample_items (
-                sample_id INTEGER NOT NULL REFERENCES search_samples,
-                segment_id INTEGER NOT NULL REFERENCES segments, position INTEGER NOT NULL,
-                PRIMARY KEY(sample_id, segment_id));
-            CREATE TABLE IF NOT EXISTS search_judgements (
-                id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES search_runs,
-                species_id TEXT NOT NULL, segment_id INTEGER NOT NULL REFERENCES segments,
-                verdict TEXT NOT NULL CHECK(verdict IN ('target','other','unknown')),
-                note TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            CREATE INDEX IF NOT EXISTS search_judgement_target ON search_judgements(species_id, segment_id, id DESC);
             CREATE TABLE IF NOT EXISTS reports (
                 id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
-                kind TEXT NOT NULL CHECK(kind IN ('detection','search')),
+                kind TEXT NOT NULL CHECK(kind='detection'),
                 snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS workflow_cache (
                 cache_key TEXT PRIMARY KEY, snapshot BLOB NOT NULL);
             CREATE TABLE IF NOT EXISTS validation_sessions (
-                id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
-                species_id TEXT NOT NULL REFERENCES species, fingerprint TEXT NOT NULL,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id INTEGER NOT NULL REFERENCES datasets,
+                species_id TEXT NOT NULL REFERENCES species, model TEXT NOT NULL, fingerprint TEXT NOT NULL,
                 snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS validation_items (
-                id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES validation_sessions,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES validation_sessions,
                 phase TEXT NOT NULL CHECK(phase IN ('calibration','evaluation')),
                 position INTEGER NOT NULL, recording_id INTEGER NOT NULL REFERENCES recordings,
                 start_s REAL NOT NULL, stratum TEXT NOT NULL, scores TEXT NOT NULL,
                 UNIQUE(session_id,phase,position), UNIQUE(session_id,recording_id,start_s));
-            CREATE TABLE IF NOT EXISTS validation_answers (
-                id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL REFERENCES validation_items,
+            -- One answer history per species and 15-second window, shared by that species' model checks.
+            CREATE TABLE IF NOT EXISTS window_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, species_id TEXT NOT NULL REFERENCES species,
+                recording_id INTEGER NOT NULL REFERENCES recordings, start_s REAL NOT NULL,
                 verdict TEXT NOT NULL CHECK(verdict IN ('target','other','unknown')),
+                session_id INTEGER REFERENCES validation_sessions, quiz_snapshot TEXT, examples_snapshot TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            CREATE INDEX IF NOT EXISTS validation_answer_item ON validation_answers(item_id,id DESC);
-            CREATE TABLE IF NOT EXISTS annotation_sessions (
+            CREATE INDEX IF NOT EXISTS window_answer_key ON window_answers(species_id,recording_id,start_s,id DESC);
+            -- "This is the species' call": presence evidence from the AI (15 s) or search (5 s) candidate list.
+            CREATE TABLE IF NOT EXISTS presence_marks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id INTEGER NOT NULL REFERENCES datasets,
-                fingerprint TEXT NOT NULL, snapshot TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS annotation_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES annotation_sessions,
-                position INTEGER NOT NULL, recording_id INTEGER NOT NULL REFERENCES recordings,
-                start_s REAL NOT NULL, end_s REAL NOT NULL, stratum TEXT NOT NULL,
-                UNIQUE(session_id,position), UNIQUE(session_id,recording_id,start_s));
-            CREATE TABLE IF NOT EXISTS annotation_answers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL REFERENCES annotation_items,
-                ranges TEXT NOT NULL, complete INTEGER NOT NULL CHECK(complete IN (0,1)),
-                quiz_snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            CREATE INDEX IF NOT EXISTS annotation_answer_item ON annotation_answers(item_id,id DESC);
+                species_id TEXT NOT NULL REFERENCES species, recording_id INTEGER NOT NULL REFERENCES recordings,
+                start_s REAL NOT NULL, end_s REAL NOT NULL, run_id INTEGER REFERENCES search_runs,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(species_id,recording_id,start_s,end_s));
+            -- "Listened to the top N without confirming": kept even when a later mark confirms the species.
+            CREATE TABLE IF NOT EXISTS presence_misses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id INTEGER NOT NULL REFERENCES datasets,
+                species_id TEXT NOT NULL REFERENCES species, source TEXT NOT NULL CHECK(source IN ('ai','search')),
+                listened INTEGER NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            -- Custom-model material: voice / no voice on 5-second search hits.
+            CREATE TABLE IF NOT EXISTS model_labels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL REFERENCES search_runs,
+                segment_id INTEGER NOT NULL REFERENCES segments,
+                label TEXT NOT NULL CHECK(label IN ('target','other')), UNIQUE(run_id,segment_id));
             CREATE TABLE IF NOT EXISTS custom_models (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 dataset_id INTEGER NOT NULL REFERENCES datasets,
                 species_id TEXT NOT NULL REFERENCES species,
-                annotation_session_id INTEGER NOT NULL REFERENCES annotation_sessions,
-                status TEXT NOT NULL CHECK(status IN ('ready','threshold_unavailable')),
+                run_id INTEGER NOT NULL REFERENCES search_runs,
                 snapshot TEXT NOT NULL,
-                artifact_path TEXT,
-                artifact_sha256 TEXT,
-                scores_path TEXT,
-                scores_sha256 TEXT,
+                artifact_path TEXT NOT NULL,
+                artifact_sha256 TEXT NOT NULL,
+                scores_path TEXT NOT NULL,
+                scores_sha256 TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS workflow_exports (
                 id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
@@ -172,15 +160,6 @@ def initialize(root):
             CREATE VIRTUAL TABLE IF NOT EXISTS vectors USING vec0(
                 embedding float[1536] distance_metric=cosine);
         """)
-        if 'ranges' not in {r['name'] for r in db.execute('PRAGMA table_info(validation_answers)')}:
-            db.execute('ALTER TABLE validation_answers ADD COLUMN ranges TEXT')
-        if 'palette_ids' not in {r['name'] for r in db.execute('PRAGMA table_info(annotation_answers)')}:
-            db.execute("ALTER TABLE annotation_answers ADD COLUMN palette_ids TEXT NOT NULL DEFAULT '[]'")
-        for table in ('validation_answers','search_judgements'):
-            columns = {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}
-            for column in ('quiz_snapshot', 'examples_snapshot'):
-                if column not in columns:
-                    db.execute(f'ALTER TABLE {table} ADD COLUMN {column} TEXT')
         db.execute('CREATE TABLE IF NOT EXISTS changed_locations (site_id INTEGER PRIMARY KEY REFERENCES sites)')
         db.execute('CREATE TABLE IF NOT EXISTS result_revision (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)')
         db.execute('INSERT OR IGNORE INTO result_revision VALUES(1,0)')
@@ -195,8 +174,7 @@ def initialize(root):
 def monotonic_ids(root):
     """Upgrade ordinary row IDs once so deleted links can never target a later import."""
     tables = ('sites', 'datasets', 'recordings', 'jobs', 'analyses', 'candidates', 'segments',
-              'search_runs', 'search_samples', 'search_judgements', 'reports',
-              'validation_sessions', 'validation_items', 'validation_answers', 'workflow_exports')
+              'search_runs', 'reports', 'workflow_exports')
     with connect(root) as db:
         pending = [(table, db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]) for table in tables]
         pending = [(table, sql) for table, sql in pending if 'AUTOINCREMENT' not in sql]
