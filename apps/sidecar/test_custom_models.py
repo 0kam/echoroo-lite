@@ -1,6 +1,7 @@
 """Real fitting and persistence checks for the one-species custom classifier."""
 import json
 import tempfile
+import threading
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -8,10 +9,10 @@ from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 
-from custom_models import _folds, get_model, list_models, report_snapshot, score_windows, validation_population
+from custom_models import _folds, create, get_model, list_models, report_snapshot, score_windows, validation_population
 from results_workflow import context, fingerprint
 from server import create_app
-from storage import connect, initialize
+from storage import CatalogError, connect, initialize
 
 
 SPECIES = 'custom-model-species'
@@ -81,6 +82,11 @@ class CustomModelCheck(unittest.TestCase):
                 self.assertEqual({(m['label'],m['origin'],m['end_s']-m['start_s']) for m in ready['materials']},{('target','search',5),('other','search',5)})
                 self.assertEqual((ready['examples']['positive_5s'],ready['examples']['negative_5s']),(4,8))
                 with connect(root) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM annotation_items').fetchone()[0],0)
+                stopped=threading.Event();stopped.set()
+                with self.assertRaisesRegex(CatalogError,'cancelled'):
+                    create(root,annotation,SPECIES,stopped)
+                with connect(root) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM custom_models').fetchone()[0],0)
+                self.assertFalse((root/'custom-models').exists())
                 created=client.post('/custom-models',json={'annotation_session_id':annotation,'species_id':SPECIES})
                 self.assertEqual(created.status_code,200,created.text);model=created.json();model_id=model['id']
                 self.assertEqual((model['status'],model['training']['recordings'],model['cv']['window_s']),('ready',4,5))

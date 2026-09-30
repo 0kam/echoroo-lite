@@ -1,7 +1,7 @@
 export const annotationEn = {
-  aDrag: '{name}: drag across the call on the diagram.', aMarkRange: 'Mark the time range of a call', aMarkMode:'Mark a call', aDragOff:'{name}: press “Mark a call”, then drag across the call on the diagram.', aZoomShortMark:'Drag to mark · Double-click to set play position · Scroll to zoom', aHeard: 'Shared first sounds',
+  aDrag: '{name}: drag across the call on the diagram.', aMarkRange: 'Mark the time range of a call', aMarkMode:'Mark a call', aDragOff:'{name}: press “Mark a call”, then drag across the call on the diagram.', aZoomShortMark:'Drag to mark · Double-click to play from there · Scroll to zoom', aHeard: 'Shared first sounds',
   aNoMarks: 'No call ranges marked yet.', aRemove: 'Remove', aKeyboard: 'Enter seconds instead of dragging', aAddRange: 'Add this range',
-  aZoomShort:'Drag to move · Double-click to set play position · Scroll to zoom', aZoomHint: 'Drag (or use the arrow keys) to move the view. Double-click to move the play position; ▶ or Enter plays from there. Scroll to zoom; use the axes to zoom time and frequency separately.', aZoomIn:'Zoom in', aZoomOut:'Zoom out', aFit: 'Show whole clip', aFrequencyAxis: 'Frequency (kHz)', aTimeAxis: 'Time (seconds)',
+  aZoomShort:'Drag to move · Double-click to play from there · Scroll to zoom', aZoomHint: 'Drag (or use the arrow keys) to move the view. Double-click to move the play position and start playback there. Scroll to zoom; use the axes to zoom time and frequency separately.', aZoomIn:'Zoom in', aZoomOut:'Zoom out', aFit: 'Show whole clip', aFrequencyAxis: 'Frequency (kHz)', aTimeAxis: 'Time (seconds)',
   aAxisHelp: 'Scroll or use the + and − keys to zoom this axis.',
   aSharedProgress: '{answered} of the first sounds were already answered from earlier call marks. Answer the remaining {remaining}.',
   aExactEvidence: 'Marked calls', aEvidenceNote: 'Ranges marked while listening and checking. Their number alone does not show how often the species calls across all recordings.',
@@ -11,9 +11,9 @@ export const annotationEn = {
   annotation_no_intervals: 'There are no complete 15-second clips in this period.',
 };
 export const annotationJa: Record<keyof typeof annotationEn,string> = {
-  aDrag: '{name}：図の上で鳴き声の範囲をなぞってください。', aMarkRange: '鳴き声の範囲に印を付ける', aMarkMode:'鳴き声に印を付ける', aDragOff:'{name}：「鳴き声に印を付ける」を押してから、図の上で鳴き声の範囲をなぞってください。', aZoomShortMark:'ドラッグで印を付ける・ダブルクリックで再生位置・スクロールで拡大', aHeard: '共通の最初の音',
+  aDrag: '{name}：図の上で鳴き声の範囲をなぞってください。', aMarkRange: '鳴き声の範囲に印を付ける', aMarkMode:'鳴き声に印を付ける', aDragOff:'{name}：「鳴き声に印を付ける」を押してから、図の上で鳴き声の範囲をなぞってください。', aZoomShortMark:'ドラッグで印を付ける・ダブルクリックでそこから再生・スクロールで拡大', aHeard: '共通の最初の音',
   aNoMarks: 'まだ範囲を選んでいません。', aRemove: '取り消す', aKeyboard: '秒数を入力して範囲を選ぶ', aAddRange: 'この範囲を追加',
-  aZoomShort:'ドラッグで移動・ダブルクリックで再生位置・スクロールで拡大', aZoomHint: 'ドラッグ（または矢印キー）で表示を動かします。ダブルクリックで再生位置を移し、▶またはEnterでそこから再生します。スクロールで拡大・縮小。時間軸なら横だけ、周波数軸なら縦だけ変えられます。', aZoomIn:'拡大', aZoomOut:'縮小', aFit: '全体に戻す', aFrequencyAxis: '周波数（kHz）', aTimeAxis: '時間（秒）',
+  aZoomShort:'ドラッグで移動・ダブルクリックでそこから再生・スクロールで拡大', aZoomHint: 'ドラッグ（または矢印キー）で表示を動かします。ダブルクリックで再生位置を移し、そこから再生します。スクロールで拡大・縮小。時間軸なら横だけ、周波数軸なら縦だけ変えられます。', aZoomIn:'拡大', aZoomOut:'縮小', aFit: '全体に戻す', aFrequencyAxis: '周波数（kHz）', aTimeAxis: '時間（秒）',
   aAxisHelp: 'スクロール、または＋・−キーでこの軸を拡大・縮小できます。',
   aSharedProgress: '最初の音のうち{answered}音は、以前に付けた印から回答済みです。残り{remaining}音に答えてください。',
   aExactEvidence: '印を付けた鳴き声', aEvidenceNote: '聞いて確かめたときに印を付けた範囲です。この件数だけで録音全体の頻度や季節性は推定できません。',

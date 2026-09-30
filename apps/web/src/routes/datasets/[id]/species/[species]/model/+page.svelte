@@ -34,6 +34,7 @@
     marking=null;await load();
   },{toast:true});
   const build=createTask(async()=>{if(!ready)return;await api('/custom-models',{annotation_session_id:ready.annotation_session_id,species_id:speciesId});await load();});
+  const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const check=createTask(async(model:Model)=>{
     const validation=model.validation?.applicable?model.validation:await api<Validation>('/validations',{model_id:model.id});
     await goto(resolve(`/datasets/${id}/validation/${validation.id}`));
@@ -66,6 +67,7 @@
         </div>{/each}{/if}
       <p>{t('customModelIntro')}</p>
       {#if ready.can_train}<Button variant={latest?'default':'primary'} pending={build.pending} onclick={()=>build.run()}>{t('customModelCreate')}</Button>
+        {#if build.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
         {#if build.pending}<p role="status"><Spinner/> {t('customModelPreparing')}</p>{/if}
       {:else}{#each ready.reasons as reason}<p class="notice">{t(reason)}</p>{/each}{/if}
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}

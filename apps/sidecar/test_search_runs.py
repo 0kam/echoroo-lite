@@ -4,6 +4,7 @@ import json
 import os
 import random
 import tempfile
+import threading
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,7 +16,8 @@ import numpy as np
 import soundfile as sf
 from fastapi.testclient import TestClient
 
-from server import create_app
+from server import SearchRunRequest, create_app
+from search_runs import create_runs
 from storage import CatalogError, connect
 from xeno_canto import XCRedirect, download
 
@@ -111,6 +113,10 @@ class EvidenceCheck(unittest.TestCase):
                     with connect(path) as db:
                         db.set_trace_callback(statements.append)
                         yield db
+                stopped=threading.Event();stopped.set()
+                with patch('search_runs.load_perch', return_value=(Session(), 'model')), self.assertRaisesRegex(CatalogError,'cancelled'):
+                    create_runs(root,root,SearchRunRequest(**body),stopped)
+                with connect(root) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM search_runs').fetchone()[0],0)
                 with patch('search_runs.load_perch', return_value=(Session(), 'model')), \
                         patch('search_runs.connect', traced_connect):
                     response = client.post('/search-runs', json=body)

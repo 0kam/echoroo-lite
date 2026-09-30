@@ -17,6 +17,7 @@ class Audio {
 }
 const document = {
   addEventListener(name, handler) { handlers[name] = handler; },
+  querySelectorAll() { return []; },
   createElement(tag) { assert.equal(tag, 'audio'); return new Audio(); },
   getElementById() { return { addEventListener() {} }; },
 };

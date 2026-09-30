@@ -534,6 +534,10 @@ def view_session(root,sid,ctx=None,include_items=True,item_id=None):
         items=answered_items(db,sid)
         counts={phase:{'total':sum(i['phase']==phase for i in items),'answered':sum(i['phase']==phase and i['verdict'] is not None for i in items)} for phase in ['calibration','evaluation']}
         fixed=snap['method']==audit.METHOD
+        def membership(iid):
+            if not fixed:return []
+            return [{'engine':engine,'sample':sample} for engine,value in snap.get('evaluation_audits',{}).items()
+                    for sample,field in [('precision','positive_ids'),('recall','negative_ids')] if iid in value.get(field,[])]
         if fixed:
             for step, name in [('precision','evaluation'),('recall','recall')]:
                 ids=audit.active_ids(snap,step) if 'evaluation_audits' in snap else set()
@@ -549,13 +553,14 @@ def view_session(root,sid,ctx=None,include_items=True,item_id=None):
                 selected=next((i for i in visible if i['id']==item_id),None)
                 if not selected or (selected['verdict'] is None and selected!=next_item):raise CatalogError('not_found')
                 next_item=selected
-            history=[{'id':i['id'],'position':i['position'],'verdict':i['verdict']} for i in visible if i['verdict'] is not None]
+            history=[{'id':i['id'],'position':i['position'],'verdict':i['verdict'],'samples':membership(i['id'])} for i in visible if i['verdict'] is not None]
             question=None
             if next_item:
                 rec=dict(db.execute('SELECT * FROM recordings WHERE id=?',(next_item['recording_id'],)).fetchone())
-                question={'id':next_item['id'],'position':next_item['position'],'verdict':next_item['verdict'],'version':next_item['answer_id'] or 0,'source':{'id':rec['id'],'kind':'recording','path':rec['path'],'seconds':rec['seconds']},
+                question={'id':next_item['id'],'position':next_item['position'],'phase':next_item['phase'],'verdict':next_item['verdict'],'version':next_item['answer_id'] or 0,'source':{'id':rec['id'],'kind':'recording','path':rec['path'],'seconds':rec['seconds']},
                     'start_s':next_item['start_s'],'end_s':next_item['start_s']+snap['window_s'],
-                    'ranges':json.loads(next_item['ranges']) if next_item['ranges'] else snap.get('shared_ranges',{}).get(str(next_item['id']),[])}
+                    'ranges':json.loads(next_item['ranges']) if next_item['ranges'] else snap.get('shared_ranges',{}).get(str(next_item['id']),[]),
+                    'samples':membership(next_item['id']),'review_position':visible.index(next_item)+1,'review_total':len(visible)}
         else:
             question=None;history=[]
     ctx=ctx or context(root,row['dataset_id'],snap['start_date'],snap['end_date'])

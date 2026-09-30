@@ -15,6 +15,7 @@
   import { roseus } from './roseus';
   import ZoomSpectrogram from './ZoomSpectrogram.svelte';
   import type { CallRange } from './annotations';
+  import { seekInterval } from './annotation-geometry.js';
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
     zoomable=false, marks=[], onrange, marking=$bindable(false), storageKey }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
@@ -110,8 +111,9 @@
     void play(from, viewEnd);
   }
   function seek(time: number) {
-    playhead = time; cursor = time;
-    if (status !== 'idle') void play(time, viewEnd);
+    const interval=seekInterval(time,viewEnd);
+    playhead = interval[0]; cursor = interval[0];
+    void play(...interval);
   }
   function toggle() {
     if (status === 'idle') { playFromHead(); return; }

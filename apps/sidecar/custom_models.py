@@ -126,7 +126,7 @@ def _normalise(matrix):
     return matrix/norms
 
 
-def _prepare(root,annotation_session_id,species_id):
+def _prepare(root,annotation_session_id,species_id,cancel=None):
     from results_workflow import fingerprint
     with connect(root) as db:
         annotation=db.execute('SELECT * FROM annotation_sessions WHERE id=?',(annotation_session_id,)).fetchone()
@@ -213,6 +213,7 @@ def _prepare(root,annotation_session_id,species_id):
         adopted={segment_id for segment_id,origins in labels.items() if len({origin['label'] for origin in origins})==1}
         vectors={}
         for batch,matrix in _vector_batches(root,[a['id'] for a in analyses],adopted):
+            if cancel and cancel.is_set():raise CatalogError('cancelled')
             for row,vector in zip(batch,matrix):vectors[row['segment_id']]=vector
         examples=[]
         for segment_id,origins in labels.items():
@@ -292,10 +293,11 @@ def readiness(root,annotation_session_id,species_id):
     return {**public,'models':models}
 
 
-def _cv(examples,folds):
+def _cv(examples,folds,cancel=None):
     x=_normalise(np.stack([row['vector'] for row in examples]));y=np.array([row['label']=='target' for row in examples],dtype=np.float64)
     oof=np.empty(len(y),dtype=np.float64)
     for fold in range(CV_FOLDS):
+        if cancel and cancel.is_set():raise CatalogError('cancelled')
         test=np.array([folds[row['group_key']]==fold for row in examples]);train=~test
         weights,intercept=_fit(x[train],y[train]);oof[test]=expit(x[test]@weights+intercept)
     best=None
@@ -350,10 +352,11 @@ def _aggregate_arrays(analysis_ids,recording_ids,starts,ends,scores):
     return result
 
 
-def create(root,annotation_session_id,species_id):
-    state,internal=_prepare(root,annotation_session_id,species_id)
+def create(root,annotation_session_id,species_id,cancel=None):
+    state,internal=_prepare(root,annotation_session_id,species_id,cancel)
     if not state['can_train']:raise CatalogError(state['reasons'][0])
-    examples=internal['examples'];cv,x,y=_cv(examples,internal['folds'])
+    examples=internal['examples'];cv,x,y=_cv(examples,internal['folds'],cancel)
+    if cancel and cancel.is_set():raise CatalogError('cancelled')
     source_examples=_source_snapshot(examples)
     base_snapshot={'schema':'custom_model_v1','dataset_id':state['dataset_id'],'species_id':species_id,'annotation_session_id':annotation_session_id,
         'source_fingerprint':internal['current_fingerprint'],'scope':{**state['scope'],'recording_ids':sorted(internal['records'])},'feature':state['feature'],
@@ -377,6 +380,7 @@ def create(root,annotation_session_id,species_id):
     segment_ids=[];analysis_ids=[];recording_ids=[];starts=[];ends=[];scores=[]
     zone=ZoneInfo(internal['dataset']['timezone']);scope=internal['annotation_snapshot']
     for rows,matrix in _vector_batches(root,[row['id'] for row in internal['analyses']]):
+        if cancel and cancel.is_set():raise CatalogError('cancelled')
         values=expit(matrix@weights+intercept)
         for row,score in zip(rows,values):
             record=internal['records'].get(row['recording_id'])
@@ -384,6 +388,7 @@ def create(root,annotation_session_id,species_id):
             segment_ids.append(row['segment_id']);analysis_ids.append(row['analysis_id']);recording_ids.append(row['recording_id'])
             starts.append(row['start_s']);ends.append(row['end_s']);scores.append(float(score))
     complete=_aggregate_arrays(analysis_ids,recording_ids,starts,ends,scores)
+    if cancel and cancel.is_set():raise CatalogError('cancelled')
     expected=_eligible_5s(root,internal)
     snapshot={**base_snapshot,'analysis_ids':[a['id'] for a in internal['analyses']],
         'inference':{'status':'complete','scored_5s':len(scores),'complete_15s':len(complete),'missing_5s':max(0,expected-len(scores))}}

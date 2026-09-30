@@ -12,7 +12,7 @@ from species import names_for
 from storage import CatalogError, checked_source, connect
 
 
-def create_runs(root, models, body):
+def create_runs(root, models, body, cancel=None):
     loaded = load_perch(models)
     with connect(root) as db:
         dataset = db.execute('SELECT * FROM datasets WHERE id=?', (body.dataset_id,)).fetchone()
@@ -33,13 +33,14 @@ def create_runs(root, models, body):
         ids, searches = [], []
         group = secrets.token_hex(16)
         for target in body.targets:
+            if cancel and cancel.is_set():raise CatalogError('cancelled')
             species = db.execute('SELECT * FROM species WHERE id=?', (target.species_id,)).fetchone()
             if species is None:
                 raise CatalogError('not_found')
             references, vectors, owners = [], [], []
             for index, clip in enumerate(target.clips):
                 row = source(root, clip.source_kind, clip.source_id)
-                embedded, query = query_embeddings(models, row, clip.start_s, clip.end_s, loaded)
+                embedded, query = query_embeddings(models, row, clip.start_s, clip.end_s, loaded, cancel)
                 references.append({'source': row, 'query': query})
                 vectors.extend(embedded)
                 owners.extend((index, window) for window in range(len(embedded)))
@@ -59,6 +60,7 @@ def create_runs(root, models, body):
             JOIN recordings r ON r.id=a.recording_id WHERE s.analysis_id IN target_analyses ORDER BY s.id''')
         # ponytail: scan in 256-vector blocks; add a partitioned vector index if annual-scale search needs it.
         while batch := rows.fetchmany(256):
+            if cancel and cancel.is_set():raise CatalogError('cancelled')
             matrix = np.stack([np.frombuffer(r['embedding'], dtype='<f4') for r in batch])
             norms = np.linalg.norm(matrix, axis=1, keepdims=True)
             if not np.isfinite(matrix).all() or np.any(norms == 0):
@@ -76,6 +78,7 @@ def create_runs(root, models, body):
                     hits.append((run_id, row['id'], float(similarities[i, winner]), *owners[winner]))
                 db.executemany('INSERT INTO search_hits VALUES(?,?,?,?,?)', hits)
         for row in compatible:
+            if cancel and cancel.is_set():raise CatalogError('cancelled')
             checked_source(row)
         for _, references, _, _ in searches:
             for ref in references:

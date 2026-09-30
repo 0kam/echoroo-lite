@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { goalMissed,recallLow,rangeQuery,validationPhase,type Validation } from '$lib/workflow';
+  import { goalMissed,modelName,recallLow,rangeQuery,validationPhase,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ValidationSteps from '$lib/ValidationSteps.svelte';
@@ -22,6 +22,7 @@
   // An answered sound always has a next sound: a later answered one, or the first unanswered one (or the finished step).
   const goNext=()=>navigate.run(next?.id);
   const answered=$derived(!!validation?.question?.verdict);
+  const sampleUse=$derived(validation?.question?.samples.map(sample=>`${modelName(sample.engine)} ${t(sample.sample==='precision'?'vSamplePrecision':'vSampleRecall')}`).join(t('vSampleAnd'))??'');
   const remaining=$derived(validation?validation.counts[phase].total-validation.counts[phase].answered:0);
   const finishLabel=$derived(phase==='calibration'?'vBackCalibrationReady':'wValidationDone');
   const nextLabel=$derived(next||remaining>0?'vNextSound':finishLabel);
@@ -55,7 +56,7 @@
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if validation}
     <h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
-    <ValidationSteps {validation}/>
+    <ValidationSteps {validation} review={answered}/>
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??(validation.annotation_source_current?'wScopeChanged':'annotation_source_changed'))}</p>{/if}
     {#if validation.stage==='complete'&&!validation.question}<section class="panel"><QualityPanel {validation}/>
       {#if goalMissed(validation)||recallLow(validation)}<CheckAdvice datasetId={id} {validation} searchHref={`${resolve(`/datasets/${id}/search`)}?species=${validation.species.id}&${view}`} modelHref={`${resolve(`/datasets/${id}/species/${validation.species.id}/model`)}?${range}`}/>{/if}
@@ -78,7 +79,8 @@
         {:else if validation.question}
           {@const question=validation.question}
           <div class="phase-progress"><h2>{t('vQuestionNamed').replace('{name}',commonName(validation.species,app.locale)||validation.species.scientific_name)}</h2>
-            <p>{t('vAnsweredCount').replace('{answered}',String(validation.counts[phase].answered)).replace('{total}',String(validation.counts[phase].total)).replace('{remaining}',String(remaining))}{#if corrected}<span role="status"> · ✓ {t('vCorrectionSaved')}</span>{/if}</p></div>
+            <p>{#if answered}{t('vReviewProgress').replace('{n}',String(question.review_position)).replace('{total}',String(question.review_total))}{:else}{t('vAnsweredCount').replace('{answered}',String(validation.counts[phase].answered)).replace('{total}',String(validation.counts[phase].total)).replace('{remaining}',String(remaining))}{/if}{#if corrected}<span role="status"> · ✓ {t('vCorrectionSaved')}</span>{/if}</p></div>
+          {#if sampleUse}<p class="muted">{t('vSampleUse').replace('{uses}',sampleUse)}</p>{/if}
           {#if note}<p class="muted">{t(note)}</p>{/if}
           {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} marks={question.ranges.filter(range=>range.species_id===validation?.species.id)} storageKey={`echoroo-validation:${sid}:${question.id}:view`}/>{/key}
           <div class="actions answers"><Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('vPreviousSound')}</Button>

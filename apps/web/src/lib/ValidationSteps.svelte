@@ -2,13 +2,18 @@
   import { t } from './app.svelte';
   import type { Validation } from './workflow';
   /** Shows where the user is in setting the threshold → checking accuracy → optional missed-call check, with each step's sound count. */
-  let { validation }: { validation: Validation | null } = $props();
+  let { validation, review = false }: { validation: Validation | null; review?: boolean } = $props();
   type Step = 'calibration' | 'evaluation' | 'recall';
   const steps = $derived<Step[]>([
     ...(validation?.kind === 'custom' || validation && !validation.counts.calibration.total ? [] : ['calibration' as Step]),
     'evaluation', ...(!validation || validation.method === 'fixed_precision_audit_v1' ? ['recall' as Step] : [])]);
   function state(step: Step) {
     if (!validation) return 'todo';
+    if (review && validation.question) {
+      const current = validation.question.phase === 'calibration' ? step === 'calibration'
+        : validation.question.samples.some(sample => sample.sample === (step === 'recall' ? 'recall' : step === 'evaluation' ? 'precision' : ''));
+      return current ? 'current' : 'todo';
+    }
     const precisionDone = validation.stage === 'complete' || validation.audit_step === 'recall';
     if (step === 'calibration') return validation.stage === 'calibration' ? 'current' : 'done';
     if (step === 'evaluation') return validation.stage === 'calibration' ? 'todo' : precisionDone ? 'done' : 'current';

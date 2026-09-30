@@ -14,10 +14,11 @@ export type QualityResult = { model_sha256: string; threshold: number | null; ad
 export type Validation = { id: number; dataset_id: number; species: Species; stage: 'calibration' | 'evaluation' | 'complete';
   kind:'detection'|'search'|'custom';run_id:number|null;model_id:number|null;thresholds:Record<string,{threshold:number|null;adjusted:boolean}>;
   counts: Record<string,{total:number;answered:number}>; models: Record<string,string>; results: Record<string,QualityResult>;
-  question: {id:number;position:number;verdict:string|null;version:number;source:AudioSource;start_s:number;end_s:number;ranges:CallRange[]} | null;
+  question: {id:number;position:number;phase:'calibration'|'evaluation';verdict:string|null;version:number;source:AudioSource;start_s:number;end_s:number;ranges:CallRange[];
+    samples:{engine:string;sample:'precision'|'recall'}[];review_position:number;review_total:number} | null;
   annotation_session_id:number|null;annotation_source_current:boolean;split_unit:string|null;
   model_reason?:string|null;
-  history:{id:number;position:number;verdict:string}[];evaluated_count:number;uncertainty:string;
+  history:{id:number;position:number;verdict:string;samples:{engine:string;sample:'precision'|'recall'}[]}[];evaluated_count:number;uncertainty:string;
   start_date:string;end_date:string;target_precision:number;calibration_target_precision?:number;window_s:number;population:number;applicable:boolean;created_at:string;
   method?:string;audit_step?:'precision'|'recall';can_start_recall?:boolean;recall_started?:boolean };
 export type SearchRun = {id:number;species_id:string;species:Species;created_at:string};

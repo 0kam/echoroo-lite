@@ -43,7 +43,7 @@ def examples(root, species_id, dataset_id, validation_id=None, run_id=None, samp
         zone = ZoneInfo(site['timezone'])
         records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))}
         local = lambda record, start: window_key(record, start, zone)[1]
-        named, confirmed = [], []
+        named, search_named, confirmed = [], [], []
         for row in db.execute('''SELECT c.id AS clip_id,c.metadata,r.* FROM quiz_clips c JOIN audio_references r ON r.id=c.reference_id
                 WHERE c.species_id=? AND c.enabled=1 ORDER BY c.id''', (species_id,)):
             meta = json.loads(row['metadata'])
@@ -58,7 +58,8 @@ def examples(root, species_id, dataset_id, validation_id=None, run_id=None, samp
                 WHERE lower(json_extract(x.metadata,'$.scientific_name'))=lower(?) ORDER BY x.id''', (taxon['scientific_name'],)):
             meta = json.loads(row['metadata'])
             named.append(_example('named', dict(row), 'reference', 0, NAMED_S, {'origin': 'xeno-canto', 'id': row['xc_id'],
-                'recordist': meta.get('recordist', ''), 'license': meta.get('license', ''), 'url': meta.get('url', '')}))
+                'recordist': meta.get('recordist', ''), 'license': meta.get('license', ''), 'url': meta.get('url', ''),
+                'country': meta.get('country', ''), 'quality': meta.get('quality', '')}))
         for run in db.execute('SELECT id,snapshot FROM search_runs WHERE species_id=? AND dataset_id IN (SELECT id FROM datasets WHERE site_id=?) ORDER BY id DESC',
                               (species_id, site['id'])):
             for index, ref in enumerate(json.loads(run['snapshot'])['references']):
@@ -67,7 +68,7 @@ def examples(root, species_id, dataset_id, validation_id=None, run_id=None, samp
                          'license': credit.get('license', ''), 'url': credit.get('url', '')}
                 if row['kind'] == 'recording' and row['id'] in records:
                     label['local_time'] = local(records[row['id']], ref['query']['start_s'])
-                named.append(_example('named', row, row['kind'], ref['query']['start_s'], ref['query']['end_s'], label))
+                search_named.append(_example('named', row, row['kind'], ref['query']['start_s'], ref['query']['end_s'], label))
         for row in db.execute('''SELECT a.id,a.ranges,a.created_at,i.recording_id FROM annotation_items i
                 JOIN annotation_answers a ON a.id=(SELECT MAX(id) FROM annotation_answers WHERE item_id=i.id) WHERE a.complete=1'''):
             record = records.get(row['recording_id'])
@@ -94,7 +95,14 @@ def examples(root, species_id, dataset_id, validation_id=None, run_id=None, samp
         in_quiz = bool(db.execute('SELECT 1 FROM quiz_clips WHERE species_id=? AND enabled=1', (species_id,)).fetchone())
     chosen = []
     confirmed.sort(key=lambda pair: (pair[0], pair[1]['label']['id']), reverse=True)
-    for example in named + [pair[1] for pair in confirmed]:
+    # The interval deliberately chosen for a search is more useful than a generic
+    # first-15-second example from the same source, so it also wins deduplication.
+    preferred_sources={(example['source']['kind'],example['source']['id']) for example in search_named}
+    named=[example for example in named if not (example['label']['origin']=='xeno-canto' and
+        (example['source']['kind'],example['source']['id']) in preferred_sources)]
+    quiz_named=[example for example in named if example['label']['origin']=='quiz']
+    other_named=[example for example in named if example['label']['origin']!='quiz']
+    for example in quiz_named + search_named + other_named + [pair[1] for pair in confirmed]:
         window = example.pop('_window', None) or (example['source']['kind'], example['source']['id'], example['start_s'], example['end_s'])
         # One rule removes questions, duplicates and sounds overlapping an earlier example.
         if any(window[:2] == other[:2] and window[2] < other[3] and other[2] < window[3] for other in taken):
@@ -111,15 +119,20 @@ def examples(root, species_id, dataset_id, validation_id=None, run_id=None, samp
 
 
 def fetch_xeno_canto(root, species_id):
-    """Download up to three clear recordings from Japan; one failure does not stop the others."""
+    """Download the first available Japan/world, A/B condition; one failed file does not stop the others."""
     from xeno_canto import import_recording, search
     with connect(root) as db:
         taxon = db.execute('SELECT scientific_name FROM species WHERE id=?', (species_id,)).fetchone()
         if taxon is None:
             raise CatalogError('not_found')
         done = {r[0] for r in db.execute('SELECT id FROM xc_recordings WHERE reference_id IS NOT NULL')}
-    found = search(root, taxon[0], 'Japan', 'A', 1)['recordings']
-    pending = [r['id'] for r in found if r['id'] not in done and r['scientific_name'].casefold() == taxon[0].casefold()][:3]
+    found = []
+    for country, quality in [('Japan', 'A'), ('Japan', 'B'), ('', 'A'), ('', 'B')]:
+        found = [r for r in search(root, taxon[0], country, quality, 1)['recordings']
+                 if r['scientific_name'].casefold() == taxon[0].casefold()]
+        if found:
+            break
+    pending = [r['id'] for r in found if r['id'] not in done][:3]
     errors = []
     for xc_id in pending:
         try:

@@ -25,6 +25,8 @@
   const body=()=>({site_id:siteId?Number(siteId):null,site_name:selected?.name??siteName,timezone:selected?.timezone??zone,latitude:selected?.latitude??latitude??0,longitude:selected?.longitude??longitude??0,folder,dataset_name:fileName(folder)||siteName});
   const inspect=createTask(async()=>{preview=await api('/imports/preview',body());});
   const browse=createTask(async()=>{const picked=await chooseDirectory();if(picked){folder=picked;preview=null;}});
+  const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
+  function clearFolder(){folder='';preview=null;inspect.error='';register.error='';}
   const register=createTask(async()=>{
     const added=await api<{dataset_id:number}>('/imports',body());await refreshCatalog();
     const site=app.datasets.find(d=>d.id===added.dataset_id)!.site_id;
@@ -47,12 +49,16 @@
     <section class="panel"><h2>{t('uChooseFolder')}</h2><p>{t('uFolderHint')}</p>
       {#if isTauri()}<Button pending={browse.pending} onclick={()=>browse.run()}>{t('browse')}</Button>{#if folder}<p>{fileName(folder)}</p>{/if}
       {:else}<label>{t('folder')}<input bind:value={folder} required/></label>{/if}
+      {#if folder}<Button onclick={clearFolder}>{t('uClearFolder')}</Button>{/if}
       {#if browse.error}<p class="error" role="alert">{t(browse.error)}</p>{/if}
       {#if !preview}<Button type="submit" variant="primary" pending={inspect.pending} disabled={!folder}>{t('uCheckFiles')}</Button>{/if}
+      {#if inspect.pending||register.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
       {#if inspect.error}<p class="error" role="alert">{t(inspect.error)}</p>{/if}
       {#if preview}<p><strong>{preview.count} {t('uRecordingsToAdd')}</strong> · {duration(preview.seconds)}</p>
-        {#if preview.skipped.length}<details><summary>{preview.skipped.length} {t('uSkippedFiles')}</summary>{#each preview.skipped as item}<p>{fileName(item.path)} — {t(item.code)}</p>{/each}</details>{/if}
-        <Button variant="primary" pending={register.pending} disabled={!preview.count} onclick={()=>register.run()}>{t('uAddTheseFiles')}</Button>
+        {#if !preview.count}<p class="notice" role="status">{t('uNoSupportedAudio')}</p>{/if}
+        {#if preview.skipped.length}<details open={!preview.count}><summary>{preview.skipped.length} {t('uSkippedFiles')}</summary>{#each preview.skipped as item}<p>{fileName(item.path)} — {t(item.code)}</p>{/each}</details>{/if}
+        {#if preview.count}<Button variant="primary" pending={register.pending} onclick={()=>register.run()}>{t('uAddTheseFiles')}</Button>
+        {:else}<Button variant="primary" onclick={clearFolder}>{t('uChooseAnotherFolder')}</Button>{/if}
         {#if register.error}<p class="error" role="alert">{t(register.error)}</p>{/if}
       {/if}
     </section>

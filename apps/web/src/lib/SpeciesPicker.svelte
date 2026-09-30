@@ -3,6 +3,7 @@
   import { api } from './api.svelte';
   import { app, t } from './app.svelte';
   import { commonName, type Species } from './species';
+  import Button from './ui/Button.svelte';
   import Spinner from './ui/Spinner.svelte';
   let { value = $bindable(null), disabled = false, label }: { value: Species | null; disabled?: boolean; label?: string } = $props();
   let query = $state(''), rows = $state<Species[]>([]), busy = $state(false), error = $state(''), searched = $state(false);
@@ -40,8 +41,9 @@
   {#if searched}
     <div class="name-matches">
       {#each rows as row (row.id)}<button type="button" {disabled} onclick={() => choose(row)}>{commonName(row, app.locale) || t('commonNameMissing')} <i>{row.scientific_name}</i></button>
-      {:else}<p class="muted pad">{t('noSpeciesMatch')}</p><details><summary>{t('wAddUnlisted')}</summary><div class="stack"><label>{t('scientificName')}<input bind:value={scientific} required maxlength="200" disabled={adding}/></label><label>{t('wCommonName')}<input bind:value={common} placeholder={query} maxlength="200" disabled={adding}/></label><button type="button" onclick={add} disabled={adding||disabled||!scientific.trim()}>{t('addSpecies')}</button></div></details>{/each}
+      {:else}<p class="muted pad">{t('noSpeciesMatch')}</p>{/each}
     </div>
+    {#if !rows.length}<details><summary>{t('wAddUnlisted')}</summary><form class="stack" onsubmit={e=>{e.preventDefault();void add();}}><label>{t('scientificName')}<input bind:value={scientific} required maxlength="200" disabled={adding}/></label><label>{t('wCommonName')}<input bind:value={common} placeholder={query} maxlength="200" disabled={adding}/></label><Button type="submit" variant="primary" pending={adding} disabled={disabled||!scientific.trim()}>{t('addSpecies')}</Button></form></details>{/if}
   {/if}
 {/if}
 {#if error}<p class="error" role="alert">{t(error)}</p>{/if}

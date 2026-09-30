@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import tempfile
+import threading
 import unittest
 import zipfile
 from pathlib import Path
@@ -13,8 +14,10 @@ import numpy as np
 import soundfile as sf
 from fastapi.testclient import TestClient
 
-from server import create_app
+from server import WorkflowExportRequest, create_app
 from storage import connect
+from storage import CatalogError
+from workflow_export import export
 
 
 class HtmlReportCheck(unittest.TestCase):
@@ -93,6 +96,10 @@ class HtmlReportCheck(unittest.TestCase):
                     client.post(f"/quiz/sessions/{practice['id']}/answers",json={'position':index,'species_id':q['clip']['species_id']})
                 detail=client.get(url).json()
                 body={**scope,'species_ids':[species['id']],'revision':detail['revision'],'folder':str(output),'locale':'ja'}
+                stopped=threading.Event();stopped.set()
+                with self.assertRaisesRegex(CatalogError,'cancelled'):
+                    export(root,WorkflowExportRequest(**body),stopped)
+                self.assertEqual(list(output.iterdir()),[])
                 with patch('audio.resample',side_effect=AssertionError('Report playback does not need resampling')):
                     response=client.post('/workflow-exports',json=body)
                 self.assertEqual(response.status_code,200,response.text)
@@ -106,6 +113,8 @@ class HtmlReportCheck(unittest.TestCase):
                     manifest=json.loads(archive.read('manifest.json'))
                     self.assertEqual(manifest['format'],'html');self.assertEqual(manifest['scope']['recording_ids'],[1])
                     self.assertEqual(manifest['scope']['recorded_seconds'],300)
+                    self.assertEqual(manifest['scope']['schedule'][0]['hours'][6],300)
+                    self.assertEqual(sum(manifest['scope']['schedule'][0]['hours']),300)
                     self.assertEqual([r['id'] for r in json.loads(archive.read('recordings.json'))],[1])
                     for filename,entry in manifest['files'].items():self.assertEqual(hashlib.sha256(archive.read(filename)).hexdigest(),entry['sha256'])
                     refs=json.loads(archive.read('references.json'));self.assertEqual(len(refs),2)
@@ -154,8 +163,11 @@ class HtmlReportCheck(unittest.TestCase):
         self.assertIsNone(suggest_thresholds(snap,rows)['search']['threshold'])
         for row in rows:row['verdict']='target'
         self.assertLessEqual(suggest_thresholds(snap,rows)['search']['threshold'],-.3)
-        cell={'status':'analysed','max_similarity':1}
+        cell={'status':'analysed','max_similarity':1,'confirmed_windows':0}
         self.assertEqual(cell_color(cell,{'kind':'search','threshold':1}),'#a0504c')
+        self.assertEqual(cell_color(cell,{'kind':'search','threshold':None}),'#e0dfe4')
+        cell['confirmed_windows']=1
+        self.assertNotEqual(cell_color(cell,{'kind':'search','threshold':None}),'#e0dfe4')
 
 
 if __name__=='__main__':unittest.main()

@@ -475,7 +475,7 @@ def csv_bytes(rows, fields):
     return output.getvalue().encode('utf-8-sig')
 
 
-def export_report(root, report_id, folder, svg=None, png=None, audio=()):
+def export_report(root, report_id, folder, svg=None, png=None, audio=(), cancel=None):
     with connect(root) as db:
         row = db.execute('SELECT * FROM reports WHERE id=?', (report_id,)).fetchone()
         if row is None:
@@ -522,6 +522,7 @@ def export_report(root, report_id, folder, svg=None, png=None, audio=()):
                 for filename, values, required in [('species.csv', summaries, ['eligible_windows','candidate_windows','candidate_rate','recorded_days','candidate_days','confirmed_windows']),
                     ('hourly.csv', cells, ['date','hour','recorded_seconds','analysed_seconds','effective_seconds','eligible_windows','candidate_windows','candidate_rate','max_similarity','mean_similarity','confirmed_windows','status']),
                     ('evidence.csv', evidence, ['recording_id','analysis_id','segment_id','path','recorded_at','local_time','start_s','end_s','score','status','judgement_id','judged_at'])]:
+                    if cancel and cancel.is_set():raise CatalogError('cancelled')
                     fields = list(dict.fromkeys([*common, *taxon(snapshot['species']), *required, *(key for value in values for key in value)]))
                     archive.writestr(filename, csv_bytes(values, fields))
                 quality = [{**common, **taxon(s['species']), 'precision': None, 'recall': None, 'validation_id': None} for s in snapshot['summaries']]
@@ -529,6 +530,7 @@ def export_report(root, report_id, folder, svg=None, png=None, audio=()):
                 archive.writestr('report.json', json.dumps({'id': report_id, 'created_at': row['created_at'], **snapshot}, ensure_ascii=False, indent=2))
                 archive.writestr('recordings.json', json.dumps([records[rid] for rid in snapshot['recording_ids']], ensure_ascii=False, indent=2))
                 for (rid, start, end), filename in audio_files.items():
+                    if cancel and cancel.is_set():raise CatalogError('cancelled')
                     import soundfile as sf
                     from audio import read_interval
                     samples, interval = read_interval(records[rid], start, end)

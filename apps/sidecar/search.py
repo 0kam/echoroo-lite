@@ -9,7 +9,7 @@ from audio import read_interval, source
 from storage import CatalogError, checked_source, connect
 
 
-def query_embeddings(models, row, start, end, loaded=None):
+def query_embeddings(models, row, start, end, loaded=None, cancel=None):
     samples, interval = read_interval(row, start, end, maximum=30)
     if end - start < 0.2 - 1e-9:
         raise CatalogError("query_interval")
@@ -18,6 +18,7 @@ def query_embeddings(models, row, start, end, loaded=None):
     session, model_sha = loaded or load_perch(models)
     vectors, windows = [], []
     for offset in range(0, len(samples), 160000):
+        if cancel and cancel.is_set():raise CatalogError('cancelled')
         chunk = samples[offset:offset + 160000]
         padded = np.pad(chunk, (0, 160000 - len(chunk)))
         vector = session.run(["embedding"], {"inputs": padded[None].astype(np.float32)})[0][0]
@@ -78,9 +79,10 @@ def rank_segments(root, dataset_id, vectors, model_sha, query_source, start, end
         "unsearched_recordings": total - len(compatible)}
 
 
-def search(root, models, body):
+def search(root, models, body, cancel=None):
     row = source(root, body.source_kind, body.source_id)
-    vectors, query = query_embeddings(models, row, body.start_s, body.end_s)
+    vectors, query = query_embeddings(models, row, body.start_s, body.end_s, cancel=cancel)
+    if cancel and cancel.is_set():raise CatalogError('cancelled')
     hits, coverage = rank_segments(root, body.dataset_id, vectors, query["model_sha256"], row,
                                    query["start_s"], query["end_s"], body.limit, body.start_date, body.end_date)
     return {"source": row, "query": query, "hits": hits, 'start_date': body.start_date,

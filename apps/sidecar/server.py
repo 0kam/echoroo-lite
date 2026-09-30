@@ -246,6 +246,7 @@ def create_app(root, models, token):
     initialize(root)
     initialize_species(root)
     cancel = threading.Event()
+    operation_cancel = threading.Event()
     lock = threading.Lock()
     worker = None
     gate = threading.Condition()
@@ -281,6 +282,7 @@ def create_app(root, models, token):
     async def lifespan(app):
         yield
         cancel.set()
+        operation_cancel.set()
         if worker:
             # BirdNET closes its own workers before returning from predict.
             worker.join()
@@ -342,7 +344,8 @@ def create_app(root, models, token):
     def workflow_export(body: WorkflowExportRequest):
         from workflow_export import export
         with lock:
-            try:return export(root,body)
+            operation_cancel.clear()
+            try:return export(root,body,operation_cancel)
             except OSError:raise CatalogError('report_write_failed') from None
 
     @app.post('/workflow-exports/{export_id}/open')
@@ -367,7 +370,8 @@ def create_app(root, models, token):
         with lock:
             if worker and worker.is_alive():
                 raise HTTPException(409,'job_busy')
-            return create(root,body.annotation_session_id,body.species_id)
+            operation_cancel.clear()
+            return create(root,body.annotation_session_id,body.species_id,operation_cancel)
 
     @app.get('/custom-models/{model_id}')
     def custom_model_detail(model_id: int):
@@ -597,7 +601,8 @@ def create_app(root, models, token):
             if worker and worker.is_alive():
                 raise HTTPException(409, "job_busy")
             from search import search
-            return search(root, models, body)
+            operation_cancel.clear()
+            return search(root, models, body, operation_cancel)
 
     @app.get('/search-runs')
     def saved_searches(dataset_id: int):
@@ -610,7 +615,8 @@ def create_app(root, models, token):
         with lock:
             if worker and worker.is_alive():
                 raise HTTPException(409, 'job_busy')
-            return create_runs(root, models, body)
+            operation_cancel.clear()
+            return create_runs(root, models, body, operation_cancel)
 
     @app.get('/search-runs/{run_id}')
     def saved_search_detail(run_id: int, sample_id: int | None = None):
@@ -656,9 +662,11 @@ def create_app(root, models, token):
     @app.post('/reports/{report_id}/export')
     def report_export(report_id: int, body: ReportExportRequest):
         from reports import export_report
-        return export_report(root, report_id, body.folder, body.svg, body.png, body.audio)
+        with lock:
+            operation_cancel.clear()
+            return export_report(root, report_id, body.folder, body.svg, body.png, body.audio, operation_cancel)
 
-    def inspect(body):
+    def inspect(body, operation=None):
         zone = body.timezone
         if body.site_id is not None:
             with connect(root) as db:
@@ -666,30 +674,43 @@ def create_app(root, models, token):
             if row is None:
                 raise HTTPException(404, "not_found")
             zone = row[0]
-        return preview_folder(root, body.folder, zone)
+        return preview_folder(root, body.folder, zone, operation)
 
     @app.post("/imports/preview")
     def preview(body: ImportRequest):
-        records, skipped = inspect(body)
-        return {"count": len(records), "seconds": sum(r[4] for r in records),
-                "first": records[0][3] if records else None, "skipped": skipped}
+        with lock:
+            operation_cancel.clear()
+            records, skipped = inspect(body, operation_cancel)
+            return {"count": len(records), "seconds": sum(r[4] for r in records),
+                    "first": records[0][3] if records else None, "skipped": skipped}
 
     @app.post("/imports")
     def import_folder(body: ImportRequest):
-        records, skipped = inspect(body)
-        if not records:
-            raise CatalogError("no_audio")
-        with connect(root) as db:
-            site_id = body.site_id
-            if site_id is None:
-                site_id = db.execute("INSERT INTO sites(name,timezone,latitude,longitude) VALUES(?,?,?,?)",
-                                     (body.site_name.strip(), body.timezone, body.latitude, body.longitude)).lastrowid
-            dataset = db.execute("INSERT INTO datasets(site_id,name,folder) VALUES(?,?,?)",
-                                 (site_id, body.dataset_name.strip(), str(Path(body.folder).resolve()))).lastrowid
-            db.executemany("""INSERT INTO recordings(dataset_id,path,original_time,timezone,recorded_at,
-                seconds,sample_rate,size,mtime_ns) VALUES(?,?,?,?,?,?,?,?,?)""",
-                           ((dataset, *r) for r in records))
-        return {"dataset_id": dataset, "count": len(records), "skipped": skipped}
+        with lock:
+            operation_cancel.clear()
+            records, skipped = inspect(body, operation_cancel)
+            if not records:
+                raise CatalogError("no_audio")
+            with connect(root) as db:
+                if operation_cancel.is_set():raise CatalogError('cancelled')
+                site_id = body.site_id
+                if site_id is None:
+                    site_id = db.execute("INSERT INTO sites(name,timezone,latitude,longitude) VALUES(?,?,?,?)",
+                                         (body.site_name.strip(), body.timezone, body.latitude, body.longitude)).lastrowid
+                dataset = db.execute("INSERT INTO datasets(site_id,name,folder) VALUES(?,?,?)",
+                                     (site_id, body.dataset_name.strip(), str(Path(body.folder).resolve()))).lastrowid
+                def rows():
+                    for record in records:
+                        if operation_cancel.is_set():raise CatalogError('cancelled')
+                        yield dataset,*record
+                db.executemany("""INSERT INTO recordings(dataset_id,path,original_time,timezone,recorded_at,
+                    seconds,sample_rate,size,mtime_ns) VALUES(?,?,?,?,?,?,?,?,?)""",rows())
+            return {"dataset_id": dataset, "count": len(records), "skipped": skipped}
+
+    @app.post('/operations/cancel')
+    def cancel_operation():
+        operation_cancel.set()
+        return {'status':'cancelling'}
 
     @app.get("/datasets/{dataset}/recordings")
     def recordings(dataset: int):

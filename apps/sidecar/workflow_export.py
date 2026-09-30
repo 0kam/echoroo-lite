@@ -18,7 +18,7 @@ from reports import csv_bytes,save_report,scope_records,effort,window_key,window
 from storage import CatalogError,checked_source,connect
 from results_workflow import context,current_validations,detection_snapshot,searches,search_snapshot,custom_snapshot,threshold_for
 from report_document import create_html,messages,quality_result,status,criterion,method,fixed_precision
-from report_figures import DATA,spiral,spectrum,recording_effort
+from report_figures import DATA,spiral,spectrum,recording_schedule
 
 
 def write_json(path,value):
@@ -101,7 +101,7 @@ def references_for(folder,snap):
     return refs
 
 
-def score_tables(root,db,folder,snapshots,records):
+def score_tables(root,db,folder,snapshots,records,cancel=None):
     """Export all eligible scores, including below-threshold unreviewed intervals."""
     (folder/'scores').mkdir()
     fields=['recording_id','analysis_id','start_s','end_s','score','example_start_s']
@@ -118,6 +118,7 @@ def score_tables(root,db,folder,snapshots,records):
             analyses=[dict(db.execute('SELECT * FROM analyses WHERE id=?',(aid,)).fetchone()) for aid in ids]
             zone=ZoneInfo(group[0]['site']['timezone'])
             for analysis,_,arrays in classification_batches(root,db,analyses,records):
+                if cancel and cancel.is_set():raise CatalogError('cancelled')
                 labels,starts,scores,best=arrays;columns={str(label):i for i,label in enumerate(labels)}
                 record=records[analysis['recording_id']]
                 indices=[i for i,start in enumerate(starts) if window_in_scope(record,float(start),float(start)+15,zone,group[0]['start_date'],group[0]['end_date'])]
@@ -126,6 +127,7 @@ def score_tables(root,db,folder,snapshots,records):
                     if column is None or analysis['id'] not in snap['analysis_ids']:continue
                     writers[snap['figure_id']].writerows([record['id'],analysis['id'],float(starts[i]),float(starts[i])+15,float(scores[i,column]),float(best[i,column])] for i in indices)
         for snap in snapshots:
+            if cancel and cancel.is_set():raise CatalogError('cancelled')
             if snap.get('engine')=='custom':
                 from custom_models import score_windows
                 writers[snap['figure_id']].writerows([row[k] for k in fields] for row in score_windows(root,snap['model_id']))
@@ -140,7 +142,7 @@ def score_tables(root,db,folder,snapshots,records):
                     writers[snap['figure_id']].writerow([*row,''])
 
 
-def export(root,body):
+def export(root,body,cancel=None):
     from quiz import report_results
     from validation import answered_items
     ctx=context(root,body.dataset_id,body.start_date.isoformat(),body.end_date.isoformat())
@@ -154,6 +156,7 @@ def export(root,body):
     from annotations import evidence as annotation_evidence, latest_answers
     annotations=[r for r in annotation_evidence(root,ctx) if r['species_id'] is None or r['species_id'] in body.species_ids]
     for sid in dict.fromkeys(body.species_ids):
+        if cancel and cancel.is_set():raise CatalogError('cancelled')
         for model in ctx['models']:
             snap=detection_snapshot(root,ctx,model,sid,threshold_for(quality.get(sid),model))
             snap['summaries']=[s for s in snap['summaries'] if s['species']['id']==sid]
@@ -178,16 +181,19 @@ def export(root,body):
                 records={r['id']:r for r in records}
                 for record in records.values():checked_source(record)
                 quiz=report_results(db,body.species_ids,include_sessions=True)
-                daily={}
-                for i in range((body.end_date-body.start_date).days+1):daily[str(body.start_date+timedelta(days=i))]=0.
+                daily={};schedule={}
+                for i in range((body.end_date-body.start_date).days+1):
+                    day=str(body.start_date+timedelta(days=i));daily[day]=0.;schedule[day]=[0.]*24
                 for record in records.values():
-                    for (day,_),seconds in effort(record,zone):
-                        if day in daily:daily[day]+=seconds
+                    for (day,hour),seconds in effort(record,zone):
+                        if day in daily:daily[day]+=seconds;schedule[day][hour]+=seconds
                 scope={'recording_ids':sorted(records),'recorded_seconds':sum(daily.values()),'daily':[{'date':day,'seconds':seconds} for day,seconds in daily.items()],
+                    'schedule':[{'date':day,'hours':hours} for day,hours in schedule.items()],
                     'analysed_seconds':{}}
                 handled_validations=set()
-                score_tables(root,db,folder,snapshots,records)
+                score_tables(root,db,folder,snapshots,records,cancel)
                 for position,snap in enumerate(snapshots):
+                    if cancel and cancel.is_set():raise CatalogError('cancelled')
                     snap['figure_id']=f'F{position+1:03d}';sid=snap['species']['id'];engine=snap.get('engine','search')
                     snap['recording_ids']=sorted(records)
                     if engine=='search':
@@ -253,6 +259,7 @@ def export(root,body):
                 taxa={s['species']['id']:s['species'] for s in snapshots}
                 manual_species={}
                 for entry in annotations:
+                    if cancel and cancel.is_set():raise CatalogError('cancelled')
                     record=records[entry['recording_id']]
                     entry['audio_file']=save_audio(folder,record,entry['start_s'],entry['end_s'])
                     entry['review_audio_file']=save_audio(folder,record,entry['review_start_s'],entry['review_end_s'])
@@ -283,7 +290,7 @@ def export(root,body):
                         ['references.json / references/',t['references']],['manifest.json / results/',t['methods_title']]]}
                 if any(s.get('engine')=='custom' for s in snapshots):
                     manifest['file_guide'].append(['models/',t['custom_model_files']])
-                (folder/'figures'/'recording-effort.png').write_bytes(recording_effort(scope))
+                (folder/'figures'/'recording-schedule.png').write_bytes(recording_schedule(scope))
                 for filename,rows in [('species',species_rows),('hourly',hourly),('evidence',evidence),('quality',quality_rows)]:
                     fields=list(dict.fromkeys(k for row in rows for k in row))
                     values=[{k:json.dumps(v,ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in row.items()} for row in rows]
@@ -296,12 +303,15 @@ def export(root,body):
                 shutil.copyfile(DATA/'fonts'/'OFL.txt',folder/'font-license.txt')
                 manifest['files']={p.relative_to(folder).as_posix():{'sha256':digest(p),'bytes':p.stat().st_size} for p in sorted(folder.rglob('*')) if p.is_file()}
                 write_json(folder/'manifest.json',manifest)
+                if cancel and cancel.is_set():raise CatalogError('cancelled')
                 if context(root,body.dataset_id,ctx['start_date'],ctx['end_date'])['revision']!=body.revision:raise CatalogError('workflow_changed')
                 for record in records.values():checked_source(record)
                 staged_zip=Path(temp)/(package_id+'.zip')
                 with zipfile.ZipFile(staged_zip,'w',compression=zipfile.ZIP_DEFLATED) as archive:
                     for path in sorted(folder.rglob('*')):
+                        if cancel and cancel.is_set():raise CatalogError('cancelled')
                         if path.is_file():archive.write(path,path.relative_to(folder).as_posix())
+                if cancel and cancel.is_set():raise CatalogError('cancelled')
                 folder.rename(destination);published_folder=True
                 staged_zip.rename(zip_path);published_zip=True
                 eid=db.execute('INSERT INTO workflow_exports(dataset_id,snapshot,path) VALUES(?,?,?)',(body.dataset_id,json.dumps(manifest,ensure_ascii=False),str(zip_path))).lastrowid

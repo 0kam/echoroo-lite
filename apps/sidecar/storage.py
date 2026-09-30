@@ -252,7 +252,7 @@ def inspect_audio(path, zone):
             stat.st_size, stat.st_mtime_ns)
 
 
-def preview_folder(root, folder, zone):
+def preview_folder(root, folder, zone, cancel=None):
     folder = Path(folder).expanduser().resolve()
     if not folder.is_dir():
         raise CatalogError("folder_missing")
@@ -264,6 +264,8 @@ def preview_folder(root, folder, zone):
         known = {r[0] for r in db.execute("SELECT path FROM recordings")}
     records, skipped = [], []
     for path in sorted(folder.rglob("*")):
+        if cancel and cancel.is_set():
+            raise CatalogError('cancelled')
         if path.suffix.lower() not in {".wav", ".flac"} or not path.is_file():
             continue
         path = path.resolve()

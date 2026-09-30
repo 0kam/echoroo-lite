@@ -29,6 +29,7 @@ def cell_color(cell,report):
     value=cell['max_similarity'] if report['kind']=='search' else cell['candidate_rate']
     if value is None:return '#f1f0f2'
     if report['kind']=='detection' and value==0:return '#ffffff'
+    if report['kind']=='search' and report['threshold'] is None and cell.get('confirmed_windows',0)==0:return '#e0dfe4'
     low=(report['threshold'] if report['threshold'] is not None else -1) if report['kind']=='search' else 0
     if value<low:return '#e0dfe4'
     fraction=1 if low==1 else max(0,min(1,(value-low)/(1-low)))
@@ -83,7 +84,7 @@ def spiral(report,locale,criterion_text):
     start=(low if low is not None else -1)
     for i in range(200):
         value=start+(1-start)*i/199
-        c={'status':'analysed','candidate_rate':max(value,.00001),'max_similarity':value}
+        c={'status':'analysed','candidate_rate':max(value,.00001),'max_similarity':value,'confirmed_windows':1}
         polygon([(310+i*1.7,941),(312+i*1.7,941),(312+i*1.7,961),(310+i*1.7,961)],cell_color(c,report))
     label(238,951,f'{start:.2f}' if report['kind']=='search' else '>0%',26)
     label(710,951,'1.00' if report['kind']=='search' else '100%',26)
@@ -114,18 +115,21 @@ def spectrum(source,start,end,marks=()):
     return png_bytes(image),{k:v for k,v in result.items() if k!='pixels'}
 
 
-def recording_effort(scope):
-    daily=scope['daily'];values=[v['seconds']/3600 for v in daily];peak=max(values or [1]) or 1
-    image=Image.new('RGB',(1600,450),'white');draw=ImageDraw.Draw(image)
-    for index,value in enumerate(values):
-        x=120+index*1400/max(1,len(values));width=max(1,1400/max(1,len(values))-.5)
-        draw.rectangle((x,350-value/peak*290,x+width,350),fill='#a0504c')
-    for fraction in (0,.5,1):
-        y=350-fraction*290
-        draw.text((100,y),f'{peak*fraction:.1f} h',font=font(25),anchor='rm',fill='#373450')
-    if daily:
-        for index in sorted({0,(len(daily)-1)//2,len(daily)-1}):
-            x=120+(index+.5)*1400/len(daily)
-            x=max(175,min(1420,x))
-            draw.text((x,393),daily[index]['date'],font=font(26),anchor='mm',fill='#373450')
+def recording_schedule(scope):
+    schedule=scope.get('schedule') or [{'date':row['date'],'hours':[row['seconds'] if hour==0 else 0 for hour in range(24)]} for row in scope['daily']]
+    row_height=16;height=max(450,120+len(schedule)*row_height)
+    image=Image.new('RGB',(1600,height),'white');draw=ImageDraw.Draw(image)
+    left,right,top=190,1540,60
+    for hour in range(0,25,3):
+        x=left+(right-left)*hour/24
+        draw.line((x,top-10,x,top+len(schedule)*row_height),fill='#dfdad9',width=1)
+        draw.text((x,25),str(hour),font=font(24),anchor='mm',fill='#373450')
+    for index,row in enumerate(schedule):
+        y=top+index*row_height
+        draw.text((left-12,y+row_height/2),row['date'],font=font(13),anchor='rm',fill='#373450')
+        for hour,seconds in enumerate(row['hours']):
+            if seconds>0:
+                x0=left+(right-left)*hour/24;x1=left+(right-left)*(hour+1)/24
+                draw.rectangle((x0,y,x1,y+row_height-1),fill='#a0504c')
+    draw.text(((left+right)/2,height-28),'0–24 h',font=font(24),anchor='mm',fill='#373450')
     return png_bytes(image)

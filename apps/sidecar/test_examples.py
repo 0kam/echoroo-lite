@@ -10,6 +10,7 @@ import numpy as np
 import soundfile as sf
 
 import examples  # noqa: F401  Imported before patching species.ebird_codes.
+from examples import fetch_xeno_canto
 from fastapi.testclient import TestClient
 from server import create_app
 from storage import connect
@@ -66,6 +67,7 @@ class ExamplesCheck(unittest.TestCase):
         with connect(self.root) as db:
             db.execute('INSERT INTO xc_recordings(id,metadata,reference_id) VALUES(1,?,?)', (json.dumps(
                 {'id': 1, 'scientific_name': 'Horornis diphone', 'recordist': 'A. Recordist',
+                 'country': 'France', 'quality': 'B',
                  'license': '//creativecommons.org/licenses/by-nc-sa/4.0/', 'url': 'https://xeno-canto.org/1'}), reference['id']))
             used = {r[0] for r in db.execute('SELECT start_s FROM annotation_items WHERE recording_id=1')}
             start = next(s for s in range(0, 345, 15) if s not in used)  # Analysis 1 is recording 1.
@@ -85,6 +87,7 @@ class ExamplesCheck(unittest.TestCase):
         origins = [e['label']['origin'] for e in free['examples']]
         self.assertEqual(origins, ['quiz', 'xeno-canto', 'search-judgement', 'annotation'])
         self.assertEqual(free['examples'][1]['label']['recordist'], 'A. Recordist')
+        self.assertEqual((free['examples'][1]['label']['country'],free['examples'][1]['label']['quality']),('France','B'))
         self.assertEqual((free['examples'][1]['start_s'], free['examples'][1]['end_s']), (0, 15))
         annotation = free['examples'][3]
         self.assertEqual(annotation['end_s'] - annotation['start_s'], 5)
@@ -132,6 +135,34 @@ class ExamplesCheck(unittest.TestCase):
                 script.main(source)
             self.assertEqual(list(json.loads(output.read_text(encoding='utf-8')).items()),
                              [('Cyanistes cyanus', 'azutit'), ('Horornis diphone', 'jabwar')])
+
+    def test_xeno_canto_falls_back_in_agreed_order(self):
+        warbler = self.species[0]
+        calls = []
+        def search(_root, _scientific, country, quality, _page):
+            calls.append((country, quality))
+            recordings = [] if (country, quality) != ('', 'A') else [
+                {'id': 41, 'scientific_name': 'Horornis diphone'}]
+            return {'recordings': recordings}
+        with patch('xeno_canto.search', side_effect=search), patch('xeno_canto.import_recording') as imported:
+            fetch_xeno_canto(self.root, warbler['id'])
+        self.assertEqual(calls, [('Japan', 'A'), ('Japan', 'B'), ('', 'A')])
+        imported.assert_called_once_with(self.root, 41)
+
+    def test_search_interval_wins_over_generic_xeno_canto_interval(self):
+        warbler = self.species[0]
+        path = self.root / 'XC77.wav';sf.write(path, np.zeros(20000), 1000)
+        reference = self.post('/references', {'path': str(path)})
+        with connect(self.root) as db:
+            db.execute('INSERT INTO xc_recordings(id,metadata,reference_id) VALUES(77,?,?)', (json.dumps(
+                {'id': 77, 'scientific_name': 'Horornis diphone', 'country': 'France', 'quality': 'B'}), reference['id']))
+            source = {**reference, 'attribution': {'recordist': '', 'license': '', 'url': ''}}
+            snapshot = {'references': [{'source': source, 'query': {'start_s': 16, 'end_s': 19}}]}
+            db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(1,?,?)', (warbler['id'], json.dumps(snapshot)))
+        result = self.examples(warbler)['examples']
+        chosen = next(row for row in result if row['source']['id'] == reference['id'])
+        self.assertEqual((chosen['label']['origin'], chosen['start_s'], chosen['end_s']), ('search-reference', 16, 19))
+        self.assertNotIn('xeno-canto', [row['label']['origin'] for row in result if row['source']['id'] == reference['id']])
 
 
 if __name__ == '__main__':

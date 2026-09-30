@@ -36,6 +36,7 @@
       revision:overview.revision,species_ids:selected,folder,locale:app.locale});
     history=await api(`/datasets/${id}/exports`);
   });
+  const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:overview?.site.timezone}).format(new Date(value.replace(' ','T')+'Z'));
   const openReport=createTask(async(exportId:number,kind:'document'|'folder')=>{
     await api(`/workflow-exports/${exportId}/open?kind=${kind}`,{});
@@ -59,6 +60,7 @@
       <p>{t('rExportContents')}</p>
       {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} disabled={exportFiles.pending}/></label>{/if}
       <Button variant="primary" pending={exportFiles.pending} disabled={!selected.length||(!isTauri()&&!folder)} onclick={()=>exportFiles.run()}>{t('rCreate')}</Button>
+      {#if exportFiles.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
       {#if exportFiles.pending}<p role="status"><Spinner/> {t('rPreparing')}</p>{/if}
       {#if exportFiles.error}<p class="error" role="alert">{t(exportFiles.error)}</p>{/if}
     </section>

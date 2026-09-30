@@ -61,12 +61,30 @@ def criterion(snap,t):
     if snap.get('engine')=='custom':return f"{snap['threshold']:.3f}\n{t['custom_cv_threshold']}"
     validation=snap.get('validation');engine=snap.get('engine','search')
     adjusted=validation and validation['applicable'] and validation.get('thresholds',{}).get(engine,{}).get('adjusted')
-    return f"{snap['threshold']:.2f}\n{t['adjusted'] if adjusted else t['default']}"
+    label=t['adjusted'] if adjusted else t['default_unadjusted'] if validation else t['default']
+    return f"{snap['threshold']:.2f}\n{label}"
 
 
 def method(snap,t):
     if snap.get('engine')=='custom':return f"{t['custom_model']} #{snap['model_id']}"
     return ('BirdNET' if snap['engine']=='birdnet' else 'Perch') if snap['kind']=='detection' else f"{t['search']} #{snap['run_id']}"
+
+
+def model_group(snap,t):
+    engine=snap.get('engine','search')
+    return 'BirdNET' if engine=='birdnet' else 'Perch' if engine=='perch' else t['custom_model'] if engine=='custom' else t['search']
+
+
+def result_counts(snapshots):
+    flagged={s['species']['id'] for s in snapshots if s['kind']=='detection' and s['threshold'] is not None
+             and any(r.get('candidate_windows') for r in s['summaries'])}
+    checked=set();met=set()
+    for snap in snapshots:
+        validation=snap.get('validation');result=quality_result(snap)
+        if validation and validation.get('applicable') and result and result.get('precision_complete'):
+            checked.add(snap['species']['id'])
+            if result.get('goal_met'):met.add(snap['species']['id'])
+    return len(flagged),len(checked),len(met)
 
 
 def metric(value,t):
@@ -85,7 +103,7 @@ def blocks(manifest,snapshots,references,quiz):
     t=messages(manifest['locale']);locale=manifest['locale'];scope=manifest['scope'];site=manifest['site'];output=[]
     def heading(title):output.append({'type':'heading','text':title})
     def para(key,**values):output.append({'type':'paragraph','text':t[key].format(**values)})
-    def table(headers,rows,widths):output.append({'type':'table','headers':headers,'rows':rows,'widths':widths})
+    def table(headers,rows,widths,tabs=None):output.append({'type':'table','headers':headers,'rows':rows,'widths':widths,'tabs':tabs})
     def section(title):output.append({'type':'break'});heading(t[title])
     output.append({'type':'title','text':t['title']});para('intro');heading(t['scope'])
     table([t['scope'],t['summary']],[[t['site'],site['name']],
@@ -100,24 +118,26 @@ def blocks(manifest,snapshots,references,quiz):
     table([t['method'],t['analysed_hours']],[[key.replace('Search ',t['search']+' '),f'{value/3600:.2f}'] for key,value in scope['analysed_seconds'].items()],[1,1])
     if any(value+1<scope['recorded_seconds'] for value in scope['analysed_seconds'].values()):para('partial_coverage')
     para('coverage_note')
-    detected={s['species']['id'] for s in snapshots if s['kind']=='detection' and any(r['candidate_windows'] for r in s['summaries'])}
+    detected,checked,met=result_counts(snapshots)
     searched={s['species']['id'] for s in snapshots if s['kind']=='search' and any(r['candidate_windows'] for r in s['summaries'])}
-    para('result_sentence',species=len(manifest['selected_species']),detected=len(detected))
+    para('ai_flagged_sentence',detected=detected)
+    para('checked_sentence',checked=checked,met=met)
     if any(s['kind']=='search' and s['threshold'] is not None for s in snapshots):para('search_sentence',searched=len(searched))
     unset=sum(s['kind']=='search' and s['threshold'] is None for s in snapshots)
     if unset:para('unset_search_sentence',count=unset)
     para('selected_note')
-    output.append({'type':'image','path':'figures/recording-effort.png','caption':t['effort'],'width':1600,'height':450})
+    output.append({'type':'image','path':'figures/recording-schedule.png','caption':t['effort'],'width':1600,'height':max(450,120+len(scope.get('schedule',scope['daily']))*16)})
     section('reading');para('threshold_explanation');para('quality_explanation');para('unit_explanation')
     heading(t['limits']);para('limits_text')
     section('species_list');para('unit_explanation')
-    rows=[]
+    rows=[];groups={}
     for snap in snapshots:
         summary=snap['summaries'][0] if snap['summaries'] else {}
-        rows.append([name(snap['species'],locale),method(snap,t),criterion(snap,t),
+        row=[name(snap['species'],locale),method(snap,t),criterion(snap,t),
             (f"{number(summary.get('candidate_windows'))} / {number(summary.get('eligible_windows'))}\n{percent(summary.get('candidate_rate'))}" if snap['threshold'] is not None else t['unset_count'].format(eligible=number(summary.get('eligible_windows')))),
-            number(summary.get('candidate_days')),status_text(snap,t),snap['figure_id']])
-    table([t[k] for k in ('species_name','method','criterion','count','days','quality','figure')],rows,[2.6,1.1,1.3,1.6,.6,1.6,.6])
+            number(summary.get('candidate_days')),status_text(snap,t),snap['figure_id']]
+        rows.append(row);groups.setdefault(model_group(snap,t),[]).append(row)
+    table([t[k] for k in ('species_name','method','criterion','count','days','quality','figure')],rows,[2.6,1.1,1.3,1.6,.6,1.6,.6],groups)
     if manifest.get('manual_species'):
         heading(t['annotation_title']);para('annotation_note')
         table([t['species_name'],t['annotation_count']],[[name(r['species'],locale),number(r['intervals'])] for r in manifest['manual_species']],[2,1])
@@ -146,7 +166,7 @@ def blocks(manifest,snapshots,references,quiz):
             para('custom_holdout' if validation.get('model_id') else 'annotation_holdout',id=validation['id'],count=len(validation.get('excluded_recording_ids',[])),unit=t['split_'+validation['split_unit']])
             shown_validations.add(validation['id'])
     if any('checkpoints' in s.get('validation',{}).get('uncertainty','') for s in snapshots if s.get('validation')):para('checkpoint_note')
-    rows=[]
+    rows=[];groups={}
     for snap in snapshots:
         validation=snap.get('validation')
         if not validation:continue
@@ -163,9 +183,9 @@ def blocks(manifest,snapshots,references,quiz):
             samples=t['legacy_samples'].format(calibration=counts['calibration']['answered'],
                 evaluation=validation.get('evaluated_count',counts['evaluation']['answered']),
                 unresolved=number(result.get('unknown') if result else None))+f"\nV{validation['id']}"
-        rows.append([name(snap['species'],locale)+'\n'+method(snap,t),criterion(snap,t),
-            precision,recall,samples,status_text(snap,t)])
-    if rows:table([t[k] for k in ('species_name','criterion','precision','recall','samples','quality')],rows,[2.2,1.2,1.5,1.5,1.6,1.7])
+        row=[name(snap['species'],locale)+'\n'+method(snap,t),criterion(snap,t),precision,recall,samples,status_text(snap,t)]
+        rows.append(row);groups.setdefault(model_group(snap,t),[]).append(row)
+    if rows:table([t[k] for k in ('species_name','criterion','precision','recall','samples','quality')],rows,[2.2,1.2,1.5,1.5,1.6,1.7],groups)
     else:para('validation_none')
     custom=[s for s in snapshots if s.get('engine')=='custom']
     if custom:
@@ -242,18 +262,29 @@ def create_html(folder,manifest,snapshots,references,evidence,quiz):
         elif kind=='paragraph':parts.append(paragraph(block['text']));plain.append(block['text'])
         elif kind=='table':
             section_number+=1
-            parts.append(f'<div class="table-scroll" role="region" aria-label="{e(t["title"])}" tabindex="0"><table id="table-{section_number}" style="border-collapse:collapse">')
-            for index,row in enumerate([block['headers'],*block['rows']]):
-                parts.append('<thead><tr>' if index==0 else '<tr>')
-                for value in row:
-                    tag='th' if index==0 else 'td';attrs=' scope="col"' if index==0 else ''
-                    html=e(str(value)).replace('\n','<br>')
-                    if index and str(value) in figure_ids:
-                        html=f'<a href="#{e(str(value))}">{html}</a>'
-                    parts.append(f'<{tag}{attrs} style="border:1px solid #dfdad9;padding:10px;text-align:left;vertical-align:top">{html}</{tag}>')
-                parts.append('</tr></thead><tbody>' if index==0 else '</tr>')
-                plain.append('\t'.join(str(v).replace('\n',' ') for v in row))
-            parts.append('</tbody></table></div>')
+            def render_table(rows,table_id,hidden=False,labelledby=None):
+                tab_attrs=(f' tab-panel" role="tabpanel" aria-labelledby="{labelledby}" tabindex="0"' if labelledby else
+                    f'" role="region" aria-label="{e(t["title"],quote=True)}" tabindex="0"')
+                parts.append(f'<div class="table-scroll{tab_attrs} id="{table_id}"{" hidden" if hidden else ""}><table style="border-collapse:collapse">')
+                for index,row in enumerate([block['headers'],*rows]):
+                    parts.append('<thead><tr>' if index==0 else '<tr>')
+                    for value in row:
+                        tag='th' if index==0 else 'td';attrs=' scope="col"' if index==0 else ''
+                        html=e(str(value)).replace('\n','<br>')
+                        if index and str(value) in figure_ids:html=f'<a href="#{e(str(value))}">{html}</a>'
+                        parts.append(f'<{tag}{attrs} style="border:1px solid #dfdad9;padding:10px;text-align:left;vertical-align:top">{html}</{tag}>')
+                    parts.append('</tr></thead><tbody>' if index==0 else '</tr>')
+                    plain.append('\t'.join(str(v).replace('\n',' ') for v in row))
+                parts.append('</tbody></table></div>')
+            tabs=block.get('tabs')
+            if tabs and len(tabs)>1:
+                parts.append(f'<div class="tabs" role="tablist" aria-label="{e(t["method"],quote=True)}">')
+                for index,label in enumerate(tabs):
+                    tab_id=f'tab-{section_number}-{index}';panel_id=f'table-{section_number}-{index}'
+                    parts.append(f'<button type="button" role="tab" id="{tab_id}" aria-controls="{panel_id}" aria-selected="{str(index==0).lower()}" tabindex="{0 if index==0 else -1}">{e(label)}</button>')
+                parts.append('</div>')
+                for index,rows in enumerate(tabs.values()):render_table(rows,f'table-{section_number}-{index}',index>0,f'tab-{section_number}-{index}')
+            else:render_table(block['rows'],f'table-{section_number}')
         elif kind=='image':
             parts.append(f'<figure><img loading="lazy" width="{block["width"]}" height="{block["height"]}" src="{e(block["path"],quote=True)}" alt="{e(block["caption"],quote=True)}"><figcaption>{e(block["caption"])}</figcaption></figure>')
             plain.append(block['caption'])

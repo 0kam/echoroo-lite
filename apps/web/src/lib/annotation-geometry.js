@@ -9,3 +9,7 @@ export function scaledZoom(current, axis, factor) {
 export function sourceTime(x, left, width, start, end) {
   return Math.round((start + Math.max(0, Math.min(1, (x - left) / width)) * (end - start)) * 100) / 100;
 }
+
+/** Double-click playback always starts at the selected time, even while audio is already playing.
+ * @param {number} time @param {number} viewEnd @returns {[number,number]} */
+export const seekInterval = (time, viewEnd) => [Math.min(time, viewEnd - .05), viewEnd];

@@ -43,9 +43,10 @@
     const runs=await api<SearchRun[]>('/search-runs',{dataset_id:id,start_date:first||null,end_date:last||null,
       targets:targets.map(row=>({species_id:row.species.id,clips:row.clips.map(c=>({source_kind:c.source.kind,source_id:c.source.id,start_s:c.start_s,end_s:c.end_s}))}))});
     if(!alive)return;
-    source=null;saveDraft();
+    targets=[];species=null;source=null;localStorage.removeItem(`echoroo-search-${id}`);ready=false;
     await goto(resolve(`/datasets/${id}/search/${runs[0].id}`));
   },{toast:true});
+  const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   onMount(()=>{void(async()=>{try{
     try{const saved=JSON.parse(localStorage.getItem(`echoroo-search-${id}`)||'[]');
       if(Array.isArray(saved))targets=saved;else{targets=saved.targets??[];species=saved.species??null;source=saved.source??null;start=saved.start??0;end=saved.end??5;xc=saved.xc??true;}}
@@ -77,7 +78,9 @@
     <Button disabled={search.pending||targets.length>=20} onclick={()=>{species=null;source=null;}}>{t('wAddTarget')}</Button></section>{/if}
   {#if species||targets.length}<section class="panel"><p class="muted">{#if first&&last}{first}–{last} · {/if} {t('wAutoSaved')}</p>
     {#if search.pending}<p class="muted" role="status">{t('searchingAudioStatus')}</p>{/if}
-    <Button variant="primary" pending={search.pending} disabled={!!activeJob()||(!targets.length&&(!species||!valid))} onclick={()=>search.run()}>{search.pending?t('searchingAudio'):t('wSearchAction')}</Button></section>{/if}
+    <Button variant="primary" pending={search.pending} disabled={!!activeJob()||(!targets.length&&(!species||!valid))} onclick={()=>search.run()}>{search.pending?t('searchingAudio'):t('wSearchAction')}</Button>
+    {#if search.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
+    {#if search.error}<p class="error" role="alert">{t(search.error)}</p>{/if}</section>{/if}
   {#if history.length}<details><summary>{t('savedSearches')}</summary>{#each history as run}<p><a href={resolve(`/datasets/${id}/search/${run.id}`)}>{commonName(run.species,app.locale)} · {run.created_at}</a></p>{/each}</details>{/if}
 </div>
 <style>.search-page{max-width:1050px}h1{margin:16px 0}h2{margin-bottom:16px}.reference-player{margin:20px 0}.actions{margin-bottom:16px}details{margin-top:16px}</style>

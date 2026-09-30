@@ -26,6 +26,7 @@
     const value = report.kind === 'search' ? cell.max_similarity : cell.candidate_rate;
     if (value === null) return '#f1f0f2';
     if(report.kind==='detection' && value===0)return '#fff';
+    if(report.kind==='search' && report.threshold===null && cell.confirmed_windows===0)return '#e0dfe4';
     if(value<scaleMin)return '#e0dfe4';
     const raw = scaleMin === 1 ? 1 : Math.min(1, Math.max(0, (value - scaleMin) / (1 - scaleMin)));
     const fraction = report.kind==='detection' ? .25 + .75*raw : raw;
@@ -108,7 +109,7 @@
     <text x={100+i*285} y={cy+432} font-size="14" fill="#575279">{t(item.key)}</text>{/each}
   {#if report.kind==='detection'}<rect x="70" y={cy+450} width="20" height="16" fill="#fff" stroke="#aeacb8"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t('uZeroCalls')}</text>{/if}
   {#if report.kind==='search'}
-    <rect x="70" y={cy+450} width="20" height="16" fill="#e0dfe4"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t('belowThreshold')}</text>
+    <rect x="70" y={cy+450} width="20" height="16" fill="#e0dfe4"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t(report.threshold===null?'searchNotHeard':'belowThreshold')}</text>
     <circle cx="363" cy={cy+458} r="4" fill="#222"/><text x="382" y={cy+463} font-size="14" fill="#575279">{t('confirmedEvidence')}</text>
   {/if}
   <text aria-hidden={compact} x="70" y={cy+494} font-size="14" fill="#575279">{t(report.kind==='search' ? 'searchFigureCaution' : quality ? 'wFigureCaution' : 'detectionFigureCaution')}</text>

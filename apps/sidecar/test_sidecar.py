@@ -14,13 +14,21 @@ import soundfile as sf
 from fastapi.testclient import TestClient
 
 from server import create_app
-from storage import CatalogError, connect, recording_time
+from storage import CatalogError, connect, initialize, preview_folder, recording_time
 from predictions import perch_candidates
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class SidecarCheck(unittest.TestCase):
+    def test_cancelled_import_preview_stops_before_inspection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);initialize(root);sf.write(root/'20240808_060000.wav',np.zeros(1000),1000)
+            stopped=threading.Event();stopped.set()
+            with self.assertRaisesRegex(CatalogError,'cancelled'):
+                preview_folder(root,root,'Asia/Tokyo',stopped)
+            with connect(root) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM recordings').fetchone()[0],0)
+
     def test_name_relevance_and_complete_perch_score_projection(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

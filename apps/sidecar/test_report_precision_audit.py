@@ -1,6 +1,9 @@
 import unittest
+from copy import deepcopy
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
-from report_document import blocks, status, status_text, messages
+from report_document import blocks, create_html, criterion, result_counts, status, status_text, messages
 from workflow_export import quality_export
 
 
@@ -86,6 +89,35 @@ class PrecisionAuditReportTest(unittest.TestCase):
         row=quality_export(pending['validation'],pending_result)
         self.assertIsNone(row['precision_value'])
         self.assertIsNone(row['precision_lower_95'])
+
+    def test_summary_and_unadjusted_checked_threshold_use_plain_separate_statements(self):
+        checked=snapshot();unchecked=snapshot();unchecked['species']={**unchecked['species'],'id':2};unchecked['validation']=None
+        self.assertEqual(result_counts([checked,unchecked]),(2,1,1))
+        checked['validation']['thresholds']['birdnet']['adjusted']=False
+        for locale,expected in [('ja','調整に必要な音が足りませんでした'),('en','not enough sounds')]:
+            self.assertIn(expected,criterion(checked,messages(locale)))
+            self.assertEqual(criterion(unchecked,messages(locale)).splitlines()[-1],messages(locale)['default'])
+
+    def test_species_and_quality_tables_are_grouped_by_model(self):
+        birdnet=snapshot();birdnet['species']['id']='test-species';perch=deepcopy(birdnet);perch['engine']='perch';perch['model_sha256']='perch'
+        perch['validation']['models']={'perch':'perch'}
+        perch['validation']['results']={'perch':perch['validation']['results'].pop('birdnet')}
+        perch['validation']['thresholds']={'perch':{'adjusted':True}}
+        base={'locale':'en','site':{'name':'Site','latitude':35.,'longitude':138.,'timezone':'Asia/Tokyo'},
+            'start_date':'2026-01-01','end_date':'2026-01-01','selected_species':[birdnet['species']],
+            'manual_species':[],'scope':{'recording_ids':[1],'recorded_seconds':30.,'daily':[{'date':'2026-01-01','seconds':30.}],
+            'schedule':[{'date':'2026-01-01','hours':[30.]+[0.]*23}],'analysed_seconds':{'BirdNET':30.,'Perch':30.}},
+            'saved_at':'2026-01-02T00:00:00+00:00','package_id':'test','schema':'test','file_guide':[]}
+        tables=[block for block in blocks(base,[birdnet,perch],[],{'per_species':[]}) if block['type']=='table' and block.get('tabs')]
+        self.assertGreaterEqual(len(tables),2)
+        self.assertTrue(all(list(table['tabs'])==['BirdNET','Perch'] for table in tables[:2]))
+        with TemporaryDirectory() as temporary:
+            folder=Path(temporary)
+            create_html(folder,base,[birdnet,perch],[],[],{'per_species':[]})
+            html=(folder/'index.html').read_text(encoding='utf-8')
+        self.assertIn('role="tablist"',html)
+        self.assertIn('role="tabpanel" aria-labelledby="tab-',html)
+        self.assertIn("['ArrowLeft','ArrowRight','Home','End']",html)
 
 
 if __name__=='__main__':unittest.main()

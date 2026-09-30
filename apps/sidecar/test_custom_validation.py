@@ -55,6 +55,7 @@ class CustomValidationCheck(unittest.TestCase):
                                                   'evaluation': {'total': 30, 'answered': 0},
                                                   'recall': {'total': 30, 'answered': 0}})
             self.assertEqual(session['thresholds']['custom'], {'threshold': .73, 'adjusted': False})
+            self.assertEqual(session['question']['samples'], [{'engine': 'custom', 'sample': 'precision'}])
             with patch('results_workflow.context', return_value=ctx), \
                     patch('custom_models.get_model', return_value=model), \
                     patch('custom_models.validation_population', return_value=(items, model)), \
@@ -101,6 +102,8 @@ class CustomValidationCheck(unittest.TestCase):
                 self.assertEqual(session['thresholds']['custom']['threshold'], .73)
                 self.assertEqual(session['results']['custom']['unknown'], 1)
                 self.assertEqual(session['results']['custom']['precision_sample']['answered'], 10)
+                self.assertTrue(all(item['samples'] == [{'engine': 'custom', 'sample': 'precision'}]
+                                    for item in session['history']))
                 self.assertIsNone(session['results']['custom']['precision_lower_95'])
                 self.assertFalse(session['results']['custom']['goal_met'])
                 session = answer(root, session['id'], unknown_item, 'other')

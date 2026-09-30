@@ -15,7 +15,7 @@
   import Spinner from './ui/Spinner.svelte';
   import { createTask } from './ui/task.svelte';
   type Example = { kind: ExampleRef['kind']; source: AudioSource; start_s: number; end_s: number;
-    label: { origin: string; id: number | string; recordist?: string; license?: string; url?: string; local_time?: string } };
+    label: { origin: string; id: number | string; recordist?: string; license?: string; url?: string; local_time?: string; country?: string; quality?: string } };
   type Payload = { examples: Example[]; ebird_code: string | null; in_quiz: boolean };
   let { species, datasetId, validationId, runId, sampleId, practice, onexamples }:
     { species: Species; datasetId: number; validationId?: number; runId?: number; sampleId?: number | null; practice: string;
@@ -40,7 +40,8 @@
   const prepare = createTask(async () => { show(await api<Payload>(`/species/${speciesId}/examples/xeno-canto`, scope)); fetched = true; });
   const credit = (e: Example) => e.kind === 'confirmed' ? [t('refConfirmed'), e.label.local_time?.slice(0, 16).replace('T', ' ')]
     : [t('refNamed'), e.label.origin === 'quiz' ? t('refQuiz') : e.label.origin === 'xeno-canto' ? `XC${e.label.id}` : t('refSearchReference'),
-      e.label.recordist, e.label.license && licenseName(e.label.license)];
+      e.label.origin === 'xeno-canto' && e.label.country ? t(e.label.country === 'Japan' ? 'refJapan' : 'refOutsideJapan') : '',
+      e.label.quality ? t('refQuality').replace('{quality}',e.label.quality) : '', e.label.recordist, e.label.license && licenseName(e.label.license)];
 </script>
 
 <section class="panel examples" aria-labelledby="examples-title">
