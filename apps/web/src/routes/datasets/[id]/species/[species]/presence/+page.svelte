@@ -19,7 +19,8 @@
   // Shown rows and played sounds survive going back to this page.
   const draftKey=$derived(`echoroo-presence:${id}:${speciesId}:${source}:${dates}`);
   let list=$state<PresenceList|null>(null),error=$state(''),shown=$state(10),played=$state<string[]>([]),saved=$state(0),ready=$state('');
-  const key=(row:PresenceRow)=>`${row.recording_id}:${row.start_s}`;
+  // BirdNET (3 s) and Perch (5 s) rows can start at the same second.
+  const key=(row:PresenceRow)=>`${row.recording_id}:${row.start_s}:${row.end_s}`;
   async function load(){try{list=await api<PresenceList>(`/datasets/${id}/species/${speciesId}/presence?source=${source}${dates?`&${dates}`:''}`);}
     catch(e){error=e instanceof Error?e.message:'unknown_error';}}
   $effect(()=>{const current=draftKey;untrack(()=>{list=null;error='';saved=0;shown=10;played=[];

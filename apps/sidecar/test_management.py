@@ -54,8 +54,8 @@ class ManagementCheck(unittest.TestCase):
                     db.execute("INSERT INTO model_labels(run_id,segment_id,label) VALUES(?,?,'target')",(run,segment))
                     db.execute('INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,run_id) VALUES(?,?,?,0,5,?)',(dataset,species,rid,run))
                     validation=db.execute("INSERT INTO validation_sessions(dataset_id,species_id,model,fingerprint,snapshot) VALUES(?,?,'birdnet','test',?)",(dataset,species,snap)).lastrowid
-                    db.execute("INSERT INTO validation_items(session_id,phase,position,recording_id,start_s,stratum,scores) VALUES(?,'calibration',0,?,0,'0','{}')",(validation,rid))
-                    db.execute("INSERT INTO window_answers(species_id,recording_id,start_s,verdict,session_id) VALUES(?,?,0,'target',?)",(species,rid,validation))
+                    db.execute("INSERT INTO validation_items(session_id,phase,position,recording_id,start_s,end_s,stratum,scores) VALUES(?,'sample',0,?,0,3,'0','{}')",(validation,rid))
+                    db.execute("INSERT INTO window_answers(species_id,recording_id,start_s,end_s,verdict,session_id) VALUES(?,?,0,3,'target',?)",(species,rid,validation))
                     report=db.execute("INSERT INTO reports(dataset_id,kind,snapshot) VALUES(?,'detection',?)",(dataset,snap)).lastrowid
                     db.execute("INSERT INTO reports(dataset_id,kind,snapshot) VALUES(?,'detection',?)",(dataset,json.dumps({'base_report_id':report})))
                     exported=root/f'export-{rid}.zip';exported.write_bytes(b'original export')
@@ -173,7 +173,7 @@ class ManagementCheck(unittest.TestCase):
                 species=self.populate(root,client)
                 preview=client.get('/sites/1/delete-preview').json()
                 with connect(root) as db:
-                    db.execute("INSERT INTO window_answers(species_id,recording_id,start_s,verdict) VALUES(?,1,0,'other')",(species,))
+                    db.execute("INSERT INTO window_answers(species_id,recording_id,start_s,end_s,verdict) VALUES(?,1,0,3,'other')",(species,))
                 self.assertEqual(client.post('/sites/1/delete',json={'revision':preview['revision']}).json()['detail'],'management_changed')
                 with connect(root) as db:
                     db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(3,?,?)',

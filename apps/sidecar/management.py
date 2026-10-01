@@ -182,6 +182,11 @@ def delete(root, site_id, dataset_id, revision):
         generated = model_folder/str(model_id)
         if generated.resolve().is_relative_to(model_folder):
             shutil.rmtree(generated, ignore_errors=True)
+    for validation_id in plan['validations']:
+        try:
+            (Path(root) / 'validations' / f'{validation_id}.npz').unlink(missing_ok=True)
+        except OSError:
+            pass
     from results_workflow import cached_fingerprint, cached_options
     from reports import cached_windows
     cached_fingerprint.cache_clear(); cached_options.cache_clear(); cached_windows.cache_clear()

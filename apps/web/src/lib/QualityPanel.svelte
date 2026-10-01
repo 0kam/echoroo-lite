@@ -1,25 +1,31 @@
 <script lang="ts">
-  import { t } from './app.svelte';
-  import { percent } from './reports';
-  import { checkText,precisionText,recallText,interval,type Validation } from './workflow';
-  /** One model's check: its status line, then the numbers behind it. */
+  import { app,t } from './app.svelte';
+  import { checkText,fill,type Metric,type Validation } from './workflow';
+  /** One model's check in plain words. Numbers appear only after every sound is answered. */
   let {validation}:{validation:Validation|null}=$props();
-  const result=$derived(validation?.results[validation.engine]);
+  const result=$derived(validation?.applicable&&validation.stage==='complete'?validation.results[validation.engine]:undefined);
+  const share=(value:number|null)=>value==null?'—':new Intl.NumberFormat(app.locale,{style:'percent',maximumSignificantDigits:2}).format(value);
+  const about=(value:number|null)=>value==null?'—':new Intl.NumberFormat(app.locale,{maximumSignificantDigits:2}).format(value);
+  const shares=(metric:Metric)=>({p:share(metric.value),low:share(metric.low),high:share(metric.high)});
+  const sum=(key:'heard'|'not_heard'|'unknown')=>result?.answers_per_bin.reduce((total,bin)=>total+bin[key],0)??0;
 </script>
-<p><strong>{checkText(validation)}</strong>{#if precisionText(validation)}<br>{precisionText(validation)}{/if}{#if recallText(validation)}<br>{recallText(validation)}{/if}</p>
+<p><strong>{checkText(validation)}</strong></p>
 {#if validation&&!validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
-{#if validation?.status==='undecided'}<p class="muted">{t('vUndecidedHint')}</p>{/if}
-{#if validation&&result?.precision_sample}
-  <details><summary>{t(validation.applicable?'uMoreQuality':'wPreviousQuality')}</summary>
-    <p class="muted">{t('vModelPrecisionSample').replace('{answered}',String(result.precision_sample.answered)).replace('{total}',String(result.precision_sample.total)).replace('{population}',String(result.precision_sample.population))}</p>
-    {#if result.precision_complete}{#each [['wPrecision',result.precision],['wRecall',result.recall],['wRate',result.estimated_window_rate]] as [label,metric]}
-      {@const value=metric as NonNullable<typeof result.precision>}
-      <div class="metric"><strong>{t(label as string)}</strong><span>{percent(value.value)}</span><small>{t('wInterval')}: {interval(value)}</small>
-        {#if label==='wPrecision'}<small>{t('vOneSidedLower')}: {percent(result.precision_lower_95??null)}</small>{/if}
-        {#if value.value===null}<small>{t(label==='wRecall'&&!result.recall_complete?'vRecallNotChecked':'wInsufficient')}</small>{/if}</div>
-    {/each}{/if}
-    <p class="muted">{t('wUnknown')}: {result.unknown} / {result.reviewed} · {t('wThreshold')}: {result.threshold?.toPrecision(3)??'—'}</p>
-    <p class="muted">{validation.start_date}–{validation.end_date} · {validation.window_s} {t('seconds')} · {t('rQualityScope')}</p>
+{#if validation&&result}
+  {#if result.status==='undecided'}<p>{fill('rUndecided',{reason:t(`reason_${result.reason}`)})}</p>{/if}
+  <ul>
+    <li>{fill('rDensity',{...shares(result.density),n:about(Math.round(result.count.value??0)),nlow:about(Math.round(result.count.low??0)),nhigh:about(Math.round(result.count.high??0))})}</li>
+    {#if result.precision}<li>{fill('rPrecision',shares(result.precision))}</li>{/if}
+    {#if result.recall_status==='not_estimable_rare'}<li>{t('rRecallRare')}</li>{:else if result.recall}<li>{fill('rRecall',shares(result.recall))}</li>{/if}
+    {#if result.multiplier}<li>{fill('rMultiplier',{x:about(result.multiplier.value),low:about(result.multiplier.low),high:about(result.multiplier.high)})}</li>{/if}
+    {#if result.threshold!=null}<li>{fill('rThreshold',{threshold:+result.threshold.toPrecision(3),window:validation.window_s})}</li>{/if}
+    {#if result.unknown}<li>{fill('rUnknown',{n:result.unknown})}</li>{/if}
+  </ul>
+  {#if result.disagreement}<p class="notice">{t('rDisagreement')}</p>{/if}
+  <details><summary>{t('uMoreQuality')}</summary>
+    {#if result.auprc}<p>{fill('rAuprc',{p:result.auprc.value?.toFixed(2)??'—',low:result.auprc.low?.toFixed(2)??'—',high:result.auprc.high?.toFixed(2)??'—'})}</p>{/if}
+    <p>{fill('rAnswers',{total:validation.counts.answered,heard:sum('heard'),not_heard:sum('not_heard'),unknown:sum('unknown')})}</p>
+    <p class="muted">{fill('rScope',{first:validation.start_date,last:validation.end_date,population:validation.population.toLocaleString(app.locale),window:validation.window_s})}</p>
   </details>
 {/if}
-<style>.metric{display:grid;grid-template-columns:1fr auto;gap:4px 10px;margin:12px 0}.metric small{grid-column:1/-1;color:rgb(var(--stone-700))}p{margin:10px 0}</style>
+<style>p{margin:10px 0}ul{margin:10px 0;padding-left:1.2em;display:grid;gap:6px}</style>

@@ -5,92 +5,72 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,rangeQuery,validationPhase,type Validation } from '$lib/workflow';
+  import { fill,modelName,rangeQuery,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
-  import ValidationSteps from '$lib/ValidationSteps.svelte';
   import ReferencePanel,{type ExampleRef} from '$lib/ReferencePanel.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),sid=Number(page.params.validation);
-  let validation=$state<Validation|null>(null),error=$state(''),paused=$state(false),started=$state(false),corrected=$state(false),heard=$state<ExampleRef[]>();
-  const phase=$derived(validationPhase(validation));
+  let validation=$state<Validation|null>(null),error=$state(''),started=$state(false),corrected=$state(false),heard=$state<ExampleRef[]>();
   const previous=$derived(validation?.history.filter(item=>item.position<(validation?.question?.position??Infinity)).at(-1));
   const next=$derived(validation?.history.find(item=>item.position>(validation?.question?.position??Infinity)));
-  // An answered sound always has a next sound: a later answered one, or the first unanswered one (or the finished step).
+  // An answered sound always has a next sound: a later answered one, or the first unanswered one (or the result).
   const goNext=()=>navigate.run(next?.id);
   const answered=$derived(!!validation?.question?.verdict);
-  const sampleUse=$derived(validation?.question?.samples.map(sample=>`${modelName(sample.engine)} ${t(sample.sample==='precision'?'vSamplePrecision':'vSampleRecall')}`).join(t('vSampleAnd'))??'');
-  const remaining=$derived(validation?validation.counts[phase].total-validation.counts[phase].answered:0);
-  const finishLabel=$derived(phase==='calibration'?'vBackCalibrationReady':'wValidationDone');
-  const nextLabel=$derived(next||remaining>0?'vNextSound':finishLabel);
-  onMount(()=>{api<Validation>(`/validations/${sid}`).then(value=>{validation=value;started=value.stage!=='calibration'||value.counts.calibration.answered>0;const active=validationPhase(value);
-    paused=active!=='calibration'&&value.counts[active].answered>0&&value.counts[active].answered%10===0;
-  }).catch(e=>error=e.message);});
-  const navigate=createTask(async(itemId?:number)=>{validation=await api<Validation>(`/validations/${sid}${itemId?`?item_id=${itemId}`:''}`);paused=false;started=true;corrected=false;});
-  const begin=createTask(async()=>{if(!validation?.applicable)return;validation=await api<Validation>(`/validations/${sid}/evaluation`,{});paused=false;corrected=false;});
-  const beginRecall=createTask(async()=>{if(!validation?.applicable)return;validation=await api<Validation>(`/validations/${sid}/recall`,{});paused=false;started=true;corrected=false;});
+  const remaining=$derived(validation?validation.counts.total-validation.counts.answered:0);
+  const nextLabel=$derived(next||remaining>0?'vNextSound':'wValidationDone');
+  onMount(()=>{api<Validation>(`/validations/${sid}`).then(value=>{validation=value;started=value.counts.answered>0;}).catch(e=>error=e.message);});
+  const navigate=createTask(async(itemId?:number)=>{validation=await api<Validation>(`/validations/${sid}${itemId?`?item_id=${itemId}`:''}`);started=true;corrected=false;});
+  const extend=createTask(async()=>{if(!validation?.applicable)return;validation=await api<Validation>(`/validations/${sid}/extend`,{});corrected=false;});
   const answer=createTask(async(verdict:string)=>{if(!validation?.applicable||!validation.question)return;const question=validation.question;
     const value=await api<Validation>(`/validations/${sid}/answers`,{item_id:question.id,verdict,version:question.version,examples_snapshot:heard});
     // Correcting an earlier sound moves on to the following sound, just like a first answer.
     corrected=question.verdict!==null;
-    if(corrected){validation=next?await api<Validation>(`/validations/${sid}?item_id=${next.id}`):value;return;}
-    validation=value;
-    if(value.counts[phase].answered>0&&value.counts[phase].answered%10===0)paused=true;
+    validation=corrected&&next?await api<Validation>(`/validations/${sid}?item_id=${next.id}`):value;
   });
-  const busy=$derived(answer.pending||navigate.pending||begin.pending||beginRecall.pending);
+  const busy=$derived(answer.pending||navigate.pending||extend.pending);
+  const done=$derived(validation?.stage==='complete'&&!validation.question);
   // The species results tab this check belongs to, so pages opened from here return to it.
   const range=$derived(validation?rangeQuery(validation.start_date,validation.end_date):'');
   const view=$derived(validation?`${range}&engine=${validation.engine}${validation.model_id?`&model_id=${validation.model_id}`:''}`:'');
   const back=$derived(validation?`${resolve(`/datasets/${id}/species/${validation.species.id}`)}?${view}`:resolve(`/datasets/${id}`));
   const practice=$derived(validation?`${resolve('/quiz')}?species=${validation.species.id}&return=${encodeURIComponent(`/datasets/${id}/validation/${sid}`)}`:'');
-  // One sentence per step on why these sounds are asked.
-  const note=$derived(!validation?.question?'':phase==='recall'?'vRecallNote':phase==='evaluation'?'vEvaluationNote':'vCalibrationNote');
-  const missed=$derived(validation?.status==='undecided'||validation?.status==='goal_not_met');
 </script>
 {#snippet examples()}{#if validation}<div class="examples-column"><ReferencePanel species={validation.species} datasetId={id} validationId={sid} {practice} onexamples={list=>heard=list}/></div>{/if}{/snippet}
 <div class="page validation-page"><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if validation}
     <h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
-    <p class="model">{fill('vModelTitle',{model:modelName(validation.engine)})}</p>
-    <ValidationSteps {validation} review={answered}/>
+    <p class="model">{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p>
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
-    {#if validation.stage==='complete'&&!validation.question}<section class="panel"><QualityPanel {validation}/>
-      {#if missed}<p>{t('sGoalHint')}</p><Button href={`${resolve(`/datasets/${id}/species/${validation.species.id}/model`)}?${range}`}>{t('customModelTitle')}</Button>{/if}
-      {#if validation.can_start_recall}<p>{t('vRecallOptional')}</p>{/if}
-      <div class="actions"><Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{#if validation.can_start_recall}<Button pending={beginRecall.pending} disabled={busy||!validation.applicable} onclick={()=>beginRecall.run()}>{t('vStartRecall')}</Button>{/if}{#if previous}<Button pending={navigate.pending} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
-      {#if beginRecall.error}<p class="error" role="alert">{t(beginRecall.error)}</p>{/if}</section>
-    {:else if !started}<section class="panel"><h2>{t('cStart')}</h2><p>{t('wValidationPlan')}</p>
-      <p>{t('vFirstCount').replace('{count}',String(remaining))}</p>
+    {#if done}<section class="panel"><h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>
+      {#if validation.can_extend}<p><strong>{t('vExtendWhy')}</strong></p>{/if}
+      <div class="actions">{#if validation.can_extend}<Button variant="primary" pending={extend.pending} disabled={busy||!validation.applicable} onclick={()=>extend.run()}>{t('vExtend')}</Button><Button href={back}>{t('vFinishHere')}</Button>
+        {:else}<Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{/if}
+        {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
+      {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
+    {:else if !started}<section class="panel"><h2>{t('cStart')}</h2><p>{fill('wValidationPlan',{total:validation.counts.total})}</p>
       <p><strong>{t('refListenFirst')}</strong></p>{@render examples()}<Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>
     {:else}
       <div class="with-examples"><section class="panel">
-        {#if phase==='calibration'&&!validation.question}
-          <h2>{t('vCalibrationReady')}</h2><p>{t('vCalibrationFreeze')}</p>
-          <div class="actions"><Button variant="primary" pending={begin.pending} disabled={busy||!validation.applicable} onclick={()=>begin.run()}>{t('vBeginEvaluation')}</Button>{#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
-        {:else if paused}
-          <h2>{t('wBatchDone')}</h2>
-          {#if phase==='evaluation'}<QualityPanel {validation}/>{/if}
-          <div class="actions"><Button variant="primary" onclick={()=>paused=false}>{t('wNextBatch')}</Button><Button href={back}>{t('wStopHere')}</Button>{#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
-        {:else if validation.question}
+        {#if validation.question}
           {@const question=validation.question}
           <div class="phase-progress"><h2>{t('vQuestionNamed').replace('{name}',commonName(validation.species,app.locale)||validation.species.scientific_name)}</h2>
-            <p>{#if answered}{t('vReviewProgress').replace('{n}',String(question.review_position)).replace('{total}',String(question.review_total))}{:else}{t('vAnsweredCount').replace('{answered}',String(validation.counts[phase].answered)).replace('{total}',String(validation.counts[phase].total)).replace('{remaining}',String(remaining))}{/if}{#if corrected}<span role="status"> · ✓ {t('vCorrectionSaved')}</span>{/if}</p></div>
-          {#if sampleUse}<p class="muted">{t('vSampleUse').replace('{uses}',sampleUse)}</p>{/if}
-          {#if note}<p class="muted">{t(note)}</p>{/if}
+            <p>{#if answered}{fill('vReviewProgress',{n:question.review_position,total:question.review_total})}{:else}{fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}{/if}{#if corrected}<span role="status"> · ✓ {t('vCorrectionSaved')}</span>{/if}</p></div>
+          <p class="muted">{t('vMixedNote')}</p>
           {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`}/>{/key}
           <div class="actions answers"><Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('vPreviousSound')}</Button>
             <div class="verdicts" role="group" aria-label={t('wQuestion')}>{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
             <Button size="lg" active={question.verdict===verdict} aria-pressed={question.verdict===verdict} disabled={busy||!validation.applicable} onclick={()=>answer.run(verdict)}>{question.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
             <Button disabled={busy||!answered} title={answered?undefined:t('vAnswerToContinue')} onclick={goNext}>{t(nextLabel)} ›</Button>
             <p class="muted unknown-note">{t('vUnknownNote')}</p></div>
-          {#if answered&&next}<div class="actions review-navigation"><Button disabled={busy} onclick={()=>navigate.run()}>{t(remaining>0?'vResume':finishLabel)}</Button></div>{/if}
+          {#if answered&&next}<div class="actions review-navigation"><Button disabled={busy} onclick={()=>navigate.run()}>{t(remaining>0?'vResume':'wValidationDone')}</Button></div>{/if}
         {/if}
-        {#if answer.error||navigate.error||begin.error||beginRecall.error}<p class="error" class:answer-feedback={!!validation.question&&!paused} role="alert">{t(answer.error||navigate.error||begin.error||beginRecall.error)}</p>{/if}
+        {#if answer.error||navigate.error}<p class="error" class:answer-feedback={!!validation.question} role="alert">{t(answer.error||navigate.error)}</p>{/if}
       </section>{@render examples()}</div>
     {/if}
   {:else if !error}<p><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.answer-feedback{position:fixed;bottom:100px;left:28px;right:28px;z-index:4;padding:12px;background:rgb(var(--color-page-bg));box-shadow:0 0 0 1px currentColor;border-radius:8px;}:global(.main:has(.validation-page)){padding-top:16px}.page.validation-page{max-width:1280px;gap:8px;padding-bottom:130px}.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}.examples-column{display:flex;flex-direction:column;gap:8px;position:sticky;top:16px}@media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}.validation-page .crumbs{margin-bottom:0}.validation-page .panel{padding:16px}.validation-page h1{font-size:27px;margin:0}.model{font-weight:600}.validation-page .sci{display:inline;font-size:16px;margin-left:12px}.phase-progress{display:flex;align-items:center;justify-content:space-between;gap:12px}.validation-page h2{font-size:20px;margin:0 0 8px}p{margin:6px 0}.answers{position:fixed;bottom:0;left:0;right:0;z-index:3;justify-content:space-between;align-items:center;row-gap:4px;padding:10px max(24px,calc((100vw - 1280px)/2));background:rgb(var(--color-page-bg));border-top:1px solid rgb(var(--stone-300));margin:0}.answers .verdicts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.unknown-note{flex-basis:100%;text-align:center;margin:0;font-size:14px}.review-navigation{margin-top:24px}@media(max-width:700px){.answers{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 12px}.answers .verdicts{grid-column:1/-1;order:-1;flex-wrap:nowrap;gap:6px}.answers .verdicts :global(.button){flex:1;padding:8px;font-size:16px;min-height:48px}.unknown-note{grid-column:1/-1}.page.validation-page{padding-bottom:220px}}</style>
+<style>.answer-feedback{position:fixed;bottom:100px;left:28px;right:28px;z-index:4;padding:12px;background:rgb(var(--color-page-bg));box-shadow:0 0 0 1px currentColor;border-radius:8px;}:global(.main:has(.validation-page)){padding-top:16px}.page.validation-page{max-width:1280px;gap:8px;padding-bottom:130px}.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}.examples-column{display:flex;flex-direction:column;gap:8px;position:sticky;top:16px}@media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}.validation-page .crumbs{margin-bottom:0}.validation-page .panel{padding:16px}.validation-page h1{font-size:27px;margin:0}.model{font-weight:600}.validation-page .sci{display:inline;font-size:16px;margin-left:12px}.phase-progress{display:flex;align-items:center;justify-content:space-between;gap:12px}.phase-progress p{white-space:nowrap}.validation-page h2{font-size:20px;margin:0 0 8px}p{margin:6px 0}.answers{position:fixed;bottom:0;left:0;right:0;z-index:3;justify-content:space-between;align-items:center;row-gap:4px;padding:10px max(24px,calc((100vw - 1280px)/2));background:rgb(var(--color-page-bg));border-top:1px solid rgb(var(--stone-300));margin:0}.answers .verdicts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.unknown-note{flex-basis:100%;text-align:center;margin:0;font-size:14px}.review-navigation{margin-top:24px}@media(max-width:700px){.answers{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 12px}.answers .verdicts{grid-column:1/-1;order:-1;flex-wrap:nowrap;gap:6px}.answers .verdicts :global(.button){flex:1;padding:8px;font-size:16px;min-height:48px}.unknown-note{grid-column:1/-1}.page.validation-page{padding-bottom:220px}}</style>

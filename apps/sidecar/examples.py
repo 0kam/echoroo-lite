@@ -11,7 +11,7 @@ from species import ebird_codes
 from storage import CatalogError, checked_source, connect
 
 LIMIT = 12
-NAMED_S = 15  # Same width as a detection validation window.
+NAMED_S = 5
 
 
 def _example(kind, row, source_kind, start, end, label):
@@ -24,8 +24,8 @@ def _question_windows(db, validation_id):
         return []
     if not db.execute('SELECT 1 FROM validation_sessions WHERE id=?', (validation_id,)).fetchone():
         raise CatalogError('not_found')
-    return [('recording', r[0], r[1], r[1] + 15) for r in
-            db.execute('SELECT recording_id,start_s FROM validation_items WHERE session_id=?', (validation_id,))]
+    return [('recording', r[0], r[1], r[2]) for r in
+            db.execute('SELECT recording_id,start_s,end_s FROM validation_items WHERE session_id=?', (validation_id,))]
 
 
 def examples(root, species_id, dataset_id, validation_id=None):
@@ -69,16 +69,15 @@ def examples(root, species_id, dataset_id, validation_id=None):
             if record := records.get(row['recording_id']):
                 confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['end_s'],
                                   {'origin': 'presence', 'id': row['id'], 'local_time': local(record, row['start_s'])})))
-        for row in db.execute('''SELECT a.id,a.created_at,a.recording_id,a.start_s FROM window_answers a
-                WHERE a.id IN (SELECT MAX(id) FROM window_answers WHERE species_id=? GROUP BY recording_id,start_s) AND a.verdict='target' ''', (species_id,)):
+        for row in db.execute('''SELECT a.id,a.created_at,a.recording_id,a.start_s,a.end_s FROM window_answers a
+                WHERE a.id IN (SELECT MAX(id) FROM window_answers WHERE species_id=? GROUP BY recording_id,start_s,end_s) AND a.verdict='target' ''', (species_id,)):
             if record := records.get(row['recording_id']):
-                confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['start_s'] + 15,
+                confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['end_s'],
                                   {'origin': 'validation', 'id': row['id'], 'local_time': local(record, row['start_s'])})))
         in_quiz = bool(db.execute('SELECT 1 FROM quiz_clips WHERE species_id=? AND enabled=1', (species_id,)).fetchone())
     chosen = []
     confirmed.sort(key=lambda pair: (pair[0], pair[1]['label']['id']), reverse=True)
-    # The interval deliberately chosen for a search is more useful than a generic
-    # first-15-second example from the same source, so it also wins deduplication.
+    # A deliberately chosen search interval is more useful than a generic opening example.
     preferred_sources={(example['source']['kind'],example['source']['id']) for example in search_named}
     named=[example for example in named if not (example['label']['origin']=='xeno-canto' and
         (example['source']['kind'],example['source']['id']) in preferred_sources)]

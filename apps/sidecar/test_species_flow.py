@@ -23,7 +23,7 @@ class Session:
 
 @contextmanager
 def site():
-    """Six days of 90-second recordings; Perch hears the species in every other 15-second window."""
+    """Six days of 90-second recordings with Perch embeddings and scores every 5 seconds."""
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp).resolve()
         audio = root / 'audio'
@@ -44,7 +44,7 @@ def site():
                         (job, rid, json.dumps({'model_sha256': 'perch-sha', 'candidate_filter': {'species': [label]}}), str(path))).lastrowid
                     for index in range(18):
                         segment = db.execute('INSERT INTO segments(analysis_id,start_s,end_s) VALUES(?,?,?)', (analysis, index * 5, index * 5 + 5)).lastrowid
-                        # The call is in the first 5 seconds of every even 15-second window.
+                        # Repeated separable examples for the small custom classifier.
                         vector = (E0 if index % 6 == 0 else E1) + np.eye(1, 1536, 10 + rid, dtype='<f4')[0] * .05
                         db.execute('INSERT INTO vectors(rowid,embedding) VALUES(?,?)', (segment, vector.tobytes()))
             yield root, client, species
@@ -86,7 +86,7 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual(client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']['status'], 'confirmed')
             # The AI list interleaves each model's ranking and says which model flagged a sound.
             ai = client.get(f'/datasets/1/species/{sid}/presence', params={'source': 'ai', **{k: scope[k] for k in ('start_date', 'end_date')}}).json()
-            self.assertTrue(ai['rows'] and all(r['end_s'] - r['start_s'] == 15 and r['models'][0]['engine'] == 'perch' for r in ai['rows']))
+            self.assertTrue(ai['rows'] and all(r['end_s'] - r['start_s'] == 5 and r['models'][0]['engine'] == 'perch' for r in ai['rows']))
             # Custom model material: labels on search hits, needing three of each.
             ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={k: scope[k] for k in ('start_date', 'end_date')}).json()
             self.assertEqual((ready['can_train'], ready['reasons']), (False, ['custom_positive_examples_needed', 'custom_negative_examples_needed']))
@@ -110,7 +110,7 @@ class SpeciesFlowCheck(unittest.TestCase):
             detail = client.get(f'/datasets/1/species/{sid}', params={**scope, 'engine': 'custom', 'model_id': model['id']}).json()
             self.assertEqual(detail['selected'], f"custom:{model['id']}")
             self.assertEqual(detail['report']['threshold'], .5)
-            self.assertEqual(detail['report']['summaries'][0]['eligible_windows'], 36)
+            self.assertEqual(detail['report']['summaries'][0]['eligible_windows'], 108)
             ai = client.get(f'/datasets/1/species/{sid}/presence', params={'source': 'ai', **{k: scope[k] for k in ('start_date', 'end_date')}}).json()
             self.assertEqual({m['engine'] for r in ai['rows'] for m in r['models']}, {'perch', 'custom'})
             # The custom model is checked like any other model, without the windows it learned from.
@@ -118,26 +118,32 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual(check.status_code, 200, check.text)
             check = check.json()
             with connect(root) as db:
-                training = {(e['recording_id'], e['start_s'] // 15 * 15) for e in json.loads(db.execute('SELECT snapshot FROM custom_models').fetchone()[0])['training']['examples']}
-                items = {tuple(r) for r in db.execute('SELECT recording_id,start_s FROM validation_items WHERE session_id=?', (check['id'],))}
+                training = {(e['recording_id'], e['start_s'], e['end_s']) for e in json.loads(db.execute('SELECT snapshot FROM custom_models').fetchone()[0])['training']['examples']}
+                items = {tuple(r) for r in db.execute('SELECT recording_id,start_s,end_s FROM validation_items WHERE session_id=?', (check['id'],))}
             self.assertFalse(items & training)
             heard = lambda question: 'target' if question['start_s'] % 30 == 0 else 'other'
             while check['question']:
                 check = client.post(f"/validations/{check['id']}/answers", json={'item_id': check['question']['id'], 'verdict': heard(check['question'])}).json()
-            check = client.post(f"/validations/{check['id']}/evaluation").json()
-            self.assertIsNotNone(check['thresholds']['custom']['threshold'])
-            while check['question']:
-                check = client.post(f"/validations/{check['id']}/answers", json={'item_id': check['question']['id'], 'verdict': heard(check['question'])}).json()
-            check = client.post(f"/validations/{check['id']}/recall").json()
-            while check['question']:
-                check = client.post(f"/validations/{check['id']}/answers", json={'item_id': check['question']['id'], 'verdict': heard(check['question'])}).json()
-            self.assertEqual(check['status'], 'goal_met')
-            # "Not heard" in ②③ becomes no-voice material: three 5-second pieces per 15-second window.
+            self.assertIn(check['status'], ('decided', 'undecided'))
+            reported = client.get(f'/datasets/1/species/{sid}', params={**scope, 'engine': 'custom', 'model_id': model['id']}).json()['report']
+            summary = reported['summaries'][0]
+            self.assertEqual((summary['density'], summary['window_s'], summary['model_sha256']),
+                             (check['results']['custom']['density'], 5, model['artifact_sha256']))
+            self.assertEqual(summary['validation_status'], check['status'])
+            perch_check = client.post('/validations', json={**scope, 'model': 'perch'}).json()
+            with connect(root) as db:
+                custom_windows = {tuple(r) for r in db.execute('SELECT recording_id,start_s,end_s FROM validation_items WHERE session_id=?',(check['id'],))}
+                perch_windows = {tuple(r) for r in db.execute('SELECT recording_id,start_s,end_s FROM validation_items WHERE session_id=?',(perch_check['id'],))}
+            self.assertEqual(perch_check['counts']['answered'], len(custom_windows & perch_windows))
+            self.assertGreater(perch_check['counts']['answered'], 0)
+            client.post(f"/validations/{perch_check['id']}/delete")
+            self.assertEqual(client.get(f"/validations/{check['id']}").json()['status'],check['status'])
+            # Only exact 5-second "Not heard" answers become no-voice material.
             ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={k: scope[k] for k in ('start_date', 'end_date')}).json()
             with connect(root) as db:
                 pieces = db.execute('''SELECT COUNT(*) FROM segments s JOIN analyses n ON n.id=s.analysis_id JOIN validation_items i
-                    ON i.recording_id=n.recording_id AND s.start_s>=i.start_s AND s.end_s<=i.start_s+15 JOIN window_answers a
-                    ON a.recording_id=i.recording_id AND a.start_s=i.start_s WHERE i.session_id=? AND i.phase='evaluation' AND a.verdict='other'
+                    ON i.recording_id=n.recording_id AND s.start_s=i.start_s AND s.end_s=i.end_s JOIN window_answers a
+                    ON a.recording_id=i.recording_id AND a.start_s=i.start_s AND a.end_s=i.end_s WHERE i.session_id=? AND a.verdict='other'
                     AND s.id NOT IN (SELECT segment_id FROM model_labels)''', (check['id'],)).fetchone()[0]
             self.assertGreater(pieces, 0)
             self.assertEqual(ready['examples']['negative_from_checks'], pieces)

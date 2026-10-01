@@ -1,133 +1,141 @@
-"""① sampling and threshold fitting, the day split, and exact finite-population bounds."""
+import json
+import tempfile
+import time
 import unittest
-from zoneinfo import ZoneInfo
+from datetime import date
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
-from scipy.special import expit, logit
-from scipy.stats import hypergeom
+from scipy.special import expit
 
-from validation import calibration_sample, exact_count_interval, fit_threshold, logit_scores, split_recordings
-
-
-class CalibrationSampleCheck(unittest.TestCase):
-    def test_one_window_per_equal_logit_bin_when_every_bin_is_filled(self):
-        scores = expit(np.linspace(-6, 6, 400))
-        chosen = calibration_sample(scores, np.random.default_rng(1))
-        self.assertEqual(len(chosen), 20)
-        self.assertEqual(sorted(band for _, band in chosen), list(range(20)))
-        x = logit_scores(scores)
-        edges = np.linspace(x.min(), x.max(), 21)
-        for index, band in chosen:
-            self.assertTrue(edges[band] - 1e-9 <= x[index] <= edges[band + 1] + 1e-9)
-        self.assertEqual(len({index for index, _ in chosen}), 20)
-
-    def test_empty_bins_are_filled_from_the_others_and_small_populations_are_taken_whole(self):
-        # Two clusters leave most of the 20 bins empty.
-        scores = np.r_[np.full(30, .01), np.full(30, .99)] * np.r_[np.linspace(.9, 1, 30), np.linspace(.999, 1, 30)]
-        chosen = calibration_sample(scores, np.random.default_rng(2))
-        self.assertEqual(len(chosen), 20)
-        self.assertEqual(len({index for index, _ in chosen}), 20)
-        occupied = {band for _, band in chosen}
-        self.assertGreaterEqual(len(occupied), 2)
-        self.assertEqual(sorted(i for i, _ in calibration_sample([.2, .4, .6], np.random.default_rng(3))), [0, 1, 2])
-        self.assertEqual(calibration_sample([], np.random.default_rng(4)), [])
-        self.assertEqual(len(calibration_sample(np.full(50, .3), np.random.default_rng(5))), 20)
-
-    def test_the_draw_depends_only_on_scores_and_seed(self):
-        scores = expit(np.random.default_rng(0).normal(size=300))
-        self.assertEqual(calibration_sample(scores, np.random.default_rng(9)), calibration_sample(scores, np.random.default_rng(9)))
+from server import ValidationRequest
+from species import initialize_species
+from storage import CatalogError, connect, initialize
+from validation import (CURVE_FLOOR, _load_population, answer, delete_check, estimate, extend, extension_needed,
+                        quantile_strata, sample_indices, start_session, view_session)
 
 
-class ThresholdCheck(unittest.TestCase):
-    population = expit(np.linspace(-8, 8, 2000))
+class ValidationEstimatorTest(unittest.TestCase):
+    def population(self, n=6000, seed=4):
+        rng = np.random.default_rng(seed)
+        x = rng.normal(-3, 2, n)
+        probability = CURVE_FLOOR + (1 - CURVE_FLOOR) * expit(.8 + 1.2 * (x + .8))
+        truth = rng.random(n) < probability
+        scores = expit(x)
+        strata, _, _ = quantile_strata(scores, seed)
+        sampled = np.array([i for i, _ in sample_indices(strata, seed + 1, 10)])
+        return scores, truth, strata, sampled
 
-    def test_lowest_threshold_with_fitted_share_of_at_least_90_percent(self):
-        sample = expit(np.linspace(-8, 8, 20))
-        verdicts = ['target' if s > .5 else 'other' for s in sample]
-        result = fit_threshold(sample, verdicts, self.population)
-        self.assertIsNone(result['reason'])
-        self.assertGreater(result['curve']['slope'], 0)
-        self.assertGreaterEqual(result['estimated_precision'], .9)
-        # The share above the chosen threshold reaches 90%; one population step lower no longer does.
-        chosen = result['threshold']
-        self.assertIn(chosen, self.population)
-        beta = result['curve']['intercept'], result['curve']['slope']
-        fitted = lambda cut: expit(beta[0] + beta[1] * logit_scores(self.population[self.population >= cut])).mean()
-        self.assertGreaterEqual(fitted(chosen), .9)
-        lower = self.population[self.population < chosen].max()
-        self.assertLess(fitted(lower), .9)
-        # Unknown answers are left out, not counted as absent.
-        self.assertEqual(fit_threshold(sample, [*verdicts[:-1], 'unknown'], self.population)['curve']['answers'], 19)
+    def test_rank_bins_have_exact_weights_and_reproducible_ties(self):
+        scores = np.ones(101) * .2
+        first, edges, _ = quantile_strata(scores, 9)
+        second, _, _ = quantile_strata(scores, 9)
+        self.assertTrue(np.array_equal(first, second))
+        self.assertEqual(np.bincount(first, minlength=6).tolist(), np.diff(edges).tolist())
 
-    def test_all_heard_uses_the_lowest_population_score(self):
-        sample = expit(np.linspace(-8, 8, 20))
-        result = fit_threshold(sample, ['target'] * 20, self.population)
-        self.assertEqual(result['threshold'], self.population.min())
-        self.assertEqual(result['reason'], 'all_target')
-        self.assertEqual(result['estimated_precision'], 1.0)
-        self.assertEqual(result['curve'], {'answers': 20, 'heard': 20})
-        with_unknowns = fit_threshold(sample, ['unknown'] * 19 + ['target'], self.population)
-        self.assertEqual((with_unknowns['threshold'], with_unknowns['reason']),
-                         (self.population.min(), 'all_target'))
+    def test_census_reproduces_truth(self):
+        scores, truth, strata, _ = self.population(6000)
+        result = estimate(scores, strata, np.arange(len(scores)), np.where(truth, 'target', 'other'),
+                          np.min(np.log(scores[strata == 5] / (1 - scores[strata == 5]))), 5)
+        actual = truth.mean()
+        self.assertAlmostEqual(result['density']['value'], actual, places=12)
+        self.assertLess(result['density']['high'] - result['density']['low'], .02)
+        self.assertLess(result['curve_density']['high'] - result['curve_density']['low'], 1e-12)
 
-    def test_no_heard_sound_or_no_relation_cannot_set_a_threshold(self):
-        sample = expit(np.linspace(-8, 8, 20))
-        self.assertEqual(fit_threshold(sample, ['other'] * 20, self.population), {'threshold': None, 'reason': 'no_target'})
-        backwards = ['target' if s < .5 else 'other' for s in sample]
-        result = fit_threshold(sample, backwards, self.population)
-        self.assertIsNone(result['threshold'])
-        self.assertEqual(result['reason'], 'no_relation')
-        self.assertLessEqual(result['curve']['slope'], 0)
+    def test_simulated_population_intervals_cover_density_and_recall(self):
+        scores, truth, strata, sampled = self.population()
+        x0 = np.min(np.log(scores[strata == 5] / (1 - scores[strata == 5])))
+        result = estimate(scores, strata, sampled, np.where(truth[sampled], 'target', 'other'), x0, 8)
+        self.assertLessEqual(result['density']['low'], truth.mean())
+        self.assertGreaterEqual(result['density']['high'], truth.mean())
+        if result['threshold'] is not None and result['recall'] is not None:
+            actual = truth[scores >= result['threshold']].sum() / truth.sum()
+            self.assertLessEqual(result['recall']['low'], actual)
+            self.assertGreaterEqual(result['recall']['high'], actual)
 
-    def test_a_weak_relation_that_never_reaches_90_percent_is_reported(self):
-        sample = expit(np.linspace(-8, 8, 20))
-        verdicts = ['target' if i % 2 == 0 or i > 15 else 'other' for i in range(20)]
-        verdicts[19] = 'other'
-        result = fit_threshold(sample, verdicts, self.population)
-        self.assertIsNone(result['threshold'])
-        self.assertIn(result['reason'], {'target_unreachable', 'no_relation'})
+    def test_rare_rule_and_undecided_reasons(self):
+        scores = np.linspace(1e-5, .9, 6000)
+        strata, _, bounds = quantile_strata(scores, 1)
+        sampled = np.array([i for i, _ in sample_indices(strata, 2, 10)])
+        none = estimate(scores, strata, sampled, np.full(len(sampled), 'other'), bounds[5]['low_x'], 3)
+        self.assertEqual((none['reason'], none['threshold']), ('no_target', None))
+        verdicts = np.full(len(sampled), 'other'); verdicts[np.argmax(scores[sampled])] = 'target'
+        rare = estimate(scores, strata, sampled, verdicts, bounds[5]['low_x'], 4)
+        self.assertEqual(rare['recall_status'], 'not_estimable_rare')
+        self.assertIsNone(rare['recall']); self.assertIsNone(rare['multiplier'])
+        unreachable = estimate(scores, strata, sampled, np.where(scores[sampled] < np.median(scores[sampled]), 'target', 'other'), bounds[5]['low_x'], 5)
+        self.assertEqual(unreachable['reason'], 'target_unreachable')
 
-    def test_logit_scale_is_clipped_at_the_extremes(self):
-        values = logit_scores([0, 1e-30, .5, 1])
-        self.assertTrue(np.isfinite(values).all())
-        self.assertEqual(values[0], values[1])
-        self.assertAlmostEqual(values[2], 0)
-        self.assertAlmostEqual(values[0], logit(1e-9))
+    def test_extension_rule_and_large_population_speed(self):
+        scores, truth, strata, sampled = self.population(6000, 7)
+        x0 = np.min(np.log(scores[strata == 5] / (1 - scores[strata == 5])))
+        result = estimate(scores, strata, sampled, np.where(truth[sampled], 'target', 'other'), x0, 8)
+        should_extend = result['recall'] is not None and result['recall']['high'] - result['recall']['low'] > .30
+        self.assertEqual(extension_needed(result), should_extend)
+        rare = dict(result, recall=None, recall_status='not_estimable_rare')
+        self.assertFalse(extension_needed(rare))
+        rng = np.random.default_rng(10)
+        million = rng.random(1_000_000)
+        large_strata, _, bounds = quantile_strata(million, 11)
+        chosen = np.array([i for i, _ in sample_indices(large_strata, 12, 10)])
+        started = time.perf_counter()
+        estimate(million, large_strata, chosen, np.where(million[chosen] > .7, 'target', 'other'), bounds[5]['low_x'], 13)
+        self.assertLess(time.perf_counter() - started, 2.0)
 
-
-class SplitCheck(unittest.TestCase):
-    def test_days_split_in_half_reproducibly_and_one_day_splits_recordings(self):
-        zone = ZoneInfo('Asia/Tokyo')
-        records = {rid: {'id': rid, 'recorded_at': f'2024-08-0{day}T01:00:00+00:00', 'seconds': 60}
-                   for rid, day in [(1, 1), (2, 1), (3, 2), (4, 3), (5, 4)]}
-        split = split_recordings(records, zone, 7)
-        self.assertEqual(split['unit'], 'local_day')
-        self.assertEqual(split, split_recordings(dict(reversed(records.items())), zone, 7))
-        self.assertEqual(sorted(split['calibration_recording_ids'] + split['evaluation_recording_ids']), [1, 2, 3, 4, 5])
-        # Recordings of one day never straddle the split.
-        self.assertEqual({1, 2} <= set(split['calibration_recording_ids']) or {1, 2} <= set(split['evaluation_recording_ids']), True)
-        days = lambda ids: {records[i]['recorded_at'][:10] for i in ids}
-        self.assertEqual(len(days(split['calibration_recording_ids'])), 2)
-        one = split_recordings({1: records[1], 2: records[2]}, zone, 7)
-        self.assertEqual((one['unit'], len(one['calibration_recording_ids']), len(one['evaluation_recording_ids'])), ('recording', 1, 1))
-        single = split_recordings({1: records[1]}, zone, 7)
-        self.assertEqual((single['calibration_recording_ids'], single['evaluation_recording_ids']), ([1], []))
-
-
-class FiniteBoundCheck(unittest.TestCase):
-    def test_exact_hypergeometric_limits(self):
-        for N, n in [(5, 2), (10, 1), (10, 6), (1000, 30), (70080, 30)]:
-            for alpha in (.05, .1):
-                for k in sorted({0, 1, n // 2, n - 1, n}):
-                    low, high = exact_count_interval(N, n, k, alpha)
-                    self.assertGreaterEqual(hypergeom.sf(k - 1, N, low, n), alpha / 2)
-                    self.assertGreaterEqual(hypergeom.cdf(k, N, high, n), alpha / 2)
-                    if low > k:
-                        self.assertLess(hypergeom.sf(k - 1, N, low - 1, n), alpha / 2)
-                    if high < N - n + k:
-                        self.assertLess(hypergeom.cdf(k, N, high + 1, n), alpha / 2)
-        self.assertEqual(exact_count_interval(10, 10, 0, .05), (0, 0))
-        self.assertEqual(exact_count_interval(10, 10, 10, .05), (10, 10))
+    def test_large_population_is_external_and_answering_and_extension_work(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            initialize(root); initialize_species(root)
+            source = root / 'source.wav'; source.write_bytes(b'audio')
+            stat = source.stat()
+            with connect(root) as db:
+                db.execute("INSERT INTO sites VALUES(1,'Site','Asia/Tokyo',35,138)")
+                db.execute("INSERT INTO datasets VALUES(1,1,'Data',?)", (str(root),))
+                db.execute('''INSERT INTO recordings VALUES(1,1,?,?,?,?,?,?,?,?)''',
+                    (str(source), '2024-01-01T00:00:00', 'Asia/Tokyo', '2023-12-31T15:00:00+00:00',
+                     600_000, 1, stat.st_size, stat.st_mtime_ns))
+                species_id = db.execute("SELECT id FROM species WHERE scientific_name='Horornis diphone'").fetchone()[0]
+            ctx = {'dataset': {'id': 1, 'name': 'Data'}, 'site': {'id': 1, 'name': 'Site', 'timezone': 'Asia/Tokyo',
+                'latitude': 35, 'longitude': 138}, 'start_date': '2024-01-01', 'end_date': '2024-01-01',
+                'fingerprint': 'scope', 'models': [], 'revision': 1}
+            count = 200_003
+            scores = np.linspace(.0001, .9999, count)
+            windows = [{'recording_id': 1, 'start_s': i * 3.0, 'end_s': i * 3.0 + 3,
+                        'score': float(score)} for i, score in enumerate(scores)]
+            request = ValidationRequest(dataset_id=1, species_id=species_id, start_date=date(2024, 1, 1),
+                                        end_date=date(2024, 1, 1), model='birdnet')
+            with patch('results_workflow.context', return_value=ctx), \
+                 patch('validation.model_windows', return_value=(windows, {'birdnet': 'model'}, [1])):
+                check = start_session(root, request)
+                with connect(root) as db:
+                    raw = db.execute('SELECT snapshot FROM validation_sessions WHERE id=?', (check['id'],)).fetchone()[0]
+                self.assertLess(len(raw.encode()), 50_000)
+                self.assertNotIn('population', json.loads(raw))
+                population_path = root / 'validations' / f"{check['id']}.npz"
+                self.assertTrue(population_path.is_file())
+                with np.load(population_path, allow_pickle=False) as saved:
+                    self.assertEqual((len(saved['score']), saved['recording_id'].dtype, saved['score'].dtype, saved['bin'].dtype),
+                                     (count, np.dtype('int64'), np.dtype('float64'), np.dtype('int8')))
+                with patch('validation._load_population', side_effect=AssertionError('view loaded population')):
+                    self.assertEqual(view_session(root, check['id'], ctx=ctx)['population'], count)
+                with patch('results_workflow.context', return_value=ctx), patch('validation.extension_needed', return_value=True):
+                    while check['question']:
+                        question = check['question']
+                        check = answer(root, check['id'], question['id'],
+                                       'target' if question['start_s'] >= 500_000 else 'other')
+                with connect(root) as db:
+                    completed_raw = db.execute('SELECT snapshot FROM validation_sessions WHERE id=?', (check['id'],)).fetchone()[0]
+                self.assertLess(len(completed_raw.encode()), 50_000)
+                self.assertTrue(check['can_extend'])
+                with patch('results_workflow.context', return_value=ctx):
+                    check = extend(root, check['id'])
+                self.assertEqual((check['stage'], check['extended']), ('extension', True))
+                self.assertGreater(check['counts']['total'], 60)
+                delete_check(root, check['id'])
+                self.assertFalse(population_path.exists())
+                with self.assertRaisesRegex(CatalogError, 'validation_population_missing'):
+                    _load_population(root, check['id'])
 
 
 if __name__ == '__main__':

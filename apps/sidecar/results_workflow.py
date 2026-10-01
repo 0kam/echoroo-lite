@@ -96,7 +96,7 @@ def detection_snapshot(root, ctx, model, species_id=None, threshold=.1):
     body = SimpleNamespace(dataset_id=ctx['dataset']['id'], engine=model['engine'], model_sha256=model['model_sha256'],
         threshold=threshold, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']),
         species_id=species_id, base_report_id=None)
-    return cached(root, ['detection-site-v5', ctx['fingerprint'], ctx['names_revision'], ctx['site']['name'], ctx['dataset']['name'], vars(body)], lambda: detection(root, body, persist=False))
+    return cached(root, ['detection-site-v6', ctx['fingerprint'], ctx['names_revision'], ctx['site']['name'], ctx['dataset']['name'], vars(body)], lambda: detection(root, body, persist=False))
 
 
 def search_for(root, ctx, species_id):
@@ -113,8 +113,7 @@ def custom_snapshot(root, ctx, model):
 
     def build():
         result = report_snapshot(root, ctx, model['id'], threshold)
-        result['validation'] = quality
-        return result
+        return attach_validation(result, quality)
     return cached(root, ['custom-report-v2', ctx['revision'], ctx['start_date'], ctx['end_date'], model['id']], build)
 
 
@@ -138,18 +137,34 @@ def current_validations(root, ctx):
 
 
 def threshold_for(quality, model):
-    """The checked threshold (None when ① could not decide one); the default while unchecked or in ①."""
+    """Use a decided threshold, otherwise the documented model default."""
     from validation import default_threshold
     if quality and quality['applicable'] and quality['models'].get(model['engine']) == model['model_sha256']:
         chosen = quality['thresholds'].get(model['engine'])
-        if chosen:
+        if chosen and chosen['threshold'] is not None:
             return chosen['threshold']
     return default_threshold(model['engine'])
 
 
+def attach_validation(snapshot, validation):
+    snapshot['validation'] = validation
+    result = (validation or {}).get('results', {}).get(snapshot['engine']) if validation else None
+    for summary in snapshot['summaries']:
+        summary.update(validation_status=validation['status'] if validation else 'not_started',
+                       threshold_state='decided' if result and result.get('threshold') is not None else 'default',
+                       engine=snapshot['engine'], model_sha256=snapshot['model_sha256'], window_s=snapshot['window_s'],
+                       threshold=snapshot['threshold'],
+                       density=(result or {}).get('density'), count=(result or {}).get('count'),
+                       precision=(result or {}).get('precision'), recall=(result or {}).get('recall'),
+                       recall_status=(result or {}).get('recall_status'), auprc=(result or {}).get('auprc'),
+                       multiplier=(result or {}).get('multiplier'), answers_per_bin=(result or {}).get('answers_per_bin'),
+                       disagreement=(result or {}).get('disagreement'), validation_unknown=(result or {}).get('unknown'))
+    return snapshot
+
+
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    return cached(root, ['overview-v8', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
+    return cached(root, ['overview-v9', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
                   lambda: build_overview(root, dataset_id, ctx))
 
 
@@ -182,12 +197,15 @@ def build_overview(root, dataset_id, ctx):
                 found.update({s['species']['id']: s for s in detection_snapshot(root, ctx, model, sid, threshold)['summaries'] if s['species']['id'] == sid})
         for summary in found.values():
             sid = summary['species']['id']
+            validation=quality.get((sid, model['engine']))
             add(summary['species'])['models'].append({**summary, 'species': None, **model, 'key': model['engine'], 'model_id': None,
-                'threshold': threshold_for(quality.get((sid, model['engine'])), model), 'validation': quality.get((sid, model['engine']))})
+                'threshold': threshold_for(validation, model), 'validation': validation,
+                'validation_status': validation['status'] if validation else 'not_started'})
     for model in list_models(root, ctx):
         entry = {'engine': 'custom', 'key': f"custom:{model['id']}", 'model_id': model['id'], 'created_at': model['created_at'],
                  'applicable': model['applicable'], 'reason': model['reason'],
                  'validation': quality.get((model['species']['id'], f"custom:{model['id']}"))}
+        entry['validation_status']=entry['validation']['status'] if entry['validation'] else 'not_started'
         if model['applicable']:
             snap = custom_snapshot(root, ctx, model)
             entry.update({k: v for k, v in snap['summaries'][0].items() if k != 'species'}, threshold=snap['threshold'])
@@ -222,6 +240,8 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
                'validation': quality.get((species_id, m['engine']))} for m in listed]
     checks += [{'engine': 'custom', 'key': f"custom:{m['id']}", 'model_id': m['id'], 'model_sha256': m['artifact_sha256'],
                 'created_at': m['created_at'], 'validation': quality.get((species_id, f"custom:{m['id']}"))} for m in custom]
+    for check in checks:
+        check['status']=check['validation']['status'] if check['validation'] else 'not_started'
     if engine == 'auto':
         engine = next((m['engine'] for m in listed if any(
             s['species']['id'] == species_id and s['candidate_windows'] for s in detection_snapshot(root, ctx, m)['summaries'])), None)
@@ -235,7 +255,7 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
     elif selected:
         model = next(m for m in ctx['models'] if m['engine'] == engine)
         snap = detection_snapshot(root, ctx, model, species_id, threshold_for(selected['validation'], model))
-        snap['validation'] = selected['validation']
+        attach_validation(snap, selected['validation'])
     with connect(root) as db:
         report = snapshot_view(db, snap, cell_date=cell_date, hour=hour) if snap else None
     return {**ctx, 'species': taxon, 'checks': checks, 'selected': selected['key'] if selected else None, 'report': report,

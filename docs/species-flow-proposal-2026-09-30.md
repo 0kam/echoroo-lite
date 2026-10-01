@@ -159,3 +159,26 @@
   a ~ N(0, 2.5²)、b > 0 で half-N(1.5)、床は expit(−11) に固定（報告の「実質床なし」）。格子で事後分布を求め、
   聞いていない区間に声の有無を1,000回割り当てて範囲を出す。区間が多いときは、x の近い区間をまとめて計算する。
 - 古いデータの移し替えはしない（データの版を上げ、古いデータは開けないと表示する）。
+
+## 実装（2026-10-01）
+
+上の合意と実装方針を sidecar に実装した。BirdNET は3秒、Perch・種のモデルは5秒の区間を、候補一覧、確認、集計、図、CSV、根拠音で一貫して使う。保存データは schema version 2 とし、回答のキーを「種・録音・開始秒・終了秒」にした。旧①②③、日分割、Firth 回帰、固定30音の評価、再現率の別段階、片側95%下限による目標判定は削除した。
+
+確認は `stratified_quantile6_v1` の1段階である。全区間を順位分位の6群に分けて各群10音（群が小さい場合は全音）を固定し、回答順も保存する。全回答後だけ、ビン別 Beta(0.1, 0.1) の10,000回抽出による声を含む割合・区間数と、床を `expit(-11)` に固定した格子事後分布・1,000回の有限母集団予測による基準、正しさ、見つけた割合、AUPRC、補正倍率を返す。大きな母集団は同じスコアを分割しない最大2,000群へまとめる。珍しい種の規則、推定方法間の食い違い、追加18音にも対応した。
+
+UI が使う HTTP API は次のとおり。
+
+- `POST /validations`: `dataset_id`, `species_id`, `start_date`, `end_date`, `model`（`birdnet` / `perch` / `custom`）、種のモデルだけ `model_id` を送る。同じ適用可能な確認があれば再開し、なければ作成する。
+- `GET /validations/{id}`: 確認画面用。`status`（`in_progress` / `decided` / `undecided` / `stale`）、`counts`（全体と6群の `total`, `answered`, `heard`, `not_heard`, `unknown`）、`question`（`id`, `source`, `start_s`, `end_s`, `version`, `review_position`, `review_total`）、`history`、`window_s`, `population`, `can_extend`, `extended` を返す。未開始は種詳細の各 check で `status: not_started` とする。
+- `POST /validations/{id}/answers`: `item_id`, `verdict`（`target` / `other` / `unknown`）、任意の `version`, `examples_snapshot` を送る。未回答は保存順に答え、回答済み項目は同じ API で修正できる。途中の `results` は空である。
+- `POST /validations/{id}/extend`: `can_extend` が true の完了済み確認に限り、各群3音を追加する。開始後は全追加回答が終わるまで `results` を空にする。追加しない場合は、そのまま完了結果を使う。
+- `POST /validations/{id}/delete`: 同じ種の別確認が同一区間を使っていない回答も含めて削除する。
+
+完了後の `results[engine]` は `status`, `threshold`, `reason`, `density`, `count`, `precision`, `recall`, `recall_status`, `auprc`, `multiplier`, `answers_per_bin`, `unknown`, `disagreement`, `curve_density`, `posterior_edge_mass`, `grid_edge_ok`, `model_sha256` を返す。各推定値は原則 `value`, `low`, `high`（中央値または指定された点推定、90%範囲）を持つ。再現用に確認本体へ `method`, `seeds`, `quantile_bounds`, `bin_bounds`, `bin_weights`, `population`, `window_s`, `models`, `priors`, `grid`, `draws` を保存する。基準未決定または未確認の図は BirdNET・Perch 0.1、種のモデル0.5で集計し、その状態を併記する。
+
+未合意として実装時に決めた細部は次のとおり。
+
+- 分位境界の整数化は `floor(q × N)` とし、同点は保存 seed の無作為順で分ける。
+- ある群の回答がすべて「判断できない」の場合、その群の声を含む割合の点推定は対称な Beta(0.1, 0.1) 事前分布の平均0.5とする。
+- 追加時に未確認区間が3音未満の群は、残っている区間をすべて追加する。どの群にも未確認区間がなければ追加を提示しない。
+- 最大2,000群への集約では、同点スコアを分割せず、異なるスコア値を昇順にほぼ同数の群へ分ける。群内の曲線計算にはロジットスコアの平均、基準候補には群の最小スコアを使う。

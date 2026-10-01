@@ -1,7 +1,6 @@
 """Is the species here? A person listened and said "this is its call" at least once.
 
-Evidence is a marked sound from the candidate list, or a "heard" answer in ② or ③.
-① answers are not evidence: those sounds were chosen for their AI scores on purpose.
+Evidence is a marked sound from the candidate list, or any "heard" check answer.
 """
 import json
 from zoneinfo import ZoneInfo
@@ -46,7 +45,7 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None):
             for name, windows in lists:
                 if rank < len(windows):
                     w = windows[rank]
-                    row = rows.setdefault((w['recording_id'], w['start_s'], w['start_s'] + 15), {'score': None, 'models': [], 'run_id': None})
+                    row = rows.setdefault((w['recording_id'], w['start_s'], w['end_s']), {'score': None, 'models': [], 'run_id': None})
                     row['models'].append({'engine': name, 'rank': rank + 1, 'score': w['score']})
     summary = summaries(root, ctx, species_id).get(species_id, empty())
     marked = {(e['recording_id'], e['start_s'], e['end_s']) for e in summary['evidence'] if e['origin'] == 'mark'}
@@ -64,7 +63,7 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None):
 def set_mark(root, body):
     with connect(root) as db:
         record = db.execute('SELECT * FROM site_recordings WHERE scope_id=? AND id=?', (body.dataset_id, body.recording_id)).fetchone()
-        if record is None or not 0 <= body.start_s < body.end_s <= record['seconds'] or round(body.end_s - body.start_s) not in (5, 15):
+        if record is None or not 0 <= body.start_s < body.end_s <= record['seconds'] or round(body.end_s - body.start_s) not in (3, 5):
             raise CatalogError('invalid_interval')
         if body.run_id is not None and not db.execute('''SELECT 1 FROM search_hits h JOIN segments s ON s.id=h.segment_id
                 JOIN search_runs r ON r.id=h.run_id WHERE h.run_id=? AND r.species_id=? AND s.start_s=? AND s.end_s=?''',
@@ -105,11 +104,12 @@ def summaries(root, ctx, species_id=None):
         marks = db.execute('''SELECT m.species_id,m.recording_id,m.start_s,m.end_s,m.id,m.created_at,m.run_id FROM presence_marks m
             JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''',
             (ctx['site']['id'], species_id, species_id)).fetchall()
-        heard = db.execute('''SELECT DISTINCT v.species_id,i.recording_id,i.start_s,i.start_s+15 AS end_s,a.id,a.created_at,NULL AS run_id
+        heard = db.execute('''SELECT DISTINCT v.species_id,i.recording_id,i.start_s,i.end_s,a.id,a.created_at,NULL AS run_id
             FROM validation_items i JOIN validation_sessions v ON v.id=i.session_id JOIN datasets d ON d.id=v.dataset_id
             JOIN window_answers a ON a.id=(SELECT MAX(id) FROM window_answers w
-                WHERE w.species_id=v.species_id AND w.recording_id=i.recording_id AND w.start_s=i.start_s)
-            WHERE d.site_id=? AND (? IS NULL OR v.species_id=?) AND i.phase='evaluation' AND a.verdict='target' ORDER BY a.id''',
+                WHERE w.species_id=v.species_id AND w.recording_id=i.recording_id
+                  AND w.start_s=i.start_s AND w.end_s=i.end_s)
+            WHERE d.site_id=? AND (? IS NULL OR v.species_id=?) AND a.verdict='target' ORDER BY a.id''',
             (ctx['site']['id'], species_id, species_id)).fetchall()
         misses = db.execute('''SELECT m.* FROM presence_misses m JOIN datasets d ON d.id=m.dataset_id
             WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''', (ctx['site']['id'], species_id, species_id)).fetchall()

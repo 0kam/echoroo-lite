@@ -62,7 +62,7 @@ class ExamplesCheck(unittest.TestCase):
                  'country': 'France', 'quality': 'B',
                  'license': '//creativecommons.org/licenses/by-nc-sa/4.0/', 'url': 'https://xeno-canto.org/1'}), reference['id']))
             # A sound confirmed on the presence list; newer than any check answer.
-            db.execute("INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,created_at) VALUES(1,?,1,300,315,'2999-01-01 00:00:00')",
+            db.execute("INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,created_at) VALUES(1,?,1,300,305,'2999-01-01 00:00:00')",
                        (warbler['id'],))
         free = self.examples(warbler)
         self.assertTrue(free['in_quiz'])
@@ -70,9 +70,9 @@ class ExamplesCheck(unittest.TestCase):
         self.assertEqual([e['label']['origin'] for e in free['examples']], ['quiz', 'xeno-canto', 'presence'])
         self.assertEqual(free['examples'][1]['label']['recordist'], 'A. Recordist')
         self.assertEqual((free['examples'][1]['label']['country'],free['examples'][1]['label']['quality']),('France','B'))
-        self.assertEqual((free['examples'][1]['start_s'], free['examples'][1]['end_s']), (0, 15))
+        self.assertEqual((free['examples'][1]['start_s'], free['examples'][1]['end_s']), (0, 5))
         marked = free['examples'][2]
-        self.assertEqual((marked['start_s'], marked['end_s']), (300, 315))
+        self.assertEqual((marked['start_s'], marked['end_s']), (300, 305))
         self.assertIn('T', marked['label']['local_time'])
 
         # Every window of the current check is excluded, including a practice clip cut from one of them.

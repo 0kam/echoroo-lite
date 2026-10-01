@@ -40,7 +40,7 @@ class HtmlReportCheck(unittest.TestCase):
                         db.execute("INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,'perch',?,?)",(job,rid,json.dumps(meta),str(path)))
                 scope={'dataset_id':1,'species_id':species['id'],'start_date':'2024-08-08','end_date':'2024-08-08'}
                 listed=client.get(f"/datasets/1/species/{species['id']}/presence",params={'start_date':'2024-08-08','end_date':'2024-08-08'}).json()
-                self.assertEqual(len(listed['rows']),20)
+                self.assertEqual(len(listed['rows']),60)
                 for row in listed['rows'][:2]:
                     client.post('/presence/marks',json={'dataset_id':1,'species_id':species['id'],'recording_id':row['recording_id'],
                         'start_s':row['start_s'],'end_s':row['end_s'],'marked':True})
@@ -68,7 +68,7 @@ class HtmlReportCheck(unittest.TestCase):
                     html=archive.read('index.html').decode();self.assertIn('&lt;script&gt;unexpected()',html)
                     self.assertNotIn('<script>unexpected()',html);self.assertNotIn('<audio ',html)
                     self.assertIn('width="1920" height="2240"',html)
-                    self.assertIn('聞いて確認した（根拠の音 2）',html);self.assertIn('既定値（確かめていない）',html)
+                    self.assertIn('聞いて確認した（根拠の音 2）',html);self.assertIn('既定値（確かめて決めた基準ではない）',html)
                     manifest=json.loads(archive.read('manifest.json'))
                     self.assertEqual(manifest['format'],'html');self.assertEqual(manifest['scope']['recording_ids'],[1])
                     self.assertEqual(manifest['scope']['recorded_seconds'],300)
@@ -79,7 +79,7 @@ class HtmlReportCheck(unittest.TestCase):
                     presence=[row for row in evidence if row['audio_role']=='presence']
                     self.assertEqual(len(presence),2)
                     for row in presence:
-                        with sf.SoundFile(io.BytesIO(archive.read(row['audio_file']))) as sound:self.assertEqual((sound.frames,sound.samplerate),(15000,1000))
+                        with sf.SoundFile(io.BytesIO(archive.read(row['audio_file']))) as sound:self.assertEqual((sound.frames,sound.samplerate),(5000,1000))
                     rows=list(csv.DictReader(io.StringIO(archive.read('presence.csv').decode('utf-8-sig'))))
                     self.assertEqual([(r['status'],r['marked'],r['heard_in_checks']) for r in rows],[('confirmed','2','0')])
                     self.assertEqual(json.loads(archive.read('quiz-results.json'))['per_species'][0]['correct'],1)

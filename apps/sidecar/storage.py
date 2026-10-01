@@ -11,7 +11,7 @@ import sqlite_vec
 
 
 # Increment whenever the SQLite schema changes.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class CatalogError(Exception):
@@ -103,19 +103,19 @@ def initialize(root):
                 snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS validation_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES validation_sessions,
-                phase TEXT NOT NULL CHECK(phase IN ('calibration','evaluation')),
+                phase TEXT NOT NULL CHECK(phase IN ('sample','extension')),
                 position INTEGER NOT NULL, recording_id INTEGER NOT NULL REFERENCES recordings,
-                start_s REAL NOT NULL, stratum TEXT NOT NULL, scores TEXT NOT NULL,
-                UNIQUE(session_id,phase,position), UNIQUE(session_id,recording_id,start_s));
-            -- One answer history per species and 15-second window, shared by that species' model checks.
+                start_s REAL NOT NULL, end_s REAL NOT NULL, stratum TEXT NOT NULL, scores TEXT NOT NULL,
+                UNIQUE(session_id,phase,position), UNIQUE(session_id,recording_id,start_s,end_s));
+            -- One answer history per species and exact native window.
             CREATE TABLE IF NOT EXISTS window_answers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, species_id TEXT NOT NULL REFERENCES species,
-                recording_id INTEGER NOT NULL REFERENCES recordings, start_s REAL NOT NULL,
+                recording_id INTEGER NOT NULL REFERENCES recordings, start_s REAL NOT NULL, end_s REAL NOT NULL,
                 verdict TEXT NOT NULL CHECK(verdict IN ('target','other','unknown')),
                 session_id INTEGER REFERENCES validation_sessions, quiz_snapshot TEXT, examples_snapshot TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            CREATE INDEX IF NOT EXISTS window_answer_key ON window_answers(species_id,recording_id,start_s,id DESC);
-            -- "This is the species' call": presence evidence from the AI (15 s) or search (5 s) candidate list.
+            CREATE INDEX IF NOT EXISTS window_answer_key ON window_answers(species_id,recording_id,start_s,end_s,id DESC);
+            -- "This is the species' call": presence evidence from a native AI window or 5 s search hit.
             CREATE TABLE IF NOT EXISTS presence_marks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id INTEGER NOT NULL REFERENCES datasets,
                 species_id TEXT NOT NULL REFERENCES species, recording_id INTEGER NOT NULL REFERENCES recordings,

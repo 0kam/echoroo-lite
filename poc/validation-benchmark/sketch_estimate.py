@@ -10,22 +10,22 @@ from scipy.special import expit, logit
 
 GRID_A = np.linspace(-7, 7, 57)          # logit P(call) at the threshold
 GRID_B = np.linspace(0.02, 4, 30)        # slope per logit-score unit (monotone: b > 0)
-GRID_C = np.linspace(-11, -0.5, 36)      # logit of the floor: calls at very low scores
+FLOOR = expit(-11)                        # agreed effectively floorless curve
 DRAWS = 1000
 
 
-def curve(a, b, c, x):
-    return c + (1 - c) * expit(a + b * x)
+def curve(a, b, x):
+    return FLOOR + (1 - FLOOR) * expit(a + b * x)
 
 
 def posterior(x, y):
-    """Grid weights for (a, b, c). x: logit score minus threshold logit; y: 1 heard / 0 not heard."""
-    A, B, C = (m.ravel() for m in np.meshgrid(GRID_A, GRID_B, expit(GRID_C), indexing='ij'))
-    p = np.clip(curve(A[:, None], B[:, None], C[:, None], x[None, :]), 1e-12, 1 - 1e-12)
+    """Grid weights for (a, b). x: logit score minus threshold logit; y: 1 heard / 0 not heard."""
+    A, B = (m.ravel() for m in np.meshgrid(GRID_A, GRID_B, indexing='ij'))
+    p = np.clip(curve(A[:, None], B[:, None], x[None, :]), 1e-12, 1 - 1e-12)
     log_post = (y * np.log(p) + (1 - y) * np.log1p(-p)).sum(1)
-    log_post += -0.5 * (A / 2.5) ** 2 - 0.5 * (B / 1.5) ** 2 - 0.5 * ((logit(C) + 4) / 2) ** 2
+    log_post += -0.5 * (A / 2.5) ** 2 - 0.5 * (B / 1.5) ** 2
     w = np.exp(log_post - log_post.max())
-    return A, B, C, w / w.sum()
+    return A, B, w / w.sum()
 
 
 def summarize(Y, x, xt, order):
@@ -50,9 +50,9 @@ def estimate(scores, sampled, verdicts, threshold, strata, seed=0):
     y[sampled] = verdicts
     order = np.argsort(-x)
     # model-based
-    A, B, C, w = posterior(x[sampled] - xt, y[sampled].astype(float))
+    A, B, w = posterior(x[sampled] - xt, y[sampled].astype(float))
     g = rng.choice(len(w), DRAWS, p=w)
-    P = curve(A[g, None], B[g, None], C[g, None], x[None, :] - xt)
+    P = curve(A[g, None], B[g, None], x[None, :] - xt)
     Y = rng.random(P.shape) < P
     Y[:, sampled] = y[sampled]
     model = summarize(Y, x, xt, order)
@@ -72,7 +72,7 @@ def estimate(scores, sampled, verdicts, threshold, strata, seed=0):
 if __name__ == '__main__':
     rng = np.random.default_rng(1)
     x = rng.normal(-6, 2, 4000)
-    truth = rng.random(4000) < curve(1.5, 0.6, 0.02, x)
+    truth = rng.random(4000) < curve(1.5, 0.6, x)
     strata = np.digitize(x, [-6, -4, -2, 0])
     sampled = np.concatenate([rng.choice(np.flatnonzero(strata == h), min(15, (strata == h).sum()), replace=False) for h in range(5)])
     out = estimate(expit(x), sampled, truth[sampled], 0.5, strata)

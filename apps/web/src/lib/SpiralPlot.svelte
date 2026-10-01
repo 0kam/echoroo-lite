@@ -100,7 +100,7 @@
     <rect x={70+i*285} y={cy+419} width="20" height="16" fill={item.fill} stroke="#aeacb8" stroke-width=".5"/>
     <text x={100+i*285} y={cy+432} font-size="14" fill="#575279">{t(item.key)}</text>{/each}
   <rect x="70" y={cy+450} width="20" height="16" fill="#fff" stroke="#aeacb8"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t('uZeroCalls')}</text>
-  <text aria-hidden={compact} x="70" y={cy+494} font-size="14" fill="#575279">{t(quality ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
+  <text aria-hidden={compact} x="70" y={cy+494} font-size="14" fill="#575279">{t(quality?.status === 'decided' ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
 {#if quality}<text aria-hidden={compact} x="70" y={cy+523} font-size="14" fill="#575279">{t('wQuality')}: {checkText(quality)}</text>{/if}
 </svg>
 </div>

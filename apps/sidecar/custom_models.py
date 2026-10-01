@@ -1,9 +1,8 @@
 """Small one-species classifiers over fixed Perch embeddings.
 
 Material: 5-second search hits labelled "voice" / "no voice" on the model page,
-plus "not heard" answers from ② and ③ (each 15-second window as three 5-second
-pieces). A built model scores every 5-second piece of the site; its 15-second
-score is the maximum of three pieces, checked like BirdNET and Perch.
+plus "not heard" answers from 5-second checks. A built model scores and is
+checked on every 5-second piece of the site.
 """
 import hashlib
 import json
@@ -85,7 +84,7 @@ def _perch_analyses(db, ctx):
 
 
 def _materials(db, ctx, species_id):
-    """Labelled 5-second pieces: search-hit labels, then ②③ "not heard" windows split into three."""
+    """Labelled 5-second pieces: search-hit labels, then 5-second "not heard" checks."""
     from search_runs import site_run
     run = site_run(db, ctx['site']['id'], species_id)
     if run is None:
@@ -93,13 +92,15 @@ def _materials(db, ctx, species_id):
     labels = {r['segment_id']: {'label': r['label'], 'origin': 'search'} for r in db.execute(
         'SELECT segment_id,label FROM model_labels WHERE run_id=?', (run['id'],))}
     analyses = {r['recording_id']: r['id'] for r in _perch_analyses(db, ctx)}
-    for row in db.execute('''SELECT DISTINCT i.recording_id,i.start_s FROM validation_items i
+    for row in db.execute('''SELECT DISTINCT i.recording_id,i.start_s,i.end_s FROM validation_items i
             JOIN validation_sessions v ON v.id=i.session_id JOIN datasets d ON d.id=v.dataset_id
             JOIN window_answers a ON a.id=(SELECT MAX(id) FROM window_answers w
-                WHERE w.species_id=v.species_id AND w.recording_id=i.recording_id AND w.start_s=i.start_s)
-            WHERE d.site_id=? AND v.species_id=? AND i.phase='evaluation' AND a.verdict='other' ''', (ctx['site']['id'], species_id)):
-        for segment in db.execute('''SELECT id FROM segments WHERE analysis_id=? AND start_s>=? AND end_s<=?+15
-                AND ABS(end_s-start_s-5)<0.000001''', (analyses.get(row['recording_id']), row['start_s'], row['start_s'])):
+                WHERE w.species_id=v.species_id AND w.recording_id=i.recording_id
+                  AND w.start_s=i.start_s AND w.end_s=i.end_s)
+            WHERE d.site_id=? AND v.species_id=? AND ABS(i.end_s-i.start_s-5)<0.000001 AND a.verdict='other' ''',
+            (ctx['site']['id'], species_id)):
+        for segment in db.execute('''SELECT id FROM segments WHERE analysis_id=? AND start_s=? AND end_s=?
+                AND ABS(end_s-start_s-5)<0.000001''', (analyses.get(row['recording_id']), row['start_s'], row['end_s'])):
             # A search label on the same piece is the more specific answer.
             labels.setdefault(segment[0], {'label': 'other', 'origin': 'check'})
     return run, labels
@@ -145,27 +146,11 @@ def set_label(root, run_id, segment_id, label):
     return {'segment_id': segment_id, 'label': label}
 
 
-def _aggregate_arrays(analysis_ids, recording_ids, starts, ends, scores):
-    result = []
-    parts = {}
-    current = None
-
-    def flush():
-        if current is not None and set(parts) == {0, 5, 10}:
-            best = max(parts.values(), key=lambda row: row['score'])
-            result.append({'recording_id': current[0], 'analysis_id': best['analysis_id'], 'start_s': current[1], 'end_s': current[1] + 15,
-                           'score': best['score'], 'example_start_s': best['start_s']})
-    for analysis_id, recording_id, start, end, score in zip(analysis_ids, recording_ids, starts, ends, scores):
-        start = float(start)
-        key = (int(recording_id), float(int(start // 15) * 15))
-        offset = round(start - key[1])
-        if key != current:
-            flush()
-            current, parts = key, {}
-        if offset in (0, 5, 10) and abs(float(end) - start - 5) < 1e-6:
-            parts[offset] = {'analysis_id': int(analysis_id), 'start_s': start, 'score': float(score)}
-    flush()
-    return result
+def _score_rows(analysis_ids, recording_ids, starts, ends, scores):
+    return [{'analysis_id': int(aid), 'recording_id': int(rid), 'start_s': float(start), 'end_s': float(end),
+             'score': float(score), 'example_start_s': float(start)}
+            for aid, rid, start, end, score in zip(analysis_ids, recording_ids, starts, ends, scores)
+            if abs(float(end) - float(start) - 5) < 1e-6]
 
 
 def create(root, ctx, species_id, cancel=None):
@@ -268,7 +253,7 @@ def training_windows(root, model_id):
         row = db.execute('SELECT snapshot FROM custom_models WHERE id=?', (model_id,)).fetchone()
     if not row:
         raise CatalogError('not_found')
-    return {(e['recording_id'], float(int(e['start_s'] // 15) * 15)) for e in json.loads(row['snapshot'])['training']['examples']}
+    return {(e['recording_id'], float(e['start_s']), float(e['end_s'])) for e in json.loads(row['snapshot'])['training']['examples']}
 
 
 def list_models(root, ctx, species_id=None, every=False):
@@ -314,7 +299,7 @@ def score_windows(root, model_id):
         keys = ('segment_ids', 'analysis_ids', 'recording_ids', 'start_s', 'end_s', 'scores')
         if len({len(saved[key]) for key in keys}) != 1 or not all(np.isfinite(saved[key]).all() for key in ('start_s', 'end_s', 'scores')):
             raise CatalogError('invalid_scores')
-        return _aggregate_arrays(saved['analysis_ids'], saved['recording_ids'], saved['start_s'], saved['end_s'], saved['scores'])
+        return _score_rows(saved['analysis_ids'], saved['recording_ids'], saved['start_s'], saved['end_s'], saved['scores'])
 
 
 def report_snapshot(root, ctx, model_id, threshold):
@@ -342,7 +327,7 @@ def report_snapshot(root, ctx, model_id, threshold):
         eligible += 1
         days.add(key[0])
         cells[key]['eligible_windows'] += 1
-        cells[key]['effective_seconds'] += 15
+        cells[key]['effective_seconds'] += 5
         if threshold is not None and row['score'] >= threshold:
             found += 1
             candidate_days.add(key[0])
@@ -356,8 +341,8 @@ def report_snapshot(root, ctx, model_id, threshold):
         'candidate_days': len(candidate_days) if counted else None, 'quality': 'not_evaluated'}
     return {'kind': 'detection', 'dataset': ctx['dataset'], 'site': ctx['site'], 'engine': 'custom', 'model_sha256': model['artifact_sha256'], 'model_id': model_id,
         'custom_model': {'id': model_id, 'perch_model_sha256': model['feature']['model_sha256'], 'feature_spec': model['feature']['spec'],
-            'training_window_s': 5, 'evaluation_window_s': 15, 'training': model['training'], 'run_id': model['run_id']},
+            'training_window_s': 5, 'evaluation_window_s': 5, 'training': model['training'], 'run_id': model['run_id']},
         'analysis_ids': sorted({row['analysis_id'] for row in windows}), 'missing_region': [], 'threshold': threshold,
-        'start_date': ctx['start_date'], 'end_date': ctx['end_date'], 'window_s': 15, 'species': model['species'], 'summaries': [summary],
+        'start_date': ctx['start_date'], 'end_date': ctx['end_date'], 'window_s': 5, 'species': model['species'], 'summaries': [summary],
         'cells': finalize_cells(cells, threshold), 'evidence': evidence, 'quality': 'not_evaluated', 'complete_windows_only': True,
         'recording_ids': sorted(records), 'base_report_id': None}

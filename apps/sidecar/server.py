@@ -400,17 +400,11 @@ def create_app(root, models, token):
         from validation import view_session
         return view_session(root,session_id,item_id=item_id)
 
-    @app.post('/validations/{session_id}/evaluation')
-    def validation_evaluation(session_id: int):
-        from validation import finish_calibration
+    @app.post('/validations/{session_id}/extend')
+    def validation_extend(session_id: int):
+        from validation import extend
         with lock:
-            return finish_calibration(root,session_id)
-
-    @app.post('/validations/{session_id}/recall')
-    def validation_recall(session_id: int):
-        from validation import start_recall
-        with lock:
-            return start_recall(root,session_id)
+            return extend(root,session_id)
 
     @app.post('/validations/{session_id}/answers')
     def validation_answer(session_id: int,body: ValidationAnswer):

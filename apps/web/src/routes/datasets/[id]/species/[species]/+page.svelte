@@ -7,7 +7,7 @@
   import { app,t } from '$lib/app.svelte';
   import { commonName,speciesPage } from '$lib/species';
   import { openExternal } from '$lib/files';
-  import { checkName,checkText,fill,listenLabel,presenceText,rangeQuery,type Check,type SpeciesResult,type Validation } from '$lib/workflow';
+  import { checkName,checkText,fill,listenLabel,presenceText,rangeQuery,windowSeconds,type Check,type SpeciesResult,type Validation } from '$lib/workflow';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReportView from '$lib/ReportView.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -40,8 +40,8 @@
   const modelHref=$derived(`${resolve(`/datasets/${id}/species/${speciesId}/model`)}?${range}`);
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}?${view}`)}`);
   const selected=$derived(result?.checks.find(item=>item.key===result?.selected)??null);
-  // Every model finished its check and none reached the goal: a species model is the remaining route.
-  const missed=$derived(!!result?.checks.length&&result.checks.every(item=>item.validation?.applicable&&['goal_not_met','undecided'].includes(item.validation.status)));
+  // Every model finished its check without a threshold: a species model is the remaining route.
+  const missed=$derived(!!result?.checks.length&&result.checks.every(item=>item.validation?.applicable&&item.validation.status==='undecided'));
   const check=createTask(async(item:Check)=>{
     if(!result)return;
     const validation=item.validation?.applicable?item.validation:await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
@@ -77,13 +77,13 @@
         <h2 id="activity-title">{t('sActivityTitle')}</h2>
         <p class="muted">{t('sActivityHint')}</p>
         {#each result.checks as item (item.key)}<div class="check-row">
-          <div class="check-name"><strong>{checkName(item)}</strong><span>{checkText(item.validation)}</span></div>
+          <div class="check-name"><strong>{checkName(item)} <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}</span></strong><span>{checkText(item.validation)}</span></div>
           <div class="actions"><Button pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>
             {#if item.validation}<Button variant="ghost" onclick={()=>confirming=confirming===item.key?'':item.key}>{t('sDeleteCheck')}</Button>{/if}</div>
           {#if confirming===item.key}<div class="confirm" role="group" aria-label={t('sDeleteCheck')}><p>{fill('sDeleteCheckConfirm',{model:checkName(item)})}</p>
             <div class="actions"><Button onclick={()=>confirming=''}>{t('mCancel')}</Button><Button variant="danger" pending={removeCheck.pending} onclick={()=>removeCheck.run(item)}>{t('sDeleteYes')}</Button></div></div>{/if}
         </div>{:else}<p>{t('wNoModel')}</p>{/each}
-        {#if missed}<p>{t('sGoalHint')}</p>{/if}
+        {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
         {#if result.search}<div class="actions"><Button href={modelHref}>{t('customModelTitle')}</Button></div>{:else}<p class="muted">{t('sModelNeedsSearch')}</p>{/if}
       </section>
     </div>

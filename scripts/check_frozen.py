@@ -40,7 +40,7 @@ with ExitStack() as stack:
         folder.mkdir()
         args.recording = folder / 'SMOKE_20240808_060000.wav'
         sf.write(args.recording, samples[:rate * 30], rate, subtype='PCM_16')
-        # A second day gives the per-model check an evaluation day distinct from its calibration day.
+        # A second recording also exercises sampling across the whole period.
         sf.write(folder / 'SMOKE_20240809_060000.wav', samples[:rate * 30], rate, subtype='PCM_16')
     child = subprocess.Popen([args.binary, "--data", temp, "--models", str(args.models or Path(temp) / "models"), "--parent-stdin",
                               *(['--diagnostics'] if args.diagnostics else [])],
@@ -129,7 +129,7 @@ with ExitStack() as stack:
                 model = next(m for m in options['models'] if m['engine'] == engine)
                 report = api('/reports/detection', {**dates, 'dataset_id': imported['dataset_id'], 'engine': engine,
                     'model_sha256': model['model_sha256'], 'threshold': .1, 'species_id': target['id']})
-                assert report['window_s'] == 15 and report['quality'] == 'not_evaluated'
+                assert report['window_s'] == (3 if engine == 'birdnet' else 5) and report['quality'] == 'not_evaluated'
                 assert sum(c['recorded_seconds'] for c in report['cells']) > 0
             exported = api(f"/reports/{report['id']}/export", {'folder': temp,
                 'audio': [{k: e[k] for k in ('recording_id', 'start_s', 'end_s')} for e in report['evidence'][:1]]})
@@ -139,14 +139,14 @@ with ExitStack() as stack:
                 assert any(name.endswith('.wav') for name in archive.namelist()) or not report['evidence']
             print(f"Frozen detection reports and CSV/audio export passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
-            if len(records) > 1:  # A single recording has no separate evaluation day.
+            if len(records) > 1:
                 check=api('/validations',{**dates,'dataset_id':imported['dataset_id'],'species_id':target['id'],'model':'perch'})
                 question=check['question'];a=question['start_s']
-                assert check['counts']['calibration']['total']>0 and 'scores' not in question
-                detail=api(f"/sources/recording/{record['id']}/spectrogram?start_s={a}&end_s={a+15}&detail=true")
+                assert check['counts']['total']>0 and check['window_s']==5 and 'scores' not in question
+                detail=api(f"/sources/recording/{question['source']['id']}/spectrogram?start_s={a}&end_s={question['end_s']}&detail=true")
                 assert detail['width']>1000
                 answered=api(f"/validations/{check['id']}/answers",{'item_id':question['id'],'verdict':'unknown','version':question['version']})
-                assert answered['counts']['calibration']['answered']==1
+                assert answered['counts']['answered']==1 and answered['status']=='in_progress'
                 print(f"Frozen per-model check, high-resolution spectrogram and saved answer passed in {time.perf_counter()-started:.2f}s.")
             started = time.perf_counter()
             overview = api(f"/datasets/{imported['dataset_id']}/overview")

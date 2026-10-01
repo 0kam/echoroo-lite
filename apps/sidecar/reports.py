@@ -140,7 +140,7 @@ def classification_batches(root, db, analyses, records):
             region_id = regions.setdefault(region_key, len(regions))
             signatures.append([a['id'], a['scores_path'], stat.st_size, stat.st_mtime_ns, a['engine'],
                                records[a['recording_id']]['seconds'], region_id])
-        key = hashlib.sha256(json.dumps([signatures, list(regions)]).encode()).hexdigest()
+        key = hashlib.sha256(json.dumps(['native-windows-v2', signatures, list(regions)]).encode()).hexdigest()
         folder = Path(root) / 'window-batches'; folder.mkdir(exist_ok=True)
         path = folder / (key + '.npz')
         fields = ('labels', 'codes', 'sizes', 'starts', 'scores', 'best')
@@ -175,7 +175,7 @@ def classification_batches(root, db, analyses, records):
 @lru_cache(maxsize=8)
 def cached_windows(path, size, mtime, engine, seconds, allowed):
     # The derived arrays are shared by all species, reports and validation.
-    key = hashlib.sha256(json.dumps([size, mtime, engine, seconds, allowed, 1]).encode()).hexdigest()[:20]
+    key = hashlib.sha256(json.dumps([size, mtime, engine, seconds, allowed, 2]).encode()).hexdigest()[:20]
     cached = Path(path).with_name(Path(path).name + '.' + key + '.windows.npz')
     fields = ('labels', 'starts', 'scores', 'best_starts')
     if cached.exists():
@@ -196,10 +196,10 @@ def cached_windows(path, size, mtime, engine, seconds, allowed):
 
 
 def read_classification_windows(analysis, seconds, allowed):
-    """Return full 15-second windows and strongest native-window evidence per species."""
+    """Return complete model-native windows: BirdNET 3 s and Perch 5 s."""
     from scipy.special import softmax
     native = 3 if analysis['engine'] == 'birdnet' else 5
-    slots, per_common = int(seconds // native), 15 // native
+    slots = int(seconds // native)
     with np.load(analysis['scores_path'], allow_pickle=False) as saved:
         if analysis['engine'] == 'perch':
             labels, logits = saved['labels'], saved['logits']
@@ -228,15 +228,13 @@ def read_classification_windows(analysis, seconds, allowed):
             # Stored BirdNET scores are complete at threshold zero; missing entries are not negatives.
             present &= np.isfinite(scores).all(axis=1)
             labels = np.array([label.partition('_')[0] for label in labels])
-    count = min(len(scores) // per_common, int(seconds // 15))
+    count = min(len(scores), slots)
     if not count or not len(labels):
         return labels, np.array([], dtype=int), np.empty((0, len(labels))), np.empty((0, len(labels)))
-    valid = present[:count * per_common].reshape(count, per_common).all(axis=1)
-    grouped = scores[:count * per_common].reshape(count, per_common, len(labels))[valid]
-    starts = np.arange(count)[valid] * 15
-    offsets = grouped.argmax(axis=1)
-    maxima = grouped.max(axis=1)
-    return labels, starts, maxima, starts[:, None] + offsets * native
+    valid = present[:count]
+    starts = np.arange(count)[valid] * native
+    native_scores = scores[:count][valid]
+    return labels, starts, native_scores, np.broadcast_to(starts[:, None], native_scores.shape).copy()
 
 
 def save_report(db, dataset_id, kind, snapshot):
@@ -301,7 +299,8 @@ def detection(root, body, *, persist=True):
             selected_index = next((i for i, label in enumerate(labels) if label == wanted), None)
             for i, start in enumerate(starts):
                 key, local = window_key(record, float(start), zone)
-                if key not in cells or not window_in_scope(record,float(start),float(start)+15,zone,body.start_date,body.end_date):
+                window_s = 3 if body.engine == 'birdnet' else 5
+                if key not in cells or not window_in_scope(record,float(start),float(start)+window_s,zone,body.start_date,body.end_date):
                     continue
                 selected_labels = enumerate(labels) if wanted is None or persist else ([] if selected_index is None else [(selected_index, wanted)])
                 for j, label in selected_labels:
@@ -316,13 +315,13 @@ def detection(root, body, *, persist=True):
                 j = selected_index
                 cell = cells[key]
                 cell['eligible_windows'] += 1
-                cell['effective_seconds'] += 15
+                cell['effective_seconds'] += window_s
                 if body.threshold is not None and scores[i, j] >= body.threshold:
                     cell['candidate_windows'] += 1
                     native_start = float(best_starts[i, j])
                     evidence.append({'recording_id': record['id'], 'analysis_id': analysis['id'], 'start_s': native_start,
-                        'end_s': native_start + (3 if body.engine == 'birdnet' else 5), 'window_start_s': float(start),
-                        'window_end_s': float(start + 15), 'score': float(scores[i, j]), 'local_time': window_key(record, native_start, zone)[1],
+                        'end_s': native_start + window_s, 'window_start_s': float(start),
+                        'window_end_s': float(start + window_s), 'score': float(scores[i, j]), 'local_time': window_key(record, native_start, zone)[1],
                         'window_local_time': local,
                         'date': key[0], 'hour': key[1], 'status': 'ai_candidate'})
             checked_source(record)
@@ -331,7 +330,7 @@ def detection(root, body, *, persist=True):
             if item['candidate_windows'] or label == wanted:
                 taxon = species_rows.get(label, {'id': None, 'scientific_name': label, 'common_names': {}})
                 counted = body.threshold is not None
-                # No threshold (① could not decide one): nothing is counted rather than using a default.
+                # A direct report request may explicitly omit a threshold.
                 summaries.append({'species': taxon, 'eligible_windows': item['eligible_windows'],
                     'candidate_windows': item['candidate_windows'] if counted else None,
                     'candidate_rate': item['candidate_windows'] / item['eligible_windows'] if counted else None, 'recorded_days': len(item['days']),
@@ -339,7 +338,8 @@ def detection(root, body, *, persist=True):
         summaries.sort(key=lambda r: (-(r['candidate_windows'] or 0), r['species']['scientific_name']))
         snapshot = {'kind': 'detection', 'dataset': dataset, 'site': site, 'engine': body.engine, 'model_sha256': body.model_sha256,
                     'analysis_ids': analysis_ids, 'missing_region': missing_region, 'threshold': body.threshold,
-                    'start_date': body.start_date.isoformat(), 'end_date': body.end_date.isoformat(), 'window_s': 15,
+                    'start_date': body.start_date.isoformat(), 'end_date': body.end_date.isoformat(),
+                    'window_s': 3 if body.engine == 'birdnet' else 5,
                     'species': names_for(selected) if selected else None, 'summaries': summaries,
                     'cells': finalize_cells(cells, body.threshold) if selected else [], 'evidence': evidence,
                     'quality': 'not_evaluated', 'complete_windows_only': True}

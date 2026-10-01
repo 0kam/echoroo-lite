@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,duration,refreshCatalog } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { checkName,fill,presenceText,rangeQuery,reliableModels,speciesGroup,type Overview } from '$lib/workflow';
+  import { checkName,fill,presenceText,rangeQuery,decidedModels,speciesGroup,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
@@ -36,10 +36,10 @@
   const titles={confirmed:'wGroupConfirmed',check:'wGroupCheck',few:'wGroupFew'};
 </script>
 {#snippet table(rows:Row[])}<div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wPresence')}</th><th>{t('wActivity')}</th></tr></thead><tbody>
-  {#each rows as row (row.species.id)}{@const reliable=reliableModels(row.models)}<tr><td><a href={speciesHref(row)}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
+  {#each rows as row (row.species.id)}{@const decided=decidedModels(row.models)}<tr><td><a href={speciesHref(row)}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
     <td>{#each row.models as model}<div>{checkName(model)}: {model.candidate_windows==null?'—':`${model.candidate_windows.toLocaleString(app.locale)} ${t('wDetectedWindows')} · ${model.candidate_days} ${t('wDays')}`}</div>{:else}—{/each}</td>
     <td>{presenceText(row.presence)}</td>
-    <td>{reliable.length?fill('wReliable',{models:reliable.join(app.locale==='ja'?'・':', ')}):t('wNoReliable')}</td></tr>{/each}
+    <td>{decided.length?fill('wDecidedModels',{models:decided.join(app.locale==='ja'?'・':', ')}):t('wNoDecided')}</td></tr>{/each}
 </tbody></table></div>{/snippet}
 <div class="page">
   <div class="page-header"><div><div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span>{result?.site.name}</div>

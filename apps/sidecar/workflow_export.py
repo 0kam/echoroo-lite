@@ -16,8 +16,8 @@ from contextlib import ExitStack
 
 from reports import csv_bytes,save_report,scope_records,effort,window_key,window_in_scope,classification_batches
 from storage import CatalogError,checked_source,connect
-from results_workflow import context,current_validations,detection_snapshot,custom_snapshot,threshold_for
-from report_document import create_html,messages,quality_result,status,criterion,method,fixed_precision
+from results_workflow import attach_validation,context,current_validations,detection_snapshot,custom_snapshot,threshold_for
+from report_document import create_html,messages,quality_result,status,criterion,method
 from report_figures import DATA,spiral,recording_schedule
 
 
@@ -31,29 +31,18 @@ def digest(path):
 
 
 def quality_export(validation,result):
-    """Flatten saved validation evidence without conflating decision and descriptive intervals."""
+    """Flatten the one-stage check for CSV without hiding 90% intervals."""
     row={}
-    for metric in ('precision','recall','estimated_window_rate'):
-        complete=(not fixed_precision(validation) or
-            (result or {}).get('precision_complete' if metric=='precision' else 'recall_complete'))
-        value=((result or {}).get(metric) or {}) if complete else {}
+    for metric in ('density','count','precision','recall','auprc','multiplier'):
+        value=((result or {}).get(metric) or {})
         row.update({f'{metric}_{part}':value.get(part) for part in ('value','low','high')})
-    precision_complete=bool(result and result.get('precision_complete'))
     row.update({
-        'goal_met':result.get('goal_met') if result and (not fixed_precision(validation) or precision_complete) else None,
-        'precision_lower_95':result.get('precision_lower_95') if precision_complete else None,
-        'precision_complete':result.get('precision_complete') if result else None,
-        'recall_complete':result.get('recall_complete') if result else None,
-        'evaluation_eligible_windows':result.get('eligible_windows') if result else None,
-        'evaluation_reviewed':result.get('reviewed') if result else None,
-        'evaluation_unknown':result.get('unknown') if result else None,
+        'status':result.get('status') if result else None,'recall_status':result.get('recall_status') if result else None,
+        'unknown':result.get('unknown') if result else None,'disagreement':result.get('disagreement') if result else None,
+        'answers_per_bin':result.get('answers_per_bin') if result else None,
     })
-    for metric in ('precision','recall'):
-        sample=(result or {}).get(metric+'_sample') or {}
-        row.update({f'{metric}_sample_{part}':sample.get(part) for part in ('total','answered','target','unknown','population')})
     if validation:
-        row.update(validation_method=validation.get('method'),target_precision=validation.get('target_precision'),
-            calibration_target_precision=validation.get('calibration_target_precision'),evaluation_scope=validation.get('evaluation_scope'),
+        row.update(validation_method=validation.get('method'),evaluation_scope=validation.get('evaluation_scope'),
             sampling_unit=validation.get('sampling_unit'),human_reference=validation.get('reference'))
     return row
 
@@ -92,11 +81,12 @@ def score_tables(root,db,folder,snapshots,records,cancel=None):
                 if cancel and cancel.is_set():raise CatalogError('cancelled')
                 labels,starts,scores,best=arrays;columns={str(label):i for i,label in enumerate(labels)}
                 record=records[analysis['recording_id']]
-                indices=[i for i,start in enumerate(starts) if window_in_scope(record,float(start),float(start)+15,zone,group[0]['start_date'],group[0]['end_date'])]
+                width=3 if engine=='birdnet' else 5
+                indices=[i for i,start in enumerate(starts) if window_in_scope(record,float(start),float(start)+width,zone,group[0]['start_date'],group[0]['end_date'])]
                 for snap in group:
                     column=columns.get(snap['species']['scientific_name'])
                     if column is None or analysis['id'] not in snap['analysis_ids']:continue
-                    writers[snap['figure_id']].writerows([record['id'],analysis['id'],float(starts[i]),float(starts[i])+15,float(scores[i,column]),float(best[i,column])] for i in indices)
+                    writers[snap['figure_id']].writerows([record['id'],analysis['id'],float(starts[i]),float(starts[i])+width,float(scores[i,column]),float(best[i,column])] for i in indices)
         for snap in snapshots:
             if cancel and cancel.is_set():raise CatalogError('cancelled')
             if snap.get('engine')=='custom':
@@ -125,7 +115,7 @@ def export(root,body,cancel=None):
             snap=detection_snapshot(root,ctx,model,sid,threshold_for(v,model))
             snap['summaries']=[s for s in snap['summaries'] if s['species']['id']==sid]
             if not snap['summaries']:continue
-            snap['validation']=v;snapshots.append(snap)
+            snapshots.append(attach_validation(snap,v))
         for model in custom:
             if model['species']['id']==sid and model['applicable']:
                 snapshots.append(custom_snapshot(root,ctx,model))
@@ -176,9 +166,7 @@ def export(root,body,cancel=None):
                             row.update(audio_file=save_audio(folder,records[key[0]],key[1],key[2]),audio_role='ai_example',audio_reason='included')
                         evidence.append(row)
                     v=snap.get('validation');result=quality_result(snap)
-                    common.update(validation_method=v.get('method') if v else None,calibration_method=v.get('calibration_method') if v else None,
-                        target_precision=v.get('target_precision') if v else None,
-                        calibration_target_precision=v.get('calibration_target_precision') if v else None,
+                    common.update(validation_method=v.get('method') if v else None,
                         evaluation_scope=v.get('evaluation_scope') if v else None,sampling_unit=v.get('sampling_unit') if v else None,
                         uncertainty_method=v.get('uncertainty') if v else None,human_reference=v.get('reference') if v else None)
                     quality_rows.append({**common,'validation_id':v['id'] if v else None,'validation_applicable':v['applicable'] if v else False,
@@ -198,13 +186,14 @@ def export(root,body,cancel=None):
                         answered=[]
                         for answer in answered_items(db,v['id']):
                             if answer['verdict'] is None:continue
-                            record=records[answer['recording_id']];start=answer['start_s'];end=start+v['window_s']
+                            record=records[answer['recording_id']];start=answer['start_s'];end=answer['end_s']
                             clip=save_audio(folder,record,start,end)
                             answered.append({**answer,'audio_file':clip})
                             evidence.append({**common,**answer,'validation_id':v['id'],'start_s':start,'end_s':end,'local_time':window_key(record,start,zone)[1],
                                 'audio_file':clip,'audio_role':'validation','audio_reason':'included','status':answer['verdict']})
                         history=[dict(r) for r in db.execute('''SELECT a.* FROM window_answers a WHERE a.species_id=? AND EXISTS
-                            (SELECT 1 FROM validation_items i WHERE i.session_id=? AND i.recording_id=a.recording_id AND i.start_s=a.start_s) ORDER BY a.id''',(sid,v['id']))]
+                            (SELECT 1 FROM validation_items i WHERE i.session_id=? AND i.recording_id=a.recording_id
+                             AND i.start_s=a.start_s AND i.end_s=a.end_s) ORDER BY a.id''',(sid,v['id']))]
                         write_json(folder/'validation'/f"{v['id']}.json",{**dict(saved),'snapshot':json.loads(saved['snapshot']),
                             'items':answered,'answer_history':history})
                     write_json(folder/'results'/f'{report_id}.json',{'id':report_id,**snap})
