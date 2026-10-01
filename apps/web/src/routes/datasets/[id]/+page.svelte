@@ -4,7 +4,7 @@
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.svelte';
-  import { app,t,activeJob,duration,refreshCatalog } from '$lib/app.svelte';
+  import { app,t,activeJob,dayRange,duration,refreshCatalog } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { checkName,fill,presenceText,rangeQuery,decidedModels,speciesGroup,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
@@ -34,16 +34,21 @@
   const speciesHref=(row:Row)=>`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=${row.models.find(m=>(m.candidate_windows??0)>0)?.engine??'auto'}`;
   const reports=$derived(`${resolve(`/datasets/${id}/reports`)}${range}`);
   const titles={confirmed:'wGroupConfirmed',check:'wGroupCheck',few:'wGroupFew'};
+  // A column that says the same thing on every row becomes one note above the table.
+  const anyDecided=$derived(!!result?.species.some(row=>decidedModels(row.models).length));
+  const days=$derived(result?Math.round((Date.parse(result.end_date)-Date.parse(result.start_date))/86400000)+1:0);
+  const unanalysed=$derived(result?result.records-result.analysed_recordings:0);
+  const jobHere=$derived(job&&app.datasets.find(d=>d.id===job.dataset_id)?.site_id===result?.site.id?job:null);
 </script>
-{#snippet table(rows:Row[])}<div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wPresence')}</th><th>{t('wActivity')}</th></tr></thead><tbody>
+{#snippet table(rows:Row[])}<div class="table-wrap"><table><thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wPresence')}</th>{#if anyDecided}<th>{t('wActivity')}</th>{/if}</tr></thead><tbody>
   {#each rows as row (row.species.id)}{@const decided=decidedModels(row.models)}<tr><td><a href={speciesHref(row)}><strong>{commonName(row.species,app.locale)}</strong><i class="scientific-name">{row.species.scientific_name}</i></a></td>
     <td>{#each row.models as model}<div>{checkName(model)}: {model.candidate_windows==null?'—':`${model.candidate_windows.toLocaleString(app.locale)} ${t('wDetectedWindows')} · ${model.candidate_days} ${t('wDays')}`}</div>{:else}—{/each}</td>
     <td>{presenceText(row.presence)}</td>
-    <td>{decided.length?fill('wDecidedModels',{models:decided.join(app.locale==='ja'?'・':', ')}):t('wNoDecided')}</td></tr>{/each}
+    {#if anyDecided}<td>{decided.length?fill('wDecidedModels',{models:decided.join(app.locale==='ja'?'・':', ')}):t('wNoDecided')}</td>{/if}</tr>{/each}
 </tbody></table></div>{/snippet}
 <div class="page">
-  <div class="page-header"><div><div class="crumbs"><a href={resolve('/datasets')}>{t('navLibrary')}</a><span>›</span>{result?.site.name}</div>
-    <h1>{result?.site.name??t('wResults')}</h1><p>{result?.start_date} — {result?.end_date}</p></div></div>
+  <div class="page-header"><div><div class="crumbs"><a href={resolve('/datasets')}>{t('uBackSites')}</a></div>
+    <h1>{result?.site.name??t('wResults')}</h1>{#if result}<p>{dayRange(result.start_date,result.end_date)}{fill('wDaysSpan',{n:days})}</p>{/if}</div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}
     {#if (Date.parse(result.last_date)-Date.parse(result.first_date))/86400000>=366}<label class="year">{t('uYear')}<select value={first.slice(0,4)} onchange={e=>goto(`${resolve(`/datasets/${id}`)}?${rangeQuery(e.currentTarget.value+'-01-01',e.currentTarget.value+'-12-31')}`)}>{#each result.years as year}<option value={String(year)}>{year}</option>{/each}</select></label>{/if}
@@ -52,17 +57,19 @@
       <div class="actions">{#if confirmed}<Button variant="primary" href={reports}>{t('wExport')}</Button>{/if}
         {#if next}<Button variant={confirmed?'default':'primary'} href={speciesHref(next)}>{fill('wNextOpen',{name:commonName(next.species,app.locale)||next.species.scientific_name})}</Button>{/if}
         {#if !confirmed}<Button href={reports}>{t('wExport')}</Button>{/if}</div></section>{/if}
-    <section class="panel"><div class="section-heading"><div class="stat-row"><span><strong>{result.analysed_recordings} / {result.records}</strong> {t('files')}</span>
-      <span><strong>{result.recorded_seconds<3600?duration(result.recorded_seconds):(result.recorded_seconds/3600).toFixed(1)+' h'}</strong></span>
-      <span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span></div>
-      <div class="actions"><Button href={`${resolve('/datasets/new')}?site=${result.site.id}&return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('uAddRecordings')}</Button><Button href={resolve(`/datasets/${id}/recordings`)}>{t('wViewRecordings')}</Button>
-        {#if result.mixed_models||result.analysed_recordings<result.records}<Button pending={analyze.pending} disabled={!!job} onclick={()=>analyze.run()}>{t('analyzeAll')}</Button>{/if}</div></div>
+    <section class="panel stack"><div class="section-heading"><div class="stat-row"><span>{fill('wRecordingsAnalysed',{analysed:result.analysed_recordings,records:result.records})}</span>
+      <span>{fill('wTotalLength',{duration:duration(result.recorded_seconds)})}</span>
+      <span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span></div></div>
       {#if result.mixed_models}<p class="notice">{t('wModelVersions')}</p>{/if}
-      {#if job&&app.datasets.find(d=>d.id===job.dataset_id)?.site_id===result.site.id}<JobStatus {job}/>{/if}
-
+      <!-- Before and during analysis the box is already there, so progress does not push the page around. -->
+      {#if jobHere||unanalysed>0}<div class="status-box" role="status">
+        {#if jobHere}<JobStatus job={jobHere}/>{:else}<p><strong>{fill('wAnalyzeNeeded',{n:unanalysed})}</strong></p><p class="muted">{t('analyzeAllHint')}</p>{/if}</div>{/if}
+      <div class="actions">
+        {#if result.mixed_models||unanalysed>0}<Button variant={unanalysed>0?'primary':'default'} pending={analyze.pending} disabled={!!job} onclick={()=>analyze.run()}>{t('analyzeAll')}</Button>{/if}
+        <Button href={`${resolve('/datasets/new')}?site=${result.site.id}&return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('uAddRecordings')}</Button><Button href={resolve(`/datasets/${id}/recordings`)}>{t('wViewRecordings')}</Button></div>
     </section>
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindMissing')}</Button></div>
-      <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>
+      <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>{#if result.species.length&&!anyDecided}<p class="muted">{t('wActivityNoneAll')}</p>{/if}
       {#if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
       {#each groups as group}{#if group.rows.length}
         {#if group.key==='few'}<details class="group"><summary><h3>{t(titles[group.key])} · {fill('wSpeciesCount',{n:group.rows.length})}</h3></summary><p class="notice">{t('wFewCaution')}</p>{@render table(group.rows)}</details>
@@ -72,4 +79,4 @@
     </section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
   {:else if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none;color:inherit}td a:hover strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:28px}h3.group,.group h3{font-size:18px;margin-bottom:0}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}</style>
+<style>.year{max-width:180px}.page-header p{font-size:16px}td a{display:block;min-height:44px;text-decoration:none;color:inherit}td a:hover strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}h3.group,.group h3{font-size:18px;margin-bottom:0}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}</style>

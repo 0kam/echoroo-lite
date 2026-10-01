@@ -50,7 +50,6 @@
       {@const target = datasetOf(job.dataset_id)}
       <a class="jobchip" href={resolve('/datasets')}><span class="dot-pulse"></span>{t('analysisInProgress')}: {siteOf(target)?.name ?? ''} · {job.done} / {job.total}</a>
     {/if}
-    {#if app.connectionError}<span role="alert">{t(app.connectionError)}</span>{/if}
     <select aria-label={t('language')} value={app.locale} onchange={e => setLocale(e.currentTarget.value as 'ja' | 'en')}>
       <option value="ja">日本語</option><option value="en">English</option>
     </select>
@@ -58,6 +57,8 @@
   </header>
   <main class="main">
     {#if app.connected}
+      <!-- A lost connection is reported in the page, not in the top bar. -->
+      {#if app.connectionError}<p class="error connection" role="alert">{t(app.connectionError)}</p>{/if}
       {#key page.url.hash}{@render children()}{/key}
     {:else}
       <div class="page"><div class="panel empty" role="status">
@@ -71,6 +72,7 @@
 <Toasts />
 
 <style>
+  .connection { max-width: 1120px; margin: 0 auto 16px; }
   .dot-pulse { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
 </style>

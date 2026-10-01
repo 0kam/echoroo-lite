@@ -1,18 +1,20 @@
 <script lang="ts">
   import { onMount, tick, type Snippet } from 'svelte';
   import { api } from './api.svelte';
-  import { t } from './app.svelte';
-  import { roseus } from './roseus';
+  import { app, t } from './app.svelte';
+  import { kHz, paint, type Spectrogram, type Tick } from './spectrogram';
   import { scaledZoom, sourceTime } from './annotation-geometry.js';
   import Button from './ui/Button.svelte';
+  import ScaleSwitch from './ui/ScaleSwitch.svelte';
   let { mediaPath, start, end, cursor=null, onseek, onplay, storageKey, controls }:
     {mediaPath:string;start:number;end:number;cursor?:number|null;onseek:(time:number)=>void;onplay:()=>void;storageKey?:string;controls?:Snippet}=$props();
   let viewport:HTMLDivElement, track:HTMLDivElement, canvas:HTMLCanvasElement;
   let zoom=$state({x:1,y:1}), left=$state(0), top=$state(0), width=$state(1), height=$state(1), viewWidth=$state(1), viewHeight=$state(1);
-  let loading=$state(true), error=$state(''), maxHz=$state(12000);
+  let loading=$state(true), error=$state(''), ticks=$state<Tick[]>([]);
   let alive=true, pan=$state<{x:number;y:number;left:number;top:number}|null>(null);
   const viewStart=$derived(start+left/width*(end-start)),viewEnd=$derived(Math.min(end,start+(left+viewWidth)/width*(end-start)));
-  const high=$derived(maxHz*(1-top/height)),low=$derived(Math.max(0,maxHz*(1-(top+viewHeight)/height)));
+  // Ticks follow the rows the sidecar drew (mel or linear): y = (1 − row_fraction) × track height − scroll.
+  const visibleTicks=$derived(ticks.map(tick=>({tick,y:(1-tick.row_fraction)*height-top})).filter(({y})=>y>=-.5&&y<=viewHeight+.5));
   const x=(time:number)=>(time-start)/(end-start)*width;
   function measure(){if(!viewport||!track)return;left=viewport.scrollLeft;top=viewport.scrollTop;width=track.clientWidth;height=track.clientHeight;viewWidth=viewport.clientWidth;viewHeight=viewport.clientHeight;}
   function remember(){measure();if(storageKey)try{localStorage.setItem(storageKey,JSON.stringify({...zoom,left:left/width,top:top/height}));}catch{/* View settings are disposable; answers are saved separately. */}}
@@ -46,23 +48,22 @@
     const restore=async()=>{if(!storageKey)return;try{const view=JSON.parse(localStorage.getItem(storageKey)||'null');
       if(view&&[view.x,view.y,view.left,view.top].every(Number.isFinite)){zoom={x:Math.max(1,Math.min(8,view.x)),y:Math.max(1,Math.min(8,view.y))};await tick();if(!alive)return;viewport.scrollLeft=view.left*track.clientWidth;viewport.scrollTop=view.top*track.clientHeight;measure();}}catch{/* Ignore invalid view settings. */}};
     void restore();
-    api<{width:number;height:number;pixels:string;frequency_max_hz:number}>(`${mediaPath}/spectrogram?start_s=${start}&end_s=${end}&detail=true`).then(data=>{
-      if(!alive)return;canvas.width=data.width;canvas.height=data.height;maxHz=data.frequency_max_hz;
-      const pixels=atob(data.pixels),frame=new ImageData(data.width,data.height);
-      for(let i=0;i<pixels.length;i++){const c=pixels.charCodeAt(i)*3;frame.data.set([roseus[c],roseus[c+1],roseus[c+2],255],i*4);}
-      canvas.getContext('2d')!.putImageData(frame,0,0);
+    // The parent re-creates this view when the mel/linear choice changes.
+    api<Spectrogram>(`${mediaPath}/spectrogram?start_s=${start}&end_s=${end}&detail=true&scale=${app.frequencyScale}`).then(data=>{
+      if(!alive)return;ticks=data.frequency_ticks;paint(canvas,data);
     }).catch(e=>{if(alive)error=e.message;}).finally(()=>{if(alive)loading=false;});
     return ()=>{alive=false;observer.disconnect();};
   });
   function wheelAction(node:HTMLElement,axis:'x'|'y'|'both'){const listener=wheel(axis);node.addEventListener('wheel',listener,{passive:false});return{destroy(){node.removeEventListener('wheel',listener);}};}
 </script>
-<div class="zoom-controls">{@render controls?.()}<span title={t('aZoomHint')}>{t('aZoomShort')}</span><div class="actions">
-  <Button aria-label={t('aZoomOut')} disabled={Math.min(zoom.x,zoom.y)<=1} onclick={()=>scale('both',1/1.4)}>−</Button>
-  <Button aria-label={t('aZoomIn')} disabled={Math.max(zoom.x,zoom.y)>=8} onclick={()=>scale('both',1.4)}>＋</Button>
-  <Button disabled={zoom.x===1&&zoom.y===1} onclick={reset}>{t('aFit')}</Button></div></div>
+<div class="zoom-controls">{@render controls?.()}<span class="hint" title={t('aZoomHint')}>{t('aZoomShort')}</span><div class="actions">
+  <Button size="sm" aria-label={t('aZoomOut')} title={t('aZoomOut')} disabled={Math.min(zoom.x,zoom.y)<=1} onclick={()=>scale('both',1/1.4)}>−</Button>
+  <Button size="sm" aria-label={t('aZoomIn')} title={t('aZoomIn')} disabled={Math.max(zoom.x,zoom.y)>=8} onclick={()=>scale('both',1.4)}>＋</Button>
+  <Button size="sm" disabled={zoom.x===1&&zoom.y===1} onclick={reset}>{t('aFit')}</Button></div></div>
+<div class="axis-head"><span class="unit">kHz</span><ScaleSwitch/></div>
 <div class="grid">
   <div class="frequency" role="slider" tabindex="0" aria-orientation="vertical" aria-valuemin="1" aria-valuemax="8" aria-valuenow={zoom.y} aria-valuetext={`${zoom.y.toFixed(1)}×`} aria-label={t('aFrequencyAxis')} title={t('aAxisHelp')} use:wheelAction={'y'} onkeydown={e=>keyboard(e,'y')}>
-    <span>{+(high/1000).toFixed(2)}</span><span>kHz</span><span>{+(low/1000).toFixed(2)}</span>
+    {#each visibleTicks as {tick,y} (tick.frequency_hz)}<span style:top={`${y}px`} class:edge-high={y<8} class:edge-low={y>viewHeight-8}>{kHz(tick)}</span>{/each}
   </div>
   <!-- Drag or arrow keys pan the view; +/- zoom. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -75,6 +76,7 @@
       onpointermove={e=>{if(pan)viewport.scrollTo(pan.left-(e.clientX-pan.x),pan.top-(e.clientY-pan.y));}}
       onpointerup={()=>{pan=null;}} onpointercancel={()=>{pan=null;}}>
       <canvas bind:this={canvas}></canvas>
+      {#each ticks as tick}{#if tick.row_fraction>0&&tick.row_fraction<1}<div class="guide" style:bottom={`${tick.row_fraction*100}%`}></div>{/if}{/each}
       <svg class="marks" width={width} height={height} aria-hidden="true">
         {#if cursor!==null&&cursor>=start&&cursor<=end}<path d={`M${x(cursor)},0 V${height}`} stroke="#60dcff" stroke-width="2"/>{/if}
       </svg>
@@ -86,5 +88,18 @@
   </div>
 </div>
 <style>
-  .zoom-controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;font-size:14px}.zoom-controls .actions{gap:6px}.grid{display:grid;grid-template-columns:54px minmax(0,1fr);gap:4px}.frequency{display:flex;flex-direction:column;justify-content:space-between;text-align:right;padding:4px 8px 4px 0;cursor:ns-resize;font-size:12px}.viewport{height:clamp(240px,calc(100vh - 520px),560px);overflow:hidden;position:relative;background:#050505;overscroll-behavior:contain}.track{position:relative;touch-action:none;cursor:grab;min-height:100%;user-select:none}.track.panning{cursor:grabbing}canvas{width:100%;height:100%;display:block}.marks{position:absolute;inset:0;pointer-events:none}.state{position:sticky;bottom:0;left:0;background:#101010dd;color:white;padding:12px}.time-axis{display:flex;justify-content:space-between;align-items:center;min-height:44px;cursor:ew-resize;font-size:13px;font-variant-numeric:tabular-nums}
+  .zoom-controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;font-size:14px}.zoom-controls .actions{gap:4px}
+  .hint{flex:1;min-width:200px;color:rgb(var(--stone-600))}
+  /* Touch screens have no wheel or double-click; the full help stays in the title. */
+  @media (max-width:700px){.hint{display:none}}
+  .axis-head{display:flex;align-items:end;gap:8px}.unit{width:54px;padding-right:8px;text-align:right;font-size:12px;color:rgb(var(--stone-600))}
+  .grid{display:grid;grid-template-columns:54px minmax(0,1fr);gap:4px}
+  .frequency{position:relative;cursor:ns-resize;font-size:12px;line-height:1;color:rgb(var(--stone-600));overflow:hidden}
+  .frequency span{position:absolute;right:8px;transform:translateY(-50%);font-variant-numeric:tabular-nums}.frequency .edge-high{transform:none}.frequency .edge-low{transform:translateY(-100%)}
+  .viewport{height:var(--spec-lg);overflow:hidden;position:relative;background:#050505;overscroll-behavior:contain}
+  .track{position:relative;touch-action:none;cursor:grab;min-height:100%;user-select:none}.track.panning{cursor:grabbing}
+  canvas{width:100%;height:100%;display:block}.marks{position:absolute;inset:0;pointer-events:none}
+  .guide{position:absolute;left:0;right:0;height:1px;background:rgb(255 255 255 / .15);pointer-events:none}
+  .state{position:sticky;bottom:0;left:0;background:#101010dd;color:white;padding:12px}
+  .time-axis{display:flex;justify-content:space-between;align-items:center;min-height:44px;cursor:ew-resize;font-size:13px;font-variant-numeric:tabular-nums}
 </style>

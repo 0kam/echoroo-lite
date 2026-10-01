@@ -51,7 +51,8 @@ SELECT ?name ?itemLabel ?jaLabel ?enCommon WHERE {{
         for row in rows:
             item = found.setdefault(row["name"]["value"], {})
             if label := row.get("enCommon", {}).get("value"):
-                item.setdefault("en", label[0].upper() + label[1:])
+                # Wikidata has misspelt some common names (e.g. "Janpanese Leaf Warbler").
+                item.setdefault("en", (label[0].upper() + label[1:]).replace("Janpanese", "Japanese"))
             if (label := row.get("itemLabel", {}).get("value")) and label != row["name"]["value"] and not label.startswith("http"):
                 item.setdefault("en", label)
             if label := row.get("jaLabel", {}).get("value"):

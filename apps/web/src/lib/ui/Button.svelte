@@ -13,7 +13,7 @@
 {:else}
   <button {...rest} {type} class={`button ${variant} ${size} ${className}`} class:active class:pending
     disabled={disabled || pending} aria-label={ariaLabel} aria-busy={pending || rest['aria-busy'] || undefined} aria-pressed={rest['aria-pressed']}>
-    {#if pending}<Spinner size={size === 'sm' ? 12 : 14} />{/if}
-    {@render children()}
+    <span class="label">{@render children()}</span>
+    {#if pending}<Spinner size={size === 'sm' ? 14 : 18} />{/if}
   </button>
 {/if}

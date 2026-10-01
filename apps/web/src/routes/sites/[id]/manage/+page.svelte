@@ -8,6 +8,7 @@
   import Button from '$lib/ui/Button.svelte';
   import SiteMap from '$lib/SiteMap.svelte';
   import { createTask } from '$lib/ui/task.svelte';
+  import { fill } from '$lib/workflow';
   type Collection = Dataset & {count:number;seconds:number;first:string|null;last:string|null};
   type Details = {site:Site;datasets:Collection[]};
   type Removal = {site_id:number;dataset_id:number|null;name:string;revision:string;recordings:number;analyses:number;searches:number;validations:number;custom_models?:number;reports:number;exports:number};
@@ -22,7 +23,6 @@
     event.cancel();
     if(!event.willUnload&&event.to){destination=event.to.url;discardDialog.showModal();}
   });
-  const resultId=$derived(details?.datasets[0]?.id);
   function receive(value:Details){details=value;name=value.site.name;latitude=value.site.latitude;longitude=value.site.longitude;changingPlace=false;renameId=null;}
   const load=createTask(async()=>receive(await api(`/sites/${id}/management`)));
   onMount(()=>{void load.run();});
@@ -39,8 +39,8 @@
   });
   const date=(value:string|null)=>value&&details?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeZone:details.site.timezone}).format(new Date(value)):'—';
 </script>
-<div class="page management">
-  <div class="crumbs"><a href={resolve('/datasets')}>{t('uSites')}</a>{#if resultId}<a href={resolve(`/datasets/${resultId}`)}>{t('uBackResults')}</a>{/if}</div>
+<div class="page narrow">
+  <div class="crumbs"><a href={resolve('/datasets')}>{t('uBackSites')}</a></div>
   <h1>{t('mManage')}</h1>
   {#if details}
     <form class="panel stack" onsubmit={event=>{event.preventDefault();save.run();}}>
@@ -64,16 +64,16 @@
             <label>{t('mImportName')}<input bind:value={collectionName} disabled={rename.pending} required maxlength="200"/></label>
             <Button type="submit" pending={rename.pending}>{t('mSave')}</Button><Button disabled={rename.pending} onclick={()=>renameId=null}>{t('mCancel')}</Button>
           </form>{:else}<h3>{dataset.name}</h3>{/if}
-          <p>{date(dataset.first)} — {date(dataset.last)} · {dataset.count} {t('files')} · {duration(dataset.seconds)}</p>
+          <p>{date(dataset.first)===date(dataset.last)?date(dataset.first):`${date(dataset.first)} – ${date(dataset.last)}`} · {fill('rRecordingsCount',{n:dataset.count})} · {duration(dataset.seconds)}</p>
           <p class="muted folder">{dataset.folder}</p>
           {#if renameId===null}<div class="actions"><Button disabled={dirty||changingPlace} onclick={()=>{renameId=dataset.id;collectionName=dataset.name;}}>{t('mRename')}</Button>
-            <Button disabled={dirty} pending={inspect.pending} onclick={()=>inspect.run(dataset.id)}>{t('mRemoveImport')}</Button></div>{/if}
+            <Button variant="danger" disabled={dirty} pending={inspect.pending} onclick={()=>inspect.run(dataset.id)}>{t('mRemoveImport')}</Button></div>{/if}
         </div>
       {:else}<p>{t('mNoImports')}</p>{/each}
       {#if rename.error}<p class="error" role="alert">{t(rename.error)}</p>{/if}
     </section>
     <section class="panel"><h2>{t('mRemoveSite')}</h2><p>{t('mKeepFiles')}</p>
-      <Button disabled={dirty} pending={inspect.pending} onclick={()=>inspect.run(null)}>{t('mRemoveSite')}</Button></section>
+      <Button variant="danger" disabled={dirty} pending={inspect.pending} onclick={()=>inspect.run(null)}>{t('mRemoveSite')}</Button></section>
   {/if}
   {#if load.pending}<p role="status">{t('loading')}</p>{/if}
   {#if load.error||inspect.error}<p class="error" role="alert">{t(load.error||inspect.error)}</p>{/if}
@@ -91,4 +91,4 @@
     <Button onclick={()=>{if(destination){leaving=true;discardDialog.close();void goto(destination);}}}>{t('mLeave')}</Button>
   </div>
 </dialog>
-<style>.management{max-width:860px!important}.stack{gap:18px}.collection{padding:22px 0;border-bottom:1px solid rgb(var(--stone-200))}h3{margin:0}p{margin:12px 0}.folder{overflow-wrap:anywhere;font-size:13px}dialog{max-width:560px;width:calc(100% - 40px);padding:28px;border:1px solid #ccc;border-radius:12px;background:rgb(var(--stone-50));color:inherit}dialog::backdrop{background:#0006}dl>div{display:flex;justify-content:space-between;padding:5px 0}</style>
+<style>.stack{gap:16px}.collection{padding:24px 0;border-bottom:1px solid rgb(var(--stone-200))}h3{margin:0}p{margin:12px 0}.folder{overflow-wrap:anywhere;font-size:13px}dialog{max-width:560px;width:calc(100% - 32px);padding:24px;border:1px solid #ccc;border-radius:12px;background:rgb(var(--stone-50));color:inherit}dialog::backdrop{background:#0006}dl>div{display:flex;justify-content:space-between;padding:5px 0}</style>

@@ -108,7 +108,9 @@ with ExitStack() as stack:
             assert search['searched_recordings'] == len(records) and search['hits']
             assert all(-1 <= h['similarity'] <= 1 and (h['recording_id'] != record['id'] or h['start_s'] >= 3) for h in search['hits'])
             view = api(f"/sources/reference/{reference['id']}/spectrogram?start_s=0&end_s={min(30, record['seconds'])}")
-            assert view['width'] <= 1000 and view['height'] == 385
+            assert view['width'] <= 1000 and view['height'] == 256 and view['frequency_scale'] == 'mel'
+            linear = api(f"/sources/reference/{reference['id']}/spectrogram?start_s=0&end_s={min(30, record['seconds'])}&scale=linear")
+            assert linear['height'] == 385 and linear['frequency_scale'] == 'linear'
             print(f"Frozen reference registration, spectrogram and real similarity search passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
             run = api('/search-runs', {'dataset_id': imported['dataset_id'], 'species_id': target['id'], 'clips': [

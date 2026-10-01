@@ -9,12 +9,17 @@ export type Recording = { id: number; dataset_id: number; path: string; original
   timezone: string; seconds: number };
 
 type Locale = 'ja' | 'en';
-const LOCALE = 'echoroo-locale', THEME = 'echoroo-theme', DATASET = 'echoroo-dataset';
+export type FrequencyScale = 'mel' | 'linear';
+const LOCALE = 'echoroo-locale', THEME = 'echoroo-theme', DATASET = 'echoroo-dataset', SCALE = 'echoroo-frequency-scale';
 
 /** Global application state shared by every route. */
 export const app = $state({
   locale: 'en' as Locale, dark: false,
+  /** Frequency axis of every spectrogram; one choice for the whole app. */
+  frequencyScale: 'mel' as FrequencyScale,
   connected: false, connectionError: '',
+  /** Whether BirdNET is bundled; analysis then runs both BirdNET and Perch. */
+  birdnet: false,
   dataFolder: '',
   sites: [] as Site[], datasets: [] as Dataset[], jobs: [] as Job[],
   datasetId: null as number | null,
@@ -31,8 +36,19 @@ export const activeJob = () => app.jobs.find(job => job.status === 'queued' || j
 export const datasetOf = (id: number | null) => app.datasets.find(d => d.id === id) ?? null;
 export const siteOf = (dataset: Dataset | null) => app.sites.find(s => s.id === dataset?.site_id) ?? null;
 export const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
-export const duration = (seconds: number) =>
-  `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+const fillText = (key: string, values: Record<string, number>) =>
+  Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value.toLocaleString(app.locale)), t(key));
+/** Plain length such as "48 min" or "1 h 30 min"; never the ambiguous "48:00". */
+export function duration(seconds: number) {
+  if (seconds < 59.5) return fillText('durationS', { s: Math.round(seconds) });
+  const minutes = Math.round(seconds / 60), h = Math.floor(minutes / 60), m = minutes % 60;
+  return h ? fillText(m ? 'durationHM' : 'durationH', { h, m }) : fillText('durationM', { m });
+}
+/** A calendar date (YYYY-MM-DD) in the app's date style, e.g. 2025/01/01. */
+export const day = (date: string) =>
+  new Intl.DateTimeFormat(app.locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${date.slice(0, 10)}T00:00:00Z`));
+/** A date range that names a single day only once. */
+export const dayRange = (first: string, last: string) => first === last ? day(first) : `${day(first)} – ${day(last)}`;
 export const siteTime = (recording: { recorded_at: string; timezone: string }, style: 'short' | 'medium' = 'medium') =>
   new Intl.DateTimeFormat(app.locale, { dateStyle: style, timeStyle: 'short', timeZone: recording.timezone })
     .format(new Date(recording.recorded_at));
@@ -40,6 +56,10 @@ export const siteTime = (recording: { recorded_at: string; timezone: string }, s
 export function setLocale(locale: Locale) {
   app.locale = locale; document.documentElement.lang = locale;
   localStorage.setItem(LOCALE, locale);
+}
+export function setFrequencyScale(scale: FrequencyScale) {
+  app.frequencyScale = scale;
+  try { localStorage.setItem(SCALE, scale); } catch { /* The choice then lasts for this session only. */ }
 }
 export function setDark(dark: boolean) {
   app.dark = dark; document.documentElement.classList.toggle('dark', dark);
@@ -53,6 +73,7 @@ export function restorePreferences() {
   const saved = localStorage.getItem(LOCALE);
   setLocale(saved === 'ja' || saved === 'en' ? saved : navigator.language.startsWith('ja') ? 'ja' : 'en');
   setDark(localStorage.getItem(THEME) === 'dark');
+  app.frequencyScale = localStorage.getItem(SCALE) === 'linear' ? 'linear' : 'mel';
   const dataset = Number(localStorage.getItem(DATASET));
   app.datasetId = Number.isInteger(dataset) && dataset > 0 ? dataset : null;
 }
@@ -69,7 +90,7 @@ export function startSession() {
   (async () => {
     try {
       const health = await connect();
-      app.dataFolder = health.data_folder;
+      app.dataFolder = health.data_folder; app.birdnet = health.birdnet;
       if (health.status !== 'ok') throw Error(health.detail || 'data_incompatible');
       await refreshCatalog(); app.connected = true;
     }

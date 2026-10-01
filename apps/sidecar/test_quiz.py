@@ -52,6 +52,9 @@ class QuizTest(unittest.TestCase):
                 self.assertEqual(plot.status_code,200,plot.text)
                 ref=snapshot['questions'][0]['clip']['source']['id']
                 self.assertEqual(plot.json(),client.get(f'/sources/reference/{ref}/spectrogram{interval}').json())
+                self.assertEqual(plot.json()['frequency_scale'],'mel')
+                self.assertEqual(client.get(f'/quiz/sessions/{sid}/questions/0/spectrogram{interval}&scale=linear').json()['frequency_scale'],'linear')
+                self.assertEqual(client.get(f'/quiz/sessions/{sid}/questions/0/spectrogram{interval}&scale=invalid').status_code,422)
                 self.assertTrue(plot.json()['pixels'])
                 self.assertFalse({'path','species','clip','source'} & plot.json().keys())
                 result = client.post(f'/quiz/sessions/{sid}/answers', json={'position': 0, 'species_id': correct}).json()

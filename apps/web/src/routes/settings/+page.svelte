@@ -13,7 +13,7 @@
   onMount(()=>{api<{birdnet:boolean}>('/health').then(value=>birdnet=value.birdnet).catch(()=>{});});
 </script>
 
-<div class="page">
+<div class="page narrow">
   {#if origin}<div class="crumbs"><a href={appHref(origin)}>{t('wReturn')}</a></div>{/if}
   <div class="page-header"><div><h1>{t('navSettings')}</h1><p>{t('settingsIntro')}</p></div></div>
   <SpeciesNames />

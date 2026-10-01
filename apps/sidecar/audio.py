@@ -3,6 +3,7 @@ import base64
 import json
 import math
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import soundfile as sf
@@ -68,7 +69,42 @@ def read_interval(row, start, end, maximum=60, *, native_rate=False):
         "source_sample_rate": rate, "source_channels": samples.shape[1], "sample_rate": rate if native_rate else 32000}
 
 
-def spectrogram(row, start, end, *, max_columns=1000):
+def _mel_power(power, frequencies, rows=256):
+    """Map linear FFT power to fixed HTK-mel rows, low to high."""
+    to_mel = lambda hz: 2595 * np.log10(1 + hz / 700)
+    to_hz = lambda mel: 700 * np.expm1(mel * np.log(10) / 2595)
+    edges = to_hz(np.linspace(0, to_mel(frequencies[-1]), rows + 1))
+    centers = to_hz((to_mel(edges[:-1]) + to_mel(edges[1:])) / 2)
+    result = np.empty((rows, power.shape[1]), dtype=power.dtype)
+    bin_width = frequencies[1] - frequencies[0]
+    for index, (low, high, center) in enumerate(zip(edges[:-1], edges[1:], centers)):
+        first = np.searchsorted(frequencies, low, side="left")
+        last = np.searchsorted(frequencies, high, side="right" if index == rows - 1 else "left")
+        if high - low >= bin_width and last > first:
+            result[index] = power[first:last].max(axis=0)
+        else:
+            upper = min(np.searchsorted(frequencies, center), len(frequencies) - 1)
+            lower = max(0, upper - 1)
+            weight = 0 if upper == lower else (center - frequencies[lower]) / (frequencies[upper] - frequencies[lower])
+            result[index] = power[lower] * (1 - weight) + power[upper] * weight
+    return result
+
+
+def _frequency_ticks(maximum, scale):
+    values = [value for value in (0, 1000, 2000, 4000, 8000, 12000) if value <= maximum]
+    if values[-1] != maximum:
+        values.append(maximum)
+    if scale == "mel":
+        denominator = 2595 * math.log10(1 + maximum / 700)
+        fraction = lambda hz: 2595 * math.log10(1 + hz / 700) / denominator
+    else:
+        fraction = lambda hz: hz / maximum
+    return [{"frequency_hz": float(value), "row_fraction": fraction(value)} for value in values]
+
+
+def spectrogram(row, start, end, *, max_columns=1000, scale: Literal["mel", "linear"] = "mel"):
+    if scale not in ("mel", "linear"):
+        raise ValueError("invalid frequency scale")
     # Display at the native rate: no resampling or scientific-library cold import.
     samples, interval = read_interval(row, start, end, native_rate=True)
     rate = interval['sample_rate']
@@ -86,10 +122,21 @@ def spectrogram(row, start, end, *, max_columns=1000):
     width = min(max_columns, power.shape[1])
     edges = np.linspace(0, power.shape[1], width + 1).astype(int)
     power = np.maximum.reduceat(power, edges[:-1], axis=1)
+    linear_frequencies = frequencies[included]
+    # 256 rows retain useful detail for the reduced-height UI while cutting the
+    # common 385-row payload by one third. Narrow low-frequency rows interpolate.
+    if scale == "mel":
+        power = _mel_power(power, linear_frequencies)
     db = 10 * np.log10(np.maximum(power, 1e-12))
     ceiling = max(-80.0, float(db.max()))
     pixels = (np.clip((db - (ceiling - 70)) / 70, 0, 1) * 255).astype(np.uint8)[::-1]
-    return {**interval, "width": width, "height": len(frequencies[frequencies <= 12000]),
+    maximum = float(linear_frequencies[-1])
+    result = {**interval, "width": width, "height": len(power),
             "window": "hann", "window_samples": size, "hop_samples": hop, "fft_samples": fft_size,
-            "frequency_max_hz": float(frequencies[included][-1]), "db_min": ceiling - 70, "db_max": ceiling,
+            "frequency_scale": scale, "frequency_min_hz": 0.0, "frequency_max_hz": maximum,
+            "frequency_ticks": _frequency_ticks(maximum, scale),
+            "db_min": ceiling - 70, "db_max": ceiling,
             "pixels": base64.b64encode(pixels.tobytes()).decode("ascii")}
+    if scale == "mel":
+        result["mel_formula"] = "HTK: 2595 * log10(1 + f / 700)"
+    return result

@@ -209,6 +209,9 @@ class SidecarCheck(unittest.TestCase):
                 body = dict(folder=str(folder), site_name="Test", dataset_name="August", timezone="Asia/Tokyo", latitude=35, longitude=138)
                 preview = client.post("/imports/preview", json=body).json()
                 self.assertEqual(preview["count"], 1)
+                self.assertEqual(preview["first"], preview["last"])
+                # The folder can be checked before the site is named.
+                self.assertEqual(client.post("/imports/preview", json={"folder": str(folder), "timezone": "Asia/Tokyo"}).json()["count"], 1)
                 self.assertEqual(preview["skipped"][0]["code"], "filename_time")
                 imported = client.post("/imports", json=body)
                 self.assertEqual(imported.status_code, 200, imported.text)

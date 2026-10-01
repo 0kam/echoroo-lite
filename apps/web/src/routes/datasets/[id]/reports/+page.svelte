@@ -5,9 +5,9 @@
   import { isTauri } from '@tauri-apps/api/core';
   import { chooseDirectory } from '$lib/files';
   import { api } from '$lib/api.svelte';
-  import { app,t } from '$lib/app.svelte';
+  import { app,t,dayRange,duration } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { rangeQuery,speciesGroup,type Overview } from '$lib/workflow';
+  import { fill,rangeQuery,speciesGroup,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -42,40 +42,44 @@
     await api(`/workflow-exports/${exportId}/open?kind=${kind}`,{});
   });
 </script>
-<div class="page report-page">
-  <div class="crumbs"><a href={back}>{t('uBackResults')}</a><span>{overview?.site.name}</span></div>
+<div class="page narrow report-page">
+  <div class="crumbs"><a href={back}>{t('uBackResults')}</a></div>
   <h1>{t('wExport')}</h1><p class="lead">{t('rExportIntro')}</p>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if overview}
     <section class="panel">
       <h2>{overview.site.name}</h2>
-      <p>{overview.start_date}–{overview.end_date} · {overview.site.timezone}</p>
-      <p>{overview.records.toLocaleString(app.locale)} {t('rAudioFiles')} · {(overview.recorded_seconds/3600).toLocaleString(app.locale,{maximumFractionDigits:1})} {t('rHours')}</p>
+      <p>{dayRange(overview.start_date,overview.end_date)} · {overview.site.timezone}</p>
+      <p>{fill('rRecordingsCount',{n:overview.records.toLocaleString(app.locale)})} · {fill('wTotalLength',{duration:duration(overview.recorded_seconds)})}</p>
       <details><summary>{t('wIncludeSpecies')} · {selected.length}</summary>
         {#each [false,true] as few}{@const rows=overview.species.filter(row=>(speciesGroup(row)==='few')===few)}
           {#if few&&rows.length}<h3>{t('wGroupFew')}</h3><p class="notice">{t('wFewCaution')}</p>{/if}
           {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending}/>
             <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i></span></label>{/each}{/each}
       </details>
-      <p>{t('rExportContents')}</p>
       {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} disabled={exportFiles.pending}/></label>{/if}
-      <Button variant="primary" pending={exportFiles.pending} disabled={!selected.length||(!isTauri()&&!folder)} onclick={()=>exportFiles.run()}>{t('rCreate')}</Button>
-      {#if exportFiles.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
-      {#if exportFiles.pending}<p role="status"><Spinner/> {t('rPreparing')}</p>{/if}
-      {#if exportFiles.error}<p class="error" role="alert">{t(exportFiles.error)}</p>{/if}
+      <!-- Same shape as adding recordings: a status box that is always there, then one fixed main button. -->
+      <div class="status-box" role="status" aria-live="polite">
+        {#if exportFiles.pending}<p class="busy"><Spinner/> {t('rPreparing')}</p><Button size="sm" pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>
+        {:else if exportFiles.error}<p class="error">{t(exportFiles.error)}</p>
+        {:else if output}<p><strong>{t('rCreated')}</strong> {t('rReady')}</p>
+          <div class="actions"><Button pending={openReport.pending} onclick={()=>openReport.run(output!.id,'document')}>{t('rOpen')}</Button>
+            <Button pending={openReport.pending} onclick={()=>openReport.run(output!.id,'folder')}>{t('rOpenFolder')}</Button></div>
+          <p class="path">{output.folder_path}</p>
+        {:else}<p>{t('rExportContents')}</p>{/if}
+        {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{/if}
+      </div>
+      <Button variant="primary" pending={exportFiles.pending} disabled={!selected.length||(!isTauri()&&!folder)} aria-describedby="export-reason" onclick={()=>exportFiles.run()}>{t('rCreate')}</Button>
+      <p class="muted" id="export-reason">{!selected.length?t('rSaveIdle'):!isTauri()&&!folder?t('rNeedFolder'):''}</p>
     </section>
-    {#if output}<section class="panel output" aria-live="polite"><h2>{t('rCreated')}</h2><p>{t('rReady')}</p>
-      <div class="actions"><Button variant="primary" pending={openReport.pending} onclick={()=>openReport.run(output!.id,'document')}>{t('rOpen')}</Button>
-        <Button pending={openReport.pending} onclick={()=>openReport.run(output!.id,'folder')}>{t('rOpenFolder')}</Button></div>
-      <p class="path">{output.folder_path}</p>
-    </section>{/if}
-    {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{/if}
     {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="saved">
       <div><p>{when(item.created_at)}</p>
         <small class="path">{item.folder_path??item.path}</small></div>
       {#if item.folder_path}<Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{/if}
     </div>{/each}</section>{/if}
-    {#if earlier.length}<details><summary>{t('wEarlierReports')} · {earlier.length}</summary>{#each earlier as item}<p><a href={`${resolve(`/datasets/${id}/reports/${item.id}`)}?${query}`}>{item.species?(item.species.common_names&&commonName(item.species,app.locale))||item.species.scientific_name:t('species')} · {item.start_date}–{item.end_date} · {when(item.created_at)}</a></p>{/each}</details>{/if}
+    {#if earlier.length}<details><summary>{t('wEarlierReports')} · {earlier.length}</summary>{#each earlier as item}<p><a href={`${resolve(`/datasets/${id}/reports/${item.id}`)}?${query}`}>{item.species?(item.species.common_names&&commonName(item.species,app.locale))||item.species.scientific_name:t('species')} · {item.start_date&&item.end_date?dayRange(item.start_date,item.end_date):''} · {when(item.created_at)}</a></p>{/each}</details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.report-page{max-width:960px}h1{margin-top:20px}h2{margin-bottom:12px}p{margin:16px 0}.lead{font-size:18px}.export-species{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}.export-species input{width:22px;height:22px}details{margin:24px 0}summary{font-size:18px;padding:12px 0;cursor:pointer}h3{margin:28px 0 0}.path{overflow-wrap:anywhere;color:rgb(var(--stone-700));font-size:14px}.saved{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:18px 0;border-top:1px solid rgb(var(--stone-300))}.saved p{margin:0 0 8px}.output{border-color:rgb(var(--primary-700))}</style>
+<style>h2{margin-bottom:12px}section>p,section>label{margin:16px 0}.lead{font-size:18px}.busy{display:flex;align-items:center;gap:8px}
+  .export-species{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}details{margin:24px 0}summary{font-size:18px;padding:12px 0;cursor:pointer}h3{margin:24px 0 0}
+  .path{overflow-wrap:anywhere;color:rgb(var(--stone-700));font-size:14px}.saved{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.saved p{margin:0 0 8px}</style>

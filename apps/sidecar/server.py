@@ -40,6 +40,13 @@ class DeleteRequest(BaseModel):
     revision: str = Field(min_length=64, max_length=64)
 
 
+class PreviewRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    folder: str
+    site_id: int | None = None
+    timezone: str
+
+
 class ImportRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     folder: str
@@ -548,10 +555,11 @@ def create_app(root, models, token):
     @app.get('/quiz/sessions/{session_id}/questions/{position}/spectrogram')
     def quiz_spectrogram(session_id: int, position: int,
                          start_s: float = Query(ge=0, allow_inf_nan=False),
-                         end_s: float = Query(gt=0, allow_inf_nan=False)):
+                         end_s: float = Query(gt=0, allow_inf_nan=False),
+                         scale: Literal['mel', 'linear'] = 'mel'):
         from quiz import question_source
         from audio import spectrogram
-        return spectrogram(question_source(root, session_id, position), start_s, end_s)
+        return spectrogram(question_source(root, session_id, position), start_s, end_s, scale=scale)
 
     @app.post("/references")
     def reference(body: ReferenceRequest):
@@ -594,9 +602,11 @@ def create_app(root, models, token):
     @app.get("/sources/{kind}/{source_id}/spectrogram")
     def source_spectrogram(kind: Literal["recording", "reference"], source_id: int,
                            start_s: float = Query(ge=0, allow_inf_nan=False),
-                           end_s: float = Query(gt=0, allow_inf_nan=False), detail: bool = False):
+                           end_s: float = Query(gt=0, allow_inf_nan=False), detail: bool = False,
+                           scale: Literal['mel', 'linear'] = 'mel'):
         from audio import source, spectrogram
-        return spectrogram(source(root, kind, source_id), start_s, end_s, max_columns=8000 if detail else 1000)
+        return spectrogram(source(root, kind, source_id), start_s, end_s,
+                           max_columns=8000 if detail else 1000, scale=scale)
 
     @app.post("/search")
     def similarity_search(body: SearchRequest):
@@ -665,12 +675,14 @@ def create_app(root, models, token):
         return preview_folder(root, body.folder, zone, operation)
 
     @app.post("/imports/preview")
-    def preview(body: ImportRequest):
+    def preview(body: PreviewRequest):
+        # Only the folder and time zone matter here, so the folder can be checked before the site is named.
         with lock:
             operation_cancel.clear()
             records, skipped = inspect(body, operation_cancel)
+            starts = [r[3] for r in records]
             return {"count": len(records), "seconds": sum(r[4] for r in records),
-                    "first": records[0][3] if records else None, "skipped": skipped}
+                    "first": min(starts, default=None), "last": max(starts, default=None), "skipped": skipped}
 
     @app.post("/imports")
     def import_folder(body: ImportRequest):

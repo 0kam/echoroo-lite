@@ -55,10 +55,11 @@ export function listenLabel(value:Validation|null) {
   if(value.stage==='complete')return t('wValidationDone');
   return fill('vListenContinue',{answered:value.counts.answered,total:value.counts.total});
 }
+/** Presence in words with a leading symbol, so it never relies on colour alone. */
 export function presenceText(presence:Presence) {
-  if(presence.status==='confirmed')return fill('pConfirmed',{n:presence.evidence.length});
-  if(presence.status==='not_found')return fill('pNotFound',{n:presence.miss!.listened});
-  return t('pUnchecked');
+  if(presence.status==='confirmed')return `✓ ${fill('pConfirmed',{n:presence.evidence.length})}`;
+  if(presence.status==='not_found')return `− ${fill('pNotFound',{n:presence.miss!.listened})}`;
+  return `○ ${t('pUnchecked')}`;
 }
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
 // Below this many detected intervals (by any AI), a species is more likely an AI mistake than present (review A2).

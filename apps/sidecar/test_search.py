@@ -36,11 +36,13 @@ class SearchCheck(unittest.TestCase):
                 self.assertEqual(client.get(url + '/audio?token=test', headers={'Authorization': '', 'Range': 'bytes=0-43'}).status_code, 206)
                 self.assertEqual(client.get('/sources/unknown/1/audio').status_code, 422)
                 self.assertEqual(client.post('/references', json={'path': str(root / 'test.txt')}).json()['detail'], 'reference_format')
-                view = client.get(url + '/spectrogram?start_s=1&end_s=61').json()
+                view = client.get(url + '/spectrogram?start_s=1&end_s=61&scale=linear').json()
                 pixels = np.frombuffer(base64.b64decode(view['pixels']), dtype=np.uint8).reshape(view['height'], view['width'])
                 self.assertLessEqual(view['width'], 1000)
                 frequency = 12000 - np.argmax(pixels.mean(axis=1)) * 31.25
                 self.assertAlmostEqual(frequency, 1000, delta=32)
+                self.assertEqual(view['frequency_scale'], 'linear')
+                self.assertEqual(client.get(url + '/spectrogram?start_s=1&end_s=2&scale=invalid').status_code, 422)
                 for start, end in [(-1, 1), (1, 1), (0, 61), (64, 66), ('nan', 2)]:
                     self.assertIn(client.get(url + f'/spectrogram?start_s={start}&end_s={end}').status_code, (400, 422))
                 samples, interval = read_interval(ref, 1, 7)

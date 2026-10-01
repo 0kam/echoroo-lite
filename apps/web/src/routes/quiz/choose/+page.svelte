@@ -50,7 +50,7 @@
     restored=true;
   })(); });
 </script>
-<div class="page quiz-choose"><div class="crumbs"><a href={`${resolve('/quiz')}${continuation}`}>{t('uBackQuiz')}</a></div>
+<div class="page narrow"><div class="crumbs"><a href={`${resolve('/quiz')}${continuation}`}>{t('uBackQuiz')}</a></div>
   <h1>{t('uQuizChoose')}</h1>
   {#if loadError}<p class="error">{t(loadError)}</p>{:else if library}
     <section class="panel"><label>{t('uQuizSaved')}<select bind:value={setId} onchange={chooseSet}><option value="">{t('quizAllClips')}</option>{#each library.sets as set}<option value={String(set.id)}>{set.bundled_key?t('quizSampleSet'):set.name}</option>{/each}</select></label>
@@ -63,4 +63,4 @@
       {#if saveSet.error}<p class="error">{t(saveSet.error)}</p>{/if}</form>
   {:else}<p>{t('loading')}</p>{/if}
 </div>
-<style>.quiz-choose{max-width:800px!important}label{margin:16px 0}.birds{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}.bird{padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}</style>
+<style>label{margin:16px 0}.birds{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}.bird{padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}</style>

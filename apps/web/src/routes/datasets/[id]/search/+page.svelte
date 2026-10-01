@@ -6,7 +6,7 @@
   import { isTauri } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { api } from '$lib/api.svelte';
-  import { app,t,activeJob,fileName } from '$lib/app.svelte';
+  import { t,activeJob,dayRange,fileName } from '$lib/app.svelte';
   import { type Species } from '$lib/species';
   import { rangeQuery } from '$lib/workflow';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
@@ -58,12 +58,14 @@
     if(query.get('species')){const chosen=await api<Species>(`/species/${encodeURIComponent(query.get('species')!)}`);if(chosen.id!==species?.id)species=chosen;}
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
 </script>
-<div class="page search-page"><div class="crumbs"><a href={back.href}>{t(back.label)}</a><span>{app.sites.find(s=>s.id===app.datasets.find(d=>d.id===id)?.site_id)?.name}</span></div>
-  <h1>{t(fromSpecies?'sSearchTitle':'sFindMissing')}</h1><p>{t('wFindHint')}</p>
+<div class="page search-page"><div class="crumbs"><a href={back.href}>{t(back.label)}</a></div>
+  <h1>{t(fromSpecies?'sSearchTitle':'sFindMissing')}</h1><p class="lead">{t('wFindHint')}</p>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
-  <section class="panel"><SpeciesPicker bind:value={species} disabled={search.pending}/></section>
+  <!-- Same numbered steps as adding recordings: species, example calls, search. -->
+  <div class="steps">
+  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/></section>
   {#if species}
-    <section class="panel"><h2>{t('wSource')}</h2><div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
+    <section class="panel step-card"><h2>{t('wSource')}</h2><div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
       <Button pending={addReference.pending} disabled={search.pending||(!isTauri()&&!referencePath.trim())} onclick={()=>addReference.run()}>{t('referenceFromFile')}</Button></div>
       {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending}/></label>{/if}
       {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference}/></div>{/key}{/if}
@@ -74,11 +76,12 @@
       {/if}
       {#if clips.length}<h3>{t('wQueriesAdded')}</h3><div class="added-clips">{#each clips as clip,index}<div class="actions"><Button disabled={search.pending} onclick={()=>{source=clip.source;start=clip.start_s;end=clip.end_s;}}>{fileName(clip.source.path)} · {clip.start_s.toFixed(1)}–{clip.end_s.toFixed(1)} {t('seconds')}</Button><Button disabled={search.pending} aria-label={`${t('removeReference')}: ${fileName(clip.source.path)}`} onclick={()=>{clips.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div>{/each}</div>{/if}
     </section>
-    <section class="panel"><p class="muted">{#if first&&last}{first}–{last} · {/if} {t('wAutoSaved')}</p>
+    <section class="panel step-card"><h2>{t('sSearchStepRun')}</h2><p class="muted">{#if first&&last}{dayRange(first,last)} · {/if} {t('wAutoSaved')}</p>
       {#if search.pending}<p class="muted" role="status">{t('searchingAudioStatus')}</p>{/if}
       <Button variant="primary" pending={search.pending} disabled={!!activeJob()||(!clips.length&&!valid)} onclick={()=>search.run()}>{search.pending?t('searchingAudio'):t('wSearchAction')}</Button>
       {#if search.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
       {#if search.error}<p class="error" role="alert">{t(search.error)}{#if search.error==='search_exists'} · <a href={`${resolve(`/datasets/${id}/species/${species.id}`)}${first&&last?`?${rangeQuery(first,last)}`:''}`}>{t('wOpenSpecies')}</a>{/if}</p>{/if}</section>
   {/if}
+  </div>
 </div>
-<style>.search-page{max-width:1050px}h1{margin:16px 0}h2{margin-bottom:16px}h3{margin:20px 0 8px}.reference-player{margin:20px 0}.actions{margin-bottom:16px}</style>
+<style>h2{margin-bottom:16px}h3{margin:24px 0 8px}.reference-player{margin:24px 0}.actions{margin-bottom:16px}</style>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api } from './api.svelte';
-  import { app,t } from './app.svelte';
+  import { app,t,day } from './app.svelte';
   import type { Cell,Report } from './reports';
   import SpiralPlot from './SpiralPlot.svelte';
   import AudioRegion from './AudioRegion.svelte';
@@ -25,7 +25,7 @@
       {#if report.cells.length}<SpiralPlot {report} compact onselect={select}/>{/if}
     </div>
     <section><h2>{t('evidenceAudio')}</h2>
-      {#if filter}<p>{filter.date} · {filter.hour}:00 <Button onclick={()=>select(null)}>{t('uAllSounds')}</Button></p>{/if}
+      {#if filter}<p>{day(filter.date)} · {filter.hour}:00 <Button onclick={()=>select(null)}>{t('uAllSounds')}</Button></p>{/if}
       {#if loading}<p role="status">{t('loading')}</p>
       {:else if hit}
         <p>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:report.site.timezone}).format(new Date(hit.local_time))} · {index+1} / {visible.evidence.length}</p>

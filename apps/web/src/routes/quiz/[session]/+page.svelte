@@ -11,9 +11,9 @@
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
+  import { fill } from '$lib/workflow';
   const context = quizContext(page.url);
   const quizUrl = `${resolve('/quiz')}${context.query ? `?${context.query}` : ''}`;
-  const returnUrl = context.returnPath ? `${resolve('/datasets')}${context.returnPath.slice('/datasets'.length)}` : '';
   const sessionId = $derived(Number(page.params.session));
   let session = $state<QuizSession | null>(null), loadError = $state('');
   let reviewPosition = $state<number | null>(null), questionPlayer = $state<{play:()=>Promise<void>;stop:()=>void}>();
@@ -39,8 +39,8 @@
 </script>
 
 <div class="page">
-  <div class="page-header"><div><div class="crumbs"><a href={quizUrl}>{t('quiz')}</a><span>›</span></div><h1>{t('quizSession')}</h1></div>
-    <div class="actions"><Button href={quizUrl}>‹ {t('backToQuiz')}</Button>{#if returnUrl}<Button href={returnUrl}>{t('wReturn')}</Button>{/if}</div></div>
+  <div class="crumbs"><a href={quizUrl}>{t('backToQuiz')}</a></div>
+  <h1>{session?.question?fill('quizTitleProgress',{n:session.question.position+1,total:session.count}):t('quiz')}</h1>
   {#if loadError}<div class="panel empty"><p class="error">{t(loadError === 'not_found' ? 'sessionNotFound' : loadError)}</p></div>
   {:else if !session}<p class="muted"><Spinner /> {t('loading')}</p>
   {:else}
@@ -98,15 +98,16 @@
 </div>
 
 <style>
-  .quiz-session { max-width: 960px; width: 100%; align-self: center; }
-  .question { margin-top: 20px; }
-  .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 20px 0; }
-  .choices :global(.choice) { justify-content: flex-start; text-align: left; white-space: normal; min-height: 76px; }
+  /* The question figure is 180 px, like the other 30-second views. */
+  .quiz-session :global(.spectrogram) { height: var(--spec-view); }
+  .question { margin-top: 24px; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 24px 0; }
+  .choices :global(.choice) { justify-content: flex-start; text-align: left; white-space: normal; min-height: 72px; }
   .choices :global(.unknown) { min-height: 50px; }
-  .feedback { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; border: 1px solid rgb(var(--primary-300)); padding: 18px; border-radius: 6px; }
+  .feedback { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid rgb(var(--primary-200)); padding: 16px; border-radius: 6px; }
   .bird-photo { max-width: 100%; width: 320px; max-height: 240px; object-fit: contain; border-radius: 4px; }
   :global(.next) { margin-top: 16px; }
   .result-score { margin: 12px 0; font-size: 28px; color: rgb(var(--primary-700)); }
-  .review-heading { margin-top: 20px; }
+  .review-heading { margin-top: 24px; }
   .review-list { max-height: 340px; overflow: auto; }
 </style>

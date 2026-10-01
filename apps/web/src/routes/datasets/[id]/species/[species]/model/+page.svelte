@@ -37,10 +37,11 @@
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${latest?`&engine=custom&model_id=${latest.id}`:''}`);
   const time=(hit:SearchHit)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium'}).format(new Date(hit.local_time));
 </script>
-<div class="page model-page">
+<div class="page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   <h1>{t('customModelTitle')}</h1>
-  {#if error}<p class="error" role="alert">{t(error)}</p>{#if error==='custom_search_needed'}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>{/if}{/if}
+  <!-- A missing search is a step still to do, not an error. -->
+  {#if error}<p class={error==='custom_search_needed'?'info':'error'} role={error==='custom_search_needed'?'status':'alert'}>{t(error)}</p>{#if error==='custom_search_needed'}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>{/if}{/if}
   {#if ready}
     <p class="species">{commonName(ready.species,app.locale)} <i class="sci">{ready.species.scientific_name}</i></p>
     <p>{t('customModelIntro')}</p>
@@ -49,16 +50,17 @@
       <p class="muted">{fill('mdNeed',{n:ready.requirements.positive_5s})}</p>
       {#each ready.hits.slice(0,shown) as hit,index (hit.segment_id)}<article class="row">
         <div class="row-head"><span class="rank">{index+1}</span><span>{time(hit)}</span><span class="muted">{fill('pSimilarity',{value:hit.similarity.toFixed(2)})}</span></div>
-        <AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange compact start={hit.start_s} end={hit.end_s}/>
-        <div class="actions" role="group" aria-label={t('customModelTitle')}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
-          <Button active={hit.label===value} aria-pressed={hit.label===value} pending={label.pending} onclick={()=>label.run(hit,value as 'target'|'other')}>{hit.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>
+        <AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange compact start={hit.start_s} end={hit.end_s}>
+          {#snippet actions()}<div class="actions" role="group" aria-label={t('customModelTitle')}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
+            <Button active={hit.label===value} aria-pressed={hit.label===value} pending={label.pending} onclick={()=>label.run(hit,value as 'target'|'other')}>{hit.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>{/snippet}
+        </AudioRegion>
       </article>{/each}
       {#if shown<ready.hit_count}<Button onclick={()=>{shown+=10;if(shown>ready!.hits.length)void load();}}>{t('pMore')}</Button>{/if}
     </section>
     <section class="panel">
       {#if ready.can_train}<Button variant={latest?'default':'primary'} pending={build.pending} onclick={()=>build.run()}>{t('customModelCreate')}</Button>
         {#if build.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button><p role="status"><Spinner/> {t('customModelPreparing')}</p>{/if}
-      {:else}{#each ready.reasons as reason}<p class="notice">{t(reason)}</p>{/each}{/if}
+      {:else}{#each ready.reasons as reason}<p class="info">{t(reason)}</p>{/each}{/if}
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
     </section>
     {#if ready.models.length}<section class="panel"><h2>{t('modelList')}</h2>
@@ -72,7 +74,7 @@
     <div class="actions"><Button href={back}>{t('wBackSpecies')}</Button></div>
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.model-page{max-width:1050px}h1{margin:12px 0}section p{margin:10px 0}.species{margin:0}.row{display:flex;flex-direction:column;gap:8px;padding:14px 0;border-top:1px solid rgb(var(--stone-300))}
-  .row-head{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}.rank{font-weight:700}
-  .model-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid rgb(var(--stone-200))}
+<style>section p{margin:12px 0}.species{margin:0}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
+  .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.rank{font-weight:700}
+  .model-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid rgb(var(--stone-200))}
   .confirm{flex-basis:100%;padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}</style>

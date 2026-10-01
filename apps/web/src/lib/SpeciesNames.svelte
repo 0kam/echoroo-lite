@@ -43,8 +43,8 @@
 <section class="panel species-settings">
   <h2>{t('speciesNames')}</h2><p class="muted">{t('speciesNamePolicy')}</p>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
-  <form class="name-search" onsubmit={event => { event.preventDefault(); void search(); }}>
-    <div class="inline"><label style="flex: 1">{t('findSpecies')}<input bind:value={query} oninput={schedule} required /></label><Button type="submit" pending={busy}>{t('search')}</Button></div>
+  <form class="inline" onsubmit={event => { event.preventDefault(); void search(); }}>
+    <label>{t('findSpecies')}<input bind:value={query} oninput={schedule} required /></label><Button type="submit" pending={busy}>{t('search')}</Button>
   </form>
   {#if searched}
     <div class="name-matches">
@@ -53,8 +53,8 @@
       </button>{:else}<p class="muted">{t('noSpeciesMatch')}</p>{/each}
     </div>
   {/if}
-  <form onsubmit={event => { event.preventDefault(); save.run(); }}>
-    <div class="section-heading"><h3>{t(selected ? 'editSpeciesName' : 'addSpecies')}</h3><Button type="button" size="sm" onclick={reset}>{t('addSpecies')}</Button></div>
+  <form class="stack names" onsubmit={event => { event.preventDefault(); save.run(); }}>
+    <div class="section-heading"><h3>{t(selected ? 'editSpeciesName' : 'addSpecies')}</h3>{#if selected}<Button type="button" size="sm" variant="ghost" onclick={reset}>{t('newSpecies')}</Button>{/if}</div>
     <div class="form-grid">
       <label>{t('scientificName')}<input bind:value={scientific} required maxlength="200" readonly={!!selected} /></label>
       <label>{t('japaneseName')}<input bind:value={japanese} maxlength="200" placeholder={selected?.common_names.ja || ''} /></label>
@@ -65,3 +65,7 @@
     {#if save.error}<p class="error" role="alert">{t(save.error)}</p>{/if}
   </form>
 </section>
+
+<style>
+  .names { margin-top: 24px; padding-top: 24px; border-top: 1px solid rgb(var(--stone-200)); }
+</style>

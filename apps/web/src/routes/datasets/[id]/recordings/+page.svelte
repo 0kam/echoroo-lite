@@ -6,9 +6,7 @@
   import { app, t, activeJob, datasetOf, siteOf, fileName, duration, siteTime, loadRecordings, refreshCatalog, type Recording } from '$lib/app.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
-  import JobStatus from '$lib/JobStatus.svelte';
-  import { createTask } from '$lib/ui/task.svelte';
-  import { notify } from '$lib/ui/toast.svelte';
+  import { fill } from '$lib/workflow';
   const id = $derived(Number(page.params.id));
   const dataset = $derived(datasetOf(id)), site = $derived(siteOf(dataset));
   const job = $derived(activeJob());
@@ -20,7 +18,7 @@
   const filtered = $derived(records.filter(r => !recordingDate || r.original_time.startsWith(recordingDate)));
   const pages = $derived(Math.max(1, Math.ceil(filtered.length / PAGE)));
   const visible = $derived(filtered.slice(pageIndex * PAGE, (pageIndex + 1) * PAGE));
-  const hours = $derived(records.reduce((sum, r) => sum + r.seconds, 0) / 3600);
+  const totalSeconds = $derived(records.reduce((sum, r) => sum + r.seconds, 0));
   $effect(() => {
     const dataset = id, version = app.recordingsVersion;
     loading = true; loadError = '';
@@ -47,8 +45,8 @@
         <div class="section-heading">
           <h2>{t('datasetRecordings')}</h2>
           <div class="stat-row">
-            <span><strong>{records.length}</strong>{t('files')}</span>
-            <span><strong>{hours.toFixed(1)}</strong>h</span>
+            <span>{fill('rRecordingsCount',{n:records.length})}</span>
+            <span>{fill('wTotalLength',{duration:duration(totalSeconds)})}</span>
             <span>{t('localTime')}</span>
           </div>
         </div>
@@ -60,7 +58,7 @@
               <label>{t('recordingDate')}<input type="date" bind:value={recordingDate} onchange={() => pageIndex = 0} /></label>
               <Button size="sm" disabled={!recordingDate} onclick={() => { recordingDate = ''; pageIndex = 0; }}>{t('clearRecordingDate')}</Button>
               {#if pages > 1}
-                <span class="muted" role="status">{filtered.length} {t('files')} · {t('recordingPage')} {pageIndex + 1} / {pages}</span>
+                <span class="muted" role="status">{fill('rRecordingsCount',{n:filtered.length})} · {t('recordingPage')} {pageIndex + 1} / {pages}</span>
                 <Button size="sm" disabled={pageIndex === 0} onclick={() => pageIndex--}>{t('previousRecordingPage')}</Button>
                 <Button size="sm" disabled={pageIndex + 1 >= pages} onclick={() => pageIndex++}>{t('nextRecordingPage')}</Button>
               {/if}

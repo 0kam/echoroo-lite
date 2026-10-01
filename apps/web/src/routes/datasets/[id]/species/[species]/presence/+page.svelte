@@ -45,8 +45,8 @@
   const time=(row:PresenceRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:list?.site.timezone}).format(new Date(row.local_time));
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}/presence?${range}&source=${source}`)}`);
 </script>
-<div class="page presence-page">
-  <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a><span>{list?.site.name}</span></div>
+<div class="page wide presence-page">
+  <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if list}
     <h1>{fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name})}</h1>
@@ -59,8 +59,9 @@
       {#each list.rows.slice(0,shown) as row,index (key(row))}<article class="row" class:marked={row.marked}>
         <div class="row-head"><span class="rank">{index+1}</span><span>{time(row)}</span>
           <span class="muted">{source==='search'?fill('pSimilarity',{value:(row.score??0).toFixed(2)}):flagged(row)}</span></div>
-        <AudioRegion source={row.source} fixedRange compact start={row.start_s} end={row.end_s} onplaying={()=>{if(!played.includes(key(row)))played=[...played,key(row)];}}/>
-        <Button variant={row.marked?'primary':'default'} aria-pressed={row.marked} pending={mark.pending} onclick={()=>mark.run(row)}>{row.marked?'✓ ':''}{t('pMark')}</Button>
+        <AudioRegion source={row.source} fixedRange compact start={row.start_s} end={row.end_s} onplaying={()=>{if(!played.includes(key(row)))played=[...played,key(row)];}}>
+          {#snippet actions()}<Button variant={row.marked?'primary':'default'} aria-pressed={row.marked} pending={mark.pending} onclick={()=>mark.run(row)}>{row.marked?'✓ ':''}{t('pMark')}</Button>{/snippet}
+        </AudioRegion>
       </article>{:else}<p>{t('pNoRows')}</p>{/each}
       {#if shown<list.rows.length}<Button onclick={()=>shown+=10}>{t('pMore')}</Button>{/if}
       {#if !anyMarked&&list.rows.length}<div class="miss">
@@ -73,8 +74,8 @@
     <div class="examples-column"><ReferencePanel species={list.species} datasetId={id} {practice}/></div></div>
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.presence-page{max-width:1280px}.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}
+<style>.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}
   .examples-column{position:sticky;top:16px}@media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}
-  h1{margin:12px 0}p{margin:8px 0}.status{font-size:18px}.row{display:flex;flex-direction:column;gap:8px;padding:14px 0;border-top:1px solid rgb(var(--stone-300))}
-  .row.marked{border-left:4px solid rgb(var(--primary-700));padding-left:12px}.row>:global(.button){align-self:flex-start}
-  .row-head{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}.rank{font-weight:700}.miss{margin:16px 0;padding:12px;border:1px solid rgb(var(--stone-300));border-radius:8px}</style>
+  p{margin:8px 0}.status{font-size:18px}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
+  .row.marked{border-left:4px solid rgb(var(--primary-700));padding-left:12px}
+  .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.rank{font-weight:700}.miss{margin:16px 0;padding:12px;border:1px solid rgb(var(--stone-300));border-radius:8px}</style>

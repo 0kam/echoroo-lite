@@ -36,7 +36,7 @@
     catch (e) { loadError = e instanceof Error ? e.message : 'unknown_error'; }
   })(); });
 </script>
-<div class="page quiz-home">
+<div class="page narrow quiz-home">
   {#if returnUrl}<div class="crumbs"><a href={returnUrl}>{t('wReturn')}</a></div>{/if}
   <h1>{t('quiz')}</h1><p>{t('uQuizHint')}</p>
   {#if loadError}<p class="error" role="alert">{t(loadError)}</p>
@@ -53,4 +53,4 @@
     <p class="muted">{t('quizPracticeHint')}</p>
   {/if}
 </div>
-<style>.quiz-home{max-width:800px!important}p{margin:16px 0}</style>
+<style>p{margin:16px 0}</style>
