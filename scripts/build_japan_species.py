@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHECKLIST_URL = "https://ornithology.jp/materials/checklist/jpbirdlist8ed_ver1.xlsx"
 WIKIDATA_URL = "https://query.wikidata.org/sparql"
 OUTPUT = ROOT / "apps/sidecar/data/japan-birds.json"
+DEFAULT_BIRDNET_LABELS = ROOT / "poc/models/birdnet/acoustic-models/v2.4/tf/labels/en_us.txt"
 # Reviewed genus moves in Perch's iNaturalist 2024 taxonomy (same species epithet).
 MANUAL = {
     "Accipiter gentilis": "Astur gentilis",
@@ -32,6 +33,36 @@ MANUAL = {
     "Ixobrychus flavicollis": "Botaurus flavicollis",
     "Ixobrychus sinensis": "Botaurus sinensis",
     "Pardaliparus venustulus": "Periparus venustulus",
+}
+# Reviewed BirdNET 2.4 names, keyed by the app's canonical Perch name.
+BIRDNET_MANUAL = {
+    "Anarhynchus alexandrinus": "Charadrius alexandrinus",
+    "Anarhynchus leschenaultii": "Charadrius leschenaultii",
+    "Anarhynchus mongolus": "Charadrius mongolus",
+    "Anarhynchus veredus": "Charadrius veredus",
+    "Ardea ibis": "Bubulcus ibis",
+    "Astur gentilis": "Accipiter gentilis",
+    "Botaurus cinnamomeus": "Ixobrychus cinnamomeus",
+    "Botaurus eurhythmus": "Ixobrychus eurhythmus",
+    "Botaurus flavicollis": "Ixobrychus flavicollis",
+    "Botaurus sinensis": "Ixobrychus sinensis",
+    "Coloeus dauuricus": "Corvus dauuricus",
+    "Coloeus monedula": "Corvus monedula",
+    "Emberiza personata": "Emberiza spodocephala",
+    "Eudromias morinellus": "Charadrius morinellus",
+    "Gallirallus okinawae": "Gallirallus okinawae",
+    "Helopsaltes amnicola": "Locustella amnicola",
+    "Helopsaltes certhiola": "Locustella certhiola",
+    "Helopsaltes ochotensis": "Locustella ochotensis",
+    "Helopsaltes pleskei": "Locustella pleskei",
+    "Helopsaltes pryeri": "Locustella pryeri",
+    "Larus vegae": "Larus argentatus",
+    "Parus cinereus": "Parus minor",
+    "Phasianus versicolor": "Phasianus colchicus",
+    "Tachyspiza gularis": "Accipiter gularis",
+    "Tachyspiza soloensis": "Accipiter soloensis",
+    "Thinornis dubius": "Charadrius dubius",
+    "Thinornis placidus": "Charadrius placidus",
 }
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
@@ -81,6 +112,54 @@ def perch_species(path):
         return {row[0] for row in rows if " " in row[0] and "_" not in row[0]}
 
 
+def birdnet_species(path):
+    return {line.partition("_")[0] for line in path.read_text(encoding="utf-8").splitlines() if "_" in line}
+
+
+def add_birdnet_mappings(payload, labels_path):
+    labels = birdnet_species(labels_path)
+    rows_by_species = {}
+    for row in payload["mappings"]:
+        rows_by_species.setdefault(row["perch_scientific_name"], []).append(row)
+    resolved = {canonical: target for canonical, target in BIRDNET_MANUAL.items()
+                if canonical in rows_by_species and target in labels}
+    methods = {canonical: "manual" for canonical in resolved}
+    claimed = {target: canonical for canonical, target in resolved.items()}
+    if len(claimed) != len(resolved):
+        raise ValueError("Two manual mappings use the same BirdNET species")
+    for canonical, rows in rows_by_species.items():
+        if canonical in resolved:
+            continue
+        checklist = {row["scientific_name"] for row in rows if row["scientific_name"] in labels}
+        if len(checklist) > 1:
+            raise ValueError(f"Conflicting checklist names for {canonical}: {sorted(checklist)}")
+        matched = next(iter(checklist), "")
+        method = "checklist_exact"
+        if not matched and canonical in labels:
+            matched, method = canonical, "perch_exact"
+        if matched in claimed:
+            matched, method = "", "unmatched"
+        if matched:
+            claimed[matched] = canonical
+        resolved[canonical], methods[canonical] = matched, method if matched else "unmatched"
+    for row in payload["mappings"]:
+        canonical = row["perch_scientific_name"]
+        matched, method = resolved[canonical], methods[canonical]
+        row["birdnet_scientific_name"] = matched
+        row["birdnet_method"] = method
+    mapped = [name for name in resolved.values() if name]
+    if len(mapped) != len(set(mapped)):
+        raise ValueError("Two app species map to the same BirdNET species")
+    payload["stats"].update({
+        f"birdnet_{method}": sum(value == method for value in methods.values())
+        for method in ("manual", "checklist_exact", "perch_exact", "unmatched")
+    })
+    payload["sources"] = [source for source in payload["sources"] if source.get("name") != "BirdNET 2.4 English labels"]
+    payload["sources"].append({"name": "BirdNET 2.4 English labels", "file": labels_path.name,
+                               "sha256": digest(labels_path)})
+    return payload
+
+
 def wikidata_matches(names, perch):
     """Return accepted taxon names linked through Wikidata's taxon-synonym relation."""
     found = {}
@@ -110,7 +189,7 @@ SELECT DISTINCT ?check ?acceptedName WHERE {{
     return {name: next(iter(values)) for name, values in found.items()}
 
 
-def build(checklist_path, labels_path, output=OUTPUT, offline=False):
+def build(checklist_path, labels_path, output=OUTPUT, offline=False, birdnet_labels=DEFAULT_BIRDNET_LABELS):
     checklist = checklist_species(checklist_path)
     perch = perch_species(labels_path)
     exact = {row["scientific_name"] for row in checklist} & perch
@@ -146,6 +225,7 @@ def build(checklist_path, labels_path, output=OUTPUT, offline=False):
         "mappings": mappings,
         "unmatched": unmatched,
     }
+    add_birdnet_mappings(payload, birdnet_labels)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(stats, ensure_ascii=False))
@@ -153,10 +233,24 @@ def build(checklist_path, labels_path, output=OUTPUT, offline=False):
     return payload
 
 
+def add_birdnet_to_existing(output=OUTPUT, labels_path=DEFAULT_BIRDNET_LABELS):
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    add_birdnet_mappings(payload, labels_path)
+    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(payload["stats"], ensure_ascii=False))
+    return payload
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("xlsx", nargs="?", type=Path, help="Downloaded jpbirdlist8ed_ver1.xlsx")
     parser.add_argument("--labels", type=Path, default=ROOT / "poc/models/perch-labels/assets/labels.csv")
+    parser.add_argument("--birdnet-labels", type=Path, default=DEFAULT_BIRDNET_LABELS)
+    parser.add_argument("--birdnet-only", action="store_true", help="Add BirdNET mappings to the existing JSON without rebuilding Perch mappings")
     parser.add_argument("--offline", action="store_true", help="Skip Wikidata and leave those taxa unmatched")
     args = parser.parse_args()
-    build((args.xlsx or download_checklist()).resolve(), args.labels.resolve(), offline=args.offline)
+    if args.birdnet_only:
+        add_birdnet_to_existing(labels_path=args.birdnet_labels.resolve())
+    else:
+        build((args.xlsx or download_checklist()).resolve(), args.labels.resolve(), offline=args.offline,
+              birdnet_labels=args.birdnet_labels.resolve())

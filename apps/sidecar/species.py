@@ -18,6 +18,18 @@ def additional_names():
 
 
 @lru_cache(maxsize=1)
+def birdnet_species_mapping():
+    data = json.loads((Path(__file__).parent / 'data/japan-birds.json').read_text(encoding='utf-8'))
+    return {row['birdnet_scientific_name']: row['perch_scientific_name'] for row in data['mappings']
+            if row.get('birdnet_scientific_name')}
+
+
+def canonical_scientific_name(engine, label):
+    scientific = str(label).partition('_')[0]
+    return birdnet_species_mapping().get(scientific) if engine == 'birdnet' else scientific
+
+
+@lru_cache(maxsize=1)
 def ebird_codes():
     # Built by scripts/build_ebird_codes.py from the eBird taxonomy; may be empty until then.
     path = Path(__file__).parent / 'data/ebird-codes.json'
@@ -72,17 +84,15 @@ def save_species(root, scientific_name, names):
 
 
 def decorate_candidates(db, engine, candidates):
-    def scientific(label):
-        return label.partition("_")[0] if engine == "birdnet" else label
-
-    keys = {scientific(row["label"]) for row in candidates}
+    keys = {canonical_scientific_name(engine, row["label"]) for row in candidates}
+    keys.discard(None)
     if not keys:
         return candidates
     placeholders = ",".join("?" for _ in keys)
     records = {row["scientific_name"]: names_for(row) for row in db.execute(
         f"SELECT * FROM species WHERE scientific_name IN ({placeholders})", tuple(keys))}
     for row in candidates:
-        record = records.get(scientific(row["label"]))
+        record = records.get(canonical_scientific_name(engine, row["label"]))
         row["species_id"] = record["id"] if record else None
         row["scientific_name"] = record["scientific_name"] if record else None
         row["common_names"] = record["common_names"] if record else {}

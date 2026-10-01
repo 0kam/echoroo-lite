@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-from species import names_for
+from species import canonical_scientific_name, names_for
 from storage import CatalogError, checked_source, connect
 
 
@@ -121,7 +121,11 @@ def candidate_list(db, analysis):
 def classification_windows(analysis, seconds, allowed):
     path = Path(analysis['scores_path'])
     stat = path.stat()
-    return cached_windows(str(path), stat.st_size, stat.st_mtime_ns, analysis['engine'], float(seconds), tuple(sorted(allowed)))
+    mapping_sha = ''
+    if analysis['engine'] == 'birdnet':
+        from analysis import species_mapping_sha256
+        mapping_sha = species_mapping_sha256()
+    return cached_windows(str(path), stat.st_size, stat.st_mtime_ns, analysis['engine'], float(seconds), tuple(sorted(allowed)), mapping_sha)
 
 
 def classification_batches(root, db, analyses, records):
@@ -140,7 +144,11 @@ def classification_batches(root, db, analyses, records):
             region_id = regions.setdefault(region_key, len(regions))
             signatures.append([a['id'], a['scores_path'], stat.st_size, stat.st_mtime_ns, a['engine'],
                                records[a['recording_id']]['seconds'], region_id])
-        key = hashlib.sha256(json.dumps(['native-windows-v2', signatures, list(regions)]).encode()).hexdigest()
+        mapping_sha = ''
+        if any(a['engine'] == 'birdnet' for a in batch):
+            from analysis import species_mapping_sha256
+            mapping_sha = species_mapping_sha256()
+        key = hashlib.sha256(json.dumps(['native-windows-v3', mapping_sha, signatures, list(regions)]).encode()).hexdigest()
         folder = Path(root) / 'window-batches'; folder.mkdir(exist_ok=True)
         path = folder / (key + '.npz')
         fields = ('labels', 'codes', 'sizes', 'starts', 'scores', 'best')
@@ -173,9 +181,9 @@ def classification_batches(root, db, analyses, records):
 
 
 @lru_cache(maxsize=8)
-def cached_windows(path, size, mtime, engine, seconds, allowed):
+def cached_windows(path, size, mtime, engine, seconds, allowed, mapping_sha=''):
     # The derived arrays are shared by all species, reports and validation.
-    key = hashlib.sha256(json.dumps([size, mtime, engine, seconds, allowed, 2]).encode()).hexdigest()[:20]
+    key = hashlib.sha256(json.dumps([size, mtime, engine, seconds, allowed, mapping_sha, 3]).encode()).hexdigest()[:20]
     cached = Path(path).with_name(Path(path).name + '.' + key + '.windows.npz')
     fields = ('labels', 'starts', 'scores', 'best_starts')
     if cached.exists():
@@ -211,7 +219,8 @@ def read_classification_windows(analysis, seconds, allowed):
             present = np.ones(len(scores), dtype=bool)
         else:
             raw_labels = saved['labels']
-            labels = np.array(sorted({str(s) for s in raw_labels} & set(allowed)))
+            labels = np.array(sorted(label for label in ({str(s) for s in raw_labels} & set(allowed))
+                                     if canonical_scientific_name('birdnet', label)))
             scores = np.full((slots, len(labels)), -np.inf)
             lookup = {label: i for i, label in enumerate(labels)}
             starts, ends, values = saved['start_s'], saved['end_s'], saved['scores']
@@ -227,7 +236,7 @@ def read_classification_windows(analysis, seconds, allowed):
                     scores[index, lookup[label]] = max(scores[index, lookup[label]], float(score))
             # Stored BirdNET scores are complete at threshold zero; missing entries are not negatives.
             present &= np.isfinite(scores).all(axis=1)
-            labels = np.array([label.partition('_')[0] for label in labels])
+            labels = np.array([canonical_scientific_name('birdnet', label) for label in labels])
     count = min(len(scores), slots)
     if not count or not len(labels):
         return labels, np.array([], dtype=int), np.empty((0, len(labels))), np.empty((0, len(labels)))

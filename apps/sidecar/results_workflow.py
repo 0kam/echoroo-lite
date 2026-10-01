@@ -7,7 +7,7 @@ from functools import lru_cache
 from types import SimpleNamespace
 
 from reports import detection, options, snapshot_view
-from species import names_for
+from species import canonical_scientific_name, names_for
 from storage import CatalogError, checked_source, connect
 
 
@@ -96,7 +96,7 @@ def detection_snapshot(root, ctx, model, species_id=None, threshold=.1):
     body = SimpleNamespace(dataset_id=ctx['dataset']['id'], engine=model['engine'], model_sha256=model['model_sha256'],
         threshold=threshold, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']),
         species_id=species_id, base_report_id=None)
-    return cached(root, ['detection-site-v6', ctx['fingerprint'], ctx['names_revision'], ctx['site']['name'], ctx['dataset']['name'], vars(body)], lambda: detection(root, body, persist=False))
+    return cached(root, ['detection-site-v7', ctx['fingerprint'], ctx['names_revision'], ctx['site']['name'], ctx['dataset']['name'], vars(body)], lambda: detection(root, body, persist=False))
 
 
 def search_for(root, ctx, species_id):
@@ -164,7 +164,7 @@ def attach_validation(snapshot, validation):
 
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    return cached(root, ['overview-v9', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
+    return cached(root, ['overview-v10', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
                   lambda: build_overview(root, dataset_id, ctx))
 
 
@@ -192,9 +192,19 @@ def build_overview(root, dataset_id, ctx):
     for model in ctx['models']:
         found = {s['species']['id']: s for s in detection_snapshot(root, ctx, model)['summaries']}
         for sid, key in quality:
+            if key != model['engine']:
+                continue
             threshold = threshold_for(quality[sid, key], model)
-            if key == model['engine'] and threshold != .1:
-                found.update({s['species']['id']: s for s in detection_snapshot(root, ctx, model, sid, threshold)['summaries'] if s['species']['id'] == sid})
+            if sid in found and threshold == .1:
+                continue
+            summaries = detection_snapshot(root, ctx, model, sid, threshold)['summaries']
+            summary = next((s for s in summaries if s['species']['id'] == sid), None)
+            if summary is None and sid in named:
+                summary = {'species': named[sid], 'eligible_windows': 0, 'candidate_windows': 0,
+                           'candidate_rate': None, 'recorded_days': 0, 'candidate_days': 0,
+                           'quality': 'not_evaluated'}
+            if summary is not None:
+                found[sid] = summary
         for summary in found.values():
             sid = summary['species']['id']
             validation=quality.get((sid, model['engine']))
@@ -234,7 +244,7 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
     custom = [m for m in list_models(root, ctx, species_id) if m['applicable']]
     with connect(root) as db:
         # Only models whose species list includes this species can count it.
-        listed = [m for m in ctx['models'] if any(str(label).partition('_')[0] == taxon['scientific_name'] for label in
+        listed = [m for m in ctx['models'] if any(canonical_scientific_name(m['engine'], label) == taxon['scientific_name'] for label in
                   candidate_list(db, db.execute('SELECT * FROM analyses WHERE id=?', (m['latest_analysis_id'],)).fetchone()) or [])]
     checks = [{'engine': m['engine'], 'key': m['engine'], 'model_id': None, 'model_sha256': m['model_sha256'],
                'validation': quality.get((species_id, m['engine']))} for m in listed]

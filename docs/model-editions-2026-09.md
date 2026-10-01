@@ -79,6 +79,23 @@
 - 未決：Perch のアオジは目録どおり *E. personata* とする。日本のアオジの録音で、Perch が *E. personata* と *E. spodocephala* の
   どちらに高いスコアを出すかは未確認。
 
+### 2026-10-01 実装
+
+- `japan-birds.json` の各対応に `birdnet_scientific_name` を追加した。既存の Wikidata 対応を変えずに更新するコマンドは
+  `python scripts/build_japan_species.py --birdnet-only`。BirdNET 2.4 英語ラベルの SHA-256 も出典へ保存する。
+- 手動対応は次の21件：アオジ *Emberiza spodocephala*、キジ *Phasianus colchicus*、セグロカモメ
+  *Larus argentatus*、アマサギ *Bubulcus ibis*、シジュウカラ *Parus minor*、チドリ類7件
+  （*Anarhynchus*／*Thinornis*／*Eudromias* → *Charadrius*）、ヨシゴイ類4件
+  （*Botaurus* → *Ixobrychus*）、タカ類3件（*Tachyspiza*／*Astur* → *Accipiter*）、
+  コクマルガラス類2件（*Coloeus* → *Corvus*）。候補に挙げたヤンバルクイナと
+  *Helopsaltes amnicola*／*H. pleskei* は対応先が BirdNET 2.4 ラベルにないため空欄とした。
+- BirdNET の地域モデル候補を対応済みの種だけに制限し、生の BirdNET ラベルは NPZ に保持したまま、窓を読む共通経路で
+  Perch 学名へ変換する。解析メタデータに対応 JSON の SHA-256 を保存し、窓キャッシュを更新した。報告、確認、在不在候補、
+  録音別候補、エクスポートはこの共通経路または同じ対応表を使う。
+- **未合意（実装上の判断）**：一つの BirdNET ラベルを二種へ割り当てない条件を優先し、指定されたアオジとキジへ割り当てた。
+  そのため、同じラベルと完全一致するシベリアアオジ *E. spodocephala* とタイリクキジ *P. colchicus* の対応は空欄にした。
+  また、コバシチドリ *Eudromias morinellus* → *Charadrius morinellus* を明白な属変更として手動対応へ加えた。
+
 ## 未決
 
 - BirdNET 付き版の注記の出し方（ホーム画面に常時表示か、初回起動時か）。BirdNET チームの回答を見て決める。

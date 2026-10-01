@@ -11,6 +11,7 @@ import soundfile as sf
 
 from audio import resample
 
+from species import birdnet_species_mapping
 from storage import CatalogError, checked_source, connect
 
 
@@ -45,6 +46,10 @@ def candidate_filter():
     path = Path(__file__).parent / "data/japan-birds.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     return {"source": data["sources"], "sha256": digest(path), "species": data["species"]}
+
+
+def species_mapping_sha256():
+    return digest(Path(__file__).parent / "data/japan-birds.json")
 
 
 def save(root, job, recording, engine, meta, scores, candidates, embeddings=None):
@@ -100,12 +105,15 @@ def run(root, models, job, records, site, cancel):
             # ponytail: year-round geo until seasonal filtering is specified and checked.
             species = geo.predict(site["latitude"], site["longitude"], week=None,
                                   min_confidence=0.03).to_structured_array()["species_name"].tolist()
+            mapped = birdnet_species_mapping()
+            species = [label for label in species if str(label).partition('_')[0] in mapped]
             if not species:
                 raise CatalogError("no_geo_species")
             bird_meta = {"model": "BirdNET 2.4 FP32 LiteRT", "model_sha256": digest(acoustic.model_path),
                          "geo_sha256": digest(geo.model_path), "latitude": site["latitude"],
                          "longitude": site["longitude"], "week": None, "geo_threshold": 0.03,
-                         "species": species, "score_type": "sigmoid_uncalibrated", "window_s": 3,
+                         "species": species, "species_mapping_sha256": species_mapping_sha256(),
+                         "score_type": "sigmoid_uncalibrated", "window_s": 3,
                          "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
                          "display_threshold": 0.1}
         progress("loading_perch", 0)

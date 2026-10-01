@@ -29,12 +29,33 @@ class WorkflowCheck(unittest.TestCase):
                 save(root,job,record,'birdnet',{'model_sha256':'birdnet','species':labels},dict(
                     labels=np.tile(labels,20),scores=bird.ravel(),start_s=np.repeat(np.arange(20)*3,3),end_s=np.repeat(np.arange(1,21)*3,3)),[])
                 probs=np.repeat([[.2,.2,.01],[.2,.2,.01],[.2,.2,.01],[.2,.05,.01]],3,axis=0)
-                save(root,job,record,'perch',{'model_sha256':'perch','candidate_filter':{'species':labels}},dict(
-                    labels=[s.partition('_')[0] for s in labels]+['Other'],logits=np.log(np.column_stack([probs,1-probs.sum(axis=1)]))),[])
+                perch_labels=['Horornis diphone','Parus cinereus','Astur gentilis']
+                save(root,job,record,'perch',{'model_sha256':'perch','candidate_filter':{'species':perch_labels}},dict(
+                    labels=perch_labels+['Other'],logits=np.log(np.column_stack([probs,1-probs.sum(axis=1)]))),[])
                 rows=client.get('/datasets/1/overview').json()['species']
-                self.assertEqual([r['species']['scientific_name'] for r in rows],['Parus minor','Horornis diphone','Accipiter gentilis'])
+                self.assertEqual([r['species']['scientific_name'] for r in rows],['Parus cinereus','Horornis diphone','Astur gentilis'])
                 self.assertEqual([{m['engine']:m['candidate_windows'] for m in r['models']} for r in rows],
                                  [{'birdnet':15,'perch':9},{'birdnet':5,'perch':12},{'birdnet':5}])
+
+    def test_overview_keeps_checked_model_with_zero_candidates(self):
+        from results_workflow import build_overview
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
+                species=client.get('/species?q=ウグイス').json()[0]
+                with connect(root) as db:
+                    site=dict(db.execute('SELECT * FROM sites').fetchone())
+                    dataset=dict(db.execute('SELECT * FROM datasets').fetchone())
+                model={'engine':'perch','model_sha256':'perch','name':'Perch','latest_analysis_id':1,'recordings':1}
+                quality={(species['id'],'perch'):{'applicable':True,'models':{'perch':'perch'},
+                    'thresholds':{'perch':{'threshold':.897}},'status':'decided'}}
+                ctx={'site':site,'dataset':dataset,'models':[model],'start_date':'2024-08-08','end_date':'2024-08-08'}
+                with patch('results_workflow.current_validations',return_value=quality), \
+                     patch('results_workflow.detection_snapshot',return_value={'summaries':[]}):
+                    row=next(r for r in build_overview(root,1,ctx)['species'] if r['species']['id']==species['id'])
+                self.assertEqual([(m['engine'],m['candidate_windows'],m['threshold']) for m in row['models']],
+                                 [('perch',0,.897)])
 
     def test_analysis_prepares_native_windows(self):
         from analysis import save
