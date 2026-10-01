@@ -61,6 +61,24 @@
 - `check_frozen.py` を Perch だけのモデル置き場でも実行する。Windows CI は両版を作る。
 - README、model-sources.md、implementation-status.md を更新する。
 
+## 7. BirdNET 付き版の種の対応（2026-10-01 実装方針）
+
+2026-10-01 にユーザーが「モデル間の種の対応を別の作業として整える」ことを了承した。以下は実装の方針で、細部は未合意。
+
+- 問題：BirdNET の結果は BirdNET の学名のまま種になるため、同じ鳥がモデルごとに別の種になる
+  （シジュウカラ：Perch *Parus cinereus* / BirdNET *Parus minor*、キジ：*Phasianus versicolor* / *P. colchicus*、
+  アマサギ：*Ardea ibis* / *Bubulcus ibis*、セグロカモメ：*Larus vegae* / *L. argentatus*、アオジ：*Emberiza personata* / *E. spodocephala*）。
+  比較報告の限界の欄（ToriNET の対応表の監査）でも同じ例が挙がっている。
+- アプリの種は、日本鳥類目録の1種につき1つとし、学名は今どおり Perch の学名で表す。
+- `japan-birds.json` の各種に、BirdNET 2.4 のラベルの学名（`birdnet_scientific_name`）を加える。
+  対応の順番は、手動の対応表 → 目録の学名の完全一致 → Perch の学名の完全一致。BirdNET にない種は空にする。
+  手動の対応表を先にするのは、BirdNET に目録の学名と同名の別の分類群があるため（例：シジュウカラの *Parus cinereus* ではなく *Parus minor*）。
+- BirdNET の候補は、地域モデルの一覧のうち、この対応がある BirdNET の学名だけにする。結果を読むときに Perch の学名へ置き換え、
+  元のラベルは解析ファイルに残す。置き換えに使った一覧の SHA-256 を解析メタデータに残す。
+- 検査：上の5例が対応すること、BirdNET の学名がすべて BirdNET のラベルにあること、2つの種が同じ BirdNET の学名に対応しないこと。
+- 未決：Perch のアオジは目録どおり *E. personata* とする。日本のアオジの録音で、Perch が *E. personata* と *E. spodocephala* の
+  どちらに高いスコアを出すかは未確認。
+
 ## 未決
 
 - BirdNET 付き版の注記の出し方（ホーム画面に常時表示か、初回起動時か）。BirdNET チームの回答を見て決める。
