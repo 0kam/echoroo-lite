@@ -68,10 +68,12 @@ export function presenceText(presence:Presence) {
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
 // About 10 detected intervals in 30 hours of recording; below that a species is more likely an AI mistake than present (review A2, A5).
 export const fewBelow = (recordedSeconds:number) => recordedSeconds/3600/3;
-/** Site list sections: confirmed by listening, listened but not confirmed, worth checking, or few detections and nothing done yet. */
-export function speciesGroup(row:Overview['species'][number],recordedSeconds:number):'confirmed'|'missed'|'check'|'few' {
+/** Site list sections: confirmed by listening, listened but not confirmed, worth checking, few detections and nothing done yet,
+ * or not expected here by the BirdNET range model. A person's listening outranks the range model. */
+export function speciesGroup(row:Overview['species'][number],recordedSeconds:number):'confirmed'|'missed'|'check'|'few'|'rare' {
   if(row.presence.status==='confirmed')return 'confirmed';
   if(row.presence.status==='not_found')return 'missed';
+  if(row.region==='unusual')return 'rare';
   const most=Math.max(0,...row.models.map(model=>model.candidate_windows??0));
   const touched=row.search||row.models.some(model=>model.validation);
   return !touched&&most<fewBelow(recordedSeconds)?'few':'check';

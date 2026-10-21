@@ -27,13 +27,14 @@
   const analyze=createTask(async()=>{await api('/jobs',{dataset_id:id,recording_id:null});await refreshCatalog();},{toast:true});
   const range=$derived(result?`?${rangeQuery(result.start_date,result.end_date)}`:'');
   type Row=Overview['species'][number];
-  const groups=$derived(Object.fromEntries((['confirmed','missed','check','few'] as const).map(key=>[key,result?.species.filter(row=>speciesGroup(row,result!.recorded_seconds)===key)??[]])) as Record<'confirmed'|'missed'|'check'|'few',Row[]>);
-  // The next step: the most-detected species nobody has listened to yet; when none needs checking, the first of the few detections (A5).
-  const fewFirst=$derived(!groups.check.length);
-  const next=$derived((fewFirst?groups.few:groups.check).find(row=>row.presence.status==='unchecked'));
+  const order=['confirmed','missed','check','few','rare'] as const;
+  const groups=$derived(Object.fromEntries(order.map(key=>[key,result?.species.filter(row=>speciesGroup(row,result!.recorded_seconds)===key)??[]])) as Record<typeof order[number],Row[]>);
+  // The next step: the most-detected species nobody has listened to yet; then the few detections (A5); species rare here only when nothing else is left.
+  const stage=$derived(groups.check.length?'check':groups.few.length?'few':'rare');
+  const next=$derived(groups[stage].find(row=>row.presence.status==='unchecked'));
   const speciesHref=(row:Row)=>`${resolve(`/datasets/${id}/species/${row.species.id}`)}${range}&engine=${row.models.find(m=>(m.candidate_windows??0)>0)?.engine??'auto'}`;
   const reports=$derived(`${resolve(`/datasets/${id}/reports`)}${range}`);
-  const titles={confirmed:'wGroupConfirmed',missed:'wGroupMissed',check:'wGroupCheck',few:'wGroupFew'};
+  const titles={confirmed:'wGroupConfirmed',missed:'wGroupMissed',check:'wGroupCheck',few:'wGroupFew',rare:'wGroupRare'};
   // A column that says the same thing on every row becomes one note above the table.
   const anyActivity=$derived(!!result?.species.some(row=>activity(row.models)!=='not_started'));
   // Listening still needed for "when and how much" on the species worth checking (A2, B3: one AI each).
@@ -60,7 +61,7 @@
     {#if result.location_stale}<p class="notice" role="status">{t('location_reanalysis')}</p>{/if}
     {#if result.species.length&&result.analysed_recordings===result.records&&!result.location_stale}<section class="panel next-step">
       <p><strong>{t(!next?'wNextExport':groups.confirmed.length?'wNextMore':'wNextListen')}</strong></p>
-      <p>{fill('wProgress',{total:result.species.length-(fewFirst?0:groups.few.length),confirmed:groups.confirmed.length,missed:groups.missed.length})}</p>
+      <p>{fill('wProgress',{total:result.species.length-(stage==='check'?groups.few.length:0)-(stage==='rare'?0:groups.rare.length),confirmed:groups.confirmed.length,missed:groups.missed.length})}</p>
       {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,low:effort.low,high:effort.high})}</p>{/if}
       <div class="actions">{#if next}<Button variant="primary" href={speciesHref(next)}>{fill('wNextOpen',{name:commonName(next.species,app.locale)||next.species.scientific_name})}</Button>{/if}
         <Button variant={next?'default':'primary'} href={reports}>{t('wExport')}</Button></div></section>{/if}
@@ -78,8 +79,8 @@
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindMissing')}</Button></div>
       <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>{#if result.species.length&&!anyActivity}<p class="muted">{t('wActivityNoneAll')}</p>{/if}
       {#if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
-      {#each (['confirmed','missed','check','few'] as const) as key}{@const rows=groups[key]}{#if rows.length}
-        {#if key==='few'}<details class="group" open={fewFirst}><summary><h3>{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3></summary><p class="notice">{t('wFewCaution')}</p>{@render table(rows)}</details>
+      {#each order as key}{@const rows=groups[key]}{#if rows.length}
+        {#if key==='few'||key==='rare'}<details class="group" open={stage===key}><summary><h3>{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3></summary><p class="notice">{t(key==='few'?'wFewCaution':'wRareHint')}</p>{@render table(rows)}</details>
         {:else}<h3 class="group">{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3>{#if key==='missed'}<p class="muted">{t('wMissedHint')}</p>{/if}{@render table(rows)}{/if}
       {/if}{/each}
       {#if !result.species.length}<p>{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</p>{/if}

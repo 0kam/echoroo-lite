@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from reports import classification_batches
+from reports import classification_batches, classification_species_windows
 
 
 class WindowBatchCheck(unittest.TestCase):
@@ -14,17 +14,34 @@ class WindowBatchCheck(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             path = root / 'scores.npz'; path.write_bytes(b'test')
-            analyses = [dict(id=i, recording_id=i, scores_path=str(path), engine='birdnet') for i in range(257)]
+            analyses = [dict(id=i, recording_id=i, scores_path=str(path), engine='birdnet',
+                             metadata='{"model_sha256":"model"}') for i in range(257)]
             records = {a['id']: {'seconds': 30} for a in analyses}
             outputs = [(np.array(['B', 'A']), np.array([0, 15]), np.array([[.1, .8], [.9, .2]]), np.array([[3, 6], [18, 21]])),
                        (np.array(['C']), np.array([], dtype=int), np.empty((0, 1)), np.empty((0, 1)))]
             def read(a, *_):
                 return outputs[a['id'] % 2]
             with patch('reports.candidate_list', return_value=['B', 'A', 'C']), patch('reports.classification_windows', side_effect=read) as loader:
-                for _ in range(2):
-                    for a, allowed, arrays in classification_batches(root, None, analyses, records):
+                for run in range(2):
+                    for a, allowed, arrays in classification_batches(root, None, analyses, records,
+                                                                      index_species=run == 0):
                         for actual, expected in zip(arrays, read(a)):
                             np.testing.assert_array_equal(actual, expected)
+                self.assertEqual(loader.call_count, 257)
+                analysis_ids, recording_ids, starts, scores = classification_species_windows(
+                    root, None, analyses, records, 'A')
+                self.assertEqual(len(scores), 258)
+                self.assertTrue(np.all(analysis_ids % 2 == 0))
+                np.testing.assert_array_equal(recording_ids, analysis_ids)
+                np.testing.assert_array_equal(np.tile([0, 15], 129), starts)
+                np.testing.assert_allclose(np.tile([.8, .2], 129), scores)
+                *_, best = classification_species_windows(root, None, analyses, records, 'A', True)
+                np.testing.assert_array_equal(np.tile([6, 21], 129), best)
+                analyses[0]['metadata']='{"model_sha256":"changed"}'
+                self.assertIsNone(classification_species_windows(root,None,analyses,records,'A'))
+                analyses[0]['metadata']='{"model_sha256":"model"}'
+                self.assertTrue(all(arrays[3] is None for _, _, arrays in
+                                    classification_batches(root, None, analyses, records, False)))
                 self.assertEqual(loader.call_count, 257)
                 path.write_bytes(b'changed')
                 list(classification_batches(root, None, analyses, records))

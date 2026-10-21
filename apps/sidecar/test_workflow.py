@@ -46,10 +46,21 @@ class WorkflowCheck(unittest.TestCase):
                 perch_labels=['Horornis diphone','Parus cinereus','Astur gentilis']
                 save(root,job,record,'perch',{'model_sha256':'perch','candidate_filter':{'species':perch_labels}},dict(
                     labels=perch_labels+['Other'],logits=np.log(np.column_stack([probs,1-probs.sum(axis=1)]))),[])
-                rows=client.get('/datasets/1/overview').json()['species']
+                first=client.get('/datasets/1/overview').json()
+                rows=first['species']
                 self.assertEqual([r['species']['scientific_name'] for r in rows],['Parus cinereus','Horornis diphone','Astur gentilis'])
                 self.assertEqual([{m['engine']:m['candidate_windows'] for m in r['models']} for r in rows],
                                  [{'birdnet':15,'perch':9},{'birdnet':5,'perch':12},{'birdnet':5}])
+                with connect(root) as db: db.execute('DELETE FROM workflow_cache')
+                with patch('reports.classification_batches',side_effect=AssertionError('summary cache missed')):
+                    self.assertEqual(client.get('/datasets/1/overview').json(),first)
+                with connect(root) as db:
+                    db.execute("UPDATE analyses SET metadata=json_set(metadata,'$.model_sha256','birdnet-new') WHERE engine='birdnet'")
+                    db.execute('DELETE FROM workflow_cache')
+                from reports import classification_batches
+                with patch('reports.classification_batches',wraps=classification_batches) as batches:
+                    self.assertEqual(client.get('/datasets/1/overview').status_code,200)
+                    self.assertTrue(batches.called)
 
     def test_region_status_uses_saved_birdnet_species_for_all_payloads(self):
         from analysis import save

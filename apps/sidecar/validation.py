@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 from scipy.special import expit, logit
 
-from reports import analysis_metadata, classification_batches, window_in_scope
+from reports import analysis_metadata, classification_batches, classification_species_windows, window_in_scope
 from species import names_for
 from storage import CatalogError, checked_source, connect
 
@@ -227,8 +227,24 @@ def model_windows(root, ctx, species_id, engine, model_id=None):
             (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) ORDER BY a.recording_id''', (ctx['dataset']['id'], engine)).fetchall()
         records, windows, models, analyses = {row['recording_id']: row for row in rows}, [], {}, []
         width = native_window(engine)
-        for row, allowed, arrays in classification_batches(root, db, rows, records):
+        for row in rows:
             checked_source(row)
+        indexed = classification_species_windows(root, db, rows, records, taxon['scientific_name'])
+        if indexed is not None:
+            analysis_ids, recording_ids, starts, scores = indexed
+            by_id = {row['id']: row for row in rows}
+            for aid in dict.fromkeys(int(value) for value in analysis_ids):
+                row = by_id[aid]
+                sha = analysis_metadata(row['metadata'])['model_sha256']
+                if models.setdefault(engine, sha) != sha: raise CatalogError('validation_mixed_models')
+                analyses.append(aid)
+            for rid, start, score in zip(recording_ids, starts, scores):
+                end = float(start) + width
+                record = records[int(rid)]
+                if window_in_scope(record, float(start), end, zone, ctx['start_date'], ctx['end_date']):
+                    windows.append({'recording_id': int(rid), 'start_s': float(start), 'end_s': end, 'score': float(score)})
+            return windows, models, analyses
+        for row, allowed, arrays in classification_batches(root, db, rows, records, False, True):
             if allowed is None: continue
             labels, starts, scores, _ = arrays
             matches = np.flatnonzero(labels == taxon['scientific_name'])

@@ -6,6 +6,7 @@ import csv
 import io
 import json
 import zipfile
+import zlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -128,7 +129,83 @@ def classification_windows(analysis, seconds, allowed):
     return cached_windows(str(path), stat.st_size, stat.st_mtime_ns, analysis['engine'], float(seconds), tuple(sorted(allowed)), mapping_sha)
 
 
-def classification_batches(root, db, analyses, records):
+def _batch_paths(root, batch, allowed, records):
+    signatures, regions, model_shas = [], {}, []
+    for a, region in zip(batch, allowed):
+        stat = Path(a['scores_path']).stat()
+        region_key = tuple(sorted(region))
+        region_id = regions.setdefault(region_key, len(regions))
+        signatures.append([a['id'], a['scores_path'], stat.st_size, stat.st_mtime_ns, a['engine'],
+                           records[a['recording_id']]['seconds'], region_id])
+        model_shas.append(analysis_metadata(a['metadata']).get('model_sha256') if 'metadata' in a.keys() else None)
+    mapping_sha = ''
+    if any(a['engine'] == 'birdnet' for a in batch):
+        from analysis import species_mapping_sha256
+        mapping_sha = species_mapping_sha256()
+    key = hashlib.sha256(json.dumps(['native-windows-v3', mapping_sha, signatures, list(regions)]).encode()).hexdigest()
+    species_key = hashlib.sha256(json.dumps(['species-windows-v2', key, model_shas]).encode()).hexdigest()
+    folder = Path(root) / 'window-batches'; folder.mkdir(exist_ok=True)
+    return folder / (key + '.npz'), folder / (species_key + '.species.npz')
+
+
+def _write_species_index(path, batch, labels, codes, sizes, starts, scores, best):
+    total = sum(int(windows) for _, windows in sizes)
+    columns = [[np.full(total, np.nan), np.full(total, np.nan)] for _ in labels]
+    analysis_ids = np.empty(total, dtype=np.int64)
+    recording_ids = np.empty(total, dtype=np.int64)
+    li = wi = si = 0
+    for analysis, (count, windows) in zip(batch, sizes):
+        count, windows = int(count), int(windows)
+        end = wi + windows
+        analysis_ids[wi:end] = analysis['id']
+        recording_ids[wi:end] = analysis['recording_id']
+        matrix = scores[si:si + count * windows].reshape(windows, count)
+        best_matrix = best[si:si + count * windows].reshape(windows, count)
+        for local, code in enumerate(codes[li:li + count]):
+            columns[int(code)][0][wi:end] = matrix[:, local]
+            columns[int(code)][1][wi:end] = best_matrix[:, local]
+        li += count; wi = end; si += count * windows
+    temporary = path.with_suffix('.' + uuid4().hex + '.tmp')
+    try:
+        with temporary.open('wb') as stream:
+            np.savez(stream, labels=labels, analysis_ids=analysis_ids, recording_ids=recording_ids,
+                     starts=starts, **{f'{kind}{i}': column[k] for i, column in enumerate(columns)
+                                      for k, kind in enumerate(('s', 'b'))})
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def classification_species_windows(root, db, analyses, records, species, include_best=False):
+    """Read one species from the analysis-keyed index without loading every score column."""
+    found = [[] for _ in range(5 if include_best else 4)]
+    for offset in range(0, len(analyses), 256):
+        batch = analyses[offset:offset + 256]
+        allowed = [candidate_list(db, a) for a in batch]
+        if len(analyses) <= 256 or any(region is None for region in allowed):
+            return None
+        _, path = _batch_paths(root, batch, allowed, records)
+        try:
+            with np.load(path, allow_pickle=False) as saved:
+                matches = np.flatnonzero(saved['labels'] == species)
+                if not len(matches):
+                    continue
+                arrays = [saved[key] for key in ('analysis_ids', 'recording_ids', 'starts')]
+                scores = saved[f's{int(matches[0])}']
+                if include_best:
+                    arrays.append(saved[f'b{int(matches[0])}'])
+        except (OSError, ValueError, KeyError):
+            return None
+        valid = np.isfinite(scores)
+        values = (*arrays[:3], scores, *arrays[3:])
+        if len(found) < len(values):
+            found.append([])
+        for output, values in zip(found, values):
+            output.append(values[valid])
+    return tuple(np.concatenate(values) if values else np.array([]) for values in found)
+
+
+def classification_batches(root, db, analyses, records, include_best=True, index_species=False):
     """Read annual outputs in bounded batches instead of reopening thousands of ZIPs per species."""
     for offset in range(0, len(analyses), 256):
         batch = analyses[offset:offset + 256]
@@ -137,46 +214,53 @@ def classification_batches(root, db, analyses, records):
             for a, region in zip(batch, allowed):
                 yield a, region, classification_windows(a, records[a['recording_id']]['seconds'], region) if region is not None else None
             continue
-        signatures, regions = [], {}
-        for a, region in zip(batch, allowed):
-            stat = Path(a['scores_path']).stat()
-            region_key = tuple(sorted(region))
-            region_id = regions.setdefault(region_key, len(regions))
-            signatures.append([a['id'], a['scores_path'], stat.st_size, stat.st_mtime_ns, a['engine'],
-                               records[a['recording_id']]['seconds'], region_id])
-        mapping_sha = ''
-        if any(a['engine'] == 'birdnet' for a in batch):
-            from analysis import species_mapping_sha256
-            mapping_sha = species_mapping_sha256()
-        key = hashlib.sha256(json.dumps(['native-windows-v3', mapping_sha, signatures, list(regions)]).encode()).hexdigest()
-        folder = Path(root) / 'window-batches'; folder.mkdir(exist_ok=True)
-        path = folder / (key + '.npz')
+        path, species_path = _batch_paths(root, batch, allowed, records)
         fields = ('labels', 'codes', 'sizes', 'starts', 'scores', 'best')
+        requested = fields if include_best else fields[:-1]
         packed = None
         if path.exists():
             try:
                 with np.load(path, allow_pickle=False) as saved:
-                    packed = [saved[field] for field in fields]
+                    packed = [saved[field] for field in requested]
             except (OSError, ValueError, KeyError):
                 pass
         if packed is None:
             arrays = [classification_windows(a, records[a['recording_id']]['seconds'], region) for a, region in zip(batch, allowed)]
             labels, codes = np.unique(np.concatenate([a[0] for a in arrays]), return_inverse=True)
-            packed = [labels, codes, np.array([(len(a[0]), len(a[1])) for a in arrays]),
+            stored = [labels, codes, np.array([(len(a[0]), len(a[1])) for a in arrays]),
                       *[np.concatenate([a[i].ravel() for a in arrays]) for i in (1, 2, 3)]]
             temporary = path.with_suffix('.' + uuid4().hex + '.tmp')
             try:
                 with temporary.open('wb') as stream:
-                    np.savez(stream, **dict(zip(fields, packed)))
+                    np.savez(stream, **dict(zip(fields, stored)))
                 temporary.replace(path)
             finally:
                 temporary.unlink(missing_ok=True)
-        labels, codes, sizes, starts, scores, best = packed
+            packed = stored if include_best else stored[:-1]
+        labels, codes, sizes, starts, scores = packed[:5]
+        if index_species:
+            valid_index = False
+            if species_path.exists():
+                try:
+                    with np.load(species_path, allow_pickle=False) as saved:
+                        valid_index = all(key in saved for key in ('labels', 'analysis_ids', 'recording_ids', 'starts')) and \
+                                      (not len(saved['labels']) or 'b0' in saved)
+                except (OSError, ValueError):
+                    pass
+            if not valid_index:
+                if include_best:
+                    index_best = packed[5]
+                else:
+                    with np.load(path, allow_pickle=False) as saved:
+                        index_best = saved['best']
+                _write_species_index(species_path, batch, labels, codes, sizes, starts, scores, index_best)
+        best = packed[5] if include_best else None
         li = wi = si = 0
         for a, region, (columns, windows) in zip(batch, allowed, sizes):
             count = columns * windows
             yield a, region, (labels[codes[li:li + columns]], starts[wi:wi + windows],
-                              scores[si:si + count].reshape(windows, columns), best[si:si + count].reshape(windows, columns))
+                              scores[si:si + count].reshape(windows, columns),
+                              best[si:si + count].reshape(windows, columns) if include_best else None)
             li += columns; wi += windows; si += count
 
 
@@ -289,12 +373,43 @@ def detection(root, body, *, persist=True):
         records=scope_records(records,zone,body.start_date,body.end_date)
         record_ids={r['id'] for r in records}
         analyses=[a for a in analyses if a['recording_id'] in record_ids]
+        summary_path = None
+        if not persist and wanted is None and body.base_report_id is None:
+            signatures = []
+            for analysis in analyses:
+                stat = Path(analysis['scores_path']).stat()
+                signatures.append([analysis['id'], analysis_metadata(analysis['metadata']).get('model_sha256'),
+                                   analysis['metadata'], analysis['scores_path'], stat.st_size, stat.st_mtime_ns])
+            key = hashlib.sha256(json.dumps(['detection-summary-v1', vars(body), dataset, site, records,
+                species_rows, signatures], sort_keys=True, default=str).encode()).hexdigest()
+            summary_path = Path(root) / 'window-batches' / (key + '.detection.json.z')
+            if summary_path.exists():
+                try:
+                    return json.loads(zlib.decompress(summary_path.read_bytes()))
+                except (OSError, ValueError, zlib.error):
+                    pass
         cells = calendar_cells(records, zone, body.start_date, body.end_date)
         indexed = {r['id']: r for r in records}
         stats, evidence, analysis_ids, missing_region = {}, [], [], []
         portions_by_record = {r['id']: [(key, duration) for key, duration in effort(r, zone) if key in cells] for r in records}
         analyses = [a for a in analyses if portions_by_record[a['recording_id']]]
-        for analysis, allowed, arrays in classification_batches(root, db, analyses, indexed):
+        selected_windows = classification_species_windows(root, db, analyses, indexed, wanted, True) \
+            if wanted is not None and not persist else None
+        if selected_windows is not None:
+            indexed_analysis, indexed_recording, indexed_starts, indexed_scores, indexed_best = selected_windows
+            def batches():
+                for analysis in analyses:
+                    allowed = candidate_list(db, analysis)
+                    if allowed is None:
+                        yield analysis, allowed, None
+                        continue
+                    chosen = indexed_analysis == analysis['id']
+                    yield analysis, allowed, (np.array([wanted]), indexed_starts[chosen],
+                        indexed_scores[chosen, None], indexed_best[chosen, None])
+            batches = batches()
+        else:
+            batches = classification_batches(root, db, analyses, indexed, wanted is not None, True)
+        for analysis, allowed, arrays in batches:
             record = indexed[analysis['recording_id']]
             portions = portions_by_record[record['id']]
             checked_source(record)
@@ -306,33 +421,45 @@ def detection(root, body, *, persist=True):
             for key, duration in portions:
                 cells[key]['analysed_seconds'] += duration
             selected_index = next((i for i, label in enumerate(labels) if label == wanted), None)
+            window_s = 3 if body.engine == 'birdnet' else 5
+            valid = []
             for i, start in enumerate(starts):
                 key, local = window_key(record, float(start), zone)
-                window_s = 3 if body.engine == 'birdnet' else 5
                 if key not in cells or not window_in_scope(record,float(start),float(start)+window_s,zone,body.start_date,body.end_date):
                     continue
-                selected_labels = enumerate(labels) if wanted is None or persist else ([] if selected_index is None else [(selected_index, wanted)])
-                for j, label in selected_labels:
-                    item = stats.setdefault(str(label), {'eligible_windows': 0, 'candidate_windows': 0, 'days': set(), 'candidate_days': set()})
-                    item['eligible_windows'] += 1
-                    item['days'].add(key[0])
-                    if body.threshold is not None and scores[i, j] >= body.threshold:
-                        item['candidate_windows'] += 1
-                        item['candidate_days'].add(key[0])
-                if selected_index is None:
-                    continue
+                valid.append((i, key, local))
+            indices = range(len(labels)) if wanted is None or persist else (() if selected_index is None else (selected_index,))
+            if valid:
+                valid_indices = [i for i, _, _ in valid]
+                dates = {key[0] for _, key, _ in valid}
+                candidates = scores[valid_indices] >= body.threshold if body.threshold is not None else None
+                counts = np.count_nonzero(candidates, axis=0) if candidates is not None else np.zeros(len(labels), dtype=int)
+                candidate_days = [set() for _ in labels]
+                if candidates is not None:
+                    valid_dates = np.array([key[0] for _, key, _ in valid])
+                    for day in dates:
+                        for j in np.flatnonzero(np.any(candidates[valid_dates == day], axis=0)):
+                            candidate_days[j].add(day)
+                for j in indices:
+                    item = stats.setdefault(str(labels[j]), {'eligible_windows': 0, 'candidate_windows': 0, 'days': set(), 'candidate_days': set()})
+                    item['eligible_windows'] += len(valid)
+                    item['candidate_windows'] += int(counts[j])
+                    item['days'].update(dates)
+                    item['candidate_days'].update(candidate_days[j])
+            if selected_index is not None:
                 j = selected_index
-                cell = cells[key]
-                cell['eligible_windows'] += 1
-                cell['effective_seconds'] += window_s
-                if body.threshold is not None and scores[i, j] >= body.threshold:
-                    cell['candidate_windows'] += 1
-                    native_start = float(best_starts[i, j])
-                    evidence.append({'recording_id': record['id'], 'analysis_id': analysis['id'], 'start_s': native_start,
-                        'end_s': native_start + window_s, 'window_start_s': float(start),
-                        'window_end_s': float(start + window_s), 'score': float(scores[i, j]), 'local_time': window_key(record, native_start, zone)[1],
-                        'window_local_time': local,
-                        'date': key[0], 'hour': key[1], 'status': 'ai_candidate'})
+                for i, key, local in valid:
+                    cell = cells[key]
+                    cell['eligible_windows'] += 1
+                    cell['effective_seconds'] += window_s
+                    if body.threshold is not None and scores[i, j] >= body.threshold:
+                        cell['candidate_windows'] += 1
+                        native_start = float(best_starts[i, j])
+                        evidence.append({'recording_id': record['id'], 'analysis_id': analysis['id'], 'start_s': native_start,
+                            'end_s': native_start + window_s, 'window_start_s': float(starts[i]),
+                            'window_end_s': float(starts[i] + window_s), 'score': float(scores[i, j]), 'local_time': window_key(record, native_start, zone)[1],
+                            'window_local_time': local,
+                            'date': key[0], 'hour': key[1], 'status': 'ai_candidate'})
             checked_source(record)
         summaries = []
         for label, item in stats.items():
@@ -355,6 +482,14 @@ def detection(root, body, *, persist=True):
         snapshot['recording_ids'] = [r['id'] for r in records]
         snapshot['base_report_id'] = body.base_report_id
         if not persist:
+            if summary_path is not None:
+                summary_path.parent.mkdir(exist_ok=True)
+                temporary = summary_path.with_suffix('.' + uuid4().hex + '.tmp')
+                try:
+                    temporary.write_bytes(zlib.compress(json.dumps(snapshot, ensure_ascii=False, allow_nan=False).encode()))
+                    temporary.replace(summary_path)
+                finally:
+                    temporary.unlink(missing_ok=True)
             return snapshot
         report_id = save_report(db, body.dataset_id, 'detection', snapshot)
     return get_report(root, report_id)
