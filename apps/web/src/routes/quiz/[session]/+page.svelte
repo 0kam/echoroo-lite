@@ -45,7 +45,7 @@
   {:else if !session}<p class="muted"><Spinner /> {t('loading')}</p>
   {:else}
     <section class="panel quiz-session">
-      <div class="section-heading"><h2>{t('quizProgress')}</h2><span class="mono">{session.answered} / {session.count}</span></div>
+      <!-- The page heading already says which question this is; the bar alone shows progress, keeping the answers on screen (A18). -->
       <progress max={session.count} value={session.answered} aria-label={t('quizProgress')}></progress>
       {#if session.question}
         {@const question = session.question}
@@ -100,7 +100,7 @@
 <style>
   /* The question figure is 180 px, like the other 30-second views. */
   .quiz-session :global(.spectrogram) { height: var(--spec-view); }
-  .question { margin-top: 24px; }
+  .question { margin-top: 12px; }
   .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 24px 0; }
   .choices :global(.choice) { justify-content: flex-start; text-align: left; white-space: normal; min-height: 72px; }
   .choices :global(.unknown) { min-height: 50px; }

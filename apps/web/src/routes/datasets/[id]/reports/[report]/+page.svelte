@@ -18,7 +18,7 @@
   });
 </script>
 <div class="page">
-  <div class="crumbs"><a href={`${resolve(`/datasets/${datasetId}/reports`)}?${new URL(page.url.hash.slice(1),page.url).searchParams}`}>{t('wExportHistory')}</a></div>
+  <div class="crumbs"><a href={`${resolve(`/datasets/${datasetId}/reports`)}?${new URL(page.url.hash.slice(1),page.url).searchParams}`}>{t('uBackExport')}</a></div>
   <h1>{report?.species?commonName(report.species,app.locale):t('wExportHistory')}<i class="sci">{report?.species?.scientific_name}</i></h1><p>{t('reportSnapshotHint')}</p>
   {#if error}<p class="error" role="alert">{t(error)}</p>
   {:else if report}

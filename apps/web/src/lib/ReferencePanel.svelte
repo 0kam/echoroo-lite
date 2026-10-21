@@ -5,6 +5,7 @@
 
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { page as route } from '$app/state';
   import { api } from './api.svelte';
   import { app, t } from './app.svelte';
   import { openExternal } from './files';
@@ -59,7 +60,7 @@
     {#if !named}
       {#if fetched && !prepare.error}<p class="muted">{t('refXcNone')}</p>
       {:else}<Button pending={prepare.pending} onclick={() => prepare.run()}>{t('refPrepare')}</Button><p class="muted">{t('refPrepareHint')}</p>{/if}
-      {#if prepare.error}<p class="error" role="alert">{t(prepare.error)}{#if prepare.error === 'xc_key_required'} · <a href={resolve('/settings')}>{t('navSettings')}</a>{/if}</p>{/if}
+      {#if prepare.error}<p class="error" role="alert">{t(prepare.error)}{#if prepare.error === 'xc_key_required'} · <a href={`${resolve('/settings')}?return=${encodeURIComponent(route.url.hash.slice(1))}`}>{t('navSettings')}</a>{/if}</p>{/if}
     {/if}
     <div class="actions">
       <Button size="sm" onclick={() => void openExternal(page.url)}>{t('refLearn').replace('{site}', page.name)}</Button>

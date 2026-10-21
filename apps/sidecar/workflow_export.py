@@ -16,8 +16,8 @@ from contextlib import ExitStack
 
 from reports import csv_bytes,save_report,scope_records,effort,window_key,window_in_scope,classification_batches
 from storage import CatalogError,checked_source,connect
-from results_workflow import attach_validation,context,current_validations,detection_snapshot,custom_snapshot,threshold_for
-from report_document import create_html,messages,quality_result,status,criterion,method
+from results_workflow import attach_validation,context,counting_status,current_validations,detection_snapshot,custom_snapshot,threshold_for
+from report_document import create_html,messages,quality_result,status,status_text,criterion,method
 from report_figures import DATA,spiral,recording_schedule
 
 
@@ -154,7 +154,7 @@ def export(root,body,cancel=None):
                         'common_name_ja':snap['species']['common_names'].get('ja',''),'common_name_en':snap['species']['common_names'].get('en',''),
                         'engine':engine,'model_sha256':snap['model_sha256'],'custom_model_id':snap.get('model_id'),'threshold':snap['threshold'],
                         'start_date':snap['start_date'],'end_date':snap['end_date'],'timezone':snap['site']['timezone'],'window_s':snap['window_s'],'quality':status(snap)}
-                    caption=criterion(snap,t).replace('\n',' · ')+' · '+t[status(snap)]
+                    caption=status_text(snap,t)
                     png,svg=spiral(snap,body.locale,caption);(folder/'figures'/f"{snap['figure_id']}.png").write_bytes(png);(folder/'figures'/f"{snap['figure_id']}.svg").write_text(svg,encoding='utf-8')
                     species_rows.extend({**common,**{k:v for k,v in row.items() if k not in ('species','quality')}} for row in snap['summaries'])
                     hourly.extend({**common,**cell} for cell in snap['cells'])
@@ -209,7 +209,9 @@ def export(root,body,cancel=None):
                         evidence.append({'species_id':sid,'scientific_name':taxa[sid]['scientific_name'],**entry,'status':'target',
                             'audio_file':save_audio(folder,record,entry['start_s'],entry['end_s']),'audio_role':'presence','audio_reason':'included'})
                     miss=item['miss'] or {}
+                    species_snapshots=[snap for snap in snapshots if snap['species']['id']==sid]
                     presence_rows.append({'species_id':sid,'scientific_name':taxa[sid]['scientific_name'],'status':item['status'],
+                        'counting_status':counting_status(snap.get('validation') for snap in species_snapshots),
                         'evidence_count':len(item['evidence']),'marked':sum(e['origin']=='mark' for e in item['evidence']),
                         'heard_in_checks':sum(e['origin']=='check' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),
                         'not_found_list':miss.get('source'),'not_found_recorded_at':miss.get('created_at')})

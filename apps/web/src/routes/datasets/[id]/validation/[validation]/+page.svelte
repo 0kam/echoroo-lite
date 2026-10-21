@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,rangeQuery,type Validation } from '$lib/workflow';
+  import { EXTRA_SOUNDS,fill,modelName,rangeQuery,workload,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReferencePanel,{type ExampleRef} from '$lib/ReferencePanel.svelte';
@@ -55,11 +55,11 @@
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
     {#if done}<section class="panel"><h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>
       {#if validation.can_extend}<p><strong>{t('vExtendWhy')}</strong></p>{/if}
-      <div class="actions">{#if validation.can_extend}<Button variant="primary" pending={extend.pending} disabled={busy||!validation.applicable} onclick={()=>extend.run()}>{t('vExtend')}</Button><Button href={back}>{t('vFinishHere')}</Button>
+      <div class="actions">{#if validation.can_extend}<Button variant="primary" href={back}>{t('vFinishHere')}</Button><Button pending={extend.pending} disabled={busy||!validation.applicable} onclick={()=>extend.run()}>{t('vExtend')}</Button>
         {:else}<Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{/if}
         {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
-    {:else if !started}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill('wValidationPlan',{total:validation.counts.total})}</p>
+    {:else if !started}{@const extra=validation.population>validation.counts.total?EXTRA_SOUNDS:0}{@const effort=workload(validation.counts.total,extra)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill('wValidationPlan',{total:validation.counts.total,more:extra?t('vMore18'):'',low:effort.low,high:effort.high})}</p>
       <p><strong>{t('refListenFirst')}</strong></p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
     {:else}
       <div class="with-examples"><section class="panel">
@@ -77,13 +77,13 @@
         {#if answer.error||navigate.error}<p class="error" class:answer-feedback={!!validation.question} style:bottom={validation.question?`${barHeight+8}px`:undefined} role="alert">{t(answer.error||navigate.error)}</p>{/if}
       </section>{@render examples()}</div>
     {/if}
-  {:else if !error}<p><Spinner/> {t('loading')}</p>{/if}
+  {:else if !error}<p role="status"><Spinner/> {t('vPreparing')}</p>{/if}
 </div>
 <style>.answer-feedback{position:fixed;left:24px;right:24px;z-index:4;padding:12px;background:rgb(var(--color-page-bg));box-shadow:0 0 0 1px currentColor;border-radius:8px}
   :global(.main:has(.validation-page)){padding-top:16px}.page.validation-page{gap:8px}
   .with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}.examples-column{display:flex;flex-direction:column;gap:8px;position:sticky;top:16px}
   @media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}
-  .validation-page .crumbs{margin-bottom:0}.validation-page .panel{padding:16px}.validation-page h1{margin:0}h2.model,p.model{font-size:16px;font-weight:600;margin:0}
+  .validation-page .crumbs{margin-bottom:0}.validation-page .panel{padding:16px}.validation-page h1{margin:0;line-height:1.25}h2.model,p.model{font-size:16px;font-weight:600;margin:0}
   .validation-page .sci{display:inline;font-size:16px;margin-left:12px;white-space:nowrap}
   .phase-progress{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}.phase-progress p{white-space:nowrap}
   .validation-page section h2{font-size:21px;margin:0 0 8px}p{margin:4px 0}

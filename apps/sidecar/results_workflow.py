@@ -113,8 +113,9 @@ def custom_snapshot(root, ctx, model):
 
     def build():
         result = report_snapshot(root, ctx, model['id'], threshold)
+        result['created_at'] = model['created_at']
         return attach_validation(result, quality)
-    return cached(root, ['custom-report-v2', ctx['revision'], ctx['start_date'], ctx['end_date'], model['id']], build)
+    return cached(root, ['custom-report-v3', ctx['revision'], ctx['start_date'], ctx['end_date'], model['id']], build)
 
 
 def current_validations(root, ctx):
@@ -162,9 +163,21 @@ def attach_validation(snapshot, validation):
     return snapshot
 
 
+def counting_status(validations):
+    """One species is countable as soon as any applicable AI check decides how to count it."""
+    states = [value['status'] for value in validations if value and value.get('applicable')]
+    if 'decided' in states:
+        return 'decided'
+    if 'in_progress' in states:
+        return 'in_progress'
+    if states and all(state == 'undecided' for state in states):
+        return 'undecided'
+    return 'not_started'
+
+
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    return cached(root, ['overview-v10', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
+    return cached(root, ['overview-v11', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
                   lambda: build_overview(root, dataset_id, ctx))
 
 
@@ -223,6 +236,8 @@ def build_overview(root, dataset_id, ctx):
     for sid in [*searched, *presence, *(sid for sid, _ in quality)]:
         if sid in named:
             add(named[sid])
+    for row in rows.values():
+        row['counting_status'] = counting_status(model.get('validation') for model in row['models'])
     seconds = sum(value for r in records for key, value in effort(r, zone) if ctx['start_date'] <= key[0] <= ctx['end_date'])
     return {**ctx, 'records': len(records), 'recorded_seconds': seconds,
             'species': sorted(rows.values(), key=lambda r: (-max([m.get('candidate_windows') or 0 for m in r['models']] or [0]),
@@ -252,6 +267,7 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
                 'created_at': m['created_at'], 'validation': quality.get((species_id, f"custom:{m['id']}"))} for m in custom]
     for check in checks:
         check['status']=check['validation']['status'] if check['validation'] else 'not_started'
+    overall_status = counting_status(check.get('validation') for check in checks)
     if engine == 'auto':
         engine = next((m['engine'] for m in listed if any(
             s['species']['id'] == species_id and s['candidate_windows'] for s in detection_snapshot(root, ctx, m)['summaries'])), None)
@@ -268,5 +284,6 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
         attach_validation(snap, selected['validation'])
     with connect(root) as db:
         report = snapshot_view(db, snap, cell_date=cell_date, hour=hour) if snap else None
-    return {**ctx, 'species': taxon, 'checks': checks, 'selected': selected['key'] if selected else None, 'report': report,
+    return {**ctx, 'species': taxon, 'checks': checks, 'counting_status': overall_status,
+            'selected': selected['key'] if selected else None, 'report': report,
             'search': search_for(root, ctx, species_id), 'presence': summaries(root, ctx, species_id).get(species_id, empty())}

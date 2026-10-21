@@ -31,7 +31,7 @@ def cell_color(cell,report):
     return '#'+''.join(f'{round(a+(b-a)*fraction):02x}' for a,b in zip((248,224,222),(160,80,76)))
 
 
-def spiral(report,locale,criterion_text):
+def spiral(report,locale,counting_status_text):
     """Same scales as the app. SVG remains vector; PNG is rendered at 2x for print."""
     days=(date.fromisoformat(report['end_date'])-date.fromisoformat(report['start_date'])).days+1
     t=json.loads((DATA/'messages.json').read_text(encoding='utf-8'))[locale]
@@ -51,8 +51,12 @@ def spiral(report,locale,criterion_text):
     taxon=report['species'];common=taxon['common_names'].get(locale) or taxon['common_names'].get('en','')
     label(480,28,common+' · '+taxon['scientific_name'],26)
     engine=report.get('engine')
-    method=f"{t['custom_model']} #{report['model_id']}" if engine=='custom' else 'BirdNET' if engine=='birdnet' else 'Perch'
-    label(480,64,method+' · '+t['criterion']+': '+criterion_text,22)
+    if engine=='custom':
+        created=date.fromisoformat(report['created_at'][:10]) if report.get('created_at') else None
+        method=t['custom_model_date'].format(month=created.month if created else '—',day=created.day if created else '—',
+                                             date=created.isoformat() if created else '—')
+    else:method='BirdNET' if engine=='birdnet' else 'Perch'
+    label(480,64,method+' · '+t['quality']+': '+counting_status_text,22)
     label(480,99,report['site']['name']+' · '+report['start_date']+' — '+report['end_date']+' · '+report['site']['timezone'],19)
     inner,outer=60,340;ring=(outer-inner)/days
     for cell in report['cells']:
@@ -87,16 +91,16 @@ def spiral(report,locale,criterion_text):
 
 def recording_schedule(scope):
     schedule=scope.get('schedule') or [{'date':row['date'],'hours':[row['seconds'] if hour==0 else 0 for hour in range(24)]} for row in scope['daily']]
-    row_height=16;height=max(450,120+len(schedule)*row_height)
+    row_height=30;height=max(450,140+len(schedule)*row_height)
     image=Image.new('RGB',(1600,height),'white');draw=ImageDraw.Draw(image)
-    left,right,top=190,1540,60
+    left,right,top=220,1540,70
     for hour in range(0,25,3):
         x=left+(right-left)*hour/24
         draw.line((x,top-10,x,top+len(schedule)*row_height),fill='#dfdad9',width=1)
         draw.text((x,25),str(hour),font=font(24),anchor='mm',fill='#373450')
     for index,row in enumerate(schedule):
         y=top+index*row_height
-        draw.text((left-12,y+row_height/2),row['date'],font=font(13),anchor='rm',fill='#373450')
+        draw.text((left-12,y+row_height/2),row['date'].replace('-','/'),font=font(24),anchor='rm',fill='#373450')
         for hour,seconds in enumerate(row['hours']):
             if seconds>0:
                 x0=left+(right-left)*hour/24;x1=left+(right-left)*(hour+1)/24

@@ -51,6 +51,18 @@ def site():
 
 
 class SpeciesFlowCheck(unittest.TestCase):
+    def test_presence_list_merges_overlapping_native_windows(self):
+        from presence import merge_candidates
+        source={'id':1,'kind':'recording','path':'sound.wav','seconds':30}
+        rows=[
+            {'recording_id':1,'start_s':0,'end_s':3,'marked':False,'models':[{'engine':'birdnet'}],'source':source,'local_time':'a','run_id':None,'score':None},
+            {'recording_id':1,'start_s':0,'end_s':5,'marked':True,'models':[{'engine':'perch'}],'source':source,'local_time':'a','run_id':None,'score':None},
+            {'recording_id':1,'start_s':5,'end_s':10,'marked':False,'models':[{'engine':'perch'}],'source':source,'local_time':'b','run_id':None,'score':None},
+        ]
+        merged=merge_candidates(rows)
+        self.assertEqual([(row['start_s'],row['end_s'],row['marked']) for row in merged],[(0,5,True),(5,10,False)])
+        self.assertEqual([model['engine'] for model in merged[0]['models']],['birdnet','perch'])
+
     def test_presence_search_custom_model_and_deletion(self):
         with site() as (root, client, species):
             sid = species['id']
@@ -89,6 +101,9 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertTrue(ai['rows'] and all(r['end_s'] - r['start_s'] == 5 and r['models'][0]['engine'] == 'perch' for r in ai['rows']))
             # Custom model material: labels on search hits, needing three of each.
             ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={k: scope[k] for k in ('start_date', 'end_date')}).json()
+            self.assertEqual((ready['examples']['positive_5s'],ready['examples']['positive_from_presence']),(1,1))
+            self.assertEqual(next(hit['label'] for hit in ready['hits'] if hit['recording_id']==rows[0]['recording_id']
+                                  and hit['start_s']==rows[0]['start_s']),'target')
             self.assertEqual((ready['can_train'], ready['reasons']), (False, ['custom_positive_examples_needed', 'custom_negative_examples_needed']))
             voice = [h for h in ready['hits'] if h['similarity'] > .99][:3]
             with connect(root) as db:
@@ -102,6 +117,7 @@ class SpeciesFlowCheck(unittest.TestCase):
             client.post(f"/search-runs/{run['id']}/labels", json={'segment_id': silent[0], 'label': 'other'})
             ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={k: scope[k] for k in ('start_date', 'end_date')}).json()
             self.assertEqual((ready['can_train'], ready['examples']['positive_5s'], ready['examples']['negative_5s']), (True, 3, 3))
+            self.assertEqual(ready['examples']['positive_from_presence'],1)
             self.assertEqual(sum(h['label'] == 'target' for h in ready['hits']), 3)
             model = client.post('/custom-models', json=scope)
             self.assertEqual(model.status_code, 200, model.text)

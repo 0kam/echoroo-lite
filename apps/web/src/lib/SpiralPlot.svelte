@@ -3,7 +3,8 @@
   import { commonName } from './species';
   import { percent, type Cell, type Report } from './reports';
   import { app, t } from './app.svelte';
-  let { report, onselect, compact=false }: { compact?:boolean; report: Report; onselect: (cell: Cell) => void } = $props();
+  // Without `onselect` the cells are a picture only (the species page has no sound list, B4).
+  let { report, onselect, compact=false }: { compact?:boolean; report: Report; onselect?: (cell: Cell) => void } = $props();
   let element = $state<SVGSVGElement>(null!), zoom = $state(100), focusIndex = $state(0);
   const uid = $props.id();
   const days = $derived(Math.round((Date.parse(report.end_date) - Date.parse(report.start_date)) / 86400000) + 1);
@@ -44,7 +45,7 @@
     if (delta !== undefined) {
       event.preventDefault(); focusIndex = Math.min(report.cells.length - 1, Math.max(0, index + delta));
       element.querySelector<SVGElement>(`[data-cell="${focusIndex}"]`)?.focus();
-    } else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onselect(report.cells[index]); }
+    } else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onselect?.(report.cells[index]); }
   }
   export async function images() {
     const copy = element.cloneNode(true) as SVGSVGElement;
@@ -76,12 +77,13 @@
   <text visibility={compact?'hidden':undefined} x="36" y="67" font-size="20" font-style="italic" fill="#575279">{report.species?.scientific_name}</text>
   {#each siteLines as line, i}<text visibility={compact?'hidden':undefined} x="36" y={96+i*20} font-size="16" fill="#575279">{line}</text>{/each}
   <text visibility={compact?'hidden':undefined} x="36" y={header-22} font-size="15" fill="#575279">{report.start_date}–{report.end_date} · {report.site.timezone} · {condition}</text>
-  <text visibility={compact?'hidden':undefined} x="36" y={header} font-size="15" fill="#575279">{metric} · {t('threshold')}: {report.threshold?.toFixed(3) ?? t('noThreshold')} · {report.window_s} {t('seconds')} {report.id ? ` · #${report.id}` : ''}</text>
+  <text visibility={compact?'hidden':undefined} x="36" y={header} font-size="15" fill="#575279">{metric} · {t('threshold')}: {report.threshold == null ? t('noThreshold') : +report.threshold.toPrecision(2)} · {report.window_s} {t('seconds')} {report.id ? ` · #${report.id}` : ''}</text>
   <circle {cx} {cy} r={outer} fill="#f1f0f2"/><circle {cx} {cy} r={inner} fill="#fff"/>
   {#each report.cells as cell, index}
-    <path d={wedge(Math.floor(index/24),cell.hour)} fill={color(cell)} role="button" tabindex={focusIndex===index ? 0 : -1} data-cell={index}
+    {#if onselect}<path d={wedge(Math.floor(index/24),cell.hour)} fill={color(cell)} role="button" tabindex={focusIndex===index ? 0 : -1} data-cell={index}
       aria-label={describe(cell)} onclick={() => onselect(cell)} onkeydown={event => navigate(event,index)} onfocus={() => focusIndex=index}>
       <title>{describe(cell)}</title></path>
+    {:else}<path d={wedge(Math.floor(index/24),cell.hour)} fill={color(cell)}><title>{describe(cell)}</title></path>{/if}
     {#if cell.status === 'partial'}<path d={wedge(Math.floor(index/24),cell.hour)} fill={`url(#${uid}-partial)`} pointer-events="none"/>{/if}
   {/each}
   {#each [0,3,6,9,12,15,18,21] as hour}{@const p=point(outer+28,hour)}<text x={p[0]} y={p[1]+5} text-anchor="middle" font-size={compact?24:17} fill="#575279">{String(hour).padStart(2,'0')}:00</text>{/each}
@@ -109,7 +111,7 @@
 </div>
 <!-- On screen the figure is scaled down, so its legend is plain text at a readable size; exports keep the SVG legend. -->
 {#if compact}<div class="legend">
-  <span><i class="ramp"></i>{metric}: &gt;0%–100%</span>
+  <span><i class="ramp"></i>{t('rampLegend')}</span>
   <span><i style:background="#fff"></i>{t('uZeroCalls')}</span>
   <span><i style:background="#f1f0f2"></i>{t('cell_no_recording')}</span>
   <span><i class="missing"></i>{t('missingAnalysis')}</span>

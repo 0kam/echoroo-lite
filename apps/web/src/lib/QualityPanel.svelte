@@ -19,12 +19,11 @@
     {#if result.precision}<li>{fill('rPrecision',shares(result.precision))}</li>{/if}
     {#if result.recall_status==='not_estimable_rare'}<li>{t('rRecallRare')}</li>{:else if result.recall}<li>{fill('rRecall',shares(result.recall))}</li>{/if}
     {#if result.multiplier}<li>{fill('rMultiplier',{x:about(result.multiplier.value),low:about(result.multiplier.low),high:about(result.multiplier.high)})}</li>{/if}
-    {#if result.threshold!=null}<li>{fill('rThreshold',{threshold:+result.threshold.toPrecision(3),window:validation.window_s})}</li>{/if}
+    {#if result.threshold!=null}<li>{fill('rThreshold',{threshold:+result.threshold.toPrecision(2),window:validation.window_s})}</li>{/if}
     {#if result.unknown}<li>{fill('rUnknown',{n:result.unknown})}</li>{/if}
   </ul>
   {#if result.disagreement}<p class="notice">{t('rDisagreement')}</p>{/if}
   <details><summary>{t('uMoreQuality')}</summary>
-    {#if result.auprc}<p>{fill('rAuprc',{p:result.auprc.value?.toFixed(2)??'—',low:result.auprc.low?.toFixed(2)??'—',high:result.auprc.high?.toFixed(2)??'—'})}</p>{/if}
     <p>{fill('rAnswers',{total:validation.counts.answered,heard:sum('heard'),not_heard:sum('not_heard'),unknown:sum('unknown')})}</p>
     <p class="muted">{fill('rScope',{first:day(validation.start_date),last:day(validation.end_date),population:validation.population.toLocaleString(app.locale),window:validation.window_s})}</p>
   </details>

@@ -59,8 +59,7 @@
 <div class="zoom-controls">{@render controls?.()}<span class="hint" title={t('aZoomHint')}>{t('aZoomShort')}</span><div class="actions">
   <Button size="sm" aria-label={t('aZoomOut')} title={t('aZoomOut')} disabled={Math.min(zoom.x,zoom.y)<=1} onclick={()=>scale('both',1/1.4)}>−</Button>
   <Button size="sm" aria-label={t('aZoomIn')} title={t('aZoomIn')} disabled={Math.max(zoom.x,zoom.y)>=8} onclick={()=>scale('both',1.4)}>＋</Button>
-  <Button size="sm" disabled={zoom.x===1&&zoom.y===1} onclick={reset}>{t('aFit')}</Button></div></div>
-<div class="axis-head"><span class="unit">kHz</span><ScaleSwitch/></div>
+  <Button size="sm" disabled={zoom.x===1&&zoom.y===1} onclick={reset}>{t('aFit')}</Button><ScaleSwitch/></div></div>
 <div class="grid">
   <div class="frequency" role="slider" tabindex="0" aria-orientation="vertical" aria-valuemin="1" aria-valuemax="8" aria-valuenow={zoom.y} aria-valuetext={`${zoom.y.toFixed(1)}×`} aria-label={t('aFrequencyAxis')} title={t('aAxisHelp')} use:wheelAction={'y'} onkeydown={e=>keyboard(e,'y')}>
     {#each visibleTicks as {tick,y} (tick.frequency_hz)}<span style:top={`${y}px`} class:edge-high={y<8} class:edge-low={y>viewHeight-8}>{kHz(tick)}</span>{/each}
@@ -83,7 +82,7 @@
     </div>
     {#if loading||error}<div class="state" role="status">{t(error||'loadingSpectrogram')}</div>{/if}
   </div>
-  <div></div><div class="time-axis" role="slider" tabindex="0" aria-orientation="horizontal" aria-valuemin="1" aria-valuemax="8" aria-valuenow={zoom.x} aria-valuetext={`${zoom.x.toFixed(1)}×`} aria-label={t('aTimeAxis')} title={t('aAxisHelp')} use:wheelAction={'x'} onkeydown={e=>keyboard(e,'x')}>
+  <span class="unit">kHz</span><div class="time-axis" role="slider" tabindex="0" aria-orientation="horizontal" aria-valuemin="1" aria-valuemax="8" aria-valuenow={zoom.x} aria-valuetext={`${zoom.x.toFixed(1)}×`} aria-label={t('aTimeAxis')} title={t('aAxisHelp')} use:wheelAction={'x'} onkeydown={e=>keyboard(e,'x')}>
     <span>{(viewStart-start).toFixed(2)} s</span><span>{((viewStart+viewEnd)/2-start).toFixed(2)} s</span><span>{(viewEnd-start).toFixed(2)} s</span>
   </div>
 </div>
@@ -92,7 +91,10 @@
   .hint{flex:1;min-width:200px;color:rgb(var(--stone-600))}
   /* Touch screens have no wheel or double-click; the full help stays in the title. */
   @media (max-width:700px){.hint{display:none}}
-  .axis-head{display:flex;align-items:end;gap:8px}.unit{width:54px;padding-right:8px;text-align:right;font-size:12px;color:rgb(var(--stone-600))}
+  /* In a narrow column the hint takes its own short line instead of pushing the buttons onto two rows. */
+  @container (max-width:640px){.hint{order:-1;flex-basis:100%}}
+  /* Play, zoom and mel|linear share one row, so the answer bar below never covers the figure (A6). */
+  .unit{align-self:center;padding-right:8px;text-align:right;font-size:12px;color:rgb(var(--stone-600))}
   .grid{display:grid;grid-template-columns:54px minmax(0,1fr);gap:4px}
   .frequency{position:relative;cursor:ns-resize;font-size:12px;line-height:1;color:rgb(var(--stone-600));overflow:hidden}
   .frequency span{position:absolute;right:8px;transform:translateY(-50%);font-variant-numeric:tabular-nums}.frequency .edge-high{transform:none}.frequency .edge-low{transform:translateY(-100%)}

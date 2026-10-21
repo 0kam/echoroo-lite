@@ -84,13 +84,19 @@ def _perch_analyses(db, ctx):
 
 
 def _materials(db, ctx, species_id):
-    """Labelled 5-second pieces: search-hit labels, then 5-second "not heard" checks."""
+    """Labelled 5-second pieces from search answers, presence marks and checks."""
     from search_runs import site_run
     run = site_run(db, ctx['site']['id'], species_id)
     if run is None:
         raise CatalogError('custom_search_needed')
     labels = {r['segment_id']: {'label': r['label'], 'origin': 'search'} for r in db.execute(
         'SELECT segment_id,label FROM model_labels WHERE run_id=?', (run['id'],))}
+    for row in db.execute('''SELECT h.segment_id FROM presence_marks m
+            JOIN search_hits h ON h.run_id=m.run_id JOIN segments s ON s.id=h.segment_id
+            JOIN analyses a ON a.id=s.analysis_id
+            WHERE m.run_id=? AND m.species_id=? AND a.recording_id=m.recording_id
+              AND s.start_s=m.start_s AND s.end_s=m.end_s''', (run['id'], species_id)):
+        labels[row['segment_id']] = {'label': 'target', 'origin': 'presence'}
     analyses = {r['recording_id']: r['id'] for r in _perch_analyses(db, ctx)}
     for row in db.execute('''SELECT DISTINCT i.recording_id,i.start_s,i.end_s FROM validation_items i
             JOIN validation_sessions v ON v.id=i.session_id JOIN datasets d ON d.id=v.dataset_id
@@ -110,19 +116,21 @@ def readiness(root, ctx, species_id, limit=30, offset=0):
     from search_runs import top_hits
     with connect(root) as db:
         run, labels = _materials(db, ctx, species_id)
-        chosen = {segment: value['label'] for segment, value in labels.items() if value['origin'] == 'search'}
+        chosen = {segment: value['label'] for segment, value in labels.items() if value['origin'] != 'check'}
         hits = [{**hit, 'label': chosen.get(hit['segment_id'])} for hit in top_hits(db, run['id'], limit, offset)]
         total = db.execute('SELECT COUNT(*) FROM search_hits WHERE run_id=?', (run['id'],)).fetchone()[0]
     zone = ZoneInfo(ctx['site']['timezone'])
     for hit in hits:
         hit['local_time'] = window_key(hit, hit['start_s'], zone)[1]
-    counts = {(label, origin): sum(v == {'label': label, 'origin': origin} for v in labels.values())
-              for label in ('target', 'other') for origin in ('search', 'check')}
-    positive, negative = counts['target', 'search'], counts['other', 'search'] + counts['other', 'check']
+    positive = sum(value['label'] == 'target' for value in labels.values())
+    negative = sum(value['label'] == 'other' for value in labels.values())
+    negative_from_checks = sum(value == {'label': 'other', 'origin': 'check'} for value in labels.values())
+    positive_from_presence = sum(value == {'label': 'target', 'origin': 'presence'} for value in labels.values())
     reasons = [reason for reason, missing in [('custom_positive_examples_needed', positive < MIN_CLASS_EXAMPLES),
                                               ('custom_negative_examples_needed', negative < MIN_CLASS_EXAMPLES)] if missing]
     return {'run_id': run['id'], 'species': names_for_id(root, species_id), 'hits': hits, 'hit_count': total,
-            'examples': {'positive_5s': positive, 'negative_5s': negative, 'negative_from_checks': counts['other', 'check']},
+            'examples': {'positive_5s': positive, 'negative_5s': negative, 'negative_from_checks': negative_from_checks,
+                         'positive_from_presence': positive_from_presence},
             'requirements': {'positive_5s': MIN_CLASS_EXAMPLES, 'negative_5s': MIN_CLASS_EXAMPLES},
             'can_train': not reasons, 'reasons': reasons, 'models': list_models(root, ctx, species_id, every=True)}
 
@@ -191,7 +199,9 @@ def create(root, ctx, species_id, cancel=None):
         'scope': {'site_id': ctx['site']['id'], 'start_date': ctx['start_date'], 'end_date': ctx['end_date'], 'recording_ids': sorted(records)},
         'feature': {'engine': 'perch', 'model_sha256': expected.pop(), 'spec': FEATURE_SPEC, 'window_s': 5},
         'training': {'positive_5s': int(y.sum()), 'negative_5s': int(len(y) - y.sum()), 'l2': L2,
-                     'negative_from_checks': sum(e['origin'] == 'check' and e['label'] == 'other' for e in examples), 'examples': examples},
+                     'negative_from_checks': sum(e['origin'] == 'check' and e['label'] == 'other' for e in examples),
+                     'positive_from_presence': sum(e['origin'] == 'presence' and e['label'] == 'target' for e in examples),
+                     'examples': examples},
         'analysis_ids': ids, 'inference': {'scored_5s': len(scored)}}
     folder = Path(root) / 'custom-models'
     folder.mkdir(parents=True, exist_ok=True)

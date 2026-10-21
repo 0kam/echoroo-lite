@@ -7,7 +7,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,dayRange,duration } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { fill,rangeQuery,speciesGroup,type Overview } from '$lib/workflow';
+  import { activityText,fill,presenceText,rangeQuery,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -22,7 +22,8 @@
   const back=$derived(`${resolve(`/datasets/${id}`)}?${overview?rangeQuery(overview.start_date,overview.end_date):query}`);
   onMount(()=>{void(async()=>{try{
     const [data,saved,snapshots]=await Promise.all([api<Overview>(`/datasets/${id}/overview?${query}`),api<Export[]>(`/datasets/${id}/exports`),api<Snapshot[]>(`/reports?dataset_id=${id}`)]);
-    overview=data;history=saved;selected=data.species.filter(row=>speciesGroup(row)!=='few').map(row=>row.species.id);
+    // A3: only species a person confirmed by listening are included unless chosen.
+    overview=data;history=saved;selected=data.species.filter(row=>row.presence.status==='confirmed').map(row=>row.species.id);
     // Snapshots saved by an export are opened from that export; list only the ones saved on their own by earlier versions.
     const exported=new Set(saved.flatMap(item=>item.results?.map(result=>result.report_id)??[]));earlier=snapshots.filter(item=>!exported.has(item.id));
     try{const draft=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(draft){selected=draft.selected.filter((id:string)=>data.species.some(row=>row.species.id===id));folder=draft.folder;}}catch{}
@@ -51,12 +52,14 @@
       <h2>{overview.site.name}</h2>
       <p>{dayRange(overview.start_date,overview.end_date)} · {overview.site.timezone}</p>
       <p>{fill('rRecordingsCount',{n:overview.records.toLocaleString(app.locale)})} · {fill('wTotalLength',{duration:duration(overview.recorded_seconds)})}</p>
-      <details><summary>{t('wIncludeSpecies')} · {selected.length}</summary>
-        {#each [false,true] as few}{@const rows=overview.species.filter(row=>(speciesGroup(row)==='few')===few)}
-          {#if few&&rows.length}<h3>{t('wGroupFew')}</h3><p class="notice">{t('wFewCaution')}</p>{/if}
+      <h3>{t('wIncludeSpecies')} · {fill('wSpeciesCount',{n:selected.length})}</h3>
+      {#each [['confirmed','rGroupConfirmed'],['not_found','rGroupMissed'],['unchecked','rGroupAi']] as [status,title]}{@const rows=overview.species.filter(row=>row.presence.status===status)}
+        {#if rows.length}<details open={status==='confirmed'}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
+          {#if status==='unchecked'}<p class="notice">{t('rAiOnlyCaution')}</p>{/if}
           {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending}/>
-            <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i></span></label>{/each}{/each}
-      </details>
+            <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i>
+              <span class="muted">{presenceText(row.presence)} · {t('wActivity')}: {activityText(row.models)}</span></span></label>{/each}
+        </details>{/if}{/each}
       {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} disabled={exportFiles.pending}/></label>{/if}
       <!-- Same shape as adding recordings: a status box that is always there, then one fixed main button. -->
       <div class="status-box" role="status" aria-live="polite">
@@ -69,7 +72,7 @@
         {:else}<p>{t('rExportContents')}</p>{/if}
         {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{/if}
       </div>
-      <Button variant="primary" pending={exportFiles.pending} disabled={!selected.length||(!isTauri()&&!folder)} aria-describedby="export-reason" onclick={()=>exportFiles.run()}>{t('rCreate')}</Button>
+      <Button variant={output?'default':'primary'} pending={exportFiles.pending} disabled={!selected.length||(!isTauri()&&!folder)} aria-describedby="export-reason" onclick={()=>exportFiles.run()}>{t('rCreate')}</Button>
       <p class="muted" id="export-reason">{!selected.length?t('rSaveIdle'):!isTauri()&&!folder?t('rNeedFolder'):''}</p>
     </section>
     {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="saved">
@@ -78,8 +81,8 @@
       {#if item.folder_path}<Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{/if}
     </div>{/each}</section>{/if}
     {#if earlier.length}<details><summary>{t('wEarlierReports')} · {earlier.length}</summary>{#each earlier as item}<p><a href={`${resolve(`/datasets/${id}/reports/${item.id}`)}?${query}`}>{item.species?(item.species.common_names&&commonName(item.species,app.locale))||item.species.scientific_name:t('species')} · {item.start_date&&item.end_date?dayRange(item.start_date,item.end_date):''} · {when(item.created_at)}</a></p>{/each}</details>{/if}
-  {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
+  {:else if !error}<p role="status"><Spinner/> {t('rLoading')}</p>{/if}
 </div>
 <style>h2{margin-bottom:12px}section>p,section>label{margin:16px 0}.lead{font-size:18px}.busy{display:flex;align-items:center;gap:8px}
-  .export-species{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}details{margin:24px 0}summary{font-size:18px;padding:12px 0;cursor:pointer}h3{margin:24px 0 0}
+  .export-species{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}details{margin:8px 0}summary{font-size:18px;padding:12px 0;cursor:pointer}h3{margin:24px 0 0}.export-species .muted{display:block}
   .path{overflow-wrap:anywhere;color:rgb(var(--stone-700));font-size:14px}.saved{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.saved p{margin:0 0 8px}</style>

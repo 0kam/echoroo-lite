@@ -2,7 +2,7 @@ import { resolve } from '$app/paths';
 import type { Species } from './species';
 import type { Report, ReportOptions } from './reports';
 import type { AudioSource } from './AudioRegion.svelte';
-import { app,t } from './app.svelte';
+import { app,t,duration } from './app.svelte';
 export type Metric = { value: number | null; low: number | null; high: number | null };
 export type CheckStatus = 'not_started'|'in_progress'|'decided'|'undecided'|'stale';
 /** One check's estimates with 90% ranges; present only after every sound is answered. */
@@ -31,13 +31,15 @@ export type SearchHit = {segment_id:number;similarity:number;start_s:number;end_
 export type CustomModelReadiness = {run_id:number;species:Species;hits:SearchHit[];hit_count:number;
   examples:{positive_5s:number;negative_5s:number;negative_from_checks:number};requirements:{positive_5s:number;negative_5s:number};
   can_train:boolean;reasons:string[];models:CustomModel[]};
-export type ModelRow = {engine:'birdnet'|'perch'|'custom';key:string;model_id:number|null;created_at?:string;candidate_windows?:number|null;candidate_days?:number|null;
+export type ModelRow = {engine:'birdnet'|'perch'|'custom';key:string;model_id:number|null;created_at?:string;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
   threshold?:number|null;validation:Validation|null};
 export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;
   start_date:string;end_date:string;records:number;recorded_seconds:number;analysed_recordings:number;
   species:{species:Species;models:ModelRow[];search:SearchRef|null;presence:Presence}[]};
 export type SpeciesResult = Omit<Overview,'species'> & {species:Species;report:Report|null;checks:Check[];selected:string|null;search:SearchRef|null;presence:Presence};
-export const fill = (key:string,values:Record<string,string|number>) => Object.entries(values).reduce((text,[name,value])=>text.replaceAll(`{${name}}`,String(value)),t(key));
+// `{n|one|other}` in a message picks the singular word when the value is 1 (English plurals).
+export const fill = (key:string,values:Record<string,string|number>) => Object.entries(values).reduce((text,[name,value])=>text.replaceAll(`{${name}}`,String(value))
+  .replace(new RegExp(`\\{${name}\\|([^|}]*)\\|([^}]*)\\}`,'g'),(_,one:string,other:string)=>Number(value)===1?one:other),t(key));
 export const customName = (model:{created_at?:string}) => fill('customModelNumber',{date:new Intl.DateTimeFormat(app.locale,{month:'numeric',day:'numeric'}).format(new Date(`${model.created_at?.replace(' ','T')}Z`))});
 export const modelName = (engine:string) => engine==='birdnet'?'BirdNET':engine==='perch'?'Perch':t('customModel');
 export const checkName = (check:{engine:string;created_at?:string}) => check.engine==='custom'?customName(check):modelName(check.engine);
@@ -62,18 +64,47 @@ export function presenceText(presence:Presence) {
   return `○ ${t('pUnchecked')}`;
 }
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
-// Below this many detected intervals (by any AI), a species is more likely an AI mistake than present (review A2).
-export const FEW_DETECTIONS = 10;
-/** Site list sections: confirmed by listening, worth checking, or few detections and nothing done yet. */
-export function speciesGroup(row:Overview['species'][number]):'confirmed'|'check'|'few' {
+// About 10 detected intervals in 30 hours of recording; below that a species is more likely an AI mistake than present (review A2, A5).
+export const fewBelow = (recordedSeconds:number) => recordedSeconds/3600/3;
+/** Site list sections: confirmed by listening, listened but not confirmed, worth checking, or few detections and nothing done yet. */
+export function speciesGroup(row:Overview['species'][number],recordedSeconds:number):'confirmed'|'missed'|'check'|'few' {
   if(row.presence.status==='confirmed')return 'confirmed';
+  if(row.presence.status==='not_found')return 'missed';
   const most=Math.max(0,...row.models.map(model=>model.candidate_windows??0));
-  const touched=row.search||row.presence.miss||row.models.some(model=>model.validation);
-  return !touched&&most<FEW_DETECTIONS?'few':'check';
+  const touched=row.search||row.models.some(model=>model.validation);
+  return !touched&&most<fewBelow(recordedSeconds)?'few':'check';
 }
-/** Models whose counting threshold was decided by checking. */
-export const decidedModels = (models:{engine:string;created_at?:string;validation:Validation|null}[]) =>
+type Checked = {engine:string;created_at?:string;validation:Validation|null};
+/** Models whose counting rule was decided by checking. */
+export const decidedModels = (models:Checked[]) =>
   models.filter(model=>model.validation?.applicable&&model.validation.status==='decided').map(checkName);
+/** "When and how much" of a species. One decided AI is enough (B3); undecided only when no checked AI decided and none is in progress. */
+export function activity(models:Checked[]):'decided'|'in_progress'|'undecided'|'not_started' {
+  const states=models.map(model=>model.validation?.applicable?model.validation.status:'not_started');
+  return (['decided','in_progress','undecided'] as const).find(state=>states.includes(state))??'not_started';
+}
+const inProgress = (models:Checked[]) => models.map(model=>model.validation).find(value=>value?.applicable&&value.status==='in_progress');
+export function activityText(models:Checked[]) {
+  const state=activity(models),open=inProgress(models);
+  if(state==='decided')return fill('wDecidedModels',{models:decidedModels(models).join(app.locale==='ja'?'・':', ')});
+  if(open)return fill('cInProgress',{answered:open.counts.answered,total:open.counts.total});
+  return t(state==='undecided'?'cUndecided':'wNoDecided');
+}
+/** B3: the AI with more detections is the one to check; the others are optional. */
+export const defaultModel = <T extends {candidate_windows?:number|null}>(models:T[]) =>
+  models.reduce<T|undefined>((best,model)=>!best||(model.candidate_windows??0)>(best.candidate_windows??0)?model:best,undefined);
+// The agreed check (A2): 60 sounds for one AI, 18 more only when needed, about 8–10 seconds per sound.
+export const CHECK_SOUNDS = 60, EXTRA_SOUNDS = 18;
+type Countable = Checked & {candidate_windows?:number|null;eligible_windows?:number|null};
+/** Sounds still to answer before "when and how much" is settled, and the most that may be added. A small site has fewer intervals than 60. */
+export function remainingSounds(models:Countable[]):[sounds:number,extra:number] {
+  const state=activity(models),open=inProgress(models);
+  if(state==='decided'||state==='undecided')return [0,0];
+  if(open)return [open.counts.total-open.counts.answered,open.extended||open.population<=open.counts.total?0:EXTRA_SOUNDS];
+  const population=defaultModel(models)?.eligible_windows??Infinity;
+  return [Math.min(CHECK_SOUNDS,population),population>CHECK_SOUNDS?EXTRA_SOUNDS:0];
+}
+export const workload = (sounds:number,extra:number) => ({low:duration(sounds*8),high:duration((sounds+extra)*10)});
 // `return=` carries the in-app page to go back to (hash routing); anything not matching `allowed` is ignored.
 export const returnPath = (url:URL,allowed:RegExp) => {const path=new URL(url.hash.slice(1)||url.pathname+url.search,url).searchParams.get('return')??'';return allowed.test(path)?path:'';};
 export const appHref = (path:string) => `${resolve('/')}${path.slice(1)}`;

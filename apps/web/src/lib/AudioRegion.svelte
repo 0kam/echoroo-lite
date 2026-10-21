@@ -124,7 +124,8 @@
 </script>
 
 {#snippet playbackButton()}
-  <Button variant="primary" aria-busy={status === 'loading'} onclick={() => zoomable ? toggle() : status !== 'idle' ? stop() : fixedRange || choosing ? play() : playFromHead()}>
+  <!-- In a list of sounds (compact) every row has one, so none is the main button (A7). -->
+  <Button variant={compact?'default':'primary'} aria-busy={status === 'loading'} onclick={() => zoomable ? toggle() : status !== 'idle' ? stop() : fixedRange || choosing ? play() : playFromHead()}>
     {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(choosing?'playRange':'uListen')}
   </Button>
 {/snippet}
@@ -175,6 +176,7 @@
   .region { display: flex; flex-direction: column; gap: 8px; }
   .region-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
   .zoomable .region-controls { order: -1; }
+  .zoomable { container-type: inline-size; }
   .region-controls label { width: 112px; }
   .region-controls .position { flex: 1; min-width: 140px; }
   .range-hint { align-self: center; flex-basis: 100%; }

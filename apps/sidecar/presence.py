@@ -12,6 +12,33 @@ from storage import CatalogError, connect
 LIST_SIZE = 100
 
 
+def merge_candidates(rows):
+    """Collapse overlapping sounds while retaining a native interval that can be marked."""
+    groups = []
+    for row in rows:
+        matches = [group for group in groups if group['recording_id'] == row['recording_id']
+                   and row['start_s'] < group['_end'] and group['_start'] < row['end_s']]
+        if not matches:
+            groups.append({**row, '_start': row['start_s'], '_end': row['end_s'], '_rows': [row]})
+            continue
+        group = matches[0]
+        group['_rows'].append(row)
+        group['_start'] = min(group['_start'], row['start_s'])
+        group['_end'] = max(group['_end'], row['end_s'])
+        for extra in matches[1:]:
+            group['_rows'].extend(extra['_rows'])
+            group['_start'] = min(group['_start'], extra['_start'])
+            group['_end'] = max(group['_end'], extra['_end'])
+            groups.remove(extra)
+    result = []
+    for group in groups:
+        rows = group.pop('_rows')
+        representative = next((row for row in rows if row['marked']), rows[0])
+        models = [model for row in rows for model in row['models']]
+        result.append({**representative, 'models': models})
+    return result
+
+
 def candidates(root, dataset_id, species_id, source, first=None, last=None):
     """The sounds most likely to be this species, from the top down."""
     from custom_models import list_models
@@ -33,13 +60,20 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None):
             rows[hit['recording_id'], hit['start_s'], hit['end_s']] = {'score': hit['similarity'], 'models': [], 'run_id': run['id']}
     else:
         lists = []
+        from results_workflow import cached
         for model in ctx['models']:
-            windows = model_windows(root, ctx, species_id, model['engine'])[0]
-            lists.append((model['engine'], sorted(windows, key=lambda w: -w['score'])[:LIST_SIZE]))
+            windows = cached(root, ['presence-top-v1', ctx['fingerprint'], ctx['start_date'], ctx['end_date'],
+                                    species_id, model['engine'], model['model_sha256']],
+                             lambda model=model: sorted(model_windows(root, ctx, species_id, model['engine'])[0],
+                                                        key=lambda w: -w['score'])[:LIST_SIZE])
+            lists.append((model['engine'], windows))
         for model in list_models(root, ctx, species_id):
             if model['applicable']:
-                windows = model_windows(root, ctx, species_id, 'custom', model['id'])[0]
-                lists.append(('custom', sorted(windows, key=lambda w: -w['score'])[:LIST_SIZE]))
+                windows = cached(root, ['presence-top-v1', ctx['fingerprint'], ctx['start_date'], ctx['end_date'],
+                                        species_id, 'custom', model['id'], model['artifact_sha256']],
+                                 lambda model=model: sorted(model_windows(root, ctx, species_id, 'custom', model['id'])[0],
+                                                            key=lambda w: -w['score'])[:LIST_SIZE])
+                lists.append(('custom', windows))
         # Interleave each model's ranking so no single AI decides which sounds come first.
         for rank in range(LIST_SIZE):
             for name, windows in lists:
@@ -50,11 +84,12 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None):
     summary = summaries(root, ctx, species_id).get(species_id, empty())
     marked = {(e['recording_id'], e['start_s'], e['end_s']) for e in summary['evidence'] if e['origin'] == 'mark'}
     result = []
-    for (rid, start, end), row in list(rows.items())[:LIST_SIZE]:
+    for (rid, start, end), row in rows.items():
         record = records[rid]
         result.append({**row, 'recording_id': rid, 'start_s': start, 'end_s': end, 'marked': (rid, start, end) in marked,
                        'source': {'id': rid, 'kind': 'recording', 'path': record['path'], 'seconds': record['seconds']},
                        'local_time': window_key(record, start, zone)[1]})
+    result = merge_candidates(result)[:LIST_SIZE]
     return {'species': names_for(taxon), 'source': source, 'run_id': run['id'] if run else None, 'rows': result,
             'has_ai': bool(ctx['models']), 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'site': ctx['site'], 'presence': summary}

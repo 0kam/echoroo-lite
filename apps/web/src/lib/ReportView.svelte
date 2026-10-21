@@ -5,7 +5,7 @@
   import SpiralPlot from './SpiralPlot.svelte';
   import AudioRegion from './AudioRegion.svelte';
   import Button from './ui/Button.svelte';
-  let {report,liveUrl=''}:{report:Report;liveUrl?:string}=$props();
+  let {report}:{report:Report}=$props();
   let filtered=$state<Report|null>(null),filter=$state<Cell|null>(null),index=$state(0),loading=$state(false),error=$state('');
   let version=0;
   const visible=$derived(filtered??report),hit=$derived(visible.evidence[index]);
@@ -13,7 +13,7 @@
     const current=++version;error='';filter=cell;index=0;
     if(!cell){filtered=null;loading=false;return;}
     loading=true;
-    try{const response=await api<Report|{report:Report}>(liveUrl?`${liveUrl}&cell_date=${cell.date}&hour=${cell.hour}`:`/reports/${report.id}?cell_date=${cell.date}&hour=${cell.hour}`);
+    try{const response=await api<Report|{report:Report}>(`/reports/${report.id}?cell_date=${cell.date}&hour=${cell.hour}`);
       if(current===version)filtered='report' in response?response.report:response;
     }catch(e){if(current===version)error=e instanceof Error?e.message:'unknown_error';}finally{if(current===version)loading=false;}
   }

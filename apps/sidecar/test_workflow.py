@@ -15,6 +15,14 @@ from storage import connect
 
 
 class WorkflowCheck(unittest.TestCase):
+    def test_species_counting_status_needs_one_decided_ai(self):
+        from results_workflow import counting_status
+        validation=lambda state: {'applicable':True,'status':state}
+        self.assertEqual(counting_status([validation('undecided'),validation('decided')]),'decided')
+        self.assertEqual(counting_status([validation('undecided'),None]),'undecided')
+        self.assertEqual(counting_status([validation('undecided'),validation('in_progress')]),'in_progress')
+        self.assertEqual(counting_status([{'applicable':False,'status':'decided'},None]),'not_started')
+
     def test_overview_orders_by_native_detection_intervals(self):
         from analysis import save
         with tempfile.TemporaryDirectory() as temp:
@@ -56,6 +64,7 @@ class WorkflowCheck(unittest.TestCase):
                     row=next(r for r in build_overview(root,1,ctx)['species'] if r['species']['id']==species['id'])
                 self.assertEqual([(m['engine'],m['candidate_windows'],m['threshold']) for m in row['models']],
                                  [('perch',0,.897)])
+                self.assertEqual(row['counting_status'],'decided')
 
     def test_analysis_prepares_native_windows(self):
         from analysis import save
@@ -93,7 +102,9 @@ class WorkflowCheck(unittest.TestCase):
                 check=client.post('/validations',json=scope).json()
                 self.assertEqual((check['status'],check['counts']['total'],check['window_s']),('in_progress',43,3))
                 self.assertEqual(check['results'],{})
-                with connect(root) as db: second=db.execute('SELECT id FROM validation_items WHERE session_id=? ORDER BY position LIMIT 1 OFFSET 1',(check['id'],)).fetchone()[0]
+                with connect(root) as db:
+                    second=db.execute('SELECT id FROM validation_items WHERE session_id=? ORDER BY position LIMIT 1 OFFSET 1',(check['id'],)).fetchone()[0]
+                    db.execute("INSERT INTO workflow_cache VALUES('keep-after-answer',X'00')")
                 self.assertEqual(client.post(f"/validations/{check['id']}/answers",json={'item_id':second,'verdict':'target'}).json()['detail'],'validation_answer_order')
                 with patch('validation.extension_needed',return_value=True):
                     while check['question']:
@@ -101,6 +112,7 @@ class WorkflowCheck(unittest.TestCase):
                         check=client.post(f"/validations/{check['id']}/answers",json={'item_id':q['id'],'verdict':verdict,'version':q['version']}).json()
                         if check['question']: self.assertEqual(check['results'],{})
                 self.assertIn(check['status'],('decided','undecided'))
+                with connect(root) as db:self.assertTrue(db.execute("SELECT 1 FROM workflow_cache WHERE cache_key='keep-after-answer'").fetchone())
                 self.assertEqual(sum(b['answered'] for b in check['counts']['bins']),43)
                 self.assertTrue(check['can_extend'])
                 check=client.post(f"/validations/{check['id']}/extend").json()

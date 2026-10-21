@@ -365,7 +365,6 @@ def answer(root, sid, item_id, verdict, version=None, examples=None):
         for other in others:
             other_snap = json.loads(other['snapshot']); _finish(root, db, other['id'], other_snap)
             db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?', (json.dumps(other_snap, allow_nan=False), other['id']))
-        db.execute('DELETE FROM workflow_cache')
     return view_session(root, sid)
 
 

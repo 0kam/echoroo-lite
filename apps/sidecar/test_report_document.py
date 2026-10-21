@@ -1,4 +1,5 @@
 import unittest
+from copy import deepcopy
 
 from report_document import blocks, messages, status
 from workflow_export import quality_export
@@ -47,6 +48,29 @@ class ReportDocumentTest(unittest.TestCase):
         row=quality_export(snap['validation'],result)
         self.assertEqual((row['density_value'],row['precision_value'],row['unknown'],row['disagreement']),(.5,.5,2,True))
         self.assertNotIn('goal_met',row);self.assertNotIn('precision_lower_95',row)
+
+    def test_report_groups_species_and_moves_unconfirmed_figures_to_appendix(self):
+        confirmed=snapshot();not_found=deepcopy(confirmed);unchecked=deepcopy(confirmed)
+        for snap,sid,figure in ((confirmed,'confirmed','F001'),(not_found,'not-found','F002'),(unchecked,'unchecked','F003')):
+            snap['species']={**snap['species'],'id':sid,'scientific_name':sid,'common_names':{'ja':sid,'en':sid}}
+            snap['summaries'][0]['species']=snap['species'];snap['figure_id']=figure
+        report=manifest(confirmed)
+        report['selected_species']=[snap['species'] for snap in (confirmed,not_found,unchecked)]
+        report['presence']=[
+            {'species_id':'confirmed','status':'confirmed','counting_status':'decided','evidence_count':1,'listened_without_confirming':None},
+            {'species_id':'not-found','status':'not_found','counting_status':'undecided','evidence_count':0,'listened_without_confirming':10},
+            {'species_id':'unchecked','status':'unchecked','counting_status':'not_started','evidence_count':0,'listened_without_confirming':None},
+        ]
+        content=blocks(report,[confirmed,not_found,unchecked],{'per_species':[]})
+        headings=[block['text'] for block in content if block['type']=='heading']
+        self.assertLess(headings.index('人が聞いて確認した種'),headings.index('聞いたが確認できなかった種'))
+        self.assertLess(headings.index('聞いたが確認できなかった種'),headings.index('AIの候補のみ（人は未確認）'))
+        cards=[block['cards'] for block in content if block['type']=='cards']
+        self.assertEqual([[card['id'] for card in group] for group in cards],[['F001'],['F002','F003']])
+        rendered=str(content)
+        self.assertIn('数え方が決まった（BirdNET）',rendered)
+        self.assertIn('数え方を決められなかった（AIの誤りが多いか、答えがばらついた）',rendered)
+        self.assertNotIn('基準',rendered)
 
 
 if __name__=='__main__':unittest.main()

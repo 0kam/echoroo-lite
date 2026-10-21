@@ -8,7 +8,7 @@
   import XenoCantoKey from '$lib/XenoCantoKey.svelte';
   import Button from '$lib/ui/Button.svelte';
   // Pages that link here for a missing Xeno-Canto key pass themselves as `return=`.
-  const origin=$derived(returnPath(page.url,/^\/(datasets\/\d+\/search|quiz\/add)(\?[^#]*)?$/));
+  const origin=$derived(returnPath(page.url,/^\/(datasets\/\d+\/(search|validation\/\d+|species\/[^/?#]+\/presence)|quiz\/add)(\?[^#]*)?$/));
   let birdnet=$state(false);
   onMount(()=>{api<{birdnet:boolean}>('/health').then(value=>birdnet=value.birdnet).catch(()=>{});});
 </script>
