@@ -67,7 +67,7 @@
 <div class="page">
   <div class="crumbs"><a href={`${resolve(`/datasets/${id}`)}?${range}`}>{t('uBackResults')}</a></div>
   <div class="page-header"><div>
-    <h1>{result?commonName(result.species,app.locale):t('species')} <i class="sci">{result?.species.scientific_name}</i></h1></div>
+    <h1>{result?commonName(result.species,app.locale):t('species')}{#if result?.region==='unusual'} <span class="rare">{t('wUnusual')}</span>{/if} <i class="sci">{result?.species.scientific_name}</i></h1></div>
   </div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}

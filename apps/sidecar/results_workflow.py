@@ -79,6 +79,32 @@ def context(root, dataset_id, first=None, last=None):
     return result
 
 
+def region_statuses(root, ctx, scientific_names, birdnet=True):
+    """Compare app species with the latest saved BirdNET range list in this period."""
+    from zoneinfo import ZoneInfo
+    from reports import analysis_metadata, scope_records
+    from species import birdnet_species_mapping
+    names = tuple(scientific_names)
+    if not birdnet:
+        return dict.fromkeys(names)
+    with connect(root) as db:
+        records = scope_records([dict(r) for r in db.execute(
+            'SELECT * FROM site_recordings WHERE scope_id=?', (ctx['dataset']['id'],))],
+            ZoneInfo(ctx['site']['timezone']), ctx['start_date'], ctx['end_date'])
+        recording_ids = {record['id'] for record in records}
+        analyses = db.execute('''SELECT a.recording_id,a.metadata FROM analyses a
+            JOIN site_recordings r ON r.id=a.recording_id
+            WHERE r.scope_id=? AND a.engine='birdnet' ORDER BY a.id DESC''', (ctx['dataset']['id'],))
+        analysis = next((row for row in analyses if row['recording_id'] in recording_ids), None)
+    labels = analysis_metadata(analysis['metadata']).get('species') if analysis else None
+    if labels is None:
+        return dict.fromkeys(names)
+    usual = {str(label).partition('_')[0] for label in labels}
+    app_to_birdnet = {app: birdnet for birdnet, app in birdnet_species_mapping().items()}
+    return {name: None if name not in app_to_birdnet else
+            'usual' if app_to_birdnet[name] in usual else 'unusual' for name in names}
+
+
 def cached(root, key, build):
     key = hashlib.sha256(json.dumps(key, sort_keys=True, default=str).encode()).hexdigest()
     with connect(root) as db:
@@ -175,13 +201,13 @@ def counting_status(validations):
     return 'not_started'
 
 
-def overview(root, dataset_id, first=None, last=None):
+def overview(root, dataset_id, first=None, last=None, birdnet=True):
     ctx = context(root, dataset_id, first, last)
-    return cached(root, ['overview-v11', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date']],
-                  lambda: build_overview(root, dataset_id, ctx))
+    return cached(root, ['overview-v12', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet],
+                  lambda: build_overview(root, dataset_id, ctx, birdnet))
 
 
-def build_overview(root, dataset_id, ctx):
+def build_overview(root, dataset_id, ctx, birdnet=True):
     from zoneinfo import ZoneInfo
     from custom_models import list_models
     from presence import empty, summaries
@@ -236,15 +262,17 @@ def build_overview(root, dataset_id, ctx):
     for sid in [*searched, *presence, *(sid for sid, _ in quality)]:
         if sid in named:
             add(named[sid])
+    regions = region_statuses(root, ctx, (row['species']['scientific_name'] for row in rows.values()), birdnet)
     for row in rows.values():
         row['counting_status'] = counting_status(model.get('validation') for model in row['models'])
+        row['region'] = regions[row['species']['scientific_name']]
     seconds = sum(value for r in records for key, value in effort(r, zone) if ctx['start_date'] <= key[0] <= ctx['end_date'])
     return {**ctx, 'records': len(records), 'recorded_seconds': seconds,
             'species': sorted(rows.values(), key=lambda r: (-max([m.get('candidate_windows') or 0 for m in r['models']] or [0]),
                                                            -len(r['presence']['evidence']), r['species']['scientific_name']))}
 
 
-def species_result(root, dataset_id, species_id, first=None, last=None, engine='auto', cell_date=None, hour=None, model_id=None):
+def species_result(root, dataset_id, species_id, first=None, last=None, engine='auto', cell_date=None, hour=None, model_id=None, birdnet=True):
     """One species: presence, each model's check, and the time chart of the chosen model."""
     from custom_models import list_models
     from presence import empty, summaries
@@ -284,6 +312,8 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
         attach_validation(snap, selected['validation'])
     with connect(root) as db:
         report = snapshot_view(db, snap, cell_date=cell_date, hour=hour) if snap else None
+    region = region_statuses(root, ctx, [taxon['scientific_name']], birdnet)[taxon['scientific_name']]
     return {**ctx, 'species': taxon, 'checks': checks, 'counting_status': overall_status,
             'selected': selected['key'] if selected else None, 'report': report,
-            'search': search_for(root, ctx, species_id), 'presence': summaries(root, ctx, species_id).get(species_id, empty())}
+            'search': search_for(root, ctx, species_id), 'presence': summaries(root, ctx, species_id).get(species_id, empty()),
+            'region': region}

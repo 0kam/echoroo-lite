@@ -43,6 +43,15 @@ class ReportDocumentTest(unittest.TestCase):
         self.assertNotIn('片側95%',rendered)
         self.assertNotIn('5,000.0%',rendered)
 
+    def test_report_notes_confirmed_unusual_species_and_region_source(self):
+        snap=snapshot()
+        for locale in ('ja','en'):
+            report=manifest(snap,locale)
+            report['presence'][0]['region']='unusual'
+            rendered=str(blocks(report,[snap],{'per_species':[]}))
+            self.assertIn(messages(locale)['region_unusual_note'],rendered)
+            self.assertIn(messages(locale)['region_source'],rendered)
+
     def test_quality_csv_has_new_metrics_without_old_goal_fields(self):
         snap=snapshot();result=snap['validation']['results']['birdnet']
         row=quality_export(snap['validation'],result)

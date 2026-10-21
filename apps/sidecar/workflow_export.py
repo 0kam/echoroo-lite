@@ -16,7 +16,7 @@ from contextlib import ExitStack
 
 from reports import csv_bytes,save_report,scope_records,effort,window_key,window_in_scope,classification_batches
 from storage import CatalogError,checked_source,connect
-from results_workflow import attach_validation,context,counting_status,current_validations,detection_snapshot,custom_snapshot,threshold_for
+from results_workflow import attach_validation,context,counting_status,current_validations,detection_snapshot,custom_snapshot,region_statuses,threshold_for
 from report_document import create_html,messages,quality_result,status,status_text,criterion,method
 from report_figures import DATA,spiral,recording_schedule
 
@@ -94,7 +94,7 @@ def score_tables(root,db,folder,snapshots,records,cancel=None):
                 writers[snap['figure_id']].writerows([row[k] for k in fields] for row in score_windows(root,snap['model_id']))
 
 
-def export(root,body,cancel=None):
+def export(root,body,cancel=None,birdnet=True):
     from custom_models import list_models
     from presence import empty,summaries
     from quiz import report_results
@@ -202,6 +202,7 @@ def export(root,body,cancel=None):
                 from species import names_for
                 for sid in presence:
                     if sid not in taxa:taxa[sid]=names_for(db.execute('SELECT * FROM species WHERE id=?',(sid,)).fetchone())
+                regions=region_statuses(root,ctx,(taxon['scientific_name'] for taxon in taxa.values()),birdnet)
                 for sid,item in presence.items():
                     if cancel and cancel.is_set():raise CatalogError('cancelled')
                     for entry in item['evidence']:
@@ -211,6 +212,7 @@ def export(root,body,cancel=None):
                     miss=item['miss'] or {}
                     species_snapshots=[snap for snap in snapshots if snap['species']['id']==sid]
                     presence_rows.append({'species_id':sid,'scientific_name':taxa[sid]['scientific_name'],'status':item['status'],
+                        'region':regions[taxa[sid]['scientific_name']],
                         'counting_status':counting_status(snap.get('validation') for snap in species_snapshots),
                         'evidence_count':len(item['evidence']),'marked':sum(e['origin']=='mark' for e in item['evidence']),
                         'heard_in_checks':sum(e['origin']=='check' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),

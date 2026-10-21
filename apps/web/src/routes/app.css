@@ -171,6 +171,8 @@ tr.chosen td { background: rgb(var(--primary-100)); }
 .dark tr.chosen td { background: rgb(var(--stone-200)); }
 .common-name { display: block; font-weight: 500; }
 .scientific-name { display: block; color: rgb(var(--stone-600)); font-size: 13px; font-style: italic; }
+/* Range-model caution next to a species name: text, not colour alone. */
+.rare { display: inline-block; padding: 0 8px; border: 1px solid rgb(var(--color-warning)); border-radius: 4px; background: rgb(var(--color-warning-light)); color: rgb(var(--stone-800)); font-size: 14px; font-weight: 400; font-style: normal; vertical-align: middle; }
 .name-matches { max-height: 220px; overflow-y: auto; border: 1px solid rgb(var(--stone-300)); border-radius: 6px; margin-top: 8px; }
 .name-matches button { display: flex; width: 100%; justify-content: flex-start; text-align: left; border: 0; border-radius: 0; min-height: 32px; padding: 8px 12px; }
 .name-matches i { margin-left: 8px; color: rgb(var(--stone-600)); font-size: 14px; }

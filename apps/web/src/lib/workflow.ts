@@ -22,8 +22,10 @@ export type Presence = {status:'confirmed'|'not_found'|'unchecked';evidence:Evid
 export type SearchRef = {id:number;created_at:string};
 export type PresenceRow = {recording_id:number;start_s:number;end_s:number;score:number|null;models:{engine:string;rank:number;score:number}[];
   run_id:number|null;marked:boolean;source:AudioSource;local_time:string};
+// BirdNET range model for the site: 'unusual' species are not on its list; missing or null means no judgement.
+export type Region = 'usual'|'unusual'|null;
 export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|null;rows:PresenceRow[];has_ai:boolean;start_date:string;end_date:string;
-  site:{id:number;name:string;timezone:string};presence:Presence};
+  site:{id:number;name:string;timezone:string};presence:Presence;region?:Region};
 export type CustomModel = {id:number;created_at:string;dataset_id:number;run_id:number;species:Species;
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
   training:{positive_5s:number;negative_5s:number;negative_from_checks:number};inference:{scored_5s:number};applicable:boolean;reason:string|null};
@@ -35,8 +37,8 @@ export type ModelRow = {engine:'birdnet'|'perch'|'custom';key:string;model_id:nu
   threshold?:number|null;validation:Validation|null};
 export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;
   start_date:string;end_date:string;records:number;recorded_seconds:number;analysed_recordings:number;
-  species:{species:Species;models:ModelRow[];search:SearchRef|null;presence:Presence}[]};
-export type SpeciesResult = Omit<Overview,'species'> & {species:Species;report:Report|null;checks:Check[];selected:string|null;search:SearchRef|null;presence:Presence};
+  species:{species:Species;models:ModelRow[];search:SearchRef|null;presence:Presence;region?:Region}[]};
+export type SpeciesResult = Omit<Overview,'species'> & {species:Species;report:Report|null;checks:Check[];selected:string|null;search:SearchRef|null;presence:Presence;region?:Region};
 // `{n|one|other}` in a message picks the singular word when the value is 1 (English plurals).
 export const fill = (key:string,values:Record<string,string|number>) => Object.entries(values).reduce((text,[name,value])=>text.replaceAll(`{${name}}`,String(value))
   .replace(new RegExp(`\\{${name}\\|([^|}]*)\\|([^}]*)\\}`,'g'),(_,one:string,other:string)=>Number(value)===1?one:other),t(key));

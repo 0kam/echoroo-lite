@@ -14,6 +14,12 @@ from server import create_app
 from storage import connect
 
 
+def enable_birdnet(root):
+    for relative in ('birdnet/acoustic-models/v2.4/tf/model-fp32.tflite',
+                     'birdnet/geo-models/v2.4/tf/model-fp32.tflite'):
+        path=root/relative;path.parent.mkdir(parents=True,exist_ok=True);path.touch()
+
+
 class WorkflowCheck(unittest.TestCase):
     def test_species_counting_status_needs_one_decided_ai(self):
         from results_workflow import counting_status
@@ -44,6 +50,49 @@ class WorkflowCheck(unittest.TestCase):
                 self.assertEqual([r['species']['scientific_name'] for r in rows],['Parus cinereus','Horornis diphone','Astur gentilis'])
                 self.assertEqual([{m['engine']:m['candidate_windows'] for m in r['models']} for r in rows],
                                  [{'birdnet':15,'perch':9},{'birdnet':5,'perch':12},{'birdnet':5}])
+
+    def test_region_status_uses_saved_birdnet_species_for_all_payloads(self):
+        from analysis import save
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
+            enable_birdnet(root)
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
+                usual=client.get('/species?q=Horornis diphone').json()[0]
+                unusual=client.get('/species?q=Parus cinereus').json()[0]
+                unmapped=client.post('/species',json={'scientific_name':'Example unmapped bird'}).json()
+                with connect(root) as db:
+                    record=dict(db.execute('SELECT * FROM recordings').fetchone())
+                    job=db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(1,'done',1)").lastrowid
+                label='Horornis diphone_Japanese Bush Warbler'
+                save(root,job,record,'birdnet',{'model_sha256':'birdnet','species':[label]},dict(
+                    labels=np.repeat(label,5),scores=np.arange(5)/10,start_s=np.arange(5)*3,end_s=np.arange(1,6)*3),[])
+                with connect(root) as db:
+                    db.executemany('''INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s)
+                        VALUES(1,?,1,0,3)''',((taxon['id'],) for taxon in (usual,unusual,unmapped)))
+                expected={usual['id']:'usual',unusual['id']:'unusual',unmapped['id']:None}
+                overview={row['species']['id']:row['region'] for row in client.get('/datasets/1/overview').json()['species']}
+                self.assertEqual({sid:overview[sid] for sid in expected},expected)
+                for taxon in (usual,unusual,unmapped):
+                    detail=client.get(f"/datasets/1/species/{taxon['id']}").json()
+                    listed=client.get(f"/datasets/1/species/{taxon['id']}/presence",params={'source':'search'}).json()
+                    self.assertEqual((detail['region'],listed['region']),(expected[taxon['id']],)*2)
+                (root/'birdnet/geo-models/v2.4/tf/model-fp32.tflite').unlink()
+                self.assertIsNone(client.get(f"/datasets/1/species/{unusual['id']}").json()['region'])
+
+    def test_region_status_is_null_without_birdnet_analysis(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
+            enable_birdnet(root)
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
+                species=client.get('/species?q=Horornis diphone').json()[0]
+                with connect(root) as db:
+                    db.execute('INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s) VALUES(1,?,1,0,3)',(species['id'],))
+                row=next(row for row in client.get('/datasets/1/overview').json()['species'] if row['species']['id']==species['id'])
+                detail=client.get(f"/datasets/1/species/{species['id']}").json()
+                listed=client.get(f"/datasets/1/species/{species['id']}/presence",params={'source':'search'}).json()
+                self.assertEqual((row['region'],detail['region'],listed['region']),(None,None,None))
 
     def test_overview_keeps_checked_model_with_zero_candidates(self):
         from results_workflow import build_overview

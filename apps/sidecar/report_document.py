@@ -79,7 +79,9 @@ def numeric_metric(value,t,digits=2):
 
 
 def presence_text(row,t):
-    if row['status']=='confirmed':return t['presence_confirmed'].format(count=row['evidence_count'])
+    if row['status']=='confirmed':
+        text=t['presence_confirmed'].format(count=row['evidence_count'])
+        return text+'\n'+t['region_unusual_note'] if row.get('region')=='unusual' else text
     if row['status']=='not_found':return t['presence_not_found'].format(count=row['listened_without_confirming'])
     return t['presence_unchecked']
 
@@ -196,7 +198,7 @@ def blocks(manifest,snapshots,quiz):
         table([t['species_name'],t['custom_training_material']],[[name(snap['species'],locale)+'\n'+method(snap,t),
             t['custom_training_count'].format(positive=number(snap['custom_model']['training'].get('positive_5s')),negative=number(snap['custom_model']['training'].get('negative_5s')))]
             for snap in custom],[2,3])
-    heading(t['methods_title']);para('methods_note');para('human_reference')
+    heading(t['methods_title']);para('methods_note');para('region_source');para('human_reference')
     section('quiz_title');para('quiz_note')
     taxa={s['id']:s for s in manifest['selected_species']}
     rows=[]

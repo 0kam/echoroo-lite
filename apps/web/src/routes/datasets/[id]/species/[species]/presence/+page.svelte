@@ -19,8 +19,10 @@
   // Shown rows and played sounds survive going back to this page and restarting the app (A14).
   const draftKey=$derived(`echoroo-presence:${id}:${speciesId}:${source}:${dates}`);
   let list=$state<PresenceList|null>(null),error=$state(''),shown=$state(10),played=$state<string[]>([]),saved=$state(0),ready=$state('');
-  // B2: without an identified example to compare with, a mark gets one caution first. `null` until the examples load.
+  // B2: without an identified example to compare with, or for a species the range model does not expect here, a mark gets one caution first.
+  // `named` is `null` until the examples load.
   let named=$state<boolean|null>(null),caution=$state('');
+  const unusual=$derived(list?.region==='unusual'),warn=$derived(named===false||unusual);
   // BirdNET (3 s) and Perch (5 s) rows can start at the same second.
   const key=(row:PresenceRow)=>`${row.recording_id}:${row.start_s}:${row.end_s}`;
   async function load(){try{list=await api<PresenceList>(`/datasets/${id}/species/${speciesId}/presence?source=${source}${dates?`&${dates}`:''}`);}
@@ -64,11 +66,11 @@
         <AudioRegion source={row.source} fixedRange compact start={row.start_s} end={row.end_s} onplaying={()=>{if(!played.includes(key(row)))played=[...played,key(row)];}}>
           <!-- A4: a sound can be marked only after it was played; undoing is always possible. -->
           {#snippet actions()}<Button active={row.marked} aria-pressed={row.marked} pending={mark.pending} disabled={!row.marked&&!played.includes(key(row))}
-            onclick={()=>!row.marked&&named===false&&caution!==key(row)?caution=key(row):mark.run(row)}>{row.marked?'✓ ':''}{t('pMark')}</Button>
+            onclick={()=>!row.marked&&warn&&caution!==key(row)?caution=key(row):mark.run(row)}>{row.marked?'✓ ':''}{t('pMark')}</Button>
             {#if !row.marked&&!played.includes(key(row))}<span class="muted">{t('pPlayFirst')}</span>{/if}{/snippet}
         </AudioRegion>
-        {#if caution===key(row)&&!row.marked}<div class="notice caution" role="alert"><p>{t('pNoExamples')}</p>
-          <div class="actions"><Button onclick={()=>caution=''}>{t('mCancel')}</Button><Button pending={mark.pending} onclick={()=>mark.run(row)}>{t('pMarkAnyway')}</Button></div></div>{/if}
+        {#if caution===key(row)&&!row.marked}<div class="notice caution" role="alert">{#if unusual}<p>{t('pUnusual')}</p>{/if}{#if named===false}<p>{t('pNoExamples')}</p>{/if}
+          <div class="actions"><Button onclick={()=>caution=''}>{t('mCancel')}</Button><Button pending={mark.pending} onclick={()=>mark.run(row)}>{t(named===false?'pMarkAnyway':'pMarkCompared')}</Button></div></div>{/if}
       </article>{:else}<p>{t('pNoRows')}</p>{/each}
       {#if shown<list.rows.length}<Button onclick={()=>shown+=10}>{t('pMore')}</Button>{/if}
       {#if !anyMarked&&list.rows.length}<div class="miss">
