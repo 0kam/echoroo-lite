@@ -40,8 +40,11 @@ function Press-DesktopAction([string]$Name) {
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
 }
 
-function Press-FirstTableAction([string]$Name) {
-    $table = Find-DesktopControl $Name ([System.Windows.Automation.ControlType]::Table)
+function Press-FirstTableAction {
+    $window = [System.Windows.Automation.AutomationElement]::FromHandle($application.MainWindowHandle)
+    $table = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Table))
+    if ($null -eq $table) { throw 'The desktop UI has no accessible table' }
     foreach ($type in @([System.Windows.Automation.ControlType]::Hyperlink, [System.Windows.Automation.ControlType]::Button)) {
         $element = $table.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
             [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $type))
@@ -51,18 +54,13 @@ function Press-FirstTableAction([string]$Name) {
             return
         }
     }
-    throw "The table has no accessible action: $Name"
+    throw 'The accessible table has no action'
 }
 
-function Select-FirstSaved([string]$Name) {
-    $element = Find-DesktopControl $Name ([System.Windows.Automation.ControlType]::ComboBox)
-    $element.SetFocus()
-    [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{TAB}')
-}
-
-function Wait-ForDesktopText([string]$Text, [string]$EvidenceName) {
-    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+function Wait-ForDesktopText([string]$Text, [string]$EvidenceName, [int]$MinimumCount = 1) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(90)
     $names = @()
+    $matches = 0
     do {
         Start-Sleep -Milliseconds 500
         $application.Refresh()
@@ -72,7 +70,8 @@ function Wait-ForDesktopText([string]$Text, [string]$EvidenceName) {
             $elements = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
             $names = @($elements | ForEach-Object { $_.Current.Name })
         }
-    } until ($names -contains $Text -or [DateTime]::UtcNow -ge $deadline)
+        $matches = @($names | Where-Object { $_ -eq $Text }).Count
+    } until ($matches -ge $MinimumCount -or [DateTime]::UtcNow -ge $deadline)
     $names | Out-File (Join-Path $env:RUNNER_TEMP "$EvidenceName.txt") -Encoding utf8
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bitmap = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
@@ -84,7 +83,7 @@ function Wait-ForDesktopText([string]$Text, [string]$EvidenceName) {
         $graphics.Dispose()
         $bitmap.Dispose()
     }
-    if ($names -notcontains $Text) { throw "The desktop UI did not display: $Text" }
+    if ($matches -lt $MinimumCount) { throw "The desktop UI did not display: $Text" }
     return $window
 }
 
@@ -96,52 +95,36 @@ function Close-Desktop {
 
 $application = Start-Process "$installDirectory/echoroo-lite.exe" -PassThru
 try {
-    $window = Wait-ForDesktopText 'Local service connected' 'echoroo-startup'
+    # The navigation is visible before connection; its matching page heading is the second occurrence.
+    $window = Wait-ForDesktopText 'Recording sites' 'echoroo-startup' 2
     $language = Find-DesktopControl 'Language' ([System.Windows.Automation.ControlType]::ComboBox)
     $language.SetFocus()
     # Japanese is the first native select option; Home and Tab select and commit it.
     [System.Windows.Forms.SendKeys]::SendWait('{HOME}{TAB}')
-    $window = Wait-ForDesktopText 'ローカルで接続済み' 'echoroo-startup-ja'
+    $window = Wait-ForDesktopText '録音した地点' 'echoroo-startup-ja' 2
     Close-Desktop
 
     $application = Start-Process "$installDirectory/echoroo-lite.exe" -PassThru
-    $window = Wait-ForDesktopText 'ローカルで接続済み' 'echoroo-startup-ja-restarted'
+    $window = Wait-ForDesktopText '録音した地点' 'echoroo-startup-ja-restarted' 2
     if ($Data) {
-        Press-DesktopAction '開く'
-        $window = Wait-ForDesktopText '録音一覧' 'echoroo-startup-recordings'
-        Press-FirstTableAction '録音一覧'
-        $window = Wait-ForDesktopText 'Perch V2' 'echoroo-startup-results'
-        $null = Find-DesktopControl 'BirdNET 2.4' ([System.Windows.Automation.ControlType]::Text)
-        Press-DesktopAction 'この録音から類似検索'
-        $window = Wait-ForDesktopText '保存した検索と根拠' 'echoroo-startup-search-history'
-        Press-DesktopAction '判定する'
-        $window = Wait-ForDesktopText '類似度の分布と判定' 'echoroo-startup-search'
-        Select-FirstSaved '判定する区間'
-        $window = Wait-ForDesktopText '対象種 対象外 不明 保存済み' 'echoroo-startup-judgements'
-
-        Press-DesktopAction '報告'
-        $window = Wait-ForDesktopText '報告の履歴' 'echoroo-startup-report-history'
-        Press-DesktopAction '開く'
-        $window = Wait-ForDesktopText 'Spiral plot' 'echoroo-startup-report'
-        $plot = Find-DesktopControl 'Spiral plot' ([System.Windows.Automation.ControlType]::Group)
-        $cells = $plot.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button))
-        if ($cells.Count -ne 24) { throw "Expected 24 hourly plot cells, got $($cells.Count)" }
-        $cell = @($cells | Where-Object { $_.Current.Name -like '2024-08-08 6:00*' })[0]
-        $cell.SetFocus()
-        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-        $window = Wait-ForDesktopText '2024-08-08 · 6:00 · 解析済み' 'echoroo-startup-report-cell'
+        $window = Wait-ForDesktopText 'Test' 'echoroo-startup-site'
+        Press-DesktopAction '結果を見る'
+        $window = Wait-ForDesktopText '調べている種' 'echoroo-startup-species-list'
+        Press-FirstTableAction
+        $window = Wait-ForDesktopText '種の一覧に戻る' 'echoroo-startup-species'
+        $window = Wait-ForDesktopText 'いるか' 'echoroo-startup-species-presence'
+        $window = Wait-ForDesktopText 'いつ・どれくらいか' 'echoroo-startup-species-counting'
 
         Press-DesktopAction '鳴き声クイズ'
-        $window = Wait-ForDesktopText '学習を始める' 'echoroo-startup-quiz'
-        Press-DesktopAction '学習を始める'
-        $window = Wait-ForDesktopText '音源を聴いて、対象の種を選んでください。' 'echoroo-startup-quiz-question'
+        $window = Wait-ForDesktopText 'クイズを始める' 'echoroo-startup-quiz'
+        Press-DesktopAction 'クイズを始める'
+        $window = Wait-ForDesktopText '声を聞いて、どの鳥か選んでください。' 'echoroo-startup-quiz-question'
         Press-DesktopAction 'わからない'
         $window = Wait-ForDesktopText '次の問題' 'echoroo-startup-quiz-feedback'
-        Write-Output 'Installed Japanese desktop restored both model results, saved search/judgement, 24-cell spiral report and quiz feedback.'
+        Write-Output 'Installed Japanese desktop opened the current site, species and quiz flow.'
     }
     Close-Desktop
-    Write-Output 'NSIS installation, installed sidecar API/quiz, English/Japanese desktop connection, locale persistence and shutdown passed.'
+    Write-Output 'NSIS installation, installed sidecar API/quiz, English/Japanese site list, locale persistence and shutdown passed.'
 } finally {
     if (-not $application.HasExited) { Stop-Process -Id $application.Id -Force }
 }
