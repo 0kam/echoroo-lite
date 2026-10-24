@@ -5,6 +5,7 @@ annotation loop, rebuilt as a Tauri app with a Python sidecar and SQLite.
 The standard edition uses Perch V2. A separately distributed non-commercial
 edition adds BirdNET 2.4.
 
+- Installation (Windows, macOS, Linux; unsigned-app warnings): [docs/install-guide.md](docs/install-guide.md)
 - Implementation status and remaining work: [docs/implementation-status.md](docs/implementation-status.md)
 - UI review handoff: [docs/UI-REVIEW-HANDOFF-2026-09-24.md](docs/UI-REVIEW-HANDOFF-2026-09-24.md)
 - Fixed 30-window validation QA: [docs/validation-effort-qa-2026-09-24.md](docs/validation-effort-qa-2026-09-24.md)

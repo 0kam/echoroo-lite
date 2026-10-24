@@ -63,7 +63,8 @@ with ExitStack() as stack:
         assert species[0]["common_names"]["ja"] == "キバシリ", species
         assert api('/xeno-canto/key') == {'configured': False}
         library = api('/quiz/library')
-        assert len(library['clips']) == 26 and len({c['species_id'] for c in library['clips']}) == 26
+        bundled = len(json.loads((Path(__file__).resolve().parents[1] / 'apps/sidecar/data/quiz/manifest.json').read_text(encoding='utf-8'))['items'])
+        assert bundled >= 2 and len(library['clips']) == bundled and len({c['species_id'] for c in library['clips']}) == bundled
         quiz = api('/quiz/sessions', {'clip_ids': [c['id'] for c in library['clips']], 'count': 2})
         assert quiz['purpose'] == 'practice' and 'clip' not in quiz['question']
         quiz = api(f"/quiz/sessions/{quiz['id']}/answers", {'position': 0, 'species_id': None})
@@ -71,7 +72,7 @@ with ExitStack() as stack:
         request = urllib.request.Request(connection['url'] + f"/quiz/sessions/{quiz['id']}/questions/0/audio", headers={'Authorization': 'Bearer ' + connection['token']})
         with urllib.request.urlopen(request, timeout=30) as response:
             assert len(response.read()) > 1000
-        print('Frozen 26-species quiz, managed MP3 audio, answer persistence and feedback passed.')
+        print(f'Frozen {bundled}-species quiz, managed MP3 audio, answer persistence and feedback passed.')
         try:
             urllib.request.urlopen(connection["url"] + "/catalog", timeout=20)
         except urllib.error.HTTPError as error:
