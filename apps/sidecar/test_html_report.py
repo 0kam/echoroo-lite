@@ -14,12 +14,18 @@ import numpy as np
 import soundfile as sf
 from fastapi.testclient import TestClient
 
+from quiz_test_bundle import quiz_bundle
 from server import WorkflowExportRequest, create_app
 from storage import CatalogError, connect
 from workflow_export import export
 
 
 class HtmlReportCheck(unittest.TestCase):
+    def setUp(self):
+        self.bundle = quiz_bundle()
+        self.bundle.__enter__()
+        self.addCleanup(self.bundle.__exit__, None, None, None)
+
     def test_presence_report_and_immutable_audio_suite(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);audio=root/'input';audio.mkdir();output=root/'exports';output.mkdir()

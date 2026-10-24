@@ -129,7 +129,9 @@ class EvidenceCheck(unittest.TestCase):
                     if '/api/' in url:
                         output.write(json.dumps({'page': 1, 'numPages': 2, 'numRecordings': 601,
                             'recordings': [dict(id=str(100 + i), gen='Horornis', sp='diphone', en='Japanese Bush Warbler',
-                                rec='Test recordist', cnt='Japan', q='A', lic='https://creativecommons.org/licenses/by/4.0/') for i in range(501)]}).encode())
+                                rec='Test recordist', cnt='Japan', q='A', lic='https://creativecommons.org/licenses/by/4.0/',
+                                file=f'https://xeno-canto.org/{100 + i}/download') for i in range(501)]
+                            + [dict(id='99', gen='Horornis', sp='diphone', lic='https://creativecommons.org/licenses/by/4.0/', file=None)]}).encode())
                     else:
                         output.write(stereo.read_bytes())
                 with patch('xeno_canto.download', side_effect=upstream):

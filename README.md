@@ -24,7 +24,7 @@ models, saves scores and embeddings, and searches by a spectrogram-selected audi
 interval. Xeno-Canto key settings, search and selected downloads are implemented and
 verified against the live service in the Mac release app. Reports provide species
 summaries, evidence audio, spiral plots and portable HTML reports with CSV/SVG/PNG/audio
-ZIP exports. A 26-species practice quiz supports custom sets, selected audio clips and
+ZIP exports. A practice quiz with bundled Xeno-Canto recordings (CC BY, CC BY-SA or CC0) supports custom sets, selected audio clips and
 saved first answers. Windows acceptance and an independent, unseen-audio capability test
 remain pending.
 
@@ -151,7 +151,9 @@ Mac `.app` and DMG builds have passed. Native Mac checks cover starting, saving,
 resuming and correcting evaluations, results and local HTML playback. Windows has
 not been tested. See the [fixed-sample QA record](docs/validation-effort-qa-2026-09-24.md).
 
-Open **Bird-call quiz** to practice with the 26 birds from `koe-e-lab/sample_data`,
+Open **Bird-call quiz** to practice with the bundled Xeno-Canto clips (13 Japanese birds whose
+recordings are CC BY, CC BY-SA or CC0; credits are shown after each answer and in
+`apps/sidecar/data/quiz/selection.json`; rebuild with `scripts/bundle_quiz.py`),
 without importing field recordings first. Select species/audio and save a named set,
 then start a session. Answers, unknowns and progress are saved; results allow review
 and replay. **Add a question from audio** uses audio chosen on this PC or Xeno-Canto,

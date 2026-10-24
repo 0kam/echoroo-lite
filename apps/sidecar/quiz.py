@@ -13,6 +13,8 @@ from species import names_for
 from storage import CatalogError, checked_source, connect
 
 DATA = Path(__file__).parent / 'data/quiz'
+BUNDLE_KEY = 'xeno-canto-v1'
+RETIRED_KEY = 'koe-e-lab-v1'
 
 
 @lru_cache(maxsize=1)
@@ -22,22 +24,33 @@ def manifest():
 
 def initialize_quiz(root):
     """Called under the app mutation lock when opening the quiz library, not ML startup."""
+    bundle = manifest()
     with connect(root) as db:
-        if db.execute("SELECT id FROM quiz_sets WHERE bundled_key='koe-e-lab-v1'").fetchone():
+        db.execute("UPDATE quiz_clips SET enabled=0 WHERE bundled_key LIKE ?", (RETIRED_KEY + ':%',))
+        # Keep the saved selection, but do not let the web app choose it as the current bundled set.
+        db.execute('UPDATE quiz_sets SET bundled_key=NULL WHERE bundled_key=?', (RETIRED_KEY,))
+        if bundle.get('version') != 2 or db.execute(
+                'SELECT id FROM quiz_sets WHERE bundled_key=?', (BUNDLE_KEY,)).fetchone():
             return
         known = {r['bundled_key']: r['id'] for r in db.execute('SELECT id,bundled_key FROM quiz_clips')}
         taxa = {r['scientific_name']: r['id'] for r in db.execute('SELECT id,scientific_name FROM species')}
     ids = []
     folder = Path(root) / 'quiz/audio'
     folder.mkdir(parents=True, exist_ok=True)
-    for item in manifest()['items']:
+    for item in bundle['items']:
+        if not item['key'].startswith(BUNDLE_KEY + ':') or item['scientific_name'] not in taxa:
+            raise CatalogError('quiz_bundle_changed')
         if item['key'] in known:
             ids.append(known[item['key']]); continue
         data = DATA / item['audio_file']
-        if hashlib.sha256(data.read_bytes()).hexdigest() != item['sha256']['audio_file']:
+        try:
+            digest = hashlib.sha256(data.read_bytes()).hexdigest()
+        except OSError:
+            raise CatalogError('quiz_bundle_changed') from None
+        if digest != item['sha256']:
             raise CatalogError('quiz_bundle_changed')
         # Managed copies survive the temporary extraction directory of a frozen executable.
-        target = folder / (item['sha256']['audio_file'] + '.mp3')
+        target = folder / (item['sha256'] + '.mp3')
         if not target.exists():
             temporary = folder / (uuid4().hex + '.tmp')
             try:
@@ -45,15 +58,17 @@ def initialize_quiz(root):
                 temporary.replace(target)
             finally:
                 temporary.unlink(missing_ok=True)
-        if hashlib.sha256(target.read_bytes()).hexdigest() != item['sha256']['audio_file']:
+        if hashlib.sha256(target.read_bytes()).hexdigest() != item['sha256']:
             raise CatalogError('source_changed')
         reference = add_reference(root, target)
-        metadata = {**item, 'source': manifest()['source'], 'start_s': 0, 'end_s': reference['seconds'], 'note': ''}
+        metadata = {**item, 'source': bundle['source'], 'start_s': 0, 'end_s': reference['seconds']}
+        metadata.setdefault('note', '')
         with connect(root) as db:
             ids.append(db.execute('INSERT INTO quiz_clips(species_id,reference_id,bundled_key,metadata) VALUES(?,?,?,?)',
                 (taxa[item['scientific_name']], reference['id'], item['key'], json.dumps(metadata, ensure_ascii=False))).lastrowid)
     with connect(root) as db:
-        db.execute("INSERT INTO quiz_sets(name,clip_ids,bundled_key) VALUES('koe-e-lab',?,'koe-e-lab-v1')", (json.dumps(ids),))
+        db.execute('INSERT INTO quiz_sets(name,clip_ids,bundled_key) VALUES(?,?,?)',
+                   ('xeno-canto', json.dumps(ids), BUNDLE_KEY))
 
 
 def clip_view(db, row):
@@ -160,9 +175,13 @@ def session_view(root, session_id, position=None):
     review, per_species = [], {}
     for i, answer in enumerate(answers):
         q = questions[i]
+        clip = q['clip']
+        key = clip.get('bundled_key') or clip.get('metadata', {}).get('key', '')
+        if str(key).startswith(RETIRED_KEY + ':'):
+            clip = {**clip, 'metadata': {**clip['metadata'], 'image_file': None}}
         correct = answer['species_id'] == q['clip']['species_id']
         status = 'unknown' if answer['species_id'] is None else 'correct' if correct else 'incorrect'
-        review.append({'position': i, 'status': status, 'answered_at': answer['at'], 'clip': q['clip'],
+        review.append({'position': i, 'status': status, 'answered_at': answer['at'], 'clip': clip,
             'answer': next((s for s in q['choices'] if s['id'] == answer['species_id']), None)})
         sid = q['clip']['species_id']
         item = per_species.setdefault(sid, {'species': q['clip']['species'], 'correct': 0, 'incorrect': 0, 'unknown': 0, 'total': 0})
@@ -226,7 +245,11 @@ def question_source(root, session_id, position):
         _, snapshot, answers = session_row(db, session_id)
     if not 0 <= position < len(snapshot['questions']) or position > len(answers):
         raise CatalogError('invalid_input')
-    return snapshot['questions'][position]['clip']['source']
+    clip = snapshot['questions'][position]['clip']
+    key = clip.get('bundled_key') or clip.get('metadata', {}).get('key', '')
+    if str(key).startswith(RETIRED_KEY + ':'):
+        raise CatalogError('quiz_audio_unavailable')
+    return clip['source']
 
 
 def question_audio(root, session_id, position):
@@ -239,10 +262,13 @@ def clip_image(root, clip_id):
     if row is None:
         raise CatalogError('not_found')
     metadata = json.loads(row[0])
+    if str(metadata.get('key', '')).startswith(RETIRED_KEY + ':'):
+        raise CatalogError('not_found')
     item = next((item for item in manifest()['items'] if item['key'] == metadata.get('key')), None)
-    if item is None:
+    if item is None or not item.get('image_file'):
         raise CatalogError('not_found')
     image = DATA / item['image_file']
-    if hashlib.sha256(image.read_bytes()).hexdigest() != item['sha256']['image_file']:
+    expected = item.get('image_sha256')
+    if not expected or hashlib.sha256(image.read_bytes()).hexdigest() != expected:
         raise CatalogError('quiz_bundle_changed')
     return image

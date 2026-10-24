@@ -34,6 +34,22 @@ def load_perch(models):
     return ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"]), digest(path)
 
 
+def perch_labels(models):
+    path = Path(models) / "perch-labels/assets/labels.csv"
+    if not path.is_file():
+        raise CatalogError("models_missing")
+    with path.open(newline="", encoding="utf-8") as stream:
+        return [row[0] for row in list(csv.reader(stream))[1:]]
+
+
+def perch_label_index(labels, scientific_name):
+    mapped = birdnet_species_mapping().get(scientific_name)
+    for candidate in (scientific_name, mapped):
+        if candidate in labels:
+            return labels.index(candidate)
+    raise CatalogError("species_not_in_model")
+
+
 def birdnet_available(models):
     root = Path(models) / "birdnet"
     return all((root / relative).is_file() for relative in (
@@ -118,8 +134,7 @@ def run(root, models, job, records, site, cancel):
                          "display_threshold": 0.1}
         progress("loading_perch", 0)
         session, model_sha = load_perch(models)
-        with labels_path.open(newline="", encoding="utf-8") as stream:
-            labels = [r[0] for r in list(csv.reader(stream))[1:]]
+        labels = perch_labels(models)
         perch_meta = {"model": "Perch V2 no_dft", "model_sha256": model_sha,
                       "labels_sha256": digest(labels_path), "window_s": 5,
                       "score_type": "logit", "stored_top_k": None, "display_top_k": 5,

@@ -61,14 +61,16 @@ def download(url, output, maximum):
         raise CatalogError('xc_unavailable') from None
 
 
-def search(root, scientific, country, quality, page):
+def search_page(key_path, scientific, country, quality, page):
     from io import BytesIO
     if any('"' in value or any(ord(c) < 32 for c in value) for value in (scientific, country)):
         raise CatalogError('invalid_input')
     try:
-        key = (Path(root) / '.xeno-canto-key').read_text(encoding='utf-8')
+        key = Path(key_path).read_text(encoding='utf-8').strip()
     except FileNotFoundError:
         raise CatalogError('xc_key_required') from None
+    if not key:
+        raise CatalogError('xc_key_required')
     query = f'sp:"{scientific}"'
     if country:
         query += f' cnt:"{country}"'
@@ -80,6 +82,8 @@ def search(root, scientific, country, quality, page):
         data = json.loads(buffer.getvalue())
         recordings = []
         for raw in data['recordings']:
+            if not raw.get('file'):
+                continue  # Restricted recordings have no downloadable file; offering them only fails later.
             rid = int(raw['id'])
             if rid <= 0:
                 raise ValueError()
@@ -93,11 +97,16 @@ def search(root, scientific, country, quality, page):
                   'total_pages': max(1, int(data['numPages'])), 'total_recordings': int(data['numRecordings'])}
     except (KeyError, TypeError, ValueError):
         raise CatalogError('xc_invalid_response') from None
+    return result
+
+
+def search(root, scientific, country, quality, page):
+    result = search_page(Path(root) / '.xeno-canto-key', scientific, country, quality, page)
     with connect(root) as db:
         # Downloaded attribution is immutable even if a later API response changes.
         db.executemany('''INSERT INTO xc_recordings(id,metadata) VALUES(?,?) ON CONFLICT(id)
             DO UPDATE SET metadata=excluded.metadata WHERE xc_recordings.reference_id IS NULL''',
-                       ((r['id'], json.dumps(r, ensure_ascii=False)) for r in recordings))
+                       ((r['id'], json.dumps(r, ensure_ascii=False)) for r in result['recordings']))
     return result
 
 

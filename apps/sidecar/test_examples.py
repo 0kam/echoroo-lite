@@ -12,12 +12,16 @@ import soundfile as sf
 import examples  # noqa: F401  Imported before patching species.ebird_codes.
 from examples import fetch_xeno_canto
 from fastapi.testclient import TestClient
+from quiz_test_bundle import quiz_bundle
 from server import create_app
 from storage import connect
 
 
 class ExamplesCheck(unittest.TestCase):
     def setUp(self):
+        self.bundle = quiz_bundle()
+        self.bundle.__enter__()
+        self.addCleanup(self.bundle.__exit__, None, None, None)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)

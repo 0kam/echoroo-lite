@@ -169,11 +169,18 @@ def run(args):
                              for r in api(f"/recordings/{records[0]['id']}/results")]
         started = stage('search')
         targets = []
-        for scientific, filename in [('Horornis diphone', 'uguisu_song_01.mp3'), ('Phasianus versicolor', 'kiji_call_01.mp3')]:
+        quiz = json.loads((ROOT / 'apps/sidecar/data/quiz/manifest.json').read_text(encoding='utf-8'))['items']
+        preferred = ['Horornis diphone', 'Phasianus versicolor']
+        quiz = sorted(quiz, key=lambda item: (item['scientific_name'] not in preferred,
+                                              preferred.index(item['scientific_name']) if item['scientific_name'] in preferred else 0))
+        assert len(quiz) >= 2, 'The Xeno-Canto quiz bundle needs at least two clips'
+        for item in quiz[:2]:
+            scientific = item['scientific_name']
             taxon = api('/species?q=' + urllib.parse.quote(scientific))[0]
             assert taxon['scientific_name'] == scientific
-            ref = api('/references', {'path': str(ROOT / 'apps/sidecar/data/quiz/mp3' / filename)})
-            targets.append({'species_id': taxon['id'], 'clips': [dict(source_kind='reference', source_id=ref['id'], start_s=s, end_s=s+3) for s in (0, 5)]})
+            ref = api('/references', {'path': str(ROOT / 'apps/sidecar/data/quiz' / item['audio_file'])})
+            starts = (0, max(0, ref['seconds'] - 3))
+            targets.append({'species_id': taxon['id'], 'clips': [dict(source_kind='reference', source_id=ref['id'], start_s=s, end_s=min(s+3, ref['seconds'])) for s in starts]})
         quick = api('/search', {'dataset_id': dataset, **targets[0]['clips'][0]})
         assert quick['searched_recordings'] == args.count and quick['searched_segments'] == args.count * 12
         results['timings_s']['quick_search'] = time.perf_counter() - started
