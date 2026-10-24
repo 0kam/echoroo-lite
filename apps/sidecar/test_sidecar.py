@@ -8,7 +8,7 @@ import tempfile
 import threading
 import time
 import unittest
-from contextlib import redirect_stderr
+from contextlib import closing, redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -35,9 +35,10 @@ class SidecarCheck(unittest.TestCase):
         for version in (0, SCHEMA_VERSION + 1):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
-                with sqlite3.connect(root / "echoroo.sqlite") as db:
-                    db.execute("CREATE TABLE old_data (id INTEGER PRIMARY KEY)")
-                    db.execute(f"PRAGMA user_version={version}")
+                with closing(sqlite3.connect(root / "echoroo.sqlite")) as db:
+                    with db:
+                        db.execute("CREATE TABLE old_data (id INTEGER PRIMARY KEY)")
+                        db.execute(f"PRAGMA user_version={version}")
                 headers = {"Authorization": "Bearer test-token", "Origin": "http://localhost:1420"}
                 with TestClient(create_app(root, ROOT / "poc/models", "test-token"), headers=headers) as client:
                     health = client.get("/health")

@@ -2,7 +2,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/echoroo-sidecar"],
+    "externalBin": [
+      "binaries/echoroo-sidecar"
+    ],
     "resources": {
       "../../poc/models/perch/perch_v2_no_dft.onnx": "models/perch/perch_v2_no_dft.onnx",
       "../../poc/models/perch-labels/assets/labels.csv": "models/perch-labels/assets/labels.csv",
@@ -14,7 +16,9 @@
       }
     },
     "macOS": {
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-",
+      "hardenedRuntime": false
     },
     "linux": {
       "appimage": {

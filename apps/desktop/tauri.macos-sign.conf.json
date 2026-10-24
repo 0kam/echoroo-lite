@@ -1,7 +1,8 @@
 {
   "bundle": {
     "macOS": {
-      "entitlements": "Entitlements.plist"
+      "entitlements": "Entitlements.plist",
+      "hardenedRuntime": true
     }
   }
 }

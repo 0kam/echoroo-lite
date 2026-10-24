@@ -18,11 +18,22 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v10
+      - name: Set up Python 3.11
+        shell: bash
+        run: |
+          uv python install 3.11
+          uv venv --python 3.11 --managed-python
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "$GITHUB_WORKSPACE/.venv/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          fi
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
-      - run: python -m pip install -r apps/sidecar/requirements-dev.txt
+      - run: uv pip install -r apps/sidecar/requirements-dev.txt
+      - name: Provision the pinned models for real inference and both editions
+        run: python scripts/setup_models.py
       - run: python -m unittest discover -s apps/sidecar -p 'test_*.py'
       - run: npm ci
       - run: npm run check
@@ -30,8 +41,6 @@ jobs:
       - run: python scripts/freeze_sidecar.py
       - name: Check frozen startup and quiz without models
         run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --parent-eof
-      - name: Provision the pinned models for real inference and both editions
-        run: python scripts/setup_models.py
       - name: Provision Perch-only models
         run: python scripts/setup_models.py --perch-only --output "$env:RUNNER_TEMP/echoroo-perch-models"
       - name: Select the first bundled quiz audio
@@ -56,7 +65,7 @@ jobs:
           path: apps/desktop/target/release/bundle/
       - name: Check installation and desktop preview with analysed audio
         timeout-minutes: 8
-        run: scripts/check_windows_install.ps1 -Installer 'apps/desktop/target/release/bundle/nsis/Echoroo Lite_0.1.0_x64-setup.exe' -Data "$env:RUNNER_TEMP/echoroo-inference-data"
+        run: scripts/check_windows_install.ps1 -Installer (Get-ChildItem 'apps/desktop/target/release/bundle/nsis/Echoroo Lite_*_x64-setup.exe' | Select-Object -First 1).FullName -Data "$env:RUNNER_TEMP/echoroo-inference-data"
       - name: Save desktop startup evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,6 +1,5 @@
 """Check native-rate display against SciPy and known physical frequencies."""
 import base64
-import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,12 +56,14 @@ class SpectrogramCheck(unittest.TestCase):
             stat = path.stat()
             row = dict(path=str(path), seconds=1, sample_rate=rate, size=stat.st_size, mtime_ns=stat.st_mtime_ns)
             linear = spectrogram(row, 0, 1, scale='linear')
-            self.assertEqual(hashlib.sha256(base64.b64decode(linear['pixels'])).hexdigest(),
-                             '73ff9f6322fb038cd65e99684e03a0b53f3a6686d15c8afd9ccbe0cd159c6125')
+            f, t, z = stft(samples, fs=rate, nperseg=384, noverlap=336, nfft=768, boundary='zeros')
+            db = 10 * np.log10(np.maximum(np.abs(z[f <= 12000][:, t < 1]) ** 2, 1e-12))
+            expected = (np.clip((db - (float(db.max()) - 70)) / 70, 0, 1) * 255).astype(np.uint8)[::-1]
+            pixels = np.frombuffer(base64.b64decode(linear['pixels']), np.uint8).reshape(linear['height'], linear['width'])
+            np.testing.assert_allclose(pixels, expected, atol=1)
             self.assertEqual((linear['frequency_scale'], linear['height']), ('linear', 385))
             with self.assertRaises(ValueError):
                 spectrogram(row, 0, 1, scale='invalid')
-            pixels = np.frombuffer(base64.b64decode(linear['pixels']), np.uint8).reshape(linear['height'], linear['width'])
             peak_fraction = (linear['height'] - .5 - pixels.mean(axis=1).argmax()) / linear['height']
             self.assertAlmostEqual(peak_fraction, 997 / linear['frequency_max_hz'], delta=2 / linear['height'])
 

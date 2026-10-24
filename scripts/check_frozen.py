@@ -36,6 +36,9 @@ with ExitStack() as stack:
         if samples.ndim == 2:
             samples = samples.mean(axis=1)
         assert len(samples) >= rate * 5, 'The ML check needs at least five seconds of audio'
+        import numpy as np
+        # Bundled quiz clips are about 8 s; repeat them so the 30-s recordings exercise full search windows.
+        samples = np.tile(samples, -(-rate * 30 // len(samples)))
         folder = Path(temp) / 'recordings'
         folder.mkdir()
         args.recording = folder / 'SMOKE_20240808_060000.wav'

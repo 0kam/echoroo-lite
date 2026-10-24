@@ -45,9 +45,18 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v10
+      - name: Set up Python 3.11
+        shell: bash
+        run: |
+          uv python install 3.11
+          uv venv --python 3.11 --managed-python
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "$GITHUB_WORKSPACE/.venv/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          fi
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -56,14 +65,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libayatana-appindicator3-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
-      - run: python -m pip install -r apps/sidecar/requirements-dev.txt
+      - run: uv pip install -r apps/sidecar/requirements-dev.txt
+      - name: Provision the pinned models for both editions
+        run: python scripts/setup_models.py
       - run: python -m unittest discover -s apps/sidecar -p 'test_*.py'
       - run: npm ci
       - run: npm run check
       - run: npm run build
       - run: python scripts/freeze_sidecar.py
-      - name: Provision the pinned models for both editions
-        run: python scripts/setup_models.py
       - name: Provision Perch-only models
         shell: bash
         run: python scripts/setup_models.py --perch-only --output "$RUNNER_TEMP/echoroo-perch-models"
