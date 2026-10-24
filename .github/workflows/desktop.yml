@@ -1,6 +1,9 @@
 name: Desktop checks
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['apps/**', 'scripts/**', 'package*.json', '.github/workflows/desktop.yml']
   pull_request:
     paths: ['apps/**', 'scripts/**', 'package*.json', '.github/workflows/desktop.yml']
 permissions:
@@ -31,16 +34,22 @@ jobs:
         run: python scripts/setup_models.py
       - name: Provision Perch-only models
         run: python scripts/setup_models.py --perch-only --output "$env:RUNNER_TEMP/echoroo-perch-models"
+      - name: Select the first bundled quiz audio
+        run: |
+          $sample = python -c "import json, pathlib; p=pathlib.Path('apps/sidecar/data/quiz/manifest.json'); d=json.loads(p.read_text(encoding='utf-8')); print(p.parent / d['items'][0]['audio_file'])"
+          "QUIZ_SAMPLE_AUDIO=$sample" >> $env:GITHUB_ENV
       - name: Check frozen Perch-only inference
-        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models "$env:RUNNER_TEMP/echoroo-perch-models" --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3 --data "$env:RUNNER_TEMP/echoroo-perch-data"
+        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models "$env:RUNNER_TEMP/echoroo-perch-models" --sample-audio "$env:QUIZ_SAMPLE_AUDIO" --data "$env:RUNNER_TEMP/echoroo-perch-data"
       - name: Check frozen inference, search, reports and quiz with supplied audio
-        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3 --diagnostics --data "$env:RUNNER_TEMP/echoroo-inference-data"
-      - run: npm run desktop:build
+        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio "$env:QUIZ_SAMPLE_AUDIO" --diagnostics --data "$env:RUNNER_TEMP/echoroo-inference-data"
+      - run: npx tauri build --config tauri.bundle.conf.json --bundles nsis
+        working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         with:
           name: windows-standard-preview
           path: apps/desktop/target/release/bundle/
-      - run: npm run desktop:build:birdnet
+      - run: npx tauri build --config tauri.bundle.conf.json --config tauri.birdnet.conf.json --bundles nsis
+        working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         with:
           name: windows-birdnet-preview
