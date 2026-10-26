@@ -2,6 +2,7 @@
 import json
 import tempfile
 import threading
+import shutil
 from pathlib import Path
 from statistics import median
 from time import perf_counter
@@ -16,11 +17,12 @@ from storage import CatalogError, connect, initialize, inspect_audio
 
 
 def fit_costs(samples):
-    """Nonnegative fit of recording time = files * fixed + hours * marginal."""
+    """Fit real job time = job fixed + files * fixed + hours * marginal."""
     from scipy.optimize import nnls
-    matrix = np.array([[files, seconds/3600] for files, seconds, _ in samples])
-    fixed, marginal = nnls(matrix, np.array([elapsed for _, _, elapsed in samples]))[0]
-    return dict(seconds_per_hour=round(float(marginal)), seconds_per_file=round(float(fixed), 1))
+    matrix = np.array([[1, files, seconds/3600] for files, seconds, _ in samples])
+    job, fixed, marginal = nnls(matrix, np.array([elapsed for _, _, elapsed in samples]))[0]
+    return dict(seconds_per_job=round(float(job), 1), seconds_per_hour=round(float(marginal)),
+                seconds_per_file=round(float(fixed), 1))
 
 
 def benchmark_job(data, paths, models, engine, loaded):
@@ -40,15 +42,14 @@ def benchmark_job(data, paths, models, engine, loaded):
         records = [dict(r) for r in db.execute('SELECT * FROM recordings')]
         site = dict(db.execute('SELECT * FROM sites').fetchone())
         job = db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(1,'queued',?)", (len(records),)).lastrowid
-    recording_times = []
     started = perf_counter()
-    run(data, models, job, records, site, threading.Event(), {r['id']:[engine] for r in records}, loaded, recording_times)
+    run(data, models, job, records, site, threading.Event(), {r['id']:[engine] for r in records}, loaded)
     elapsed = perf_counter() - started
     with connect(data) as db:
         status = db.execute('SELECT status,error FROM jobs WHERE id=?', (job,)).fetchone()
     if status['status'] != 'complete':
         raise CatalogError(status['error'] or 'analysis_failed')
-    return len(records), sum(r['seconds'] for r in records), sum(recording_times), max(0., elapsed-sum(recording_times))
+    return len(records), sum(r['seconds'] for r in records), elapsed
 
 
 def benchmark(root, models):
@@ -62,25 +63,31 @@ def benchmark(root, models):
     with tempfile.TemporaryDirectory(prefix='echoroo-benchmark-') as folder:
         folder = Path(folder).resolve()
         paths = {}
-        for seconds in (60, 240):
+        # Align lengths to the 32-window Kinglet batch, including steady-state prefetch.
+        for seconds in (160, 640):
             path = folder / f'BENCHMARK_{seconds}_20240808_060000.wav'
             with sf.SoundFile(path, 'w', samplerate=rate, channels=1, subtype='PCM_16') as output:
-                for _ in range(seconds//60):
-                    output.write(minute)
+                for start in range(0, seconds, 60):
+                    output.write(minute[:min(60, seconds-start)*rate])
             paths[seconds] = path
+        short_files = [paths[160]]
+        for clock in ('060240', '060520', '060800'):
+            path = folder / f'BENCHMARK_160_20240808_{clock}.wav'
+            shutil.copyfile(paths[160], path)
+            short_files.append(path)
         for engine in REGISTRY:
             if not available(models, engine):
                 continue
             site = dict(latitude=35, longitude=138)
             with prepare_models(models, [engine], site) as loaded:
-                benchmark_job(folder / f'{engine}-warmup', [paths[240]], models, engine, loaded)
+                benchmark_job(folder / f'{engine}-warmup', [paths[640]], models, engine, loaded)
                 samples = []
-                for seconds in (60, 240):
-                    measured = [benchmark_job(folder / f'{engine}-{seconds}-{repeat}', [paths[seconds]], models, engine, loaded)
+                for index, inputs in enumerate(([paths[160]], [paths[640]], short_files)):
+                    measured = [benchmark_job(folder / f'{engine}-{index}-{repeat}', inputs, models, engine, loaded)
                                 for repeat in range(3)]
                     samples.append((measured[0][0], measured[0][1], median(row[2] for row in measured)))
-                    job_costs.append(median(row[3] for row in measured))
                 results[engine] = fit_costs(samples)
+                job_costs.append(results[engine].pop('seconds_per_job'))
             del loaded
     # Shared job setup/result preparation is counted once, using the largest measured median.
     save_benchmark(root, results, round(max(job_costs, default=0.), 1))

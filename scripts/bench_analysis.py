@@ -34,10 +34,10 @@ SHAPES = {'long':(1,3600,48000,'WAV'), 'short':(120,30,48000,'WAV'), 'flac':(20,
 ENGINE_SETS = {'perch':['perch'], 'kinglet-s':['kinglet-s'], 'kinglet-xs':['kinglet-xs'], 'dual':['perch','birdnet'],
                'all':['perch','birdnet','birdnet-v3','kinglet-s','kinglet-xs'],
                'onnx':['perch','birdnet-v3','kinglet-s','kinglet-xs']}
-VARIANTS = ['current', *[f'threads-{n}' for n in (1,2,4,6,8,12,0)], 'inter-2', 'parallel',
+VARIANTS = ['current', 'legacy', 'no-prefetch', 'eager-windows', *[f'threads-{n}' for n in (1,2,4,6,8,12,0)], 'inter-2', 'parallel',
             'graph-disabled','graph-basic','graph-extended','arena-off','no-spin', 'coreml',
             *[f'batch-{n}' for n in (1,2,4,8,16,32,64)],'batch16-no-arena','batch32-no-arena', 'no-copies', 'fft', 'poly-fast',
-            'blocks', 'prefetch', 'npz-plain', 'npz-level1', 'sqlite-normal', 'sqlite-delete',
+            'blocks', 'prefetch', 'chunk-prefetch', 'chunk-prefetch-7', 'defer-windows', 'npz-plain', 'npz-level1', 'sqlite-normal', 'sqlite-delete',
             'sqlite-bulk', 'sqlite-reuse', 'cached-hashes', 'reuse-scores', 'birdnet-batch8', 'birdnet-workers4']
 
 
@@ -133,7 +133,7 @@ class Database:
 def replace_function(function,old,new):
     source=inspect.getsource(function)
     if old not in source: raise ValueError('Experiment no longer matches source: '+old)
-    namespace=dict(function.__globals__)
+    namespace=dict(inspect.unwrap(function).__globals__)
     exec(compile(source.replace(old,new),'<benchmark experiment>','exec'),namespace)
     return namespace[function.__name__]
 
@@ -143,6 +143,20 @@ def instruments(stages,variant,models,scratch):
     import analysis, reports, results_workflow, storage
     import onnxruntime as ort
     with ExitStack() as stack:
+        if variant in ('legacy','no-prefetch','prefetch','blocks'):
+            from contextlib import nullcontext
+            stack.enter_context(patch('analysis.prefetch_audio',lambda records:nullcontext(None)))
+        if variant in ('legacy','eager-windows'):
+            original_save=analysis.save
+            def eager(root,job,record,engine,meta,*args,**kwargs):
+                result=original_save(root,job,record,engine,meta,*args,**kwargs)
+                allowed=(meta.get('candidate_filter') or {}).get('species') if engine=='perch' else meta.get('species')
+                if allowed is not None:
+                    reports.classification_windows(dict(scores_path=str(Path(root)/'analyses'/str(job)/f"{record['id']}-{engine}.npz"),engine=engine),record['seconds'],allowed)
+                return result
+            stack.enter_context(patch('analysis.save',eager))
+        from concurrent.futures import Future
+        stack.enter_context(patch.object(Future,'result',stages.wrap('prefetch_wait',Future.result)))
         if variant=='prefetch':
             with storage.connect(scratch) as db:
                 recording_paths=[Path(r[0]) for r in db.execute('SELECT path FROM recordings ORDER BY recorded_at')]
@@ -157,6 +171,8 @@ def instruments(stages,variant,models,scratch):
         if variant.startswith('batch-') or variant in ('batch16-no-arena','batch32-no-arena'):
             size=int(variant.split('-')[1]) if variant.startswith('batch-') else int(variant[5:7])
             infer=replace_function(infer,"batch_size = 1 if engine == 'perch' else 32",f'batch_size = {size}')
+            stack.enter_context(patch('analysis.prefetch_audio',replace_function(analysis.prefetch_audio,
+                'size = 32 * 160000',f'size = {size} * 160000')))
         if variant=='no-copies':
             infer=replace_function(infer,"np.pad(chunk, (0, -len(chunk) % 160000)).reshape(-1, 160000).astype(np.float32)",
                 "(np.pad(chunk, (0, -len(chunk) % 160000)) if len(chunk)%160000 else chunk).reshape(-1,160000).astype(np.float32,copy=False)")
@@ -173,6 +189,11 @@ def instruments(stages,variant,models,scratch):
             import math
             resample=lambda audio,rate: audio if rate==32000 else resample_poly(audio,32000//math.gcd(rate,32000),rate//math.gcd(rate,32000),window=('kaiser',3.))
         stack.enter_context(patch('analysis.resample',stages.wrap('resample',resample)))
+        if variant=='defer-windows' and 'classification_windows(' in inspect.getsource(analysis.save):
+            save=replace_function(analysis.save,
+                "classification_windows({'scores_path':str(path),'engine':engine},recording['seconds'],allowed)",
+                'pass')
+            stack.enter_context(patch('analysis.save',save))
         if variant=='prefetch':
             from concurrent.futures import ThreadPoolExecutor
             pool=stack.enter_context(ThreadPoolExecutor(max_workers=1,thread_name_prefix='audio-prefetch'))
@@ -238,11 +259,12 @@ def instruments(stages,variant,models,scratch):
             finally:
                 with stages.time('model_cleanup'): context.__exit__(*sys.exc_info())
         stack.enter_context(patch('analysis.prepare_models',preparing))
-        if variant.startswith(('threads-','graph-')) or variant in ('inter-2','parallel','arena-off','no-spin','coreml','batch16-no-arena','batch32-no-arena'):
+        if variant.startswith(('threads-','graph-')) or variant in ('chunk-prefetch-7','inter-2','parallel','arena-off','no-spin','coreml','batch16-no-arena','batch32-no-arena'):
             def load(directory,engine):
                 from models import REGISTRY
                 options=ort.SessionOptions(); options.intra_op_num_threads=8; options.inter_op_num_threads=1
                 if variant.startswith('threads-'): options.intra_op_num_threads=int(variant.split('-')[1])
+                if variant=='chunk-prefetch-7': options.intra_op_num_threads=7
                 if variant=='inter-2': options.inter_op_num_threads=2
                 if variant=='parallel': options.execution_mode=ort.ExecutionMode.ORT_PARALLEL
                 if variant in ('arena-off','batch16-no-arena','batch32-no-arena'): options.enable_cpu_mem_arena=False
@@ -331,7 +353,7 @@ def compare(first,second):
         for key in reference.files:
             a,b=reference[key],tested[key]
             if a.shape!=b.shape: raise ValueError('Snapshot shapes differ: '+key)
-            result['identical'] &= np.array_equal(a,b)
+            result['identical'] &= a.dtype==b.dtype and np.array_equal(a.view(np.uint8),b.view(np.uint8))
             if key.endswith(('.scores','.embeddings')):
                 field='max_abs_embeddings' if key.endswith('.embeddings') else 'max_abs_scores'
                 # Bound comparison working memory for full-hour dense scores.

@@ -46,44 +46,46 @@ def saved_results(root):
 
 class AnalysisCostsTest(unittest.TestCase):
     def test_job_reuses_connection_and_commits_completed_pairs_before_failure(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp); directory=root/'models'; model_files(directory)
-            audio=root/'audio'; audio.mkdir()
-            for day,value in ((8,.1),(9,.2)):
-                sf.write(audio/f'202408{day:02}_060000.wav',np.full(160000,value),32000)
-            data=root/'data'
-            class FailingSession(FakeSession):
-                def run(self,outputs,inputs):
-                    if next(iter(inputs.values())).mean()>.15:
-                        raise RuntimeError('Second recording failed')
-                    return super().run(outputs,inputs)
-            def load(directory,engine):
-                return FailingSession(engine,None),analysis.digest(directory/REGISTRY[engine]['files'][0])
-            with TestClient(create_app(data,directory,'test'),headers={'Authorization':'Bearer test'}) as client, \
-                    patch('analysis.load_onnx',side_effect=load), patch('results_workflow.overview',return_value={}):
-                client.post('/imports',json=dict(folder=str(audio),site_name='Site',dataset_name='Data',
-                    timezone='Asia/Tokyo',latitude=35,longitude=138))
-                with patch('analysis.connect',wraps=analysis.connect) as opening:
-                    client.post('/jobs',json={'dataset_id':1})
-                    failed=wait_job(client)
-                    # Planning, total, two loading stages, the job, and failure status.
-                    self.assertEqual(opening.call_count,6)
-                self.assertEqual((failed['status'],failed['error']),('failed','analysis_failed'))
-                with connect(data) as db:
-                    first=tuple(db.execute('SELECT id,recording_id FROM analyses').fetchone())
-                    self.assertEqual(first[1],1)
-                    self.assertEqual(db.execute('SELECT COUNT(*) FROM vectors').fetchone()[0],1)
-                    self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
-                    self.assertEqual(db.execute('PRAGMA synchronous').fetchone()[0],2)
-                    self.assertEqual(db.execute('PRAGMA journal_mode').fetchone()[0],'wal')
-                with patch('analysis.load_onnx',return_value=(FakeSession('perch',None),
-                        analysis.digest(directory/REGISTRY['perch']['files'][0]))):
-                    client.post('/jobs',json={'dataset_id':1})
-                    finished=wait_job(client)
-                self.assertEqual((finished['status'],finished['total']),('complete',1))
-                with connect(data) as db:
-                    self.assertEqual(tuple(db.execute('SELECT id,recording_id FROM analyses ORDER BY id').fetchone()),first)
-                    self.assertEqual(db.execute('SELECT COUNT(*) FROM analyses').fetchone()[0],2)
+        for engine in ('perch','kinglet-xs'):
+            with tempfile.TemporaryDirectory() as temp:
+                root=Path(temp); directory=root/'models'; model_files(directory)
+                audio=root/'audio'; audio.mkdir()
+                for day,value in ((8,.1),(9,.2)):
+                    sf.write(audio/f'202408{day:02}_060000.wav',np.full(160000,value),32000)
+                data=root/'data'
+                class FailingSession(FakeSession):
+                    def run(self,outputs,inputs):
+                        if next(iter(inputs.values())).mean()>.15:
+                            raise RuntimeError('Second recording failed')
+                        return super().run(outputs,inputs)
+                def load(directory,engine):
+                    return FailingSession(engine,None),analysis.digest(directory/REGISTRY[engine]['files'][0])
+                with TestClient(create_app(data,directory,'test'),headers={'Authorization':'Bearer test'}) as client, \
+                        patch('analysis.load_onnx',side_effect=load), patch('results_workflow.overview',return_value={}):
+                    client.put('/models',json=dict(main=engine,extra=[]))
+                    client.post('/imports',json=dict(folder=str(audio),site_name='Site',dataset_name='Data',
+                        timezone='Asia/Tokyo',latitude=35,longitude=138))
+                    with patch('analysis.connect',wraps=analysis.connect) as opening:
+                        client.post('/jobs',json={'dataset_id':1})
+                        failed=wait_job(client)
+                        # Planning, total, two loading stages, the job, and failure status.
+                        self.assertEqual(opening.call_count,6)
+                    self.assertEqual((failed['status'],failed['error']),('failed','analysis_failed'))
+                    with connect(data) as db:
+                        first=tuple(db.execute('SELECT id,recording_id FROM analyses').fetchone())
+                        self.assertEqual(first[1],1)
+                        self.assertEqual(db.execute('SELECT COUNT(*) FROM vectors').fetchone()[0],1)
+                        self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
+                        self.assertEqual(db.execute('PRAGMA synchronous').fetchone()[0],2)
+                        self.assertEqual(db.execute('PRAGMA journal_mode').fetchone()[0],'wal')
+                    with patch('analysis.load_onnx',return_value=(FakeSession(engine,None),
+                            analysis.digest(directory/REGISTRY[engine]['files'][0]))):
+                        client.post('/jobs',json={'dataset_id':1})
+                        finished=wait_job(client)
+                    self.assertEqual((finished['status'],finished['total']),('complete',1))
+                    with connect(data) as db:
+                        self.assertEqual(tuple(db.execute('SELECT id,recording_id FROM analyses ORDER BY id').fetchone()),first)
+                        self.assertEqual(db.execute('SELECT COUNT(*) FROM analyses').fetchone()[0],2)
 
     def test_shared_save_rolls_back_an_incomplete_pair(self):
         with tempfile.TemporaryDirectory() as temp:

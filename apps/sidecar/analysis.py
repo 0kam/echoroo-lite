@@ -2,10 +2,11 @@
 import csv
 import hashlib
 import json
+import math
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-from time import perf_counter
 from contextlib import contextmanager, nullcontext, ExitStack
 from pathlib import Path
 
@@ -187,6 +188,69 @@ def infer_onnx(detector, engine, audio, count, cancel=None):
     return np.concatenate(batches).astype(np.float32), vectors or None
 
 
+@contextmanager
+def prefetch_audio(records):
+    """One batch ahead, including the next recording, with the original polyphase phase."""
+    remaining = iter(records)
+    size = 32 * 160000
+    future = task = None
+
+    def prepare(record, start):
+        rate = record['sample_rate']
+        frames = round(record['seconds'] * rate)
+        total = (frames * 32000 + rate - 1) // rate
+        # Whole-second offsets preserve filter phase; context exceeds the default FIR support.
+        edge = max(1, math.ceil(11 / min(rate, 32000)))
+        first = max(0, start // 32000 - edge)
+        last = (start + size) // 32000 + edge
+        try:
+            native, rate = sf.read(checked_source(record), start=first * rate,
+                                   stop=min(frames, last * rate), dtype='float32')
+        except (OSError, RuntimeError):
+            raise CatalogError('unreadable_audio') from None
+        converted = resample(native, rate)
+        offset = start - first * 32000
+        return converted[offset:offset + min(size, total - start)]
+
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix='analysis-audio') as pool:
+        class Audio:
+            def __init__(self, record):
+                self.record = record
+                rate = record['sample_rate']
+                self.total = (round(record['seconds'] * rate) * 32000 + rate - 1) // rate
+
+            def __len__(self):
+                return self.total
+
+            def __getitem__(self, part):
+                nonlocal future, task
+                if task != (self.record, part.start) or part.stop != part.start + size:
+                    raise ValueError('Prefetched audio requires sequential batches of 32 windows')
+                result = future.result()
+                future = None
+                if part.stop < self.total:
+                    task = (self.record, part.stop)
+                else:
+                    following = next(remaining, None)
+                    task = (following, 0) if following is not None else None
+                if task is not None:
+                    future = pool.submit(prepare, *task)
+                return result
+
+        def read(record):
+            nonlocal future, task
+            if future is None:
+                task = (next(remaining), 0)
+                future = pool.submit(prepare, *task)
+            return Audio(record)
+
+        try:
+            yield read
+        finally:
+            if future is not None:
+                future.cancel()
+
+
 @lru_cache(maxsize=1)
 def candidate_filter():
     path = Path(__file__).parent / "data/japan-birds.json"
@@ -217,12 +281,6 @@ def save(root, job, recording, engine, meta, scores, candidates, embeddings=None
                 ((first+i, aid, i*width, min((i+1)*width, recording['seconds'])) for i in range(1, len(vectors))))
             db.executemany('INSERT INTO vectors(rowid,embedding) VALUES(?,?)',
                            ((first+i, vector.tobytes()) for i, vector in enumerate(vectors)))
-
-    # Build shared display windows before analysis is reported as complete.
-    from reports import classification_windows
-    allowed = (meta.get('candidate_filter') or {}).get('species') if engine == 'perch' else meta.get('species')
-    if allowed is not None:
-        classification_windows({'scores_path':str(path),'engine':engine},recording['seconds'],allowed)
 
 
 @contextmanager
@@ -287,7 +345,7 @@ def prepare_models(models, engines, site, progress=None):
         yield detectors
 
 
-def run(root, models, job, records, site, cancel, pending=None, loaded=None, recording_times=None):
+def run(root, models, job, records, site, cancel, pending=None, loaded=None):
     job_db = None
     def progress(stage, done):
         with (connect(root) if job_db is None else job_db) as db:
@@ -308,69 +366,67 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None, rec
                 job_db = resources.enter_context(connect(root))
                 included_labels = {engine:np.flatnonzero(np.isin(names, meta['species']))
                     for engine, (_, names, meta) in detectors.items() if engine not in ('perch', 'birdnet')}
+                # Other engine sets retain their shared whole-recording decode and original batches.
+                reader = (resources.enter_context(prefetch_audio([r for r in records if pending.get(r['id'])]))
+                          if len(engines) == 1 and engines <= {'kinglet-s', 'kinglet-xs'} else None)
                 for record in records:
                     if cancel.is_set():
                         break
                     pairs = pending.get(record['id'], [])
                     if not pairs:
                         continue
-                    started = perf_counter() if recording_times is not None else None
+                    path = checked_source(record)
+                    audio = None
                     try:
-                        path = checked_source(record)
-                        audio = None
-                        try:
-                            native, rate = sf.read(path, dtype='float32')
-                        except (OSError, RuntimeError):
-                            raise CatalogError('unreadable_audio') from None
-                        if any(engine != 'birdnet' for engine in pairs):
-                            audio = resample(native, rate)
-                        if 'birdnet' in pairs:
-                            bird_session, _, bird_meta = detectors['birdnet']
-                            progress("birdnet", done)
-                            # BirdNET retains its native duration and per-window 48-kHz conversion.
-                            result = bird_session.run_arrays((native, rate))
-                            if len(result.unprocessable_inputs):
-                                raise CatalogError("unreadable_audio")
-                            rows = result.to_structured_array()
-                            if not np.isfinite(rows["confidence"]).all():
-                                raise CatalogError("invalid_scores")
-                            groups = {}
-                            for row in rows:
-                                start, end = float(row["start_time"]), min(float(row["end_time"]), record["seconds"])
-                                if row["confidence"] >= 0.1:
-                                    groups.setdefault(start, []).append((start, end, str(row["species_name"]), float(row["confidence"])))
-                            candidates = [row for group in groups.values() for row in sorted(group, key=lambda r: -r[3])[:5]]
-                            checked_source(record)
-                            save(root, job, record, "birdnet", bird_meta,
-                                 {"start_s": rows["start_time"], "end_s": rows["end_time"],
-                                  "labels": rows["species_name"].astype(str), "scores": rows["confidence"]}, candidates, db=job_db)
-                            done += 1
-                        del native
-                        if cancel.is_set():
-                            break
-                        if not any(engine != 'birdnet' for engine in pairs):
+                        native, rate = (reader(record), 32000) if reader else sf.read(path, dtype='float32')
+                    except (OSError, RuntimeError):
+                        raise CatalogError('unreadable_audio') from None
+                    if any(engine != 'birdnet' for engine in pairs):
+                        audio = resample(native, rate)
+                    if 'birdnet' in pairs:
+                        bird_session, _, bird_meta = detectors['birdnet']
+                        progress("birdnet", done)
+                        # BirdNET retains its native duration and per-window 48-kHz conversion.
+                        result = bird_session.run_arrays((native, rate))
+                        if len(result.unprocessable_inputs):
+                            raise CatalogError("unreadable_audio")
+                        rows = result.to_structured_array()
+                        if not np.isfinite(rows["confidence"]).all():
+                            raise CatalogError("invalid_scores")
+                        groups = {}
+                        for row in rows:
+                            start, end = float(row["start_time"]), min(float(row["end_time"]), record["seconds"])
+                            if row["confidence"] >= 0.1:
+                                groups.setdefault(start, []).append((start, end, str(row["species_name"]), float(row["confidence"])))
+                        candidates = [row for group in groups.values() for row in sorted(group, key=lambda r: -r[3])[:5]]
+                        checked_source(record)
+                        save(root, job, record, "birdnet", bird_meta,
+                             {"start_s": rows["start_time"], "end_s": rows["end_time"],
+                              "labels": rows["species_name"].astype(str), "scores": rows["confidence"]}, candidates, db=job_db)
+                        done += 1
+                    del native
+                    if cancel.is_set():
+                        break
+                    if not any(engine != 'birdnet' for engine in pairs):
+                        continue
+                    for engine in pairs:
+                        if engine == 'birdnet' or cancel.is_set():
                             continue
-                        for engine in pairs:
-                            if engine == 'birdnet' or cancel.is_set():
-                                continue
-                            progress(engine, done)
-                            detector, names, meta = detectors[engine]
-                            scores, vectors = infer_onnx(detector, engine, audio, len(names), cancel)
-                            candidates = []
-                            if engine != 'perch':
-                                included = included_labels[engine]
-                                candidates = [(i * 5, min((i + 1) * 5, record['seconds']), names[j], float(row[j]))
-                                              for i, row in enumerate(scores)
-                                              for j in included[np.argsort(-row[included], kind='stable')[:5]]]
-                            checked_source(record)
-                            save(root, job, record, engine, meta,
-                                 {'logits' if engine == 'perch' else 'scores': scores, 'labels': np.array(names)},
-                                 candidates, vectors, db=job_db)
-                            done += 1
-                            progress(engine, done)
-                    finally:
-                        if recording_times is not None:
-                            recording_times.append(perf_counter() - started)
+                        progress(engine, done)
+                        detector, names, meta = detectors[engine]
+                        scores, vectors = infer_onnx(detector, engine, audio, len(names), cancel)
+                        candidates = []
+                        if engine != 'perch':
+                            included = included_labels[engine]
+                            candidates = [(i * 5, min((i + 1) * 5, record['seconds']), names[j], float(row[j]))
+                                          for i, row in enumerate(scores)
+                                          for j in included[np.argsort(-row[included], kind='stable')[:5]]]
+                        checked_source(record)
+                        save(root, job, record, engine, meta,
+                             {'logits' if engine == 'perch' else 'scores': scores, 'labels': np.array(names)},
+                             candidates, vectors, db=job_db)
+                        done += 1
+                        progress(engine, done)
             if not cancel.is_set():
                 progress('preparing_results', done)
                 with job_db as db:

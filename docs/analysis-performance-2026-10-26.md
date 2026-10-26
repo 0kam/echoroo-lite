@@ -145,3 +145,44 @@ ORT等のスクリーニングは6分WAV、2回中央値。I/Oは12本×30秒ま
 - 新規依存・モデル変更なし。Windows/Linuxの実測なし。既存CPU EPを維持する。将来の評価条件は、Windows DirectMLなら対応EPビルドとDirectX 12対応GPU/driver、Linux CUDAなら対応EPビルドとCUDA/cuDNN/NVIDIA環境。現wheelで利用可能なAzure EPには、このローカル音響モデル用の処理を追加していない。
 
 公式資料: [ORT threading](https://onnxruntime.ai/docs/performance/tune-performance/threading.html)、[CoreML EP](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html)、[DirectML EP](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html)、[CUDA EP](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)。
+
+## Kingletのアプリ側処理の追加調査
+
+基準は `9c71974`。上記と同じPC・モデル・fixtureで、long（60分×1）とshort（30秒×120）を各3回、新しいPythonプロセスと一時カタログで直列実行した。数値は秒の中央値。[生データ・条件・配列SHA](benchmarks/analysis-kinglet-2026-10-26.json)。OSキャッシュ・他アプリ・CPU周波数は固定していないため、推論時間の変動をアプリ改修の効果と区別する。
+
+**採用:** Kinglet-SまたはXSだけを解析するジョブで、160秒＝従来の32窓バッチと次の録音を1バッチ先読みする。バックグラウンドは1スレッド、未消費のfutureは1個。リサンプリング前後にFIRの余白を付け、整数秒の開始位置でフィルタ位相を維持して中央だけ使う。波形・推論バッチ境界・末尾のゼロ埋めを従来と一致させた。32 kHzも同じ長さで分割する。複数エンジンとPerchの読込・変換経路は維持する。
+
+表示窓は保存直後の作成をやめ、ジョブ末尾のoverviewで一度だけ準備する。shortの`result_windows`は約0.15〜0.16秒から約0.08秒となり、表示NPZも約0.11秒から約0.09秒になった。生スコア・候補・埋め込みの保存とcommitは引き続き録音／AIごとに独立し、途中失敗・キャンセル後は未完了の組合せだけ再開できる。
+
+| 構成・入力 | 全体 | 読込 | 32k変換 | 先読み待ち | 推論 | 生NPZ / 表示NPZ | 表示窓 | vec/segment | overview |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| kinglet-s / long | 4.089→2.968 | 0.287→0.333 | 0.561→0.588 | 0.000→0.039 | 2.927→2.616 | 0.025→0.024 / 0.027→0.027 | 0.004→0.003 | 0.082→0.070 | 0.120→0.119 |
+| kinglet-s / short | 4.846→4.126 | 0.291→0.578 | 0.551→0.723 | 0.000→0.007 | 3.050→3.228 | 0.129→0.141 / 0.106→0.086 | 0.160→0.078 | 0.162→0.167 | 0.204→0.206 |
+| kinglet-xs / long | 2.655→1.866 | 0.292→0.328 | 0.563→0.572 | 0.000→0.037 | 1.485→1.510 | 0.027→0.026 / 0.028→0.028 | 0.004→0.004 | 0.071→0.069 | 0.118→0.118 |
+| kinglet-xs / short | 3.822→2.474 | 0.303→0.613 | 0.551→0.705 | 0.000→0.014 | 2.051→1.628 | 0.136→0.150 / 0.107→0.086 | 0.153→0.081 | 0.168→0.163 | 0.207→0.206 |
+| perch / long | 16.876→15.645 | 0.435→0.296 | 0.671→0.583 | 0.000→0.000 | 13.647→12.828 | 1.170→1.135 / 0.088→0.086 | 0.151→0.135 | 0.075→0.069 | 0.137→0.120 |
+
+読込・変換は背景スレッドで推論と重なるため、段階の合計は全体時間と一致しない。表示窓・表示NPZはoverviewから分離した排他的時間。longの直列I/O約0.85秒が先読み待ち約0.04秒になった。Perchは推論設定を変更しておらず、今回の全体差には実行時変動が含まれる。採用後の全18試行でスコア・埋め込みのdtypeとバイト列SHAが基準と一致し、各窓1位と既定閾値での検出変更も0。
+
+| 個別に試した変更 | 実測（S / XS、秒） | 判断・同値性 |
+|---|---|---|
+| 録音間の先読みだけ | short 3.522 / 2.549 | 完全一致。短い録音では採用方式と同じ効果 |
+| 160秒単位＋録音間の先読みだけ | long 2.984 / 1.825、short 3.629 / 2.585 | 採用。完全一致 |
+| 先読み中だけORT 8→7スレッド | long 3.225 / 1.938、short 3.360 / 2.266 | 不採用。最大Δscore 3.58e-7、Δembedding 5.01e-6。検出変更0でもバイト不一致 |
+| 表示窓をoverviewに集約する変更だけ | short 4.323 / 3.185 | 採用。完全一致。表示窓＋表示NPZの約0.09〜0.10秒を削減 |
+| 保存時に手元のスコアを再利用 | short 4.311 / 3.342 | 不採用。完全一致だが、上記の集約で余分な読込自体を削除できる |
+| 推論前のpad/astypeコピー省略 | short 4.543 / 3.527 | 不採用。完全一致だが、改善を実行時変動から分離できない |
+| sqlite-vecの複数VALUES INSERT | short 4.687 / 3.593、vec 0.170 / 0.161 | 不採用。完全一致だが既存executemanyの0.162 / 0.168を安定して上回らない |
+| resample_poly入力をfloat64に変更してfloat32に戻す | 44.1/48 kHz波形: 最大Δ 1.49e-7 / 8.94e-8 | 不採用。波形がバイト不一致。既存float32経路を維持 |
+
+同時に変える項目を分けて測定した。全体時間には推論の変動も含まれるため、小さな差だけで採否を決めていない。新しい依存は追加していない。
+
+見積りは先読みと表示準備の移動に合わせて`marginal_v3`へ更新し、旧値を破棄する。暖機後の160秒×1本・640秒×1本・160秒×4本を各3回実行し、overviewを含むジョブ時間から`job + files*per_file + hours*per_hour`を非負最小二乗で分離する。APIフィールドは変更しない。このPCで実モデルを測った結果はPerch **14秒/時**、S **2秒/時**、XS **2秒/時**、各ファイル固定費 **0.0秒**、共通ジョブ固定費 **0.2秒**（規定の丸め後）。これはモデル読込を除く概算で、表のジョブ全体時間とは異なる。
+
+```sh
+# 今回の前後比較を再現（legacyは先読み無効＋保存直後の表示窓作成）
+.venv/bin/python scripts/bench_analysis.py --work-dir /tmp/kinglet-bench --shapes long,short --engine-sets kinglet-s,kinglet-xs,perch --repeats 3 --variant legacy --output /tmp/kinglet-before.json
+.venv/bin/python scripts/bench_analysis.py --work-dir /tmp/kinglet-bench --shapes long,short --engine-sets kinglet-s,kinglet-xs,perch --repeats 3 --output /tmp/kinglet-after.json --reference-dir /tmp/kinglet-before
+```
+
+検証: 全sidecarテスト **76件成功**。境界・端数末尾・32 kHzを含む6レートの波形一致、実モデルの保存配列SHA、先読みの上限とスレッド回収、録音／AIごとのcommitと再開、表示窓の一度だけの準備、ベンチマーク回帰・旧値破棄を確認した。今回の実ジョブ測定はCPUのKinglet/Perchに限定し、BirdNET 2.4・他OS・GPU EPは再測定していない。

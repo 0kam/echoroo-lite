@@ -35,25 +35,29 @@
 旧 `enabled` 配列は `main:"perch"`、その他の有効IDを `extra`、`confirmed:true` に移行する。
 
 `POST /models/benchmark` は本文不要。**選択外も含む利用可能な全モデル**を順番に測る。
-固定seedの小さなノイズとチャープによる1分・4分の48 kHzモノラルPCM16 WAVを一時生成する。
-モデル・ラベル・BirdNET地域モデルと推論sessionを先に読み込み、4分ジョブでウォームアップする。
-その後、各長さを3回ずつ、毎回独立した一時カタログで通常の解析ジョブとして実行し、中央値を使う。
-録音処理の計測には読込・デコード、リサンプリング、窓分割、推論、候補生成、NPZ・埋め込み・
-SQLite保存、表示窓の準備を含む。録音ループ外のジョブ処理とoverview作成は別に測る。
-`録音処理秒数 = ファイル数 × seconds_per_file + 音声時間数 × seconds_per_hour` を非負最小二乗で推定する。
+固定seedの小さなノイズとチャープによる160秒・640秒の48 kHzモノラルPCM16 WAVを一時生成する。
+モデル・ラベル・BirdNET地域モデルと推論sessionを先に読み込み、640秒ジョブでウォームアップする。
+その後、160秒×1本、640秒×1本、160秒×4本を各3回、独立した一時カタログで通常の
+解析ジョブとして実行し、中央値を使う。同じ総時間でもファイル数を変え、固定費を分離する。
+読込・デコード、リサンプリング、窓分割、推論、候補生成、NPZ・埋め込み・SQLite保存、
+overviewと表示窓の準備まで含むジョブ全体を測る。
+`ジョブ秒数 = seconds_per_job + ファイル数 × seconds_per_file + 音声時間数 × seconds_per_hour`
+を非負最小二乗で推定する。表示窓は各録音の保存直後には作らず、ジョブ末尾のoverviewで一度だけ作る。
+Kinglet単独ジョブは160秒（32窓）単位と次の録音の読込・変換を1バッチ先読みする。
+リサンプリングは境界にFIRの余白を付け、元のバッチ境界とスコア・埋め込みのバイト列を維持する。
 
 - `models[].seconds_per_hour`: 音声が1時間増えた場合の追加処理秒数。非負整数。
 - `models[].seconds_per_file`: 録音1ファイルあたりの固定処理秒数。非負、小数1桁。
-- トップレベル `seconds_per_job`: 録音ループ外の共通ジョブ費用。非負、小数1桁。
-  各モデル・長さの残差の中央値のうち最大を採り、UIではジョブごとに1回だけ足す。
+- トップレベル `seconds_per_job`: 上記の回帰で分離した共通ジョブ費用。非負、小数1桁。
+  各モデルの推定値の最大を採り、UIではジョブごとに1回だけ足す。
 
 いずれも未測定は null。モデル読込・地域リスト作成・初回初期化は含めない。
 BirdNET 2.4も通常のworker/session経路を使う（48 kHz・3秒窓）。測定専用の地点は
 緯度35度・経度138度、Asia/Tokyo、通年の地域リスト。一時データは完了時・エラー時とも削除し、
 利用者のカタログには書かない。GET / PUT / POST は同じ値を返し、保存先は
 `benchmark.models.<id>.{seconds_per_hour,seconds_per_file}` と `benchmark.seconds_per_job`。
-保存形式を `benchmark.method:"marginal_v2"` で識別する。ジョブ内でSQLite接続を再利用する実装に対応する。
-旧 `marginal_v1`、旧 `minutes_per_hour`、1分全体から換算した旧 `seconds_per_hour` の
+保存形式を `benchmark.method:"marginal_v3"` で識別する。先読みと表示準備の集約に対応する。
+旧 `marginal_v1/v2`、旧 `minutes_per_hour`、1分全体から換算した旧 `seconds_per_hour` の
 測定値は破棄し、再測定までは null。APIフィールドと推定式は変更しない。
 モデル設定の `main / extra / confirmed` はそのまま保持する。
 日時と `platform.machine()` / `os.cpu_count()` を保存し、PC情報が変われば測定値を破棄する。

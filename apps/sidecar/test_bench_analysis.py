@@ -14,6 +14,20 @@ spec.loader.exec_module(bench)
 
 
 class BenchmarkTest(unittest.TestCase):
+    def test_experimental_batch_size_also_updates_prefetch_chunks(self):
+        import analysis
+        import soundfile as sf
+        from test_analysis_prefetch import record
+        from test_models import FakeSession
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); path=root/'record.wav'
+            sf.write(path,np.zeros(32000*165,dtype=np.float32),32000)
+            row=record(path); calls=[]
+            with bench.instruments(bench.Stages(),'batch-16',root,root), analysis.prefetch_audio([row]) as read:
+                scores,_=analysis.infer_onnx(FakeSession('kinglet-xs',calls),'kinglet-xs',read(row),317)
+            self.assertEqual(scores.shape,(33,317))
+            self.assertEqual([len(c[2]) for c in calls],[16,16,1])
+
     def test_snapshot_covers_sparse_birdnet_top_one(self):
         import soundfile as sf
         from analysis import save
@@ -63,6 +77,13 @@ class BenchmarkTest(unittest.TestCase):
             self.assertAlmostEqual(result['max_abs_scores'],.02)
             self.assertAlmostEqual(result['max_abs_embeddings'],.001,places=6)
             self.assertEqual((result['top1_changes'],result['detection_changes']),(1,1))
+            arrays['perch.scores'][0,0]=0.
+            np.savez(first,**arrays)
+            arrays['perch.scores'][0,0]=-0.
+            np.savez(second,**arrays)
+            result=bench.compare(first,second)
+            self.assertFalse(result['identical'])
+            self.assertEqual(result['max_abs_scores'],0.)
 
     def test_bulk_insert_preserves_values_and_transaction_rollback(self):
         for variant in ('current','sqlite-bulk'):

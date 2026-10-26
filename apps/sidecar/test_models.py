@@ -244,8 +244,8 @@ class ModelsTest(unittest.TestCase):
                 self.assertNotEqual(data, root/'data')
                 measured_paths.extend(paths)
                 seconds = sum(sf.info(path).duration for path in paths)
-                measurements.append((engine, seconds))
-                return len(paths), seconds, len(paths)*.3 + seconds/3600*18, .4
+                measurements.append((engine, len(paths), seconds))
+                return len(paths), seconds, .4 + len(paths)*.3 + seconds/3600*18
             data = root/'data'
             with TestClient(create_app(data, directory, 'test'), headers={'Authorization':'Bearer test'}) as client, \
                     patch('analysis.load_onnx', side_effect=load), fake_birdnet(directory, []), \
@@ -259,7 +259,8 @@ class ModelsTest(unittest.TestCase):
                 self.assertTrue(all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] == 18
                     and m['seconds_per_file'] == .3 for m in result['models']))
                 self.assertEqual(loads, ['perch','birdnet-v3','kinglet-s','kinglet-xs'])
-                self.assertEqual(measurements, [(engine,seconds) for engine in REGISTRY for seconds in (240,60,60,60,240,240,240)])
+                expected = [(1,640), *[(1,160)]*3, *[(1,640)]*3, *[(4,640)]*3]
+                self.assertEqual(measurements, [(engine,files,seconds) for engine in REGISTRY for files,seconds in expected])
                 self.assertTrue(all(not path.exists() for path in measured_paths))
                 with connect(data) as db:
                     self.assertTrue(all(db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == 0
@@ -277,12 +278,12 @@ class ModelsTest(unittest.TestCase):
 
     def test_benchmark_fit_separates_audio_file_and_job_costs(self):
         from model_benchmark import fit_costs
-        samples=[(1,60,.3+18/60),(1,240,.3+18/15)]
-        self.assertEqual(fit_costs(samples),dict(seconds_per_hour=18,seconds_per_file=.3))
-        self.assertEqual(fit_costs([(20,600,20*.2+10/6),(1,600,.2+10/6)]),
-                         dict(seconds_per_hour=10,seconds_per_file=.2))
-        for samples in ([(1,60,.5),(1,240,.4)],[(1,60,.1),(1,240,2.)]):
+        samples=[(files,seconds,.4+files*.3+18*seconds/3600)
+                 for files,seconds in ((1,160),(1,640),(4,640))]
+        self.assertEqual(fit_costs(samples),dict(seconds_per_job=.4,seconds_per_hour=18,seconds_per_file=.3))
+        for samples in ([(1,160,.5),(1,640,.4),(4,640,.6)],[(1,160,.1),(1,640,2.),(4,640,.5)]):
             result=fit_costs(samples)
+            self.assertGreaterEqual(result['seconds_per_job'],0)
             self.assertGreaterEqual(result['seconds_per_hour'],0)
             self.assertGreaterEqual(result['seconds_per_file'],0)
 
@@ -320,7 +321,8 @@ class ModelsTest(unittest.TestCase):
 
     def test_old_benchmarks_are_dropped_without_changing_selection(self):
         for old in ({'minutes_per_hour':{'perch':.3}}, {'seconds_per_hour':{'perch':67}},
-                    {'method':'marginal_v1','models':{'perch':{'seconds_per_hour':15,'seconds_per_file':.1}},'seconds_per_job':.2}):
+                    *[{'method':method,'models':{'perch':{'seconds_per_hour':15,'seconds_per_file':.1}},'seconds_per_job':.2}
+                      for method in ('marginal_v1','marginal_v2')]):
             with self.subTest(old=old), tempfile.TemporaryDirectory() as temp:
                 root=Path(temp); directory=root/'models'; model_files(directory); data=root/'data'; data.mkdir()
                 (data/'models.json').write_text(json.dumps(dict(main='kinglet-s',extra=['perch'],confirmed=True,

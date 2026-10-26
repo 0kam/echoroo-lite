@@ -134,9 +134,9 @@ class WorkflowCheck(unittest.TestCase):
                                  [('perch',0,.897)])
                 self.assertEqual(row['counting_status'],'decided')
 
-    def test_analysis_prepares_native_windows(self):
+    def test_overview_prepares_native_windows_once_after_pair_commit(self):
         from analysis import save
-        from reports import cached_windows, classification_windows
+        from reports import cached_windows, classification_windows, read_classification_windows
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
@@ -147,9 +147,14 @@ class WorkflowCheck(unittest.TestCase):
                     record=dict(db.execute('SELECT * FROM recordings').fetchone())
                     job=db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(1,'running',1)").lastrowid
                 label='Horornis diphone_Japanese Bush Warbler'
-                save(root,job,record,'birdnet',{'species':[label]},dict(labels=np.repeat(label,5),start_s=np.arange(5)*3,
+                save(root,job,record,'birdnet',{'species':[label],'model_sha256':'test-birdnet'},dict(labels=np.repeat(label,5),start_s=np.arange(5)*3,
                      end_s=np.arange(1,6)*3,scores=np.array([.1,.8,.2,.3,.4])),[])
                 with connect(root) as db:analysis=dict(db.execute('SELECT * FROM analyses').fetchone())
+                self.assertEqual(list((root/'analyses').rglob('*.windows.npz')), [])
+                with patch('reports.read_classification_windows',wraps=read_classification_windows) as prepare:
+                    response=client.get('/datasets/1/overview')
+                    self.assertEqual(response.status_code,200,response.text)
+                    self.assertEqual(prepare.call_count,1)
                 cached_windows.cache_clear()
                 with patch('reports.read_classification_windows',side_effect=AssertionError('cache was not prepared')):
                     _,starts,scores,evidence=classification_windows(analysis,15,[label])
