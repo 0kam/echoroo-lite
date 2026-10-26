@@ -31,7 +31,7 @@ import numpy as np
 import soundfile as sf
 
 SHAPES = {'long':(1,3600,48000,'WAV'), 'short':(120,30,48000,'WAV'), 'flac':(20,300,44100,'FLAC')}
-ENGINE_SETS = {'perch':['perch'], 'kinglet-s':['kinglet-s'], 'dual':['perch','birdnet'],
+ENGINE_SETS = {'perch':['perch'], 'kinglet-s':['kinglet-s'], 'kinglet-xs':['kinglet-xs'], 'dual':['perch','birdnet'],
                'all':['perch','birdnet','birdnet-v3','kinglet-s','kinglet-xs'],
                'onnx':['perch','birdnet-v3','kinglet-s','kinglet-xs']}
 VARIANTS = ['current', *[f'threads-{n}' for n in (1,2,4,6,8,12,0)], 'inter-2', 'parallel',
@@ -393,8 +393,8 @@ def trial(args):
                 script_sha256=analysis.digest(Path(__file__)))
     with tempfile.TemporaryDirectory(prefix='analysis-job-',dir=args.work_dir) as folder:
         root=Path(folder); storage.initialize(root); initialize_species(root); configure(root,args.models)
-        (root/'models.json').write_text(json.dumps(dict(main='kinglet-s' if engines==['kinglet-s'] else 'perch',
-            extra=[e for e in engines if e!=('kinglet-s' if engines==['kinglet-s'] else 'perch')],confirmed=True,directory=str(args.models))))
+        main = engines[0] if len(engines) == 1 and engines[0].startswith('kinglet') else 'perch'
+        (root/'models.json').write_text(json.dumps(dict(main=main, extra=[e for e in engines if e != main],confirmed=True,directory=str(args.models))))
         with storage.connect(root) as db:
             db.execute("INSERT INTO sites VALUES(1,'Benchmark','Asia/Tokyo',35,138)")
             db.execute("INSERT INTO datasets VALUES(1,1,'Benchmark',?)",(str(args.fixture),))
