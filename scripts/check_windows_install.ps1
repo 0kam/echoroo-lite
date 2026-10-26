@@ -93,7 +93,7 @@ function Wait-ForDesktopText([string]$Text, [string]$EvidenceName, [int]$Minimum
     }
     if ($matches -lt $MinimumCount) {
         # Artifacts may be unavailable, so the log must show what the window offered instead.
-        Write-Output "Accessible names on screen:"; $names | Where-Object { $_ } | Select-Object -First 150 | ForEach-Object { Write-Output "  $_" }
+        Write-Host "Accessible names on screen:"; $names | Where-Object { $_ } | Select-Object -First 150 | ForEach-Object { Write-Host "  $_" }
         throw "The desktop UI did not display: $Text"
     }
     return $window
