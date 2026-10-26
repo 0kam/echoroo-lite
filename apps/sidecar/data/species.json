@@ -32,9 +32,9 @@
     }
   ],
   "counts": {
-    "taxa": 14847,
-    "ja": 9652,
-    "en": 11997
+    "taxa": 14848,
+    "ja": 9653,
+    "en": 11998
   },
   "species": {
     "Abavorana luctuosa": {},
@@ -33592,6 +33592,10 @@
     "Phodopus sungorus": {
       "en": "Dzhungarian Hamster",
       "ja": "ジャンガリアンハムスター"
+    },
+    "Phoebastria albatrus": {
+      "ja": "アホウドリ",
+      "en": "Short-tailed Albatross"
     },
     "Phoebastria immutabilis": {
       "en": "Laysan Albatross",

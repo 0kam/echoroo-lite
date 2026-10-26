@@ -71,7 +71,8 @@ def model_key(engine, model_id=None):
 
 
 def native_window(engine):
-    return 3 if engine == 'birdnet' else 5
+    from models import window_s
+    return window_s(engine)
 
 
 def default_threshold(engine):

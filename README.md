@@ -2,8 +2,16 @@
 
 Offline, single-user desktop edition of Echoroo — the human×machine bird-call
 annotation loop, rebuilt as a Tauri app with a Python sidecar and SQLite.
-The single distributed edition includes BirdNET 2.4 and Perch V2 and is for
+The single distributed edition includes BirdNET 2.4, Perch V2,
+Kinglet-S (preview) and Kinglet-XS (preview) and is for
 non-commercial / research use.
+
+Analysis uses all available engines by default. Perch V2 is always enabled for
+similarity search; the other detection engines can be selected through the model
+settings API. Kinglet previews are Apache-2.0 models distilled from Perch 2.0,
+cover 317 Japanese bird species and return uncalibrated sigmoid ranking scores.
+Kinglet embeddings are not saved in 0.9.0. See the
+[model API contract](docs/kinglet-preview-api.md) and [model sources](docs/model-sources.md).
 
 - Installation (Windows, macOS, Linux; unsigned-app warnings): [docs/install-guide.md](docs/install-guide.md)
 - Third-party models, data and licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
@@ -86,8 +94,11 @@ npm run desktop
 On Windows, create `.venv` with Python 3.11 and replace `.venv/bin/python` with
 `.venv/Scripts/python.exe`. Install the Python requirements with that interpreter
 (`python -m pip install -r ...`) or uv. Developers run `setup_models.py` without
-`--perch-only`; development and release builds both use the full BirdNET and Perch models.
+`--perch-only`; development and release builds include BirdNET, Perch and both Kinglet previews.
 Installed apps already include these models and need no model setup or network access for analysis.
+Before the Kinglet release assets are published, use
+`.venv/bin/python scripts/setup_models.py --kinglet-from poc/models/kinglet_preview1`
+to copy the supplied preview files with the same pinned checksum verification.
 Do not run `uv venv` over an existing environment you want to keep.
 
 In the app, add a site (latitude/longitude and IANA timezone), choose a folder,
@@ -204,7 +215,7 @@ npm run desktop:build
 
 Freeze on the target OS. Binaries use Tauri's host-triple naming convention and
 are excluded from Git. Run `setup_models.py` before `npm run desktop:build`; the build
-fails if a required model is absent. The bundle contains BirdNET 2.4 and Perch V2
+fails if a required model is absent. The bundle contains BirdNET 2.4, Perch V2 and both Kinglet previews
 under the `org.echoroo.lite` identifier. Installed users do not need a separate model setup.
 Model and label provenance, hashes, and unresolved distribution terms are recorded
 in [Model sources](docs/model-sources.md), including the eBird taxonomy used for species-page links.
@@ -240,11 +251,12 @@ Optional real-audio checks (the supplied 30-minute recording):
 ```
 
 The first check keeps test results under ignored `.local-data/m0-smoke`; the frozen
-check uses a temporary catalog. Scores are uncalibrated: BirdNET uses sigmoid scores;
+check uses a temporary catalog. Scores are uncalibrated: BirdNET and Kinglet use sigmoid scores;
 Perch displays softmax scores over all 14,795 classes, retaining original logits.
-Both models’ classification candidates always use the recording site's region list in the app, with no UI
-toggle. Perch uses exact scientific-name matches to the same run's BirdNET list.
+BirdNET candidates use the recording site's saved region list, Perch uses the bundled
+Japanese-bird candidate list, and each Kinglet uses its own 317-class list.
 Filtering does not change scores.
 Existing saved runs are displayed this way without reanalysis. Complete Perch class scores and BirdNET scores
 within the recorded geo-filtered label set are stored as non-pickled NPZ arrays;
-the UI shows only top candidates. This is not a validated species inventory.
+Kinglet stores all 317 sigmoid scores per window in the same format family.
+The UI shows only top candidates. This is not a validated species inventory.

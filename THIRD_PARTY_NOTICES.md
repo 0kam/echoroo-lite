@@ -16,6 +16,11 @@ are bundled in the app.
   its labels from [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx)
   and [cgeorgiaw/Perch](https://huggingface.co/cgeorgiaw/Perch). Licensed under
   Apache-2.0; the licence text is bundled as `licenses/APACHE-2.0.txt`.
+- **Kinglet-S (preview) and Kinglet-XS (preview)** — experimental models
+  distilled from Perch 2.0, covering 317 Japanese bird species. Licensed under
+  Apache-2.0; covered by the bundled `licenses/APACHE-2.0.txt`. Preview1 weights
+  and class lists were supplied by the model author; their pinned release assets
+  are at <https://github.com/0kam/echoroo-lite/releases/tag/models-kinglet-preview1>.
 
 ## Taxonomy sources
 

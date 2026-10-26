@@ -10,6 +10,7 @@ import numpy as np
 import soundfile as sf
 
 from audio import resample
+from models import REGISTRY, available, enabled_engines, window_s
 
 from species import birdnet_species_mapping
 from storage import CatalogError, checked_source, connect
@@ -20,18 +21,22 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def load_perch(models):
+def load_onnx(models, engine):
     # Disable the non-Windows uploader before ORT initializes (also avoids its shutdown race).
     os.environ["ORT_DISABLE_TELEMETRY"] = "1"
     import onnxruntime as ort
     ort.disable_telemetry_events()
-    path = Path(models) / "perch/perch_v2_no_dft.onnx"
+    path = Path(models) / REGISTRY[engine]['files'][0]
     if not path.is_file():
         raise CatalogError("models_missing")
     options = ort.SessionOptions()
     options.intra_op_num_threads = 8
     options.inter_op_num_threads = 1
     return ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"]), digest(path)
+
+
+def load_perch(models):
+    return load_onnx(models, 'perch')
 
 
 def perch_labels(models):
@@ -51,11 +56,38 @@ def perch_label_index(labels, scientific_name):
 
 
 def birdnet_available(models):
-    root = Path(models) / "birdnet"
-    return all((root / relative).is_file() for relative in (
-        "acoustic-models/v2.4/tf/model-fp32.tflite",
-        "geo-models/v2.4/tf/model-fp32.tflite",
-    ))
+    return available(models, 'birdnet')
+
+
+def plan(root, models, records, site):
+    """Freeze missing recording/engine pairs before starting the worker."""
+    if not available(models, 'perch'):
+        raise CatalogError('models_missing')
+    engines = enabled_engines(root, models)
+    hashes = {engine: digest(Path(models) / REGISTRY[engine]['files'][0]) for engine in engines}
+    classes = {engine: digest(Path(models) / REGISTRY[engine]['files'][1])
+               for engine in engines if REGISTRY[engine]['experimental']}
+    with connect(root) as db:
+        latest = {(r['recording_id'], r['engine']): r for r in db.execute('''SELECT * FROM analyses
+            WHERE id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''')}
+        changed = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?', (site.get('id'),)).fetchone())
+    pending = {}
+    for record in records:
+        missing = []
+        for engine in engines:
+            row = latest.get((record['id'], engine))
+            meta = json.loads(row['metadata']) if row else {}
+            matches = row is not None and Path(row['scores_path']).is_file() and meta.get('model_sha256') == hashes[engine]
+            if engine in classes:
+                matches &= meta.get('classes_sha256') == classes[engine]
+            if engine == 'birdnet':
+                if changed or any(key in meta for key in ('latitude', 'longitude')):
+                    matches &= all(meta.get(key) == site[key] for key in ('latitude', 'longitude'))
+            if not matches:
+                missing.append(engine)
+        if missing:
+            pending[record['id']] = missing
+    return pending
 
 
 def candidate_filter():
@@ -81,18 +113,18 @@ def save(root, job, recording, engine, meta, scores, candidates, embeddings=None
         if embeddings is not None:
             for i, vector in enumerate(embeddings):
                 sid = db.execute("INSERT INTO segments(analysis_id,start_s,end_s) VALUES(?,?,?)",
-                                 (aid, i * 5, min((i + 1) * 5, recording["seconds"]))).lastrowid
+                                 (aid, i * window_s(engine), min((i + 1) * window_s(engine), recording["seconds"]))).lastrowid
                 db.execute("INSERT INTO vectors(rowid,embedding) VALUES(?,?)",
                            (sid, vector.astype("<f4").tobytes()))
 
     # Build shared display windows before analysis is reported as complete.
     from reports import classification_windows
-    allowed = meta.get('species') if engine == 'birdnet' else (meta.get('candidate_filter') or {}).get('species')
+    allowed = (meta.get('candidate_filter') or {}).get('species') if engine == 'perch' else meta.get('species')
     if allowed is not None:
         classification_windows({'scores_path':str(path),'engine':engine},recording['seconds'],allowed)
 
 
-def run(root, models, job, records, site, cancel):
+def run(root, models, job, records, site, cancel, pending=None):
     def progress(stage, done):
         with connect(root) as db:
             db.execute("UPDATE jobs SET status='running',stage=?,done=? WHERE id=?", (stage, done, job))
@@ -100,11 +132,12 @@ def run(root, models, job, records, site, cancel):
     try:
         # Model acquisition is an explicit setup step, never a hidden job download.
         models = Path(models)
-        model_path = models / "perch/perch_v2_no_dft.onnx"
+        pending = plan(root, models, records, site) if pending is None else pending
+        engines = {engine for pairs in pending.values() for engine in pairs}
+        with connect(root) as db:
+            db.execute('UPDATE jobs SET total=? WHERE id=?', (sum(map(len, pending.values())), job))
         labels_path = models / "perch-labels/assets/labels.csv"
-        if not all(p.is_file() for p in (model_path, labels_path)):
-            raise CatalogError("models_missing")
-        use_birdnet = birdnet_available(models)
+        use_birdnet = 'birdnet' in engines
         progress("loading_models", 0)
         acoustic = bird_meta = species = None
         if use_birdnet:
@@ -132,14 +165,35 @@ def run(root, models, job, records, site, cancel):
                          "score_type": "sigmoid_uncalibrated", "window_s": 3,
                          "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
                          "display_threshold": 0.1}
-        progress("loading_perch", 0)
-        session, model_sha = load_perch(models)
-        labels = perch_labels(models)
-        perch_meta = {"model": "Perch V2 no_dft", "model_sha256": model_sha,
-                      "labels_sha256": digest(labels_path), "window_s": 5,
-                      "score_type": "logit", "stored_top_k": None, "display_top_k": 5,
-                      "candidate_filter": candidate_filter(),
-                      "resampling": "scipy.resample_poly", "last_window": "zero_pad"}
+        session = None
+        if 'perch' in engines:
+            progress("loading_perch", 0)
+            session, model_sha = load_perch(models)
+            labels = perch_labels(models)
+            perch_meta = {"model": "Perch V2 no_dft", "model_sha256": model_sha,
+                          "labels_sha256": digest(labels_path), "window_s": 5,
+                          "score_type": "logit", "stored_top_k": None, "display_top_k": 5,
+                          "candidate_filter": candidate_filter(),
+                          "resampling": "scipy.resample_poly", "last_window": "zero_pad"}
+        kinglets = {}
+        for engine in REGISTRY:
+            if engine not in engines or not REGISTRY[engine]['experimental']:
+                continue
+            progress('loading_' + engine, 0)
+            detector, sha = load_onnx(models, engine)
+            classes_path = models / REGISTRY[engine]['files'][1]
+            with classes_path.open(newline='', encoding='utf-8') as stream:
+                rows = list(csv.DictReader(stream))
+            if ([int(row['index']) for row in rows] != list(range(317)) or
+                    len({row['scientific_name'] for row in rows}) != 317):
+                raise CatalogError('invalid_scores')
+            names = [row['scientific_name'] for row in rows]
+            meta = dict(model=REGISTRY[engine]['name'], model_sha256=sha,
+                        classes_sha256=digest(classes_path), window_s=window_s(engine),
+                        score_type=REGISTRY[engine]['score_type'], species=names,
+                        stored_top_k=None, display_top_k=5, last_window='zero_pad',
+                        resampling='scipy.resample_poly')
+            kinglets[engine] = (detector, names, meta)
         done = 0
         if use_birdnet:
             progress("loading_birdnet", 0)
@@ -150,8 +204,11 @@ def run(root, models, job, records, site, cancel):
             for record in records:
                 if cancel.is_set():
                     break
+                pairs = pending.get(record['id'], [])
+                if not pairs:
+                    continue
                 path = checked_source(record)
-                if bird_session:
+                if bird_session and 'birdnet' in pairs:
                     progress("birdnet", done)
                     result = bird_session.run(path)
                     if len(result.unprocessable_inputs):
@@ -170,11 +227,42 @@ def run(root, models, job, records, site, cancel):
                          {"start_s": rows["start_time"], "end_s": rows["end_time"],
                           "labels": rows["species_name"].astype(str), "scores": rows["confidence"]}, candidates)
                     done += 1
-                progress("perch", done)
                 if cancel.is_set():
                     break
+                if not any(engine != 'birdnet' for engine in pairs):
+                    continue
                 audio, rate = sf.read(path, dtype="float32")
                 audio = resample(audio, rate)
+                for engine, (detector, names, meta) in kinglets.items():
+                    if engine not in pairs or cancel.is_set():
+                        continue
+                    progress(engine, done)
+                    batches = []
+                    # Bound waveform memory while retaining the zero-padded final window.
+                    for start in range(0, len(audio), 32 * 160000):
+                        if cancel.is_set():
+                            break
+                        chunk = audio[start:start + 32 * 160000]
+                        waveform = np.pad(chunk, (0, -len(chunk) % 160000)).reshape(-1, 160000)
+                        logits, = detector.run(['logits'], {'waveform': np.clip(waveform, -1, 1).astype(np.float32)})
+                        if logits.shape != (len(waveform), len(names)) or not np.isfinite(logits).all():
+                            raise CatalogError('invalid_scores')
+                        batches.append(1 / (1 + np.exp(-np.clip(logits.astype(np.float64), -709, 709))))
+                    if cancel.is_set():
+                        break
+                    scores = np.concatenate(batches).astype(np.float32)
+                    candidates = [(i * 5, min((i + 1) * 5, record['seconds']), names[j], float(row[j]))
+                                  for i, row in enumerate(scores) for j in np.argsort(-row, kind='stable')[:5]]
+                    checked_source(record)
+                    # Kinglet stores a dense window x class sigmoid matrix, without embeddings.
+                    save(root, job, record, engine, meta, {'scores': scores, 'labels': np.array(names)}, candidates)
+                    done += 1
+                    progress(engine, done)
+                if cancel.is_set():
+                    break
+                if 'perch' not in pairs:
+                    continue
+                progress("perch", done)
                 vectors, logits = [], []
                 for start in range(0, len(audio), 160000):
                     if cancel.is_set():

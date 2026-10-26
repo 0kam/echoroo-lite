@@ -6,9 +6,22 @@ import shutil
 import urllib.request
 from pathlib import Path
 
+KINGLET_BASE_URL = 'https://github.com/0kam/echoroo-lite/releases/download/models-kinglet-preview1/'
+KINGLET_ASSETS = (
+    ('kinglet-s-preview1.onnx', 'kinglet-s-preview1_efficientnet_lite0.onnx',
+     'a21fdfc6f3356e209d800656fc0ce1977a6fb37935eafef69998f7d94098cc03'),
+    ('kinglet-xs-preview1.onnx', 'kinglet-xs-preview1_mobilenetv4s.onnx',
+     '4da91d8725e909e8e85fe3333b2b57d7a300b3f9bd1956b7b7119441da622442'),
+    ('kinglet-s-preview1.classes.csv', 'kinglet-s-preview1_efficientnet_lite0.classes.csv',
+     '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
+    ('kinglet-xs-preview1.classes.csv', 'kinglet-xs-preview1_mobilenetv4s.classes.csv',
+     '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
+)
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1] / "poc/models")
 parser.add_argument("--perch-only", action="store_true")
+parser.add_argument('--kinglet-from', type=Path, help='Copy verified Kinglet assets from a local handover folder')
 args = parser.parse_args()
 models = args.output.resolve()
 assets = [
@@ -19,6 +32,8 @@ assets = [
      "https://huggingface.co/cgeorgiaw/Perch/resolve/c3c3c816976a6c1bb75140b8fbaef7397a6f708f/assets/labels.csv",
      "e4d5c0397d8fb08bf90c6b13a34810af53504faad927e472fcc567793c9de057"),
 ]
+if not args.perch_only:
+    assets.extend(('kinglet/' + name, KINGLET_BASE_URL + name, sha) for name, _, sha in KINGLET_ASSETS)
 
 
 def digest(path):
@@ -33,12 +48,24 @@ for relative, url, expected in assets:
         continue
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".download")
-    with urllib.request.urlopen(url, timeout=60) as source, temporary.open("wb") as target:
-        shutil.copyfileobj(source, target)
-    if digest(temporary) != expected:
-        raise RuntimeError(f"Model checksum mismatch: {relative}")
-    temporary.replace(path)
-    print(f"Downloaded and verified {relative}")
+    try:
+        if relative.startswith('kinglet/') and args.kinglet_from:
+            name, original, _ = next(asset for asset in KINGLET_ASSETS if asset[0] == path.name)
+            source = args.kinglet_from / name
+            if not source.is_file():
+                source = args.kinglet_from / original
+            if digest(source) != expected:
+                raise RuntimeError(f'Model checksum mismatch: {source}')
+            shutil.copyfile(source, temporary)
+        else:
+            with urllib.request.urlopen(url, timeout=60) as source, temporary.open("wb") as target:
+                shutil.copyfileobj(source, target)
+        if digest(temporary) != expected:
+            raise RuntimeError(f"Model checksum mismatch: {relative}")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f"Prepared and verified {relative}")
 
 if args.perch_only:
     print(f"Perch models ready: {models}")

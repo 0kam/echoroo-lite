@@ -1,7 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { untrack } from 'svelte';
 export type Connection = { url: string; token: string };
-export type Health = { status: 'ok' | 'data_incompatible'; data_folder: string; birdnet: boolean; detail?: string | null };
+export type Health = { status: 'ok' | 'data_incompatible'; data_folder: string; detail?: string | null };
 export let connection: Connection;
 /** Number of requests in flight; the activity bar reads it. */
 export const activity = $state({ count: 0 });
@@ -20,13 +20,13 @@ export async function connect(): Promise<Health> {
   }
   return api<Health>('/health');
 }
-export async function api<T>(path: string, body?: unknown): Promise<T> {
+export async function api<T>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
   untrack(() => activity.count++);
   try {
     let response: Response;
     try {
       response = await fetch(connection.url + path, {
-        method: body === undefined ? 'GET' : 'POST',
+        method,
         headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       });

@@ -17,6 +17,13 @@ from storage import connect, initialize
 
 class ManagementCheck(unittest.TestCase):
     def populate(self, root, client):
+        from models import REGISTRY
+        from analysis import digest
+        for engine in ('perch', 'birdnet'):
+            for relative in REGISTRY[engine]['files']:
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(engine.encode())
         for index in range(4):
             folder = root / f'original-{index}'
             folder.mkdir()
@@ -40,7 +47,7 @@ class ManagementCheck(unittest.TestCase):
                             np.savez(path,labels=np.repeat(label,5),scores=np.repeat(.5,5),start_s=np.arange(5)*3,end_s=np.arange(1,6)*3)
                         else:
                             np.savez(path,labels=['Horornis diphone','Other'],logits=np.log(np.full((3,2),.5)))
-                        meta={'model_sha256':engine,'species':[label],'latitude':35,'longitude':138,
+                        meta={'model_sha256':digest(root/REGISTRY[engine]['files'][0]),'species':[label],'latitude':35,'longitude':138,
                               'candidate_filter':{'species':['Horornis diphone']}}
                         aid=db.execute('INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,?,?,?)',
                                        (job,rid,engine,json.dumps(meta),str(path))).lastrowid
@@ -151,7 +158,7 @@ class ManagementCheck(unittest.TestCase):
                 self.assertEqual(response.json()['detail'],'location_reanalysis')
                 preview=client.get('/sites/1/delete-preview').json()
                 entered,release=threading.Event(),threading.Event()
-                def run(root,models,job,records,site,cancel):
+                def run(root,models,job,records,site,cancel,pending):
                     self.assertEqual([r['id'] for r in records],[1,2]);self.assertEqual(site['latitude'],36)
                     entered.set();release.wait(10)
                 with patch('analysis.run',side_effect=run):

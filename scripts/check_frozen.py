@@ -89,7 +89,7 @@ with ExitStack() as stack:
                 time.sleep(1)
             assert job["status"] == "complete", job
             results = api(f"/recordings/{record['id']}/results")
-            engines = {"perch", "birdnet"} if api("/health")["birdnet"] else {"perch"}
+            engines = {m['id'] for m in api('/models') if m['enabled'] and m['available']}
             assert {r["engine"] for r in results} == engines
             perch = next(r for r in results if r["engine"] == "perch")
             assert perch["metadata"]["display_candidate_filter"] == "applied", perch["metadata"]
@@ -136,9 +136,11 @@ with ExitStack() as stack:
             print(f"Frozen detection reports and CSV/audio export passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
             if len(records) > 1:
-                check=api('/validations',{**dates,'dataset_id':imported['dataset_id'],'species_id':target['id'],'model':'perch'})
-                question=check['question'];a=question['start_s']
-                assert check['counts']['total']>0 and check['window_s']==5 and 'scores' not in question
+                for engine in sorted(engines):
+                    check=api('/validations',{**dates,'dataset_id':imported['dataset_id'],'species_id':target['id'],'model':engine})
+                    question=check['question']
+                    assert check['counts']['total']>0 and check['window_s']==(3 if engine=='birdnet' else 5) and 'scores' not in question
+                a=question['start_s']
                 detail=api(f"/sources/recording/{question['source']['id']}/spectrogram?start_s={a}&end_s={question['end_s']}&detail=true")
                 assert detail['width']>1000
                 answered=api(f"/validations/{check['id']}/answers",{'item_id':question['id'],'verdict':'unknown','version':question['version']})

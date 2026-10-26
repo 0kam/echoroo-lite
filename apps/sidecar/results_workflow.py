@@ -7,6 +7,7 @@ from functools import lru_cache
 from types import SimpleNamespace
 
 from reports import detection, options, snapshot_view
+from models import enabled_engines
 from species import canonical_scientific_name, names_for
 from storage import CatalogError, checked_source, connect
 
@@ -38,23 +39,24 @@ def build_fingerprint(root, dataset_id):
 
 
 @lru_cache(maxsize=8)
-def cached_options(root, dataset_id, revision):
+def cached_options(root, dataset_id, revision, engines):
     def build():
         from management import location_status
         result = options(root, dataset_id)
         with connect(root) as db:
             site = dict(result['site'])
             site['location_changed'] = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?',(site['id'],)).fetchone())
-            complete, stale = location_status(db, site)
-        return {**result, 'analysed_recordings':len(complete), 'location_stale':stale}
-    return cached(root, ['options-v2', dataset_id, revision], build)
+            complete, stale = location_status(db, site, engines)
+            total = db.execute('SELECT COUNT(*) FROM site_recordings WHERE scope_id=?', (dataset_id,)).fetchone()[0]
+        return {**result, 'analysed_recordings':len(complete), 'unanalysed_recordings':total-len(complete), 'location_stale':stale}
+    return cached(root, ['options-v3', dataset_id, revision, engines], build)
 
 
 def context(root, dataset_id, first=None, last=None):
     signature = fingerprint(root, dataset_id)
     with connect(root) as db:
         data_revision = db.execute('SELECT version FROM result_revision WHERE id=1').fetchone()[0]
-    result = dict(cached_options(root, dataset_id, data_revision))
+    result = dict(cached_options(root, dataset_id, data_revision, tuple(enabled_engines(root))))
     result['mixed_models']=len(result['models'])>len({m['engine'] for m in result['models']})
     result['models']=list({m['engine']:m for m in sorted(result['models'],key=lambda m:m['latest_analysis_id'])}.values())
     result['start_date'] = first or result['first_date']
@@ -75,7 +77,7 @@ def context(root, dataset_id, first=None, last=None):
     result['names_revision']=hashlib.sha256(json.dumps(revision[-1]).encode()).hexdigest()
     with connect(root) as db:
         revision.append([tuple(r) for r in db.execute('SELECT id,answers FROM quiz_sessions ORDER BY id')])
-    result['revision']=hashlib.sha256(json.dumps([result['fingerprint'],data_revision,revision]).encode()).hexdigest()
+    result['revision']=hashlib.sha256(json.dumps([result['fingerprint'],data_revision,revision,enabled_engines(root)]).encode()).hexdigest()
     return result
 
 
@@ -203,7 +205,8 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None, birdnet=True):
     ctx = context(root, dataset_id, first, last)
-    return cached(root, ['overview-v12', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet],
+    return cached(root, ['overview-v13', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet,
+                         enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx, birdnet))
 
 
@@ -297,8 +300,9 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
         check['status']=check['validation']['status'] if check['validation'] else 'not_started'
     overall_status = counting_status(check.get('validation') for check in checks)
     if engine == 'auto':
-        engine = next((m['engine'] for m in listed if any(
-            s['species']['id'] == species_id and s['candidate_windows'] for s in detection_snapshot(root, ctx, m)['summaries'])), None)
+        counts = [(m['engine'], next((s['candidate_windows'] or 0 for s in detection_snapshot(root, ctx, m)['summaries']
+                   if s['species']['id'] == species_id), 0)) for m in listed]
+        engine = max(counts, key=lambda pair: pair[1])[0] if any(count for _, count in counts) else None
         if engine is None and custom and model_id is None:
             engine, model_id = 'custom', custom[0]['id']
         engine = engine or next((m['engine'] for m in listed), None)

@@ -260,7 +260,7 @@ def real_smoke(path):
                 time.sleep(1)
             assert job["status"] == "complete", job
             results = client.get(f"/recordings/{record['id']}/results").json()
-            assert {r["engine"] for r in results} == {"birdnet", "perch"}, results
+            assert {r["engine"] for r in results} == {m['id'] for m in client.get('/models').json() if m['enabled'] and m['available']}, results
             for result in results:
                 assert result["candidates"], result["engine"]
                 with np.load(result["scores_path"], allow_pickle=False) as stored:

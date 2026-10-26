@@ -18,17 +18,18 @@ def site_details(root, site_id):
         return {'site': dict(site), 'datasets': datasets}
 
 
-def location_status(db, site):
+def location_status(db, site, enabled=None):
     """Return completed recordings at this location and whether older locations remain."""
     from reports import analysis_metadata
+    if enabled is None:
+        from models import enabled_engines
+        enabled = enabled_engines(Path(db.execute('PRAGMA database_list').fetchone()[2]).parent)
     engines = {}
-    present = {}
     stale = False
     rows = db.execute('''SELECT a.recording_id,a.engine,a.metadata FROM analyses a JOIN recordings r ON r.id=a.recording_id
         JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=? AND a.id IN
         (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''', (site['id'],))
     for row in rows:
-        present.setdefault(row['recording_id'], set()).add(row['engine'])
         meta = analysis_metadata(row['metadata'])
         geo = meta if row['engine']=='birdnet' else {}
         matches = row['engine'] != 'birdnet' or all(geo.get(key)==site[key] for key in ('latitude','longitude'))
@@ -38,8 +39,8 @@ def location_status(db, site):
         stale |= not matches
         if matches:
             engines.setdefault(row['recording_id'], set()).add(row['engine'])
-    complete = {rid for rid, values in engines.items()
-                if 'perch' in values and ('birdnet' not in present[rid] or 'birdnet' in values)}
+    required = {'perch', *enabled}
+    complete = {rid for rid, values in engines.items() if required <= values}
     return complete, stale
 
 

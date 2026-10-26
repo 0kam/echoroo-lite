@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { checkText } from './workflow';
+  import { checkText,modelName } from './workflow';
   import { commonName } from './species';
   import { percent, type Cell, type Report } from './reports';
   import { app, t } from './app.svelte';
@@ -17,7 +17,7 @@
   const ring = $derived((outer - inner) / days);
   const dateTicks = $derived([...new Set([0,1,2,3].map(i => Math.round((days-1)*i/3)))]);
   const metric = $derived(t('candidateRate'));
-  const condition = $derived(`${report.engine === 'birdnet' ? 'BirdNET' : report.engine === 'perch' ? 'Perch' : t('customModel')} · ${report.model_sha256.slice(0, 12)}`);
+  const condition = $derived(`${modelName(report.engine)} · ${report.model_sha256.slice(0, 12)}`);
   const color = (cell: Cell) => {
     if (cell.status === 'no_recording') return 'transparent';
     if (cell.status === 'unanalysed' || cell.status === 'not_evaluated') return `url(#${uid}-missing)`;

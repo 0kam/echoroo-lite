@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from species import canonical_scientific_name, names_for
+from models import REGISTRY, window_s
 from storage import CatalogError, checked_source, connect
 
 
@@ -48,6 +49,8 @@ def options(root, dataset_id):
             json_extract(a.metadata,'$.model') AS name, MAX(a.id) AS latest_analysis_id, COUNT(*) AS recordings FROM analyses a
             JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND a.id IN
             (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) GROUP BY a.engine,model_sha256 ORDER BY a.engine''', (dataset_id,))]
+    for model in models:
+        model['name'] = REGISTRY[model['engine']]['name']
     zone = ZoneInfo(site['timezone'])
     first = min(datetime.fromisoformat(r['recorded_at']).astimezone(zone).date() for r in records)
     last = max((datetime.fromisoformat(r['recorded_at']) + timedelta(seconds=r['seconds'] - 1e-6)).astimezone(zone).date() for r in records)
@@ -114,9 +117,9 @@ def analysis_metadata(raw):
 
 def candidate_list(db, analysis):
     meta = analysis_metadata(analysis['metadata'])
-    if analysis['engine'] == 'birdnet':
-        return meta.get('species')
-    return (meta.get('candidate_filter') or {}).get('species')
+    if analysis['engine'] == 'perch':
+        return (meta.get('candidate_filter') or {}).get('species')
+    return meta.get('species')
 
 
 def classification_windows(analysis, seconds, allowed):
@@ -288,9 +291,9 @@ def cached_windows(path, size, mtime, engine, seconds, allowed, mapping_sha=''):
 
 
 def read_classification_windows(analysis, seconds, allowed):
-    """Return complete model-native windows: BirdNET 3 s and Perch 5 s."""
+    """Return complete model-native windows, excluding any zero-padded tail."""
     from scipy.special import softmax
-    native = 3 if analysis['engine'] == 'birdnet' else 5
+    native = window_s(analysis['engine'])
     slots = int(seconds // native)
     with np.load(analysis['scores_path'], allow_pickle=False) as saved:
         if analysis['engine'] == 'perch':
@@ -301,10 +304,18 @@ def read_classification_windows(analysis, seconds, allowed):
             labels = labels[included]
             scores = softmax(logits.astype(np.float64), axis=1)[:slots, included]
             present = np.ones(len(scores), dtype=bool)
+        elif REGISTRY[analysis['engine']]['experimental']:
+            labels, scores = saved['labels'], saved['scores']
+            if (labels.ndim != 1 or scores.ndim != 2 or scores.shape[1] != len(labels)
+                    or not np.isfinite(scores).all() or np.any((scores < 0) | (scores > 1))):
+                raise CatalogError('invalid_scores')
+            included = np.isin(labels, allowed)
+            labels, scores = labels[included], scores[:slots, included]
+            present = np.ones(len(scores), dtype=bool)
         else:
             raw_labels = saved['labels']
             labels = np.array(sorted(label for label in ({str(s) for s in raw_labels} & set(allowed))
-                                     if canonical_scientific_name('birdnet', label)))
+                                     if canonical_scientific_name(analysis['engine'], label)))
             scores = np.full((slots, len(labels)), -np.inf)
             lookup = {label: i for i, label in enumerate(labels)}
             starts, ends, values = saved['start_s'], saved['end_s'], saved['scores']
@@ -320,7 +331,7 @@ def read_classification_windows(analysis, seconds, allowed):
                     scores[index, lookup[label]] = max(scores[index, lookup[label]], float(score))
             # Stored BirdNET scores are complete at threshold zero; missing entries are not negatives.
             present &= np.isfinite(scores).all(axis=1)
-            labels = np.array([canonical_scientific_name('birdnet', label) for label in labels])
+            labels = np.array([canonical_scientific_name(analysis['engine'], label) for label in labels])
     count = min(len(scores), slots)
     if not count or not len(labels):
         return labels, np.array([], dtype=int), np.empty((0, len(labels))), np.empty((0, len(labels)))
@@ -421,11 +432,11 @@ def detection(root, body, *, persist=True):
             for key, duration in portions:
                 cells[key]['analysed_seconds'] += duration
             selected_index = next((i for i, label in enumerate(labels) if label == wanted), None)
-            window_s = 3 if body.engine == 'birdnet' else 5
+            width = window_s(body.engine)
             valid = []
             for i, start in enumerate(starts):
                 key, local = window_key(record, float(start), zone)
-                if key not in cells or not window_in_scope(record,float(start),float(start)+window_s,zone,body.start_date,body.end_date):
+                if key not in cells or not window_in_scope(record,float(start),float(start)+width,zone,body.start_date,body.end_date):
                     continue
                 valid.append((i, key, local))
             indices = range(len(labels)) if wanted is None or persist else (() if selected_index is None else (selected_index,))
@@ -451,13 +462,13 @@ def detection(root, body, *, persist=True):
                 for i, key, local in valid:
                     cell = cells[key]
                     cell['eligible_windows'] += 1
-                    cell['effective_seconds'] += window_s
+                    cell['effective_seconds'] += width
                     if body.threshold is not None and scores[i, j] >= body.threshold:
                         cell['candidate_windows'] += 1
                         native_start = float(best_starts[i, j])
                         evidence.append({'recording_id': record['id'], 'analysis_id': analysis['id'], 'start_s': native_start,
-                            'end_s': native_start + window_s, 'window_start_s': float(starts[i]),
-                            'window_end_s': float(starts[i] + window_s), 'score': float(scores[i, j]), 'local_time': window_key(record, native_start, zone)[1],
+                            'end_s': native_start + width, 'window_start_s': float(starts[i]),
+                            'window_end_s': float(starts[i] + width), 'score': float(scores[i, j]), 'local_time': window_key(record, native_start, zone)[1],
                             'window_local_time': local,
                             'date': key[0], 'hour': key[1], 'status': 'ai_candidate'})
             checked_source(record)
@@ -475,7 +486,7 @@ def detection(root, body, *, persist=True):
         snapshot = {'kind': 'detection', 'dataset': dataset, 'site': site, 'engine': body.engine, 'model_sha256': body.model_sha256,
                     'analysis_ids': analysis_ids, 'missing_region': missing_region, 'threshold': body.threshold,
                     'start_date': body.start_date.isoformat(), 'end_date': body.end_date.isoformat(),
-                    'window_s': 3 if body.engine == 'birdnet' else 5,
+                    'window_s': window_s(body.engine),
                     'species': names_for(selected) if selected else None, 'summaries': summaries,
                     'cells': finalize_cells(cells, body.threshold) if selected else [], 'evidence': evidence,
                     'quality': 'not_evaluated', 'complete_windows_only': True}

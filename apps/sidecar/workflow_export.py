@@ -19,6 +19,7 @@ from storage import CatalogError,checked_source,connect
 from results_workflow import attach_validation,context,counting_status,current_validations,detection_snapshot,custom_snapshot,region_statuses,threshold_for
 from report_document import create_html,messages,quality_result,status,status_text,criterion,method
 from report_figures import DATA,spiral,recording_schedule
+from models import REGISTRY,window_s
 
 
 def write_json(path,value):
@@ -71,7 +72,7 @@ def score_tables(root,db,folder,snapshots,records,cancel=None):
             snap['figure_id']=f'F{index+1:03d}';snap['score_file']=f"scores/{snap['figure_id']}.csv"
             stream=stack.enter_context((folder/snap['score_file']).open('w',encoding='utf-8-sig',newline=''))
             writers[snap['figure_id']]=csv.writer(stream);writers[snap['figure_id']].writerow(fields)
-        for engine in ('birdnet','perch'):
+        for engine in REGISTRY:
             group=[s for s in snapshots if s.get('engine')==engine]
             if not group:continue
             ids=sorted({aid for s in group for aid in s['analysis_ids']})
@@ -81,7 +82,7 @@ def score_tables(root,db,folder,snapshots,records,cancel=None):
                 if cancel and cancel.is_set():raise CatalogError('cancelled')
                 labels,starts,scores,best=arrays;columns={str(label):i for i,label in enumerate(labels)}
                 record=records[analysis['recording_id']]
-                width=3 if engine=='birdnet' else 5
+                width=window_s(engine)
                 indices=[i for i,start in enumerate(starts) if window_in_scope(record,float(start),float(start)+width,zone,group[0]['start_date'],group[0]['end_date'])]
                 for snap in group:
                     column=columns.get(snap['species']['scientific_name'])

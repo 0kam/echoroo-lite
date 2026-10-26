@@ -21,6 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from storage import CatalogError, checked_source, connect, initialize, preview_folder
 from species import decorate_candidates, initialize_species, list_species, save_species
+import models as model_registry
+from models import Engine, SpeciesEngine, ValidationEngine
 
 
 class SiteEdit(BaseModel):
@@ -61,6 +63,10 @@ class ImportRequest(BaseModel):
 class JobRequest(BaseModel):
     dataset_id: int
     recording_id: int | None = None
+
+
+class ModelSelection(BaseModel):
+    enabled: list[str]
 
 
 class SpeciesRequest(BaseModel):
@@ -121,7 +127,7 @@ class XCKeyRequest(BaseModel):
 
 class DetectionReportRequest(BaseModel):
     dataset_id: int
-    engine: Literal['birdnet', 'perch']
+    engine: Engine
     model_sha256: str
     threshold: float = Field(ge=0, le=1, allow_inf_nan=False)
     start_date: date
@@ -138,7 +144,7 @@ class ScopeRequest(BaseModel):
 
 
 class ValidationRequest(ScopeRequest):
-    model: Literal['birdnet', 'perch', 'custom']
+    model: ValidationEngine
     model_id: int | None = Field(default=None, ge=1)
 
 
@@ -228,6 +234,7 @@ def create_app(root, models, token):
     compatible = initialize(root)
     if compatible:
         initialize_species(root)
+        model_registry.configure(root, models)
     cancel = threading.Event()
     operation_cancel = threading.Event()
     lock = threading.Lock()
@@ -302,7 +309,17 @@ def create_app(root, models, token):
     def health():
         from analysis import birdnet_available
         return {"status": "ok" if compatible else "data_incompatible", "data_folder": str(root),
-                "birdnet": birdnet_available(models), "detail": None if compatible else "data_incompatible"}
+                "birdnet": birdnet_available(models), "models": model_registry.enabled_engines(root, models),
+                "detail": None if compatible else "data_incompatible"}
+
+    @app.get('/models')
+    def detection_models():
+        return model_registry.list_models(root, models)
+
+    @app.put('/models')
+    def select_models(body: ModelSelection):
+        with lock:
+            return model_registry.set_enabled(root, models, body.enabled)
 
     @app.get('/datasets/{dataset_id}/overview')
     def dataset_overview(dataset_id: int, start_date: date | None = None, end_date: date | None = None):
@@ -313,7 +330,7 @@ def create_app(root, models, token):
 
     @app.get('/datasets/{dataset_id}/species/{species_id}')
     def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
-                         engine: Literal['birdnet','perch','custom','auto'] = 'auto',
+                         engine: SpeciesEngine = 'auto',
                          model_id: int | None = Query(default=None,ge=1),
                          cell_date: date | None = None, hour: int | None = Query(default=None,ge=0,le=23)):
         from analysis import birdnet_available
@@ -759,26 +776,21 @@ def create_app(root, models, token):
                 records = [dict(r) for r in db.execute(
                     "SELECT * FROM site_recordings WHERE scope_id=? AND (? IS NULL OR id=?) ORDER BY recorded_at",
                     (body.dataset_id, body.recording_id, body.recording_id))]
-                if body.recording_id is None and records:
-                    versions=db.execute("""SELECT a.engine,COUNT(DISTINCT json_extract(a.metadata,'$.model_sha256')) AS versions
-                        FROM analyses a JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=?
-                        AND a.id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) GROUP BY a.engine""",(body.dataset_id,)).fetchall()
-                    if not any(row['versions']>1 for row in versions):
-                        from management import location_status
-                        current_site = dict(site)
-                        current_site['location_changed'] = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?',(site['id'],)).fetchone())
-                        completed, _ = location_status(db, current_site)
-                        records=[record for record in records if record['id'] not in completed]
                 if not site or not records:
                     raise CatalogError("no_audio")
-                from analysis import birdnet_available
+            from analysis import plan
+            pending = plan(root, models, records, dict(site))
+            records = [record for record in records if record['id'] in pending]
+            if not records:
+                raise CatalogError('no_audio')
+            with connect(root) as db:
                 job = db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(?,'queued',?)",
-                                 (body.dataset_id, len(records) * (2 if birdnet_available(models) else 1))).lastrowid
+                                 (body.dataset_id, sum(map(len, pending.values())))).lastrowid
             cancel.clear()
             def work():
                 try:
                     from analysis import run
-                    run(root, models, job, records, dict(site), cancel)
+                    run(root, models, job, records, dict(site), cancel, pending)
                 except Exception:
                     import traceback
                     traceback.print_exc()
@@ -795,7 +807,7 @@ def create_app(root, models, token):
 
     return CORSMiddleware(app, allow_origins=["http://localhost:1420", "http://127.0.0.1:1420",
                                               "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"],
-                          allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+                          allow_methods=["GET", "POST", "PUT"], allow_headers=["Authorization", "Content-Type"])
 
 
 def main():

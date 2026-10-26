@@ -5,7 +5,7 @@ export type Cell = { date: string; hour: number; recorded_seconds: number; analy
 export type Evidence = { recording_id: number; analysis_id: number; path: string; seconds: number;
   recorded_at: string; timezone: string; start_s: number; end_s: number; score: number; local_time: string;
   date: string; hour: number; status: string };
-export type Report = { validation?:Validation|null; id: number; kind: 'detection'; created_at: string; engine: 'birdnet'|'perch'|'custom'; model_id?:number;
+export type Report = { validation?:Validation|null; id: number; kind: 'detection'; created_at: string; engine: string; model_id?:number;
   dataset: { id: number; name: string }; site: { id: number; name: string; timezone: string }; species: Species | null;
   model_sha256: string; start_date: string; end_date: string; threshold: number | null; window_s: number;
   summaries: { species: Species; eligible_windows: number; candidate_windows: number | null; candidate_rate: number | null;

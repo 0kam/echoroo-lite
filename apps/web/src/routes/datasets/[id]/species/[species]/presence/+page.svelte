@@ -23,7 +23,7 @@
   // `named` is `null` until the examples load.
   let named=$state<boolean|null>(null),caution=$state('');
   const unusual=$derived(list?.region==='unusual'),warn=$derived(named===false||unusual);
-  // BirdNET (3 s) and Perch (5 s) rows can start at the same second.
+  // Rows of AIs with different window lengths (3 s, 5 s) can start at the same second.
   const key=(row:PresenceRow)=>`${row.recording_id}:${row.start_s}:${row.end_s}`;
   async function load(){try{list=await api<PresenceList>(`/datasets/${id}/species/${speciesId}/presence?source=${source}${dates?`&${dates}`:''}`);}
     catch(e){error=e instanceof Error?e.message:'unknown_error';}}

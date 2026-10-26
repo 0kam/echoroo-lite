@@ -56,7 +56,8 @@ def method(snap,t):
         created=date.fromisoformat(snap['created_at'][:10]) if snap.get('created_at') else None
         return t['custom_model_date'].format(month=created.month if created else '—', day=created.day if created else '—',
                                              date=created.isoformat() if created else '—')
-    return 'BirdNET' if snap['engine']=='birdnet' else 'Perch'
+    from models import REGISTRY
+    return REGISTRY[snap['engine']]['name']
 
 
 def model_group(snap,t):

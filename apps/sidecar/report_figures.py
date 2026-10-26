@@ -55,7 +55,9 @@ def spiral(report,locale,counting_status_text):
         created=date.fromisoformat(report['created_at'][:10]) if report.get('created_at') else None
         method=t['custom_model_date'].format(month=created.month if created else '—',day=created.day if created else '—',
                                              date=created.isoformat() if created else '—')
-    else:method='BirdNET' if engine=='birdnet' else 'Perch'
+    else:
+        from models import REGISTRY
+        method=REGISTRY[engine]['name']
     label(480,64,method+' · '+t['quality']+': '+counting_status_text,22)
     label(480,99,report['site']['name']+' · '+report['start_date']+' — '+report['end_date']+' · '+report['site']['timezone'],19)
     inner,outer=60,340;ring=(outer-inner)/days
