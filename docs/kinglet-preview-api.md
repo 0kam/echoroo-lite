@@ -52,8 +52,9 @@ BirdNET 2.4も通常のworker/session経路を使う（48 kHz・3秒窓）。測
 緯度35度・経度138度、Asia/Tokyo、通年の地域リスト。一時データは完了時・エラー時とも削除し、
 利用者のカタログには書かない。GET / PUT / POST は同じ値を返し、保存先は
 `benchmark.models.<id>.{seconds_per_hour,seconds_per_file}` と `benchmark.seconds_per_job`。
-保存形式を `benchmark.method:"marginal_v1"` で識別する。旧 `minutes_per_hour` と、
-1分全体から換算した旧 `seconds_per_hour` の測定値は破棄し、再測定までは null。
+保存形式を `benchmark.method:"marginal_v2"` で識別する。ジョブ内でSQLite接続を再利用する実装に対応する。
+旧 `marginal_v1`、旧 `minutes_per_hour`、1分全体から換算した旧 `seconds_per_hour` の
+測定値は破棄し、再測定までは null。APIフィールドと推定式は変更しない。
 モデル設定の `main / extra / confirmed` はそのまま保持する。
 日時と `platform.machine()` / `os.cpu_count()` を保存し、PC情報が変われば測定値を破棄する。
 この粗いPC情報ではCPU型番や負荷・電源設定の変化は判別しない。測定は概算である。

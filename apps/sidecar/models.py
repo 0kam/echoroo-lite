@@ -12,7 +12,7 @@ from uuid import uuid4
 from storage import CatalogError
 
 
-BENCHMARK_METHOD = 'marginal_v1'
+BENCHMARK_METHOD = 'marginal_v2'
 V3_MODEL = 'BirdNET+_V3.0-preview3.1_Global_11K_FP16_pruned.onnx'
 V3_LABELS = 'BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv'
 REGISTRY = {

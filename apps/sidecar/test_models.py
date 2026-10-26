@@ -319,7 +319,8 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual(bird['loads'],['acoustic','geo','acoustic','geo'])
 
     def test_old_benchmarks_are_dropped_without_changing_selection(self):
-        for old in ({'minutes_per_hour':{'perch':.3}}, {'seconds_per_hour':{'perch':67}}):
+        for old in ({'minutes_per_hour':{'perch':.3}}, {'seconds_per_hour':{'perch':67}},
+                    {'method':'marginal_v1','models':{'perch':{'seconds_per_hour':15,'seconds_per_file':.1}},'seconds_per_job':.2}):
             with self.subTest(old=old), tempfile.TemporaryDirectory() as temp:
                 root=Path(temp); directory=root/'models'; model_files(directory); data=root/'data'; data.mkdir()
                 (data/'models.json').write_text(json.dumps(dict(main='kinglet-s',extra=['perch'],confirmed=True,
