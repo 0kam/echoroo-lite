@@ -5,11 +5,12 @@ export type Site = { id: number; name: string; timezone: string; latitude: numbe
 export type Dataset = { id: number; name: string; site_id: number; folder: string };
 export type Job = { id: number; dataset_id: number; status: string; stage: string; done: number; total: number;
   error: string | null; created_at: string };
-/** A detection AI from GET /models, in display order; `seconds_per_hour` is measured on this PC. */
+/** A detection AI from GET /models, in display order; the speeds are measured on this PC (null until measured). */
 export type Model = { id: string; name: string; window_s: number; available: boolean; enabled: boolean; main_capable: boolean;
-  experimental: boolean; species_count: number | null; license: string; seconds_per_hour: number | null };
-/** GET/PUT /models: one main AI (also used for the similar-sound search) and optional AIs to compare. */
-export type ModelSettings = { main: string; extra: string[]; confirmed: boolean; models: Model[] };
+  experimental: boolean; species_count: number | null; license: string; seconds_per_hour: number | null; seconds_per_file: number | null };
+/** GET/PUT /models: one main AI (also used for the similar-sound search) and optional AIs to compare.
+ * `seconds_per_job` is the fixed start-up time of one analysis on this PC. */
+export type ModelSettings = { main: string; extra: string[]; confirmed: boolean; seconds_per_job: number | null; models: Model[] };
 export type Recording = { id: number; dataset_id: number; path: string; original_time: string; recorded_at: string;
   timezone: string; seconds: number };
 
@@ -24,7 +25,7 @@ export const app = $state({
   frequencyScale: 'mel' as FrequencyScale,
   connected: false, connectionError: '',
   /** Detection AIs; chosen on first run and in Settings. */
-  ai: { main: 'perch', extra: [], confirmed: true, models: [] } as ModelSettings,
+  ai: { main: 'perch', extra: [], confirmed: true, seconds_per_job: null, models: [] } as ModelSettings,
   dataFolder: '',
   sites: [] as Site[], datasets: [] as Dataset[], jobs: [] as Job[],
   datasetId: null as number | null,

@@ -391,6 +391,9 @@ def detection(root, body, *, persist=True):
         records=scope_records(records,zone,body.start_date,body.end_date)
         record_ids={r['id'] for r in records}
         analyses=[a for a in analyses if a['recording_id'] in record_ids]
+        if not persist:
+            # Missing saved scores are offered for reanalysis by the overview.
+            analyses=[a for a in analyses if Path(a['scores_path']).is_file()]
         summary_path = None
         if not persist and wanted is None and body.base_report_id is None:
             signatures = []

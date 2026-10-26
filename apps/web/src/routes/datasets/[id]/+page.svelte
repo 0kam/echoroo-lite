@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,dayRange,duration,refreshCatalog,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { activity,activityText,checkName,fill,presenceText,rangeQuery,remainingSounds,speciesGroup,workload,type Overview } from '$lib/workflow';
+  import { activity,activityText,analysisSeconds,checkName,fill,presenceText,rangeQuery,remainingSounds,roughTime,speciesGroup,workload,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
@@ -42,6 +42,9 @@
   const effort=$derived(workload(left.reduce((sum,[sounds])=>sum+sounds,0),left.reduce((sum,[,extra])=>sum+extra,0)));
   const days=$derived(result?Math.round((Date.parse(result.end_date)-Date.parse(result.start_date))/86400000)+1:0);
   const unanalysed=$derived(result?result.records-result.analysed_recordings:0);
+  const estimate=$derived(result?analysisSeconds(result.pending_analysis):null);
+  // Over 30 minutes, point to the faster Kinglet AIs unless one is already the main AI.
+  const suggestFaster=$derived(estimate!=null&&estimate>1800&&!app.ai.main.startsWith('kinglet')&&app.ai.models.some(m=>m.id.startsWith('kinglet')&&m.available));
   const jobHere=$derived(job&&app.datasets.find(d=>d.id===job.dataset_id)?.site_id===result?.site.id?job:null);
 </script>
 {#snippet table(rows:Row[])}<div class="table-wrap"><table><colgroup><col class="name"/><col/><col class="state"/>{#if anyActivity}<col class="state"/>{/if}</colgroup>
@@ -75,6 +78,8 @@
       <div class="actions">
         {#if result.mixed_models||unanalysed>0}<Button variant={unanalysed>0?'primary':'default'} pending={analyze.pending} disabled={!!job} onclick={()=>analyze.run()}>{t('analyzeAll')}</Button>{/if}
         <Button href={`${resolve('/datasets/new')}?site=${result.site.id}&return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('uAddRecordings')}</Button><Button href={resolve(`/datasets/${id}/recordings`)}>{t('wViewRecordings')}</Button></div>
+      {#if (result.mixed_models||unanalysed>0)&&!job&&estimate!=null}<p class="muted">{fill('analysisEstimate',{time:roughTime(estimate)})}
+        {#if suggestFaster}{t('analysisFaster')} · <a href={`${resolve('/settings')}?return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('navSettings')}</a>{/if}</p>{/if}
     </section>
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindMissing')}</Button></div>
       <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>{#if result.species.length&&!anyActivity}<p class="muted">{t('wActivityNoneAll')}</p>{/if}

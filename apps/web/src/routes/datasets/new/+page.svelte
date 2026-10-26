@@ -10,7 +10,7 @@
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import SiteMap from '$lib/SiteMap.svelte';
-  import { appHref,fill,returnPath } from '$lib/workflow';
+  import { analysisSeconds,appHref,fill,returnPath,roughTime } from '$lib/workflow';
   import { createTask } from '$lib/ui/task.svelte';
   type Preview={count:number;seconds:number;first:string|null;last:string|null;skipped:{path:string;code:string}[]};
   const query=new URL(page.url.hash.slice(1),page.url).searchParams;
@@ -55,6 +55,8 @@
   const allRegistered=$derived(!!preview&&!preview.count&&preview.skipped.length>0&&preview.skipped.every(item=>item.code==='duplicate'));
   const located=$derived(adding||(!!siteName.trim()&&latitude!==null&&longitude!==null&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180));
   const blocked=$derived(!located?'uNeedSite':!folder?'uAddDisabledReason':scanning?'uScanWait':scanError?'uScanRetry':!preview?.count?'uNothingToAdd':'');
+  // Every AI in use analyses every new recording; nothing is shown until each has a speed measurement.
+  const estimate=$derived(preview?.count?analysisSeconds(app.ai.models.filter(m=>m.enabled&&m.available).map(m=>({engine:m.id,recordings:preview!.count,seconds:preview!.seconds}))):null);
   const localTime=(iso:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:scanZone}).format(new Date(iso));
 </script>
 <div class="page narrow">
@@ -86,6 +88,7 @@
         {:else if !preview}<p class="muted">{t('uScanIdle')}</p>
         {:else}
           {#if preview.count}<p><strong>{fill('uScanResult',{n:preview.count.toLocaleString(app.locale),duration:duration(preview.seconds)})}</strong></p>
+            {#if estimate!=null}<p class="muted">{fill('analysisEstimate',{time:roughTime(estimate)})}</p>{/if}
             {#if preview.first&&preview.last}<p>{fill('uScanRange',{first:localTime(preview.first),last:localTime(preview.last),zone:scanZone})}</p>{/if}
           {:else}<p><strong>{t(allRegistered?'uAllRegistered':'uNoSupportedAudio')}</strong></p><p>{t('uTryAnotherFolder')}</p>{/if}
           {#if preview.skipped.length&&!allRegistered}<details open={!preview.count}><summary>{fill('uSkippedFiles',{n:preview.skipped.length})}</summary>

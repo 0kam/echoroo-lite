@@ -272,6 +272,8 @@ def create_app(root, models, token):
 
     @asynccontextmanager
     async def lifespan(app):
+        from analysis import start_warmup
+        start_warmup()
         yield
         cancel.set()
         operation_cancel.set()

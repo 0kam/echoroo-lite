@@ -1,5 +1,6 @@
 """Detection engines and the local, persistent main/comparison AI selection."""
 import json
+import math
 import os
 import platform
 import hashlib
@@ -11,6 +12,7 @@ from uuid import uuid4
 from storage import CatalogError
 
 
+BENCHMARK_METHOD = 'marginal_v1'
 V3_MODEL = 'BirdNET+_V3.0-preview3.1_Global_11K_FP16_pruned.onnx'
 V3_LABELS = 'BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv'
 REGISTRY = {
@@ -76,11 +78,12 @@ def settings(root):
                 or not isinstance(extra, list) or any(not isinstance(e, str) or e not in REGISTRY or e == main for e in extra)
                 or not isinstance(data['confirmed'], bool) or not isinstance(data['benchmark'], dict)):
             raise ValueError()
-        if data['benchmark'] and ('minutes_per_hour' in data['benchmark'] or
+        if data['benchmark'] and (data['benchmark'].get('method') != BENCHMARK_METHOD or
                 data['benchmark'].get('machine') != machine_fingerprint()):
             data['benchmark'] = {}
             legacy = True
-        if not isinstance(data['benchmark'].get('seconds_per_hour', {}), dict):
+        results = data['benchmark'].get('models', {})
+        if not isinstance(results, dict) or any(not isinstance(value, dict) for value in results.values()):
             raise ValueError()
         if legacy:
             _write_settings(root, data)
@@ -116,13 +119,18 @@ def _model_digest(path, size, modified):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def file_sha256(path):
+    path = Path(path)
+    stat = path.stat()
+    return _model_digest(str(path), stat.st_size, stat.st_mtime_ns)
+
+
 def model_identity(root, engine):
     data = settings(root)
     path = Path(data.get('directory', root)) / REGISTRY[engine]['files'][0]
     if not path.is_file():
         return engine, None
-    stat = path.stat()
-    return engine, _model_digest(str(path), stat.st_size, stat.st_mtime_ns)
+    return engine, file_sha256(path)
 
 
 def main_identity(root):
@@ -150,19 +158,25 @@ def result_visible(root, result):
     return engine in selected_engines(root)
 
 
+def _decimal_seconds(value):
+    return round(float(value), 1) if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+
+
 def list_models(root, directory=None):
     data = settings(root)
     directory = directory or data.get('directory', root)
-    results = data['benchmark'].get('seconds_per_hour', {})
+    results = data['benchmark'].get('models', {})
     result = []
     for engine, model in REGISTRY.items():
-        seconds = results.get(engine)
+        costs = results.get(engine, {})
+        seconds = costs.get('seconds_per_hour')
         seconds = seconds if type(seconds) is int and seconds >= 0 else None
         result.append(dict(id=engine, **{key: model[key] for key in
             ('name', 'window_s', 'main_capable', 'experimental', 'species_count', 'license')},
             available=available(directory, engine), enabled=engine == data['main'] or engine in data['extra'],
-            seconds_per_hour=seconds))
-    return dict(main=data['main'], extra=data['extra'], confirmed=data['confirmed'], models=result)
+            seconds_per_hour=seconds, seconds_per_file=_decimal_seconds(costs.get('seconds_per_file'))))
+    return dict(main=data['main'], extra=data['extra'], confirmed=data['confirmed'], models=result,
+                seconds_per_job=_decimal_seconds(data['benchmark'].get('seconds_per_job')))
 
 
 def enabled_engines(root, directory=None):
@@ -178,7 +192,7 @@ def set_selection(root, directory, main, extra):
     return list_models(root, directory)
 
 
-def save_benchmark(root, results):
+def save_benchmark(root, results, seconds_per_job):
     from datetime import datetime, timezone
-    _write_settings(root, {**settings(root), 'benchmark': {'machine': machine_fingerprint(),
-        'timestamp': datetime.now(timezone.utc).isoformat(), 'seconds_per_hour': results}})
+    _write_settings(root, {**settings(root), 'benchmark': {'method':BENCHMARK_METHOD, 'machine': machine_fingerprint(),
+        'timestamp': datetime.now(timezone.utc).isoformat(), 'models':results, 'seconds_per_job':seconds_per_job}})

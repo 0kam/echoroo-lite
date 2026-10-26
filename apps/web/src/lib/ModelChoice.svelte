@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from './api.svelte';
   import { app, t, type Model, type ModelSettings } from './app.svelte';
-  import { fill } from './workflow';
+  import { fill, roughTime } from './workflow';
   import Button from './ui/Button.svelte';
   import { createTask } from './ui/task.svelte';
   /** The first run saves once with its start button; Settings saves on each change. */
@@ -22,15 +22,12 @@
   function choose(id: string) { main = id; extra = extra.filter(item => item !== id); if (!firstRun) save.run(); }
   function toggle(id: string, on: boolean) { extra = on ? [...extra, id] : extra.filter(item => item !== id); if (!firstRun) save.run(); }
   onMount(() => { if (firstRun) measure.run(); });
-  const speed = (seconds: number) => seconds < 60
-    ? fill('modelSpeedSeconds', { n: Math.max(1, seconds) })
-    : fill('modelSpeed', { n: Math.round(seconds / 60) });
 </script>
 
 {#snippet about(model: Model)}
   <span><strong>{model.name}</strong>{#if model.experimental} <span class="rare">{t('modelPreview')}</span>{/if}<br />
     <span class="muted">{t(`modelHint_${model.id}`)}</span>
-    {#if model.seconds_per_hour != null}<br /><span class="muted">{speed(model.seconds_per_hour)}</span>{/if}</span>
+    {#if model.seconds_per_hour != null}<br /><span class="muted">{fill('modelSpeed', { time: roughTime(model.seconds_per_hour) })}</span>{/if}</span>
 {/snippet}
 
 <div class="stack">

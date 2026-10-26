@@ -36,7 +36,7 @@ export type CustomModelReadiness = {run_id:number;species:Species;hits:SearchHit
 export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
   threshold?:number|null;validation:Validation|null};
 export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;
-  start_date:string;end_date:string;records:number;recorded_seconds:number;analysed_recordings:number;
+  start_date:string;end_date:string;records:number;recorded_seconds:number;analysed_recordings:number;pending_analysis:Work[];
   species:{species:Species;models:ModelRow[];search:SearchRef|null;presence:Presence;region?:Region}[]};
 export type SpeciesResult = Omit<Overview,'species'> & {species:Species;report:Report|null;checks:Check[];selected:string|null;search:SearchRef|null;presence:Presence;region?:Region};
 // `{n|one|other}` in a message picks the singular word when the value is 1 (English plurals).
@@ -48,6 +48,21 @@ const modelOf = (engine:string) => app.ai.models.find(model=>model.id===engine);
 export const modelName = (engine:string) => engine==='custom'?t('customModel'):modelOf(engine)?.name??engine;
 export const checkName = (check:{engine:string;created_at?:string}) => check.engine==='custom'?customName(check):modelName(check.engine);
 /** Window length of a model's intervals from GET /models (BirdNET 3 s); species models are 5 s. */
+/** Analysis one AI still has to do: how many recordings and their total length in seconds. */
+export type Work = {engine:string;recordings:number;seconds:number};
+/** Expected analysis time on this PC, or null when there is nothing to do or an AI has no speed measurement yet. */
+export function analysisSeconds(work:Work[]) {
+  let total=app.ai.seconds_per_job??0;
+  for(const {engine,recordings,seconds} of work) {
+    const model=modelOf(engine);
+    if(model?.seconds_per_file==null||model.seconds_per_hour==null)return null;
+    total+=recordings*model.seconds_per_file+seconds/3600*model.seconds_per_hour;
+  }
+  return work.length?total:null;
+}
+/** A rough length of time: seconds under a minute, minutes up to 90, then hours with one decimal. */
+export const roughTime = (seconds:number) => seconds<60?fill('timeSeconds',{n:Math.max(1,Math.round(seconds))})
+  :seconds<=5400?fill('timeMinutes',{n:Math.round(seconds/60)}):fill('timeHours',{n:(seconds/3600).toFixed(1)});
 export const windowSeconds = (engine:string) => modelOf(engine)?.window_s??5;
 /** Plain status of one model's check. */
 export function checkText(value:Validation|null) {

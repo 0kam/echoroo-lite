@@ -210,9 +210,21 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None, birdnet=True):
     ctx = context(root, dataset_id, first, last)
-    return cached(root, ['overview-v15', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet,
+    result = cached(root, ['overview-v16', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet,
                          enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx, birdnet))
+    from analysis import pending_pairs
+    from models import settings
+    directory = settings(root).get('directory', root)
+    with connect(root) as db:
+        records = [dict(r) for r in db.execute('SELECT id,seconds FROM site_recordings WHERE scope_id=?', (dataset_id,))]
+    pending = pending_pairs(root, directory, records, ctx['site'])
+    estimates = []
+    for engine in enabled_engines(root, directory):
+        missing = [r for r in records if engine in pending.get(r['id'], ())]
+        if missing:
+            estimates.append(dict(engine=engine, recordings=len(missing), seconds=sum(r['seconds'] for r in missing)))
+    return {**result, 'pending_analysis':estimates}
 
 
 def build_overview(root, dataset_id, ctx, birdnet=True):

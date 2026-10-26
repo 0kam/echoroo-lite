@@ -6,8 +6,8 @@
   import SpeciesNames from '$lib/SpeciesNames.svelte';
   import XenoCantoKey from '$lib/XenoCantoKey.svelte';
   import Button from '$lib/ui/Button.svelte';
-  // Pages that link here for a missing Xeno-Canto key pass themselves as `return=`.
-  const origin=$derived(returnPath(page.url,/^\/(datasets\/\d+\/(search|validation\/\d+|species\/[^/?#]+\/presence)|quiz\/add)(\?[^#]*)?$/));
+  // Pages that link here (a missing Xeno-Canto key, a faster AI for a long analysis) pass themselves as `return=`.
+  const origin=$derived(returnPath(page.url,/^\/(datasets\/\d+(\/(search|validation\/\d+|species\/[^/?#]+\/presence))?|quiz\/add)(\?[^#]*)?$/));
 </script>
 
 <div class="page narrow">

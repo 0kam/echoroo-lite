@@ -3,6 +3,9 @@ import csv
 import hashlib
 import json
 import os
+import threading
+from functools import lru_cache
+from time import perf_counter
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
@@ -10,10 +13,37 @@ import numpy as np
 import soundfile as sf
 
 from audio import resample
-from models import REGISTRY, available, enabled_engines, main_engine, window_s, configure_birdnet
+from models import REGISTRY, available, enabled_engines, main_engine, window_s, configure_birdnet, file_sha256
 
 from species import birdnet_species_mapping
 from storage import CatalogError, checked_source, connect
+
+
+_warmup_thread = None
+_warmup_lock = threading.Lock()
+
+
+def warm_imports():
+    try:
+        os.environ['ORT_DISABLE_TELEMETRY'] = '1'
+        from scipy import signal, special, optimize
+        import onnxruntime
+        onnxruntime.disable_telemetry_events()
+        signal.resample_poly(np.zeros(48, dtype=np.float32), 2, 3)
+        signal.resample(np.zeros(32, dtype=np.float32), 48)
+        special.softmax(np.zeros((1, 2), dtype=np.float32), axis=1)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+def start_warmup():
+    global _warmup_thread
+    with _warmup_lock:
+        if _warmup_thread is None:
+            _warmup_thread = threading.Thread(target=warm_imports, name='analysis-imports', daemon=True)
+            _warmup_thread.start()
+    return _warmup_thread
 
 
 def digest(path):
@@ -63,14 +93,23 @@ def plan(root, models, records, site):
     """Freeze missing recording/engine pairs before starting the worker."""
     if not available(models, main_engine(root)):
         raise CatalogError('models_missing')
+    return pending_pairs(root, models, records, site)
+
+
+def pending_pairs(root, models, records, site):
+    """The same read-only missing-pair calculation for jobs and time estimates."""
     engines = enabled_engines(root, models)
-    hashes = {engine: digest(Path(models) / REGISTRY[engine]['files'][0]) for engine in engines}
-    classes = {engine: digest(Path(models) / REGISTRY[engine]['files'][1])
+    if not engines or not records:
+        return {}
+    hashes = {engine: file_sha256(Path(models) / REGISTRY[engine]['files'][0]) for engine in engines}
+    classes = {engine: file_sha256(Path(models) / REGISTRY[engine]['files'][1])
                for engine in engines if REGISTRY[engine]['experimental']}
     with connect(root) as db:
-        latest = {(r['recording_id'], r['engine']): r for r in db.execute('''SELECT * FROM analyses
-            WHERE id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''')}
-        embedded = {r[0] for r in db.execute('SELECT DISTINCT analysis_id FROM segments s JOIN vectors v ON v.rowid=s.id')}
+        latest = {(r['recording_id'], r['engine']): r for r in db.execute('''SELECT a.*,
+            EXISTS (SELECT 1 FROM segments s JOIN vectors v ON v.rowid=s.id WHERE s.analysis_id=a.id) AS embedded
+            FROM analyses a WHERE recording_id IN (SELECT value FROM json_each(?)) AND
+            id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''',
+            (json.dumps([r['id'] for r in records]),))}
         changed = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?', (site.get('id'),)).fetchone())
     pending = {}
     for record in records:
@@ -80,7 +119,7 @@ def plan(root, models, records, site):
             meta = json.loads(row['metadata']) if row else {}
             matches = row is not None and Path(row['scores_path']).is_file() and meta.get('model_sha256') == hashes[engine]
             if matches and REGISTRY[engine]['main_capable']:
-                matches = row['id'] in embedded
+                matches = bool(row['embedded'])
             if engine in classes:
                 matches &= meta.get('classes_sha256') == classes[engine]
             if engine == 'birdnet':
@@ -148,6 +187,7 @@ def infer_onnx(detector, engine, audio, count, cancel=None):
     return np.concatenate(batches).astype(np.float32), vectors or None
 
 
+@lru_cache(maxsize=1)
 def candidate_filter():
     path = Path(__file__).parent / "data/japan-birds.json"
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -168,12 +208,15 @@ def save(root, job, recording, engine, meta, scores, candidates, embeddings=None
                          (job, recording["id"], engine, json.dumps(meta), str(path))).lastrowid
         db.executemany("INSERT INTO candidates(analysis_id,start_s,end_s,label,score) VALUES(?,?,?,?,?)",
                        ((aid, *row) for row in candidates))
-        if embeddings is not None:
-            for i, vector in enumerate(embeddings):
-                sid = db.execute("INSERT INTO segments(analysis_id,start_s,end_s) VALUES(?,?,?)",
-                                 (aid, i * window_s(engine), min((i + 1) * window_s(engine), recording["seconds"]))).lastrowid
-                db.execute("INSERT INTO vectors(rowid,embedding) VALUES(?,?)",
-                           (sid, vector.astype("<f4").tobytes()))
+        if embeddings is not None and len(embeddings):
+            vectors = np.asarray(embeddings, dtype='<f4')
+            width = window_s(engine)
+            first = db.execute('INSERT INTO segments(analysis_id,start_s,end_s) VALUES(?,0,?)',
+                               (aid, min(width, recording['seconds']))).lastrowid
+            db.executemany('INSERT INTO segments(id,analysis_id,start_s,end_s) VALUES(?,?,?,?)',
+                ((first+i, aid, i*width, min((i+1)*width, recording['seconds'])) for i in range(1, len(vectors))))
+            db.executemany('INSERT INTO vectors(rowid,embedding) VALUES(?,?)',
+                           ((first+i, vector.tobytes()) for i, vector in enumerate(vectors)))
 
     # Build shared display windows before analysis is reported as complete.
     from reports import classification_windows
@@ -244,7 +287,7 @@ def prepare_models(models, engines, site, progress=None):
         yield detectors
 
 
-def run(root, models, job, records, site, cancel, pending=None, loaded=None):
+def run(root, models, job, records, site, cancel, pending=None, loaded=None, recording_times=None):
     def progress(stage, done):
         with connect(root) as db:
             db.execute("UPDATE jobs SET status='running',stage=?,done=? WHERE id=?", (stage, done, job))
@@ -259,57 +302,71 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None):
         done = 0
         model_context = prepare_models(models, engines, site, progress) if loaded is None else nullcontext(loaded)
         with model_context as detectors:
+            included_labels = {engine:np.flatnonzero(np.isin(names, meta['species']))
+                for engine, (_, names, meta) in detectors.items() if engine not in ('perch', 'birdnet')}
             for record in records:
                 if cancel.is_set():
                     break
                 pairs = pending.get(record['id'], [])
                 if not pairs:
                     continue
-                path = checked_source(record)
-                if 'birdnet' in pairs:
-                    bird_session, _, bird_meta = detectors['birdnet']
-                    progress("birdnet", done)
-                    result = bird_session.run(path)
-                    if len(result.unprocessable_inputs):
-                        raise CatalogError("unreadable_audio")
-                    rows = result.to_structured_array()
-                    if not np.isfinite(rows["confidence"]).all():
-                        raise CatalogError("invalid_scores")
-                    groups = {}
-                    for row in rows:
-                        start, end = float(row["start_time"]), min(float(row["end_time"]), record["seconds"])
-                        if row["confidence"] >= 0.1:
-                            groups.setdefault(start, []).append((start, end, str(row["species_name"]), float(row["confidence"])))
-                    candidates = [row for group in groups.values() for row in sorted(group, key=lambda r: -r[3])[:5]]
-                    checked_source(record)
-                    save(root, job, record, "birdnet", bird_meta,
-                         {"start_s": rows["start_time"], "end_s": rows["end_time"],
-                          "labels": rows["species_name"].astype(str), "scores": rows["confidence"]}, candidates)
-                    done += 1
-                if cancel.is_set():
-                    break
-                if not any(engine != 'birdnet' for engine in pairs):
-                    continue
-                audio, rate = sf.read(path, dtype="float32")
-                audio = resample(audio, rate)
-                for engine in pairs:
-                    if engine == 'birdnet' or cancel.is_set():
+                started = perf_counter() if recording_times is not None else None
+                try:
+                    path = checked_source(record)
+                    audio = None
+                    try:
+                        native, rate = sf.read(path, dtype='float32')
+                    except (OSError, RuntimeError):
+                        raise CatalogError('unreadable_audio') from None
+                    if any(engine != 'birdnet' for engine in pairs):
+                        audio = resample(native, rate)
+                    if 'birdnet' in pairs:
+                        bird_session, _, bird_meta = detectors['birdnet']
+                        progress("birdnet", done)
+                        # BirdNET retains its native duration and per-window 48-kHz conversion.
+                        result = bird_session.run_arrays((native, rate))
+                        if len(result.unprocessable_inputs):
+                            raise CatalogError("unreadable_audio")
+                        rows = result.to_structured_array()
+                        if not np.isfinite(rows["confidence"]).all():
+                            raise CatalogError("invalid_scores")
+                        groups = {}
+                        for row in rows:
+                            start, end = float(row["start_time"]), min(float(row["end_time"]), record["seconds"])
+                            if row["confidence"] >= 0.1:
+                                groups.setdefault(start, []).append((start, end, str(row["species_name"]), float(row["confidence"])))
+                        candidates = [row for group in groups.values() for row in sorted(group, key=lambda r: -r[3])[:5]]
+                        checked_source(record)
+                        save(root, job, record, "birdnet", bird_meta,
+                             {"start_s": rows["start_time"], "end_s": rows["end_time"],
+                              "labels": rows["species_name"].astype(str), "scores": rows["confidence"]}, candidates)
+                        done += 1
+                    del native
+                    if cancel.is_set():
+                        break
+                    if not any(engine != 'birdnet' for engine in pairs):
                         continue
-                    progress(engine, done)
-                    detector, names, meta = detectors[engine]
-                    scores, vectors = infer_onnx(detector, engine, audio, len(names), cancel)
-                    candidates = []
-                    if engine != 'perch':
-                        included = np.flatnonzero(np.isin(names, meta['species']))
-                        candidates = [(i * 5, min((i + 1) * 5, record['seconds']), names[j], float(row[j]))
-                                      for i, row in enumerate(scores)
-                                      for j in included[np.argsort(-row[included], kind='stable')[:5]]]
-                    checked_source(record)
-                    save(root, job, record, engine, meta,
-                         {'logits' if engine == 'perch' else 'scores': scores, 'labels': np.array(names)},
-                         candidates, vectors)
-                    done += 1
-                    progress(engine, done)
+                    for engine in pairs:
+                        if engine == 'birdnet' or cancel.is_set():
+                            continue
+                        progress(engine, done)
+                        detector, names, meta = detectors[engine]
+                        scores, vectors = infer_onnx(detector, engine, audio, len(names), cancel)
+                        candidates = []
+                        if engine != 'perch':
+                            included = included_labels[engine]
+                            candidates = [(i * 5, min((i + 1) * 5, record['seconds']), names[j], float(row[j]))
+                                          for i, row in enumerate(scores)
+                                          for j in included[np.argsort(-row[included], kind='stable')[:5]]]
+                        checked_source(record)
+                        save(root, job, record, engine, meta,
+                             {'logits' if engine == 'perch' else 'scores': scores, 'labels': np.array(names)},
+                             candidates, vectors)
+                        done += 1
+                        progress(engine, done)
+                finally:
+                    if recording_times is not None:
+                        recording_times.append(perf_counter() - started)
         if not cancel.is_set():
             progress('preparing_results', done)
             with connect(root) as db:

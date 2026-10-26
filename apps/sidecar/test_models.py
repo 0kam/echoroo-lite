@@ -61,7 +61,8 @@ class FakeSession:
 
     def run(self, outputs, inputs):
         wave = next(iter(inputs.values()))
-        self.calls.append((self.engine, outputs, wave.copy()))
+        if self.calls is not None:
+            self.calls.append((self.engine, outputs, wave.copy()))
         if self.engine == 'perch':
             return [np.ones((len(wave), 1536), dtype=np.float32) if name == 'embedding' else np.tile([[-4., 4.]], (len(wave), 1)) for name in outputs]
         if self.engine == 'birdnet-v3':
@@ -102,15 +103,20 @@ def fake_birdnet(directory, calls):
         return (state['app_data'] / relative).is_file()
 
     class Session:
-        def run(self, path):
-            samples, rate = sf.read(path, dtype='float32')
-            from scipy.signal import resample_poly
-            acoustic = resample_poly(samples, 3, 2) if rate == 32000 else samples
-            calls.append((str(path), len(acoustic), 48000))
+        def result(self, samples, rate):
             starts = np.arange(0, len(samples)/rate, 3)
             rows = np.array([(start, start+3, label, .8) for start in starts],
                 dtype=[('start_time','f8'),('end_time','f8'),('species_name','U128'),('confidence','f4')])
             return SimpleNamespace(unprocessable_inputs=[], to_structured_array=lambda: rows)
+
+        def run(self, path):
+            samples, rate = sf.read(path, dtype='float32')
+            return self.result(samples, rate)
+
+        def run_arrays(self, value):
+            samples, rate = value
+            calls.append(('<array>', len(samples), rate))
+            return self.result(samples, rate)
 
     @contextmanager
     def predict_session(**kwargs):
@@ -172,7 +178,7 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual([m['id'] for m in models], list(REGISTRY))
                 self.assertEqual([m['id'] for m in models if m['enabled']], ['perch'])
                 self.assertEqual(set(models[0]), {'id','name','window_s','available','enabled','main_capable',
-                                               'experimental','species_count','license','seconds_per_hour'})
+                                               'experimental','species_count','license','seconds_per_hour','seconds_per_file'})
                 for main, extra in [('unknown', []), ('birdnet', []), ('birdnet-v3', []),
                                     ('perch', ['unknown']), ('perch', ['birdnet']), ('perch', ['perch'])]:
                     response = chosen(client, main, extra)
@@ -220,6 +226,7 @@ class ModelsTest(unittest.TestCase):
                     db.execute('DELETE FROM segments')
                 overview=client.get('/datasets/1/overview').json()
                 self.assertEqual(overview['unanalysed_recordings'],1)
+                self.assertEqual(overview['pending_analysis'],[dict(engine='kinglet-xs',recordings=1,seconds=5.)])
                 self.assertEqual(client.post('/jobs',json={'dataset_id':1}).status_code,200)
                 self.assertEqual(wait_job(client)['status'],'complete')
 
@@ -228,46 +235,69 @@ class ModelsTest(unittest.TestCase):
             root = Path(temp); directory = root/'models'; model_files(directory); v3_files(directory)
             for relative in REGISTRY['birdnet']['files']:
                 path = directory/relative; path.parent.mkdir(parents=True, exist_ok=True); path.touch()
-            calls, loads, bird_audio = [], [], []
+            loads, measured_paths, measurements = [], [], []
             def load(directory, engine):
                 loads.append(engine)
-                return FakeSession(engine, calls), digest(directory/REGISTRY[engine]['files'][0])
+                return FakeSession(engine, None), digest(directory/REGISTRY[engine]['files'][0])
+            def job(data, paths, models, engine, loaded):
+                self.assertEqual(set(loaded), {engine})
+                self.assertNotEqual(data, root/'data')
+                measured_paths.extend(paths)
+                seconds = sum(sf.info(path).duration for path in paths)
+                measurements.append((engine, seconds))
+                return len(paths), seconds, len(paths)*.3 + seconds/3600*18, .4
             data = root/'data'
             with TestClient(create_app(data, directory, 'test'), headers={'Authorization':'Bearer test'}) as client, \
-                    patch('analysis.load_onnx', side_effect=load), \
-                    fake_birdnet(directory, bird_audio), \
-                    patch('model_benchmark.perf_counter', side_effect=range(10)):
+                    patch('analysis.load_onnx', side_effect=load), fake_birdnet(directory, []), \
+                    patch('model_benchmark.benchmark_job', side_effect=job):
                 response = client.post('/models/benchmark')
                 self.assertEqual(response.status_code,200,response.text)
                 result = response.json()
                 self.assertFalse(result['confirmed'])
                 self.assertEqual(result['extra'], [])
-                self.assertTrue(all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] == 60 for m in result['models']))
+                self.assertEqual(result['seconds_per_job'], .4)
+                self.assertTrue(all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] == 18
+                    and m['seconds_per_file'] == .3 for m in result['models']))
                 self.assertEqual(loads, ['perch','birdnet-v3','kinglet-s','kinglet-xs'])
-                self.assertEqual([(frames,rate) for _,frames,rate in bird_audio], [(2880000,48000)]*2)
-                self.assertTrue(all(not Path(path).exists() for path,_,_ in bird_audio))
+                self.assertEqual(measurements, [(engine,seconds) for engine in REGISTRY for seconds in (240,60,60,60,240,240,240)])
+                self.assertTrue(all(not path.exists() for path in measured_paths))
                 with connect(data) as db:
                     self.assertTrue(all(db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == 0
                         for table in ('sites','datasets','recordings','jobs','analyses','segments','vectors')))
-                self.assertEqual(settings(data)['benchmark']['seconds_per_hour'], {engine:60 for engine in REGISTRY})
-                self.assertEqual(client.get('/models').json(),result)
                 saved = settings(data)['benchmark']
+                self.assertEqual(saved['models'], {engine:dict(seconds_per_hour=18,seconds_per_file=.3) for engine in REGISTRY})
+                self.assertEqual(client.get('/models').json(),result)
                 self.assertEqual(saved['machine'],machine_fingerprint())
                 self.assertTrue(saved['timestamp'])
                 with patch('models.machine_fingerprint', return_value={'machine':'other','cpu_count':1}):
-                    self.assertTrue(all(m['seconds_per_hour'] is None for m in client.get('/models').json()['models']))
+                    cleared=client.get('/models').json()
+                    self.assertTrue(all(m['seconds_per_hour'] is None and m['seconds_per_file'] is None for m in cleared['models']))
+                    self.assertIsNone(cleared['seconds_per_job'])
                     self.assertEqual(settings(data)['benchmark'],{})
+
+    def test_benchmark_fit_separates_audio_file_and_job_costs(self):
+        from model_benchmark import fit_costs
+        samples=[(1,60,.3+18/60),(1,240,.3+18/15)]
+        self.assertEqual(fit_costs(samples),dict(seconds_per_hour=18,seconds_per_file=.3))
+        self.assertEqual(fit_costs([(20,600,20*.2+10/6),(1,600,.2+10/6)]),
+                         dict(seconds_per_hour=10,seconds_per_file=.2))
+        for samples in ([(1,60,.5),(1,240,.4)],[(1,60,.1),(1,240,2.)]):
+            result=fit_costs(samples)
+            self.assertGreaterEqual(result['seconds_per_hour'],0)
+            self.assertGreaterEqual(result['seconds_per_file'],0)
 
     def test_benchmark_then_birdnet_job_preserves_import_time_model_directory(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); directory=root/'models'; model_files(directory)
             for relative in REGISTRY['birdnet']['files']:
                 path=directory/relative; path.parent.mkdir(parents=True,exist_ok=True); path.touch()
+            for engine in ('kinglet-s','kinglet-xs'):
+                for relative in REGISTRY[engine]['files']:(directory/relative).unlink()
             audio=root/'audio'; audio.mkdir()
             sf.write(audio/'20240808_060000.wav',np.full(320000,.25),32000)
             data=root/'data'; calls=[]
             def load(directory,engine):
-                return FakeSession(engine,[]),digest(directory/REGISTRY[engine]['files'][0])
+                return FakeSession(engine,None),digest(directory/REGISTRY[engine]['files'][0])
             with patch.dict(os.environ, {'BIRDNET_APP_DATA':str(root/'wrong-cache')}), \
                     fake_birdnet(directory,calls) as bird, patch('analysis.load_onnx',side_effect=load), \
                     TestClient(create_app(data,directory,'test'),headers={'Authorization':'Bearer test'}) as client:
@@ -288,17 +318,18 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual({r['engine'] for r in client.get('/recordings/1/results').json()},{'perch','birdnet'})
                 self.assertEqual(bird['loads'],['acoustic','geo','acoustic','geo'])
 
-    def test_old_inference_only_benchmark_is_dropped_without_changing_selection(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp); directory=root/'models'; model_files(directory); data=root/'data'; data.mkdir()
-            (data/'models.json').write_text(json.dumps(dict(main='kinglet-s',extra=['perch'],confirmed=True,
-                benchmark=dict(machine=machine_fingerprint(),timestamp='2026-10-26',minutes_per_hour={'perch':.3}))))
-            with TestClient(create_app(data,directory,'test'),headers={'Authorization':'Bearer test'}) as client:
-                result=client.get('/models').json()
-                self.assertEqual((result['main'],result['extra'],result['confirmed']),('kinglet-s',['perch'],True))
-                self.assertTrue(all(m['seconds_per_hour'] is None and 'minutes_per_hour' not in m for m in result['models']))
-                self.assertNotIn('minutes_per_hour',(data/'models.json').read_text())
-                self.assertEqual(settings(data)['benchmark'],{})
+    def test_old_benchmarks_are_dropped_without_changing_selection(self):
+        for old in ({'minutes_per_hour':{'perch':.3}}, {'seconds_per_hour':{'perch':67}}):
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as temp:
+                root=Path(temp); directory=root/'models'; model_files(directory); data=root/'data'; data.mkdir()
+                (data/'models.json').write_text(json.dumps(dict(main='kinglet-s',extra=['perch'],confirmed=True,
+                    benchmark=dict(machine=machine_fingerprint(),timestamp='2026-10-26',**old))))
+                with TestClient(create_app(data,directory,'test'),headers={'Authorization':'Bearer test'}) as client:
+                    result=client.get('/models').json()
+                    self.assertEqual((result['main'],result['extra'],result['confirmed']),('kinglet-s',['perch'],True))
+                    self.assertTrue(all(m['seconds_per_hour'] is None and m['seconds_per_file'] is None for m in result['models']))
+                    self.assertIsNone(result['seconds_per_job'])
+                    self.assertEqual(settings(data)['benchmark'],{})
 
     def test_benchmark_rejects_a_running_job(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -405,7 +436,10 @@ class ModelsTest(unittest.TestCase):
                     db.execute("UPDATE analyses SET metadata=json_set(metadata,'$.model_sha256',?) WHERE engine='perch'",(sha,))
                     db.execute("UPDATE analyses SET metadata=json_set(metadata,'$.model_sha256','old-sha') WHERE engine='kinglet-s' AND recording_id=2")
                 client.put('/models',json={'main':'kinglet-s','extra':['perch']})
-                self.assertEqual(client.get('/datasets/1/overview').json()['unanalysed_recordings'],2)
+                missing = client.get('/datasets/1/overview').json()
+                self.assertEqual(missing['unanalysed_recordings'],2)
+                self.assertEqual(missing['pending_analysis'],[dict(engine='perch',recordings=2,seconds=20.),
+                    dict(engine='kinglet-s',recordings=1,seconds=10.)])
                 target=client.get('/species?q=Horornis diphone').json()[0]
                 clip=dict(source_kind='recording',source_id=2,start_s=0,end_s=3)
                 searched=client.post('/search',json=dict(dataset_id=1,**clip))
@@ -456,15 +490,19 @@ class ModelsTest(unittest.TestCase):
                 albatross = client.get('/species?q=Phoebastria albatrus').json()[0]
                 self.assertEqual(albatross['common_names'], {'ja':'アホウドリ', 'en':'Short-tailed Albatross'})
                 client.put('/models', json={'main':'perch', 'extra': []})
+                initial = client.get('/datasets/1/overview', params={'start_date':'2024-08-08','end_date':'2024-08-08'}).json()
+                self.assertEqual(initial['pending_analysis'],[dict(engine='perch',recordings=2,seconds=22.)])
                 self.assertEqual(client.post('/jobs', json={'dataset_id':1}).status_code, 200)
                 self.assertEqual({k: wait_job(client)[k] for k in ('status','total','done')}, dict(status='complete',total=2,done=2))
                 first = client.get('/datasets/1/overview').json()
                 self.assertEqual((first['analysed_recordings'], first['unanalysed_recordings']), (2, 0))
+                self.assertEqual(first['pending_analysis'],[])
                 with connect(data) as db:
                     original = [tuple(r) for r in db.execute("SELECT id,metadata FROM analyses WHERE engine='perch'")]
                 client.put('/models', json={'main':'perch','extra':['kinglet-s']})
                 missing = client.get('/datasets/1/overview').json()
                 self.assertEqual((missing['analysed_recordings'],missing['unanalysed_recordings']), (0,2))
+                self.assertEqual(missing['pending_analysis'],[dict(engine='kinglet-s',recordings=2,seconds=22.)])
                 client.post('/jobs', json={'dataset_id':1})
                 job = wait_job(client)
                 self.assertEqual((job['status'],job['total'],job['done']), ('complete',2,2))
@@ -473,6 +511,7 @@ class ModelsTest(unittest.TestCase):
                     self.assertEqual([tuple(r) for r in db.execute("SELECT id,metadata FROM analyses WHERE engine='perch'")], original)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM segments').fetchone()[0],12)
                 self.assertEqual(client.post('/jobs', json={'dataset_id':1}).json(), {'detail':'no_audio'})
+                self.assertEqual(client.get('/datasets/1/overview').json()['pending_analysis'],[])
                 result = next(r for r in client.get('/recordings/1/results').json() if r['engine']=='kinglet-s')
                 self.assertEqual(result['metadata']['species'], names)
                 self.assertEqual(result['metadata']['classes_sha256'], digest(directory / REGISTRY['kinglet-s']['files'][1]))

@@ -61,14 +61,21 @@ with ExitStack() as stack:
         assert api("/health")["status"] == "ok"
         selection = api('/models')
         assert selection['main'] == 'perch' and selection['confirmed'] is False, selection
+        assert selection['seconds_per_job'] is None
+        assert all(m['seconds_per_hour'] is None and m['seconds_per_file'] is None for m in selection['models'])
         selection = api('/models', {'main': 'perch', 'extra': [m['id'] for m in selection['models']
             if m['available'] and m['id'] != 'perch']}, method='PUT')
         assert selection['confirmed'] is True
         measured = api('/models/benchmark', {}, method='POST')
         assert all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] >= 0
                    for m in measured['models'] if m['available']), measured
+        assert all(isinstance(m['seconds_per_file'], (int,float)) and m['seconds_per_file'] >= 0
+                   and round(m['seconds_per_file'],1) == m['seconds_per_file']
+                   for m in measured['models'] if m['available']), measured
+        assert isinstance(measured['seconds_per_job'], (int,float)) and measured['seconds_per_job'] >= 0
         assert all('minutes_per_hour' not in m for m in measured['models']), measured
-        print('Sequential offline analysis benchmark (seconds/hour):', {m['id']: m['seconds_per_hour'] for m in measured['models']})
+        print('Sequential offline marginal benchmark:', {m['id']: {key:m[key] for key in
+            ('seconds_per_hour','seconds_per_file')} for m in measured['models']}, 'seconds_per_job:', measured['seconds_per_job'])
         species = api("/species?q=Certhia%20familiaris")
         assert species[0]["common_names"]["ja"] == "キバシリ", species
         assert api('/xeno-canto/key') == {'configured': False}
@@ -85,6 +92,11 @@ with ExitStack() as stack:
                 timezone="Asia/Tokyo", latitude=35.49152777777778, longitude=138.20491666666666))
             records = api(f"/datasets/{imported['dataset_id']}/recordings")
             record = next(r for r in records if Path(r["path"]) == args.recording.resolve())
+            engines = {m['id'] for m in selection['models'] if m['enabled'] and m['available']}
+            pending = api(f"/datasets/{imported['dataset_id']}/overview")['pending_analysis']
+            assert {row['engine'] for row in pending} == engines, pending
+            assert all(row['recordings'] == len(records) and
+                       abs(row['seconds']-sum(r['seconds'] for r in records)) < .001 for row in pending), pending
             started = time.perf_counter()
             api("/jobs", {"dataset_id": imported["dataset_id"]})
             previous_stage = None
@@ -98,6 +110,7 @@ with ExitStack() as stack:
                 assert time.perf_counter() - started < 240, job
                 time.sleep(1)
             assert job["status"] == "complete", job
+            assert api(f"/datasets/{imported['dataset_id']}/overview")['pending_analysis'] == []
             results = api(f"/recordings/{record['id']}/results")
             engines = {m['id'] for m in api('/models')['models'] if m['enabled'] and m['available']}
             assert {r["engine"] for r in results} == engines
