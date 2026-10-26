@@ -52,13 +52,23 @@ with ExitStack() as stack:
         connection = json.loads(child.stdout.readline())
         # Match the desktop launcher: library output must never fill the stdout pipe.
         threading.Thread(target=deque, args=(child.stdout, 0), daemon=True).start()
-        def api(path, body=None):
+        def api(path, body=None, method=None):
             request = urllib.request.Request(connection["url"] + path,
-                data=None if body is None else json.dumps(body).encode(),
+                data=None if body is None else json.dumps(body).encode(), method=method,
                 headers={"Authorization": "Bearer " + connection["token"], "Content-Type": "application/json"})
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=300) as response:
                 return json.load(response)
         assert api("/health")["status"] == "ok"
+        selection = api('/models')
+        assert selection['main'] == 'perch' and selection['confirmed'] is False, selection
+        selection = api('/models', {'main': 'perch', 'extra': [m['id'] for m in selection['models']
+            if m['available'] and m['id'] != 'perch']}, method='PUT')
+        assert selection['confirmed'] is True
+        measured = api('/models/benchmark', {}, method='POST')
+        assert all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] >= 0
+                   for m in measured['models'] if m['available']), measured
+        assert all('minutes_per_hour' not in m for m in measured['models']), measured
+        print('Sequential offline analysis benchmark (seconds/hour):', {m['id']: m['seconds_per_hour'] for m in measured['models']})
         species = api("/species?q=Certhia%20familiaris")
         assert species[0]["common_names"]["ja"] == "キバシリ", species
         assert api('/xeno-canto/key') == {'configured': False}
@@ -89,7 +99,7 @@ with ExitStack() as stack:
                 time.sleep(1)
             assert job["status"] == "complete", job
             results = api(f"/recordings/{record['id']}/results")
-            engines = {m['id'] for m in api('/models') if m['enabled'] and m['available']}
+            engines = {m['id'] for m in api('/models')['models'] if m['enabled'] and m['available']}
             assert {r["engine"] for r in results} == engines
             perch = next(r for r in results if r["engine"] == "perch")
             assert perch["metadata"]["display_candidate_filter"] == "applied", perch["metadata"]

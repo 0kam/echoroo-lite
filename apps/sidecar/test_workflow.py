@@ -32,7 +32,9 @@ class WorkflowCheck(unittest.TestCase):
     def test_overview_orders_by_native_detection_intervals(self):
         from analysis import save
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(60000),1000)
+            root=Path(temp)
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
+            sf.write(root/'20240808_060000.wav',np.zeros(60000),1000)
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
                 with connect(root) as db:
@@ -65,7 +67,9 @@ class WorkflowCheck(unittest.TestCase):
     def test_region_status_uses_saved_birdnet_species_for_all_payloads(self):
         from analysis import save
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
+            root=Path(temp)
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
+            sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
             enable_birdnet(root)
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
@@ -93,7 +97,9 @@ class WorkflowCheck(unittest.TestCase):
 
     def test_region_status_is_null_without_birdnet_analysis(self):
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
+            root=Path(temp)
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
+            sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
             enable_birdnet(root)
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
@@ -108,7 +114,9 @@ class WorkflowCheck(unittest.TestCase):
     def test_overview_keeps_checked_model_with_zero_candidates(self):
         from results_workflow import build_overview
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
+            root=Path(temp)
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
+            sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
                 species=client.get('/species?q=ウグイス').json()[0]
@@ -130,7 +138,9 @@ class WorkflowCheck(unittest.TestCase):
         from analysis import save
         from reports import cached_windows, classification_windows
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
+            root=Path(temp)
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
+            sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
                 with connect(root) as db:
@@ -148,7 +158,9 @@ class WorkflowCheck(unittest.TestCase):
 
     def test_one_stage_check_hides_interim_results_and_adds_presence(self):
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);sf.write(root/'20240808_060000.wav',np.zeros(300000),1000)
+            root=Path(temp)
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
+            sf.write(root/'20240808_060000.wav',np.zeros(300000),1000)
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
                 sid=client.get('/species?q=ウグイス').json()[0]['id'];label='Horornis diphone_Japanese Bush Warbler'

@@ -4,9 +4,10 @@ import hashlib
 import os
 import shutil
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
-KINGLET_BASE_URL = 'https://github.com/0kam/echoroo-lite/releases/download/models-kinglet-preview1/'
+KINGLET_BASE_URL = 'https://github.com/0kam/kinglet/releases/download/v0.1.0-preview1/'
 KINGLET_ASSETS = (
     ('kinglet-s-preview1.onnx', 'kinglet-s-preview1_efficientnet_lite0.onnx',
      'a21fdfc6f3356e209d800656fc0ce1977a6fb37935eafef69998f7d94098cc03'),
@@ -16,6 +17,14 @@ KINGLET_ASSETS = (
      '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
     ('kinglet-xs-preview1.classes.csv', 'kinglet-xs-preview1_mobilenetv4s.classes.csv',
      '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
+)
+
+V3_ASSETS = (
+    ('BirdNET+_V3.0-preview3.1_Global_11K_FP16_pruned.onnx',
+     '69cfc8db3ebec163feb6329e546eb56e1aadac2a309f1ee99aecfabd1aa9bd24'),
+    ('BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv',
+     '8124b0ea2d187104c5e2cd95a0f937165647e20349c8fd34d4d5ef991821f8f0'),
+    ('TERMS_OF_USE.txt', '91b474bddbfdbd7cb2f5d85fd4511eee8af151d899c8450cd0b22000c425bd8f'),
 )
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -33,7 +42,9 @@ assets = [
      "e4d5c0397d8fb08bf90c6b13a34810af53504faad927e472fcc567793c9de057"),
 ]
 if not args.perch_only:
-    assets.extend(('kinglet/' + name, KINGLET_BASE_URL + name, sha) for name, _, sha in KINGLET_ASSETS)
+    assets.extend(('birdnet-v3/' + name, 'https://zenodo.org/api/records/20703646/files/'
+                   + urllib.parse.quote(name, safe='') + '/content', sha) for name, sha in V3_ASSETS)
+    assets.extend(('kinglet/' + name, KINGLET_BASE_URL + original, sha) for name, original, sha in KINGLET_ASSETS)
 
 
 def digest(path):

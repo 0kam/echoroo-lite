@@ -21,6 +21,7 @@ class ExamplesCheck(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        (self.root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
         for hour in ('060000', '070000', '080000', '090000'):
             sf.write(self.root / f'20240808_{hour}.wav', np.zeros(360000), 1000)
         self.client = TestClient(create_app(self.root, self.root, 'test'), headers={'Authorization': 'Bearer test'})

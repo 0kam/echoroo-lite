@@ -7,7 +7,7 @@ from functools import lru_cache
 from types import SimpleNamespace
 
 from reports import detection, options, snapshot_view
-from models import enabled_engines
+from models import enabled_engines, selected_engines, main_identity, main_engine, model_identity
 from species import canonical_scientific_name, names_for
 from storage import CatalogError, checked_source, connect
 
@@ -39,24 +39,24 @@ def build_fingerprint(root, dataset_id):
 
 
 @lru_cache(maxsize=8)
-def cached_options(root, dataset_id, revision, engines):
-    def build():
-        from management import location_status
-        result = options(root, dataset_id)
-        with connect(root) as db:
-            site = dict(result['site'])
-            site['location_changed'] = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?',(site['id'],)).fetchone())
-            complete, stale = location_status(db, site, engines)
-            total = db.execute('SELECT COUNT(*) FROM site_recordings WHERE scope_id=?', (dataset_id,)).fetchone()[0]
-        return {**result, 'analysed_recordings':len(complete), 'unanalysed_recordings':total-len(complete), 'location_stale':stale}
-    return cached(root, ['options-v3', dataset_id, revision, engines], build)
+def cached_options(root, dataset_id, revision, selection):
+    return cached(root, ['options-v5', dataset_id, revision, selection], lambda: options(root, dataset_id))
 
 
 def context(root, dataset_id, first=None, last=None):
     signature = fingerprint(root, dataset_id)
     with connect(root) as db:
         data_revision = db.execute('SELECT version FROM result_revision WHERE id=1').fetchone()[0]
-    result = dict(cached_options(root, dataset_id, data_revision, tuple(enabled_engines(root))))
+    engines = tuple(sorted({main_engine(root), *enabled_engines(root)}))
+    identities = tuple(model_identity(root, engine) for engine in engines)
+    result = dict(cached_options(root, dataset_id, data_revision, tuple(selected_engines(root))))
+    from management import location_status
+    with connect(root) as db:
+        site = dict(result['site'])
+        site['location_changed'] = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?', (site['id'],)).fetchone())
+        complete, stale = location_status(db, site, engines)
+        total = db.execute('SELECT COUNT(*) FROM site_recordings WHERE scope_id=?', (dataset_id,)).fetchone()[0]
+    result.update(analysed_recordings=len(complete), unanalysed_recordings=total-len(complete), location_stale=stale)
     result['mixed_models']=len(result['models'])>len({m['engine'] for m in result['models']})
     result['models']=list({m['engine']:m for m in sorted(result['models'],key=lambda m:m['latest_analysis_id'])}.values())
     result['start_date'] = first or result['first_date']
@@ -77,7 +77,8 @@ def context(root, dataset_id, first=None, last=None):
     result['names_revision']=hashlib.sha256(json.dumps(revision[-1]).encode()).hexdigest()
     with connect(root) as db:
         revision.append([tuple(r) for r in db.execute('SELECT id,answers FROM quiz_sessions ORDER BY id')])
-    result['revision']=hashlib.sha256(json.dumps([result['fingerprint'],data_revision,revision,enabled_engines(root)]).encode()).hexdigest()
+    result['revision']=hashlib.sha256(json.dumps([result['fingerprint'],data_revision,revision,selected_engines(root),
+        main_identity(root),identities,len(complete),stale]).encode()).hexdigest()
     return result
 
 
@@ -87,7 +88,7 @@ def region_statuses(root, ctx, scientific_names, birdnet=True):
     from reports import analysis_metadata, scope_records
     from species import birdnet_species_mapping
     names = tuple(scientific_names)
-    if not birdnet:
+    if not birdnet or 'birdnet' not in selected_engines(root):
         return dict.fromkeys(names)
     with connect(root) as db:
         records = scope_records([dict(r) for r in db.execute(
@@ -153,7 +154,11 @@ def current_validations(root, ctx):
         rows = db.execute('SELECT v.id,v.species_id,v.model,v.snapshot,v.fingerprint FROM validation_sessions v '
                           'JOIN datasets d ON d.id=v.dataset_id WHERE d.site_id=? ORDER BY v.id DESC', (ctx['site']['id'],)).fetchall()
     chosen = {}
+    from custom_models import list_models
+    visible = set(selected_engines(root)) | {f"custom:{m['id']}" for m in list_models(root, ctx)}
     for row in rows:
+        if row['model'] not in visible:
+            continue
         key = (row['species_id'], row['model'])
         if key in chosen and chosen[key]['applicable']:
             continue
@@ -205,7 +210,7 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None, birdnet=True):
     ctx = context(root, dataset_id, first, last)
-    return cached(root, ['overview-v13', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet,
+    return cached(root, ['overview-v15', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet,
                          enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx, birdnet))
 
@@ -220,8 +225,12 @@ def build_overview(root, dataset_id, ctx, birdnet=True):
     with connect(root) as db:
         records = [dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))]
         named = {r['id']: names_for(r) for r in db.execute('SELECT * FROM species')}
-        searched = {r['species_id']: {'id': r['id'], 'created_at': r['created_at']} for r in db.execute(
-            'SELECT r.* FROM search_runs r JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=? ORDER BY r.id', (ctx['site']['id'],))}
+        from search_runs import site_run
+        searched = {}
+        for sid in [r[0] for r in db.execute('SELECT DISTINCT r.species_id FROM search_runs r JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=?', (ctx['site']['id'],))]:
+            run = site_run(db, ctx['site']['id'], sid)
+            if run:
+                searched[sid] = {'id': run['id'], 'created_at': run['created_at']}
     zone = ZoneInfo(ctx['site']['timezone'])
     records = scope_records(records, zone, ctx['start_date'], ctx['end_date'])
     rows = {}

@@ -43,7 +43,7 @@ export type SpeciesResult = Omit<Overview,'species'> & {species:Species;report:R
 export const fill = (key:string,values:Record<string,string|number>) => Object.entries(values).reduce((text,[name,value])=>text.replaceAll(`{${name}}`,String(value))
   .replace(new RegExp(`\\{${name}\\|([^|}]*)\\|([^}]*)\\}`,'g'),(_,one:string,other:string)=>Number(value)===1?one:other),t(key));
 export const customName = (model:{created_at?:string}) => fill('customModelNumber',{date:new Intl.DateTimeFormat(app.locale,{month:'numeric',day:'numeric'}).format(new Date(`${model.created_at?.replace(' ','T')}Z`))});
-const modelOf = (engine:string) => app.models.find(model=>model.id===engine);
+const modelOf = (engine:string) => app.ai.models.find(model=>model.id===engine);
 /** Display name from GET /models; 'custom' is an AI made for one species. */
 export const modelName = (engine:string) => engine==='custom'?t('customModel'):modelOf(engine)?.name??engine;
 export const checkName = (check:{engine:string;created_at?:string}) => check.engine==='custom'?customName(check):modelName(check.engine);

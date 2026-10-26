@@ -63,6 +63,41 @@ class SpeciesFlowCheck(unittest.TestCase):
         self.assertEqual([(row['start_s'],row['end_s'],row['marked']) for row in merged],[(0,5,True),(5,10,False)])
         self.assertEqual([model['engine'] for model in merged[0]['models']],['birdnet','perch'])
 
+    def test_custom_feature_engine_and_hiding_incompatible_models(self):
+        for engine in ('perch','kinglet-s'):
+            with self.subTest(engine=engine), site() as (root,client,species):
+                sid=species['id']
+                with connect(root) as db:
+                    db.execute('UPDATE analyses SET engine=?',(engine,))
+                data=json.loads((root/'models.json').read_text())
+                data.update(main=engine,extra=[])
+                (root/'models.json').write_text(json.dumps(data))
+                clip=dict(source_kind='recording',source_id=1,start_s=0,end_s=5)
+                with patch('search_runs.load_perch',return_value=(Session(),'perch-sha')), \
+                        patch('search_runs.load_onnx',return_value=(Session(),'perch-sha')):
+                    run=client.post('/search-runs',json=dict(dataset_id=1,species_id=sid,clips=[clip])).json()
+                with connect(root) as db:
+                    for label,condition in [('target','>.99'),('other','<.5')]:
+                        ids=[r[0] for r in db.execute('SELECT segment_id FROM search_hits WHERE run_id=? AND similarity'+condition+' LIMIT 3',(run['id'],))]
+                        for segment in ids:
+                            client.post(f"/search-runs/{run['id']}/labels",json={'segment_id':segment,'label':label})
+                scope=dict(dataset_id=1,species_id=sid,start_date='2024-08-01',end_date='2024-08-06')
+                response=client.post('/custom-models',json=scope)
+                self.assertEqual(response.status_code,200,response.text)
+                model=response.json()
+                self.assertEqual(model['feature']['engine'],engine)
+                self.assertEqual(model['feature']['spec'],f'{engine}_embedding_1536_l2_v1')
+                self.assertTrue(model['applicable'])
+                data['main']='kinglet-xs'
+                (root/'models.json').write_text(json.dumps(data))
+                self.assertFalse(client.get(f"/custom-models/{model['id']}").json()['applicable'])
+                detail=client.get(f'/datasets/1/species/{sid}',params=scope)
+                self.assertEqual(detail.status_code,200,detail.text)
+                self.assertFalse(any(c['engine']=='custom' for c in detail.json()['checks']))
+                data['main']=engine
+                (root/'models.json').write_text(json.dumps(data))
+                self.assertTrue(client.get(f"/custom-models/{model['id']}").json()['applicable'])
+
     def test_presence_search_custom_model_and_deletion(self):
         with site() as (root, client, species):
             sid = species['id']

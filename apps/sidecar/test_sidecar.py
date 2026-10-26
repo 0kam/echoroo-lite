@@ -135,6 +135,7 @@ class SidecarCheck(unittest.TestCase):
                         db.execute("INSERT INTO candidates(analysis_id,start_s,end_s,label,score) VALUES(?,0,3,?,0.5)", (aid, label))
                     for label in ["Abavorana luctuosa", "Bowed_string_instrument"]:
                         db.execute("INSERT INTO candidates(analysis_id,start_s,end_s,label,score) VALUES(2,0,3,?,0.4)", (label,))
+                client.put("/models", json={"main":"perch","extra":["birdnet"]})
                 results = client.get("/recordings/1/results").json()
                 for result in results:
                     candidate = result["candidates"][0]
@@ -260,7 +261,7 @@ def real_smoke(path):
                 time.sleep(1)
             assert job["status"] == "complete", job
             results = client.get(f"/recordings/{record['id']}/results").json()
-            assert {r["engine"] for r in results} == {m['id'] for m in client.get('/models').json() if m['enabled'] and m['available']}, results
+            assert {r["engine"] for r in results} == {m['id'] for m in client.get('/models').json()['models'] if m['enabled'] and m['available']}, results
             for result in results:
                 assert result["candidates"], result["engine"]
                 with np.load(result["scores_path"], allow_pickle=False) as stored:

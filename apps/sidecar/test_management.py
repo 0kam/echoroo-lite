@@ -24,6 +24,7 @@ class ManagementCheck(unittest.TestCase):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(engine.encode())
+        (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True,'directory':str(root)}))
         for index in range(4):
             folder = root / f'original-{index}'
             folder.mkdir()

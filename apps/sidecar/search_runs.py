@@ -4,7 +4,9 @@ import secrets
 
 import numpy as np
 
-from analysis import load_perch
+from analysis import load_perch, load_onnx
+from models import main_engine, main_identity
+from pathlib import Path
 from audio import source
 from search import search_context, query_embeddings
 from species import names_for
@@ -12,12 +14,17 @@ from storage import CatalogError, checked_source, connect
 
 
 def site_run(db, site_id, species_id):
+    root = Path(db.execute('PRAGMA database_list').fetchone()[2]).parent
+    engine, sha = main_identity(root)
     return db.execute('''SELECT r.* FROM search_runs r JOIN datasets d ON d.id=r.dataset_id
-        WHERE d.site_id=? AND r.species_id=? ORDER BY r.id DESC''', (site_id, species_id)).fetchone()
+        WHERE d.site_id=? AND r.species_id=? AND COALESCE(json_extract(r.snapshot,'$.engine'),'perch')=?
+        AND (? IS NULL OR json_extract(r.snapshot,'$.model_sha256')=?) ORDER BY r.id DESC''',
+        (site_id, species_id, engine, sha, sha)).fetchone()
 
 
 def create_run(root, models, body, cancel=None):
-    loaded = load_perch(models)
+    engine = main_engine(root)
+    loaded = load_perch(models) if engine == 'perch' else load_onnx(models, engine)
     with connect(root) as db:
         dataset = db.execute('SELECT * FROM datasets WHERE id=?', (body.dataset_id,)).fetchone()
         species = db.execute('SELECT * FROM species WHERE id=?', (body.species_id,)).fetchone()
@@ -26,7 +33,7 @@ def create_run(root, models, body, cancel=None):
         if site_run(db, dataset['site_id'], body.species_id):
             raise CatalogError('search_exists')
         site = db.execute('SELECT * FROM sites WHERE id=?', (dataset['site_id'],)).fetchone()
-        compatible, total = search_context(db, body.dataset_id, loaded[1], body.start_date, body.end_date)
+        compatible, total = search_context(db, body.dataset_id, loaded[1], body.start_date, body.end_date, engine)
         if not compatible:
             raise CatalogError('no_search_embeddings')
         for row in compatible:
@@ -42,7 +49,7 @@ def create_run(root, models, body, cancel=None):
             if cancel and cancel.is_set():
                 raise CatalogError('cancelled')
             row = source(root, clip.source_kind, clip.source_id)
-            embedded, query = query_embeddings(models, row, clip.start_s, clip.end_s, loaded, cancel)
+            embedded, query = query_embeddings(models, row, clip.start_s, clip.end_s, loaded, cancel, engine)
             references.append({'source': row, 'query': query})
             vectors.extend(embedded)
             owners.extend((index, window) for window in range(len(embedded)))
@@ -51,7 +58,7 @@ def create_run(root, models, body, cancel=None):
         snapshot = {'group': secrets.token_hex(16), 'species': names_for(species), 'dataset': dict(dataset), 'site': dict(site),
                     'start_date': body.start_date.isoformat() if body.start_date else None,
                     'end_date': body.end_date.isoformat() if body.end_date else None, 'date_scope': 'recording_start_local',
-                    'model_sha256': loaded[1], 'aggregation': 'maximum_cosine', 'references': references,
+                    'engine': engine, 'model_sha256': loaded[1], 'aggregation': 'maximum_cosine', 'references': references,
                     'analysis_ids': [r['analysis_id'] for r in compatible], **coverage}
         run_id = db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',
                             (body.dataset_id, body.species_id, json.dumps(snapshot, ensure_ascii=False))).lastrowid
@@ -85,7 +92,11 @@ def get_run(root, run_id):
         run = db.execute('SELECT * FROM search_runs WHERE id=?', (run_id,)).fetchone()
         if run is None:
             raise CatalogError('not_found')
-        return {**dict(run), 'snapshot': json.loads(run['snapshot'])}
+        snap = json.loads(run['snapshot'])
+        engine, sha = main_identity(root)
+        if snap.get('engine', 'perch') != engine or sha is not None and snap['model_sha256'] != sha:
+            raise CatalogError('not_found')
+        return {**dict(run), 'snapshot': snap}
 
 
 def top_hits(db, run_id, limit, offset=0):

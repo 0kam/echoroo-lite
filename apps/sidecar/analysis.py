@@ -3,14 +3,14 @@ import csv
 import hashlib
 import json
 import os
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
 from audio import resample
-from models import REGISTRY, available, enabled_engines, window_s
+from models import REGISTRY, available, enabled_engines, main_engine, window_s, configure_birdnet
 
 from species import birdnet_species_mapping
 from storage import CatalogError, checked_source, connect
@@ -61,7 +61,7 @@ def birdnet_available(models):
 
 def plan(root, models, records, site):
     """Freeze missing recording/engine pairs before starting the worker."""
-    if not available(models, 'perch'):
+    if not available(models, main_engine(root)):
         raise CatalogError('models_missing')
     engines = enabled_engines(root, models)
     hashes = {engine: digest(Path(models) / REGISTRY[engine]['files'][0]) for engine in engines}
@@ -70,6 +70,7 @@ def plan(root, models, records, site):
     with connect(root) as db:
         latest = {(r['recording_id'], r['engine']): r for r in db.execute('''SELECT * FROM analyses
             WHERE id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''')}
+        embedded = {r[0] for r in db.execute('SELECT DISTINCT analysis_id FROM segments s JOIN vectors v ON v.rowid=s.id')}
         changed = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?', (site.get('id'),)).fetchone())
     pending = {}
     for record in records:
@@ -78,6 +79,8 @@ def plan(root, models, records, site):
             row = latest.get((record['id'], engine))
             meta = json.loads(row['metadata']) if row else {}
             matches = row is not None and Path(row['scores_path']).is_file() and meta.get('model_sha256') == hashes[engine]
+            if matches and REGISTRY[engine]['main_capable']:
+                matches = row['id'] in embedded
             if engine in classes:
                 matches &= meta.get('classes_sha256') == classes[engine]
             if engine == 'birdnet':
@@ -88,6 +91,61 @@ def plan(root, models, records, site):
         if missing:
             pending[record['id']] = missing
     return pending
+
+
+def load_dense(models, engine):
+    detector, sha = load_onnx(models, engine)
+    path = Path(models) / REGISTRY[engine]['files'][1]
+    v3 = engine == 'birdnet-v3'
+    with path.open(newline='', encoding='utf-8-sig') as stream:
+        rows = list(csv.DictReader(stream, delimiter=';' if v3 else ','))
+    count = REGISTRY[engine]['species_count']
+    names = [r['sci_name' if v3 else 'scientific_name'] for r in rows]
+    if ([int(r['idx' if v3 else 'index']) for r in rows] != list(range(count))
+            or len(set(names)) != count):
+        raise CatalogError('invalid_scores')
+    allowed = names
+    if v3:
+        japan = {name.partition('_')[0] for name in candidate_filter()['species']}
+        allowed = [name for name in names if name in japan]
+    meta = dict(model=REGISTRY[engine]['name'], model_sha256=sha,
+                classes_sha256=digest(path), window_s=window_s(engine),
+                score_type=REGISTRY[engine]['score_type'], species=allowed,
+                stored_top_k=None, display_top_k=5, last_window='zero_pad',
+                resampling='scipy.resample_poly')
+    if v3:
+        meta['candidate_filter'] = candidate_filter()
+    return detector, names, meta
+
+
+def infer_onnx(detector, engine, audio, count, cancel=None):
+    """Shared real inference/windowing path for analysis and the local benchmark."""
+    vectors, batches = [], []
+    batch_size = 1 if engine == 'perch' else 32
+    for start in range(0, len(audio), batch_size * 160000):
+        if cancel and cancel.is_set():
+            raise CatalogError('cancelled')
+        chunk = audio[start:start + batch_size * 160000]
+        waveform = np.pad(chunk, (0, -len(chunk) % 160000)).reshape(-1, 160000).astype(np.float32)
+        if engine == 'perch':
+            embedding, scores = detector.run(['embedding', 'label'], {'inputs': waveform})
+        elif engine == 'birdnet-v3':
+            scores, = detector.run(['predictions'], {'input': np.clip(waveform, -1, 1)})
+            embedding = None
+            if np.any((scores < 0) | (scores > 1)):
+                raise CatalogError('invalid_scores')
+        else:
+            logits, embedding = detector.run(['logits', 'embedding'], {'waveform': np.clip(waveform, -1, 1)})
+            scores = 1 / (1 + np.exp(-np.clip(logits.astype(np.float64), -709, 709)))
+        if scores.shape != (len(waveform), count) or not np.isfinite(scores).all():
+            raise CatalogError('invalid_scores')
+        if embedding is not None:
+            if (embedding.shape != (len(waveform), 1536) or not np.isfinite(embedding).all()
+                    or np.any(np.linalg.norm(embedding, axis=1) == 0)):
+                raise CatalogError('invalid_scores')
+            vectors.extend(embedding)
+        batches.append(scores)
+    return np.concatenate(batches).astype(np.float32), vectors or None
 
 
 def candidate_filter():
@@ -124,7 +182,69 @@ def save(root, job, recording, engine, meta, scores, candidates, embeddings=None
         classification_windows({'scores_path':str(path),'engine':engine},recording['seconds'],allowed)
 
 
-def run(root, models, job, records, site, cancel, pending=None):
+@contextmanager
+def prepare_models(models, engines, site, progress=None):
+    """Load once and keep inference sessions alive across recording jobs."""
+    models = Path(models)
+    progress = progress or (lambda stage, done: None)
+    labels_path = models / "perch-labels/assets/labels.csv"
+    use_birdnet = 'birdnet' in engines
+    progress("loading_models", 0)
+    acoustic = bird_meta = species = None
+    if use_birdnet:
+        configure_birdnet(models)
+        import birdnet
+        from birdnet.acoustic.models.v2_4.tf import AcousticTFDownloaderV2_4
+        from birdnet.geo.models.v2_4.tf import GeoTFDownloaderV2_4
+        if not (AcousticTFDownloaderV2_4._check_acoustic_model_available("fp32")
+                and GeoTFDownloaderV2_4._check_geo_model_available()):
+            raise CatalogError("models_missing")
+        acoustic = birdnet.load("acoustic", "2.4", "tf", library="litert")
+        geo = birdnet.load("geo", "2.4", "tf", library="litert")
+        progress("loading_geo", 0)
+        # ponytail: year-round geo until seasonal filtering is specified and checked.
+        species = geo.predict(site["latitude"], site["longitude"], week=None,
+                              min_confidence=0.03).to_structured_array()["species_name"].tolist()
+        mapped = birdnet_species_mapping()
+        species = [label for label in species if str(label).partition('_')[0] in mapped]
+        if not species:
+            raise CatalogError("no_geo_species")
+        bird_meta = {"model": "BirdNET 2.4 FP32 LiteRT", "model_sha256": digest(acoustic.model_path),
+                     "geo_sha256": digest(geo.model_path), "latitude": site["latitude"],
+                     "longitude": site["longitude"], "week": None, "geo_threshold": 0.03,
+                     "species": species, "species_mapping_sha256": species_mapping_sha256(),
+                     "score_type": "sigmoid_uncalibrated", "window_s": 3,
+                     "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
+                     "display_threshold": 0.1}
+    session = None
+    if 'perch' in engines:
+        progress("loading_perch", 0)
+        session, model_sha = load_perch(models)
+        labels = perch_labels(models)
+        perch_meta = {"model": "Perch V2 no_dft", "model_sha256": model_sha,
+                      "labels_sha256": digest(labels_path), "window_s": 5,
+                      "score_type": "logit", "stored_top_k": None, "display_top_k": 5,
+                      "candidate_filter": candidate_filter(),
+                      "resampling": "scipy.resample_poly", "last_window": "zero_pad"}
+    detectors = {}
+    if session is not None:
+        detectors['perch'] = (session, labels, perch_meta)
+    for engine in REGISTRY:
+        if engine in engines and engine not in ('perch', 'birdnet'):
+            progress('loading_' + engine, 0)
+            detectors[engine] = load_dense(models, engine)
+    if use_birdnet:
+        progress("loading_birdnet", 0)
+    bird_context = acoustic.predict_session(n_workers=1, batch_size=1, top_k=None, max_n_files=1,
+        default_confidence_threshold=0, custom_species_list=species) if acoustic else nullcontext()
+    # Reuse BirdNET's public session when this edition includes it.
+    with bird_context as bird_session:
+        if bird_session is not None:
+            detectors['birdnet'] = (bird_session, None, bird_meta)
+        yield detectors
+
+
+def run(root, models, job, records, site, cancel, pending=None, loaded=None):
     def progress(stage, done):
         with connect(root) as db:
             db.execute("UPDATE jobs SET status='running',stage=?,done=? WHERE id=?", (stage, done, job))
@@ -136,71 +256,9 @@ def run(root, models, job, records, site, cancel, pending=None):
         engines = {engine for pairs in pending.values() for engine in pairs}
         with connect(root) as db:
             db.execute('UPDATE jobs SET total=? WHERE id=?', (sum(map(len, pending.values())), job))
-        labels_path = models / "perch-labels/assets/labels.csv"
-        use_birdnet = 'birdnet' in engines
-        progress("loading_models", 0)
-        acoustic = bird_meta = species = None
-        if use_birdnet:
-            os.environ["BIRDNET_APP_DATA"] = str(models / "birdnet")
-            import birdnet
-            from birdnet.acoustic.models.v2_4.tf import AcousticTFDownloaderV2_4
-            from birdnet.geo.models.v2_4.tf import GeoTFDownloaderV2_4
-            if not (AcousticTFDownloaderV2_4._check_acoustic_model_available("fp32")
-                    and GeoTFDownloaderV2_4._check_geo_model_available()):
-                raise CatalogError("models_missing")
-            acoustic = birdnet.load("acoustic", "2.4", "tf", library="litert")
-            geo = birdnet.load("geo", "2.4", "tf", library="litert")
-            progress("loading_geo", 0)
-            # ponytail: year-round geo until seasonal filtering is specified and checked.
-            species = geo.predict(site["latitude"], site["longitude"], week=None,
-                                  min_confidence=0.03).to_structured_array()["species_name"].tolist()
-            mapped = birdnet_species_mapping()
-            species = [label for label in species if str(label).partition('_')[0] in mapped]
-            if not species:
-                raise CatalogError("no_geo_species")
-            bird_meta = {"model": "BirdNET 2.4 FP32 LiteRT", "model_sha256": digest(acoustic.model_path),
-                         "geo_sha256": digest(geo.model_path), "latitude": site["latitude"],
-                         "longitude": site["longitude"], "week": None, "geo_threshold": 0.03,
-                         "species": species, "species_mapping_sha256": species_mapping_sha256(),
-                         "score_type": "sigmoid_uncalibrated", "window_s": 3,
-                         "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
-                         "display_threshold": 0.1}
-        session = None
-        if 'perch' in engines:
-            progress("loading_perch", 0)
-            session, model_sha = load_perch(models)
-            labels = perch_labels(models)
-            perch_meta = {"model": "Perch V2 no_dft", "model_sha256": model_sha,
-                          "labels_sha256": digest(labels_path), "window_s": 5,
-                          "score_type": "logit", "stored_top_k": None, "display_top_k": 5,
-                          "candidate_filter": candidate_filter(),
-                          "resampling": "scipy.resample_poly", "last_window": "zero_pad"}
-        kinglets = {}
-        for engine in REGISTRY:
-            if engine not in engines or not REGISTRY[engine]['experimental']:
-                continue
-            progress('loading_' + engine, 0)
-            detector, sha = load_onnx(models, engine)
-            classes_path = models / REGISTRY[engine]['files'][1]
-            with classes_path.open(newline='', encoding='utf-8') as stream:
-                rows = list(csv.DictReader(stream))
-            if ([int(row['index']) for row in rows] != list(range(317)) or
-                    len({row['scientific_name'] for row in rows}) != 317):
-                raise CatalogError('invalid_scores')
-            names = [row['scientific_name'] for row in rows]
-            meta = dict(model=REGISTRY[engine]['name'], model_sha256=sha,
-                        classes_sha256=digest(classes_path), window_s=window_s(engine),
-                        score_type=REGISTRY[engine]['score_type'], species=names,
-                        stored_top_k=None, display_top_k=5, last_window='zero_pad',
-                        resampling='scipy.resample_poly')
-            kinglets[engine] = (detector, names, meta)
         done = 0
-        if use_birdnet:
-            progress("loading_birdnet", 0)
-        bird_context = acoustic.predict_session(n_workers=1, batch_size=1, top_k=None, max_n_files=1,
-            default_confidence_threshold=0, custom_species_list=species) if acoustic else nullcontext()
-        # Reuse BirdNET's public session when this edition includes it.
-        with bird_context as bird_session:
+        model_context = prepare_models(models, engines, site, progress) if loaded is None else nullcontext(loaded)
+        with model_context as detectors:
             for record in records:
                 if cancel.is_set():
                     break
@@ -208,7 +266,8 @@ def run(root, models, job, records, site, cancel, pending=None):
                 if not pairs:
                     continue
                 path = checked_source(record)
-                if bird_session and 'birdnet' in pairs:
+                if 'birdnet' in pairs:
+                    bird_session, _, bird_meta = detectors['birdnet']
                     progress("birdnet", done)
                     result = bird_session.run(path)
                     if len(result.unprocessable_inputs):
@@ -233,56 +292,24 @@ def run(root, models, job, records, site, cancel, pending=None):
                     continue
                 audio, rate = sf.read(path, dtype="float32")
                 audio = resample(audio, rate)
-                for engine, (detector, names, meta) in kinglets.items():
-                    if engine not in pairs or cancel.is_set():
+                for engine in pairs:
+                    if engine == 'birdnet' or cancel.is_set():
                         continue
                     progress(engine, done)
-                    batches = []
-                    # Bound waveform memory while retaining the zero-padded final window.
-                    for start in range(0, len(audio), 32 * 160000):
-                        if cancel.is_set():
-                            break
-                        chunk = audio[start:start + 32 * 160000]
-                        waveform = np.pad(chunk, (0, -len(chunk) % 160000)).reshape(-1, 160000)
-                        logits, = detector.run(['logits'], {'waveform': np.clip(waveform, -1, 1).astype(np.float32)})
-                        if logits.shape != (len(waveform), len(names)) or not np.isfinite(logits).all():
-                            raise CatalogError('invalid_scores')
-                        batches.append(1 / (1 + np.exp(-np.clip(logits.astype(np.float64), -709, 709))))
-                    if cancel.is_set():
-                        break
-                    scores = np.concatenate(batches).astype(np.float32)
-                    candidates = [(i * 5, min((i + 1) * 5, record['seconds']), names[j], float(row[j]))
-                                  for i, row in enumerate(scores) for j in np.argsort(-row, kind='stable')[:5]]
+                    detector, names, meta = detectors[engine]
+                    scores, vectors = infer_onnx(detector, engine, audio, len(names), cancel)
+                    candidates = []
+                    if engine != 'perch':
+                        included = np.flatnonzero(np.isin(names, meta['species']))
+                        candidates = [(i * 5, min((i + 1) * 5, record['seconds']), names[j], float(row[j]))
+                                      for i, row in enumerate(scores)
+                                      for j in included[np.argsort(-row[included], kind='stable')[:5]]]
                     checked_source(record)
-                    # Kinglet stores a dense window x class sigmoid matrix, without embeddings.
-                    save(root, job, record, engine, meta, {'scores': scores, 'labels': np.array(names)}, candidates)
+                    save(root, job, record, engine, meta,
+                         {'logits' if engine == 'perch' else 'scores': scores, 'labels': np.array(names)},
+                         candidates, vectors)
                     done += 1
                     progress(engine, done)
-                if cancel.is_set():
-                    break
-                if 'perch' not in pairs:
-                    continue
-                progress("perch", done)
-                vectors, logits = [], []
-                for start in range(0, len(audio), 160000):
-                    if cancel.is_set():
-                        break
-                    window = audio[start:start + 160000]
-                    window = np.pad(window, (0, 160000 - len(window)))
-                    embedding, scores = session.run(["embedding", "label"], {"inputs": window[None].astype(np.float32)})
-                    if (embedding.shape != (1, 1536) or scores.shape != (1, len(labels))
-                            or not np.isfinite(embedding).all() or not np.isfinite(scores).all()
-                            or np.linalg.norm(embedding) == 0):
-                        raise CatalogError("invalid_scores")
-                    vectors.append(embedding[0])
-                    logits.append(scores[0])
-                if cancel.is_set():
-                    break
-                checked_source(record)
-                save(root, job, record, "perch", perch_meta,
-                     {"logits": np.array(logits), "labels": np.array(labels)}, [], vectors)
-                done += 1
-                progress("perch", done)
         if not cancel.is_set():
             progress('preparing_results', done)
             with connect(root) as db:
@@ -293,6 +320,10 @@ def run(root, models, job, records, site, cancel, pending=None):
             db.execute("UPDATE jobs SET status=?,stage='finished' WHERE id=?",
                        ("cancelled" if cancel.is_set() else "complete", job))
     except Exception as error:
+        if isinstance(error, CatalogError) and str(error) == 'cancelled':
+            with connect(root) as db:
+                db.execute("UPDATE jobs SET status='cancelled',stage='finished' WHERE id=?", (job,))
+            return
         import traceback
         traceback.print_exc()
         with connect(root) as db:

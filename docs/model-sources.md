@@ -17,7 +17,8 @@ Pythonライブラリのライセンスと、学習済みモデル・種名・�
 | BirdNET 2.4地域モデル | 同じZenodoレコードの `BirdNET_v2.4_tflite_int8.zip` 内の `meta-model.tflite` | 同上。音響・地域の取得先はインストール済みbirdnetのダウンローダーを確認 |
 | Perch V2 ONNX | [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx)、revision `da88bf8c37c0b3068fc706fe509f633b9fbd28c1`、`perch_v2_no_dft.onnx` | 固定revisionのモデルカードはApache-2.0。Googleのモデルを変換しDFTをMatMulへ置換した版。Lite側で重みを変更していない |
 | Perch V2ラベル | [cgeorgiaw/Perch](https://huggingface.co/cgeorgiaw/Perch)、revision `c3c3c816976a6c1bb75140b8fbaef7397a6f708f`、`assets/labels.csv` | 固定revisionのモデルカードはApache-2.0。学名の一覧として利用 |
-| Kinglet-S / Kinglet-XS preview1 | モデル提供者から直接受領。`poc/models/kinglet_preview1/README_handover.md`（2026-10-26）。配布予定：[GitHub release](https://github.com/0kam/echoroo-lite/releases/tag/models-kinglet-preview1) | Apache-2.0。Perch 2.0 から蒸留した試験版。日本の鳥317種、32 kHz・5秒入力。sigmoid(logits) は未較正の順位用スコアであり、生息確率ではない。0.9.0 は埋め込みを保存せず、検索には Perch を使う。公開URLからの取得は未検証 |
+| Kinglet-S / Kinglet-XS preview1 | モデル提供者から直接受領。`poc/models/kinglet_preview1/README_handover.md`（2026-10-26）。公開リリース：[GitHub release](https://github.com/0kam/kinglet/releases/tag/v0.1.0-preview1) | Apache-2.0。Perch 2.0 から蒸留した試験版。日本の鳥317種、32 kHz・5秒入力。sigmoid(logits) は未較正の順位用スコアであり、生息確率ではない。1536次元の埋め込みを保存し、メインAIに選択した場合は検索にも使う。公開URLからの取得は未検証 |
+| BirdNET+ V3.0 (preview) | [Zenodo record 20703646](https://zenodo.org/records/20703646)、developer preview 3.1、Global 11K FP16 pruned ONNX | 同梱 `TERMS_OF_USE.txt` は CC BY-SA 4.0、研究・評価用途、密猟および軍事目的を禁止。帰属表示 **Powered by BirdNET**。重み・ラベルは無改変。32 kHz・5秒、11,560ラベルの確率出力に sigmoid を追加しない。候補は日本の鳥リストとの積集合。比較用のみ、1280次元埋め込みは保存しない |
 | 日本鳥類目録 | 日本鳥学会「日本鳥類目録 改訂第8版」公開xlsx | Part A・Bの種をPerch候補と和名に使用。xlsx自体はコミットせず、URL・SHA-256・名寄せ結果を生成JSONへ記録 |
 | Wikidata | [Wikidata Query Service](https://query.wikidata.org/) | 学名・シノニムの対応と日英ラベルに使用（CC0）。取得日と件数を生成JSONへ記録 |
 | eBird種コード | [eBird Taxonomy v2025](https://www.birds.cornell.edu/clementschecklist/download/)（Cornell Lab of Ornithology）の `eBird_taxonomy_v2025-4.csv` から `scripts/build_ebird_codes.py` で学名→SPECIES_CODE（CATEGORY=species、11,167種）を `apps/sidecar/data/ebird-codes.json` に変換（2026-09-24） | 種ページへのリンク作成にのみ使用。引用：Clements, J. F., et al. 2025. The eBird/Clements checklist of Birds of the World: v2025. 再配布条件は未確認。2026-09-30、問い合わせずに現状のまま残すと判断 |
@@ -54,15 +55,22 @@ BirdNETはインストール済みキャッシュを実測。Perchは取得ス�
 | Perch `labels.csv` | `e4d5c0397d8fb08bf90c6b13a34810af53504faad927e472fcc567793c9de057` |
 | Kinglet-S `kinglet-s-preview1.onnx` | `a21fdfc6f3356e209d800656fc0ce1977a6fb37935eafef69998f7d94098cc03` |
 | Kinglet-XS `kinglet-xs-preview1.onnx` | `4da91d8725e909e8e85fe3333b2b57d7a300b3f9bd1956b7b7119441da622442` |
+| BirdNET V3 ONNX | `69cfc8db3ebec163feb6329e546eb56e1aadac2a309f1ee99aecfabd1aa9bd24` |
+| BirdNET V3 `Labels.csv` | `8124b0ea2d187104c5e2cd95a0f937165647e20349c8fd34d4d5ef991821f8f0` |
+| BirdNET V3 `TERMS_OF_USE.txt` | `91b474bddbfdbd7cb2f5d85fd4511eee8af151d899c8450cd0b22000c425bd8f` |
 | 両 Kinglet `*.classes.csv` | `1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa` |
 
 種名JSONは `scripts/build_species_names.py`、モデル準備は `scripts/setup_models.py`。
-配布版は BirdNET 2.4、Perch V2、Kinglet-S (preview)、Kinglet-XS (preview) をインストーラーへ同梱する。
+配布版は BirdNET 2.4、Perch V2、Kinglet-S (preview)、Kinglet-XS (preview)、BirdNET+ V3.0 (preview) をインストーラーへ同梱する。
 Kinglet の配布用ファイル名は `models/kinglet/kinglet-{s,xs}-preview1.onnx` と
-同名の `.classes.csv`。`scripts/setup_models.py` が固定 SHA-256 を照合し、公開予定の
-GitHub assets または `--kinglet-from DIR` の受渡しフォルダから準備する。
+同名の `.classes.csv`。`scripts/setup_models.py` が固定 SHA-256 を照合し、公開リリースの元のファイル名から
+上記のローカル名へ保存する。GitHub assets または `--kinglet-from DIR` の受渡しフォルダから準備する。
 各317学名は既存の表示用種名と一致し、欠けていたアホウドリ（`Phoebastria albatrus`）を
 日英名付きで追加した。保存形式と設定 API は [API 引継ぎ](kinglet-preview-api.md)を参照。
 クイズには[利用者が追加した音源](quiz-implementation.md)だけを使う。
 ロゴ・配色の流用元は[種名と外観](species-and-branding.md#echoroo-full-から流用したもの)を参照。
 外部配布用の帰属表示・ライセンス本文一式は、[第三者通知](../THIRD_PARTY_NOTICES.md)に記録する。上記のモデル表記差の記録は保持する。
+
+BirdNET V3 の3ファイルは `scripts/setup_models.py` が Zenodo API の
+`/api/records/20703646/files/<name>/content` から取得し、上記の固定SHA-256で照合する。
+SHA-256は2026-10-26の提供済みローカルファイルから算出した。

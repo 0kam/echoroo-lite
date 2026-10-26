@@ -97,6 +97,9 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None, bird
 
 
 def set_mark(root, body):
+    if body.run_id is not None:
+        from search_runs import get_run
+        get_run(root, body.run_id)
     with connect(root) as db:
         record = db.execute('SELECT * FROM site_recordings WHERE scope_id=? AND id=?', (body.dataset_id, body.recording_id)).fetchone()
         if record is None or not 0 <= body.start_s < body.end_s <= record['seconds'] or round(body.end_s - body.start_s) not in (3, 5):
@@ -140,7 +143,7 @@ def summaries(root, ctx, species_id=None):
         marks = db.execute('''SELECT m.species_id,m.recording_id,m.start_s,m.end_s,m.id,m.created_at,m.run_id FROM presence_marks m
             JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''',
             (ctx['site']['id'], species_id, species_id)).fetchall()
-        heard = db.execute('''SELECT DISTINCT v.species_id,i.recording_id,i.start_s,i.end_s,a.id,a.created_at,NULL AS run_id
+        heard = db.execute('''SELECT DISTINCT v.model,v.species_id,i.recording_id,i.start_s,i.end_s,a.id,a.created_at,NULL AS run_id
             FROM validation_items i JOIN validation_sessions v ON v.id=i.session_id JOIN datasets d ON d.id=v.dataset_id
             JOIN window_answers a ON a.id=(SELECT MAX(id) FROM window_answers w
                 WHERE w.species_id=v.species_id AND w.recording_id=i.recording_id
@@ -149,6 +152,15 @@ def summaries(root, ctx, species_id=None):
             (ctx['site']['id'], species_id, species_id)).fetchall()
         misses = db.execute('''SELECT m.* FROM presence_misses m JOIN datasets d ON d.id=m.dataset_id
             WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''', (ctx['site']['id'], species_id, species_id)).fetchall()
+    from models import selected_engines
+    from custom_models import list_models
+    from search_runs import site_run
+    visible = set(selected_engines(root)) | {f"custom:{m['id']}" for m in list_models(root, ctx)}
+    heard = [r for r in heard if r['model'] in visible]
+    with connect(root) as db:
+        marks = [r for r in marks if r['run_id'] is None or
+                 (run := site_run(db, ctx['site']['id'], r['species_id'])) and run['id'] == r['run_id']]
+        misses = [r for r in misses if r['source'] != 'search' or site_run(db, ctx['site']['id'], r['species_id'])]
     for origin, rows in (('mark', marks), ('check', heard)):
         for row in rows:
             record = records.get(row['recording_id'])

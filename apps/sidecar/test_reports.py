@@ -22,6 +22,7 @@ class ReportCheck(unittest.TestCase):
     def test_reports_from_complete_outputs(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
             for name, seconds in [('235945', 30), ('120000', 17)]:
                 day = '20240808' if name == '235945' else '20240809'
                 sf.write(root / f'rec_{day}_{name}.wav', np.ones(24000 * seconds, dtype=np.float32) * .1, 24000)

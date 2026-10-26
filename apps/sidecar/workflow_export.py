@@ -198,7 +198,7 @@ def export(root,body,cancel=None,birdnet=True):
                         write_json(folder/'validation'/f"{v['id']}.json",{**dict(saved),'snapshot':json.loads(saved['snapshot']),
                             'items':answered,'answer_history':history})
                     write_json(folder/'results'/f'{report_id}.json',{'id':report_id,**snap})
-                    index.append(common)
+                    index.append({**common, 'feature_engine':snap.get('custom_model',{}).get('engine')})
                 taxa={s['species']['id']:s['species'] for s in snapshots}
                 from species import names_for
                 for sid in presence:
@@ -262,6 +262,8 @@ def open_export(root,export_id,kind):
     with connect(root) as db:row=db.execute('SELECT * FROM workflow_exports WHERE id=?',(export_id,)).fetchone()
     if not row:raise CatalogError('not_found')
     snap=json.loads(row['snapshot'])
+    from models import result_visible
+    if not all(result_visible(root, r) for r in snap['results']):raise CatalogError('not_found')
     if not snap.get('folder_path'):raise CatalogError('report_export_missing')
     folder=Path(snap['folder_path']);path=folder/snap['report_file'] if kind=='document' else folder
     if not path.exists():raise CatalogError('report_export_missing')

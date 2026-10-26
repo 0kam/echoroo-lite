@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from species import canonical_scientific_name, names_for
-from models import REGISTRY, window_s
+from models import REGISTRY, window_s, selected_engines, require_selected, result_visible
 from storage import CatalogError, checked_source, connect
 
 
@@ -49,6 +49,7 @@ def options(root, dataset_id):
             json_extract(a.metadata,'$.model') AS name, MAX(a.id) AS latest_analysis_id, COUNT(*) AS recordings FROM analyses a
             JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND a.id IN
             (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine) GROUP BY a.engine,model_sha256 ORDER BY a.engine''', (dataset_id,))]
+    models = [model for model in models if model['engine'] in selected_engines(root)]
     for model in models:
         model['name'] = REGISTRY[model['engine']]['name']
     zone = ZoneInfo(site['timezone'])
@@ -60,10 +61,15 @@ def options(root, dataset_id):
 
 def list_reports(root, dataset_id):
     with connect(root) as db:
-        return [{**dict(r), 'species': json.loads(r['species']) if r['species'] else None} for r in db.execute('''
-            SELECT id,kind,created_at,json_extract(snapshot,'$.species') AS species,
-            json_extract(snapshot,'$.start_date') AS start_date,json_extract(snapshot,'$.end_date') AS end_date
-            FROM reports WHERE dataset_id IN (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC''', (dataset_id,))]
+        rows = db.execute('''SELECT * FROM reports WHERE dataset_id IN
+            (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?)) ORDER BY id DESC''', (dataset_id,))
+        result = []
+        for row in rows:
+            snap = json.loads(row['snapshot'])
+            if result_visible(root, snap):
+                result.append({k: row[k] for k in ('id', 'kind', 'created_at')} |
+                              {k: snap.get(k) for k in ('species', 'start_date', 'end_date')})
+        return result
 
 
 def calendar_cells(records, zone, first, last):
@@ -356,6 +362,7 @@ def save_report(db, dataset_id, kind, snapshot):
 
 
 def detection(root, body, *, persist=True):
+    require_selected(root, body.engine)
     with connect(root) as db:
         dataset, site, records = dataset_context(db, body.dataset_id)
         selected = db.execute('SELECT * FROM species WHERE id=?', (body.species_id,)).fetchone() if body.species_id else None
@@ -512,6 +519,8 @@ def get_report(root, report_id, cell_date=None, hour=None):
         if row is None:
             raise CatalogError('not_found')
         snapshot = json.loads(row['snapshot'])
+        if not result_visible(root, snapshot):
+            raise CatalogError('not_found')
         return snapshot_view(db, snapshot, row['id'], row['created_at'], cell_date, hour)
 
 
@@ -545,6 +554,8 @@ def export_report(root, report_id, folder, svg=None, png=None, audio=(), cancel=
         if row is None:
             raise CatalogError('not_found')
         snapshot = json.loads(row['snapshot'])
+        if not result_visible(root, snapshot):
+            raise CatalogError('not_found')
         records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (row['dataset_id'],))}
     destination = Path(folder).expanduser().resolve()
     if not destination.is_dir():

@@ -87,6 +87,7 @@ class ValidationEstimatorTest(unittest.TestCase):
     def test_large_population_is_external_and_answering_and_extension_work(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
             initialize(root); initialize_species(root)
             source = root / 'source.wav'; source.write_bytes(b'audio')
             stat = source.stat()

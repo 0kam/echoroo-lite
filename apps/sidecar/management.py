@@ -24,13 +24,25 @@ def location_status(db, site, enabled=None):
     if enabled is None:
         from models import enabled_engines
         enabled = enabled_engines(Path(db.execute('PRAGMA database_list').fetchone()[2]).parent)
+    from models import REGISTRY, model_identity, main_engine
+    root = Path(db.execute('PRAGMA database_list').fetchone()[2]).parent
+    enabled = set(enabled) | {main_engine(root)}
+    hashes = {engine: model_identity(root, engine)[1] for engine in enabled}
     engines = {}
     stale = False
-    rows = db.execute('''SELECT a.recording_id,a.engine,a.metadata FROM analyses a JOIN recordings r ON r.id=a.recording_id
+    rows = db.execute('''SELECT a.id,a.recording_id,a.engine,a.metadata,a.scores_path,
+        EXISTS (SELECT 1 FROM segments s JOIN vectors v ON v.rowid=s.id WHERE s.analysis_id=a.id) AS embedded
+        FROM analyses a JOIN recordings r ON r.id=a.recording_id
         JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=? AND a.id IN
         (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''', (site['id'],))
     for row in rows:
+        if row['engine'] not in enabled:
+            continue
         meta = analysis_metadata(row['metadata'])
+        if hashes[row['engine']] and meta.get('model_sha256') != hashes[row['engine']]:
+            continue
+        if not Path(row['scores_path']).is_file() or REGISTRY[row['engine']]['main_capable'] and not row['embedded']:
+            continue
         geo = meta if row['engine']=='birdnet' else {}
         matches = row['engine'] != 'birdnet' or all(geo.get(key)==site[key] for key in ('latitude','longitude'))
         # Legacy metadata without a location is not declared wrong until the user changes it.
@@ -39,7 +51,7 @@ def location_status(db, site, enabled=None):
         stale |= not matches
         if matches:
             engines.setdefault(row['recording_id'], set()).add(row['engine'])
-    required = {'perch', *enabled}
+    required = set(enabled)
     complete = {rid for rid, values in engines.items() if required <= values}
     return complete, stale
 

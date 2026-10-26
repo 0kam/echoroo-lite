@@ -4,6 +4,7 @@
   import { beforeNavigate,afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession } from '$lib/app.svelte';
+  import ModelChoice from '$lib/ModelChoice.svelte';
   import ActivityBar from '$lib/ui/ActivityBar.svelte';
   import Toasts from '$lib/ui/Toasts.svelte';
   import './app.css';
@@ -59,7 +60,15 @@
     {#if app.connected}
       <!-- A lost connection is reported in the page, not in the top bar. -->
       {#if app.connectionError}<p class="error connection" role="alert">{t(app.connectionError)}</p>{/if}
-      {#key page.url.hash}{@render children()}{/key}
+      {#if app.ai.confirmed}
+        {#key page.url.hash}{@render children()}{/key}
+      {:else}
+        <!-- First run: the AI choice comes before everything else; saving it sets `confirmed`. -->
+        <div class="page narrow">
+          <div class="page-header"><div><h1>{t('firstRunTitle')}</h1><p>{t('firstRunIntro')}</p></div></div>
+          <section class="panel"><ModelChoice firstRun /></section>
+        </div>
+      {/if}
     {:else}
       <div class="page"><div class="panel empty" role="status">
         <p class:error={!!app.connectionError}>{t(app.connectionError || 'connecting')}</p>

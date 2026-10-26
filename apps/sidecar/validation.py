@@ -207,6 +207,9 @@ def extension_needed(result):
 
 
 def model_windows(root, ctx, species_id, engine, model_id=None):
+    from models import require_selected
+    if engine != 'custom':
+        require_selected(root, engine)
     zone = ZoneInfo(ctx['site']['timezone'])
     if engine == 'custom':
         from custom_models import get_model, score_windows
@@ -330,6 +333,17 @@ def answered_items(db, sid, phase=None):
         WHERE i.session_id=? AND (? IS NULL OR i.phase=?) ORDER BY i.position''', (sid, phase, phase))]
 
 
+def require_visible(root, snapshot):
+    if snapshot['engine'] == 'custom':
+        from custom_models import get_model
+        from models import main_engine
+        if get_model(root, snapshot['model_id'])['feature']['engine'] != main_engine(root):
+            raise CatalogError('not_found')
+    else:
+        from models import require_selected
+        require_selected(root, snapshot['engine'])
+
+
 def custom_model_status(root, snapshot):
     if snapshot.get('engine') != 'custom': return True, None
     from custom_models import get_model
@@ -362,6 +376,7 @@ def answer(root, sid, item_id, verdict, version=None, examples=None):
         row = db.execute('SELECT * FROM validation_sessions WHERE id=?', (sid,)).fetchone()
         if not row: raise CatalogError('not_found')
         snap = json.loads(row['snapshot'])
+        require_visible(root, snap)
         current_model, reason = custom_model_status(root, snap)
         if not current_model: raise CatalogError(reason)
         item = db.execute('SELECT * FROM validation_items WHERE id=? AND session_id=?', (item_id, sid)).fetchone()
@@ -391,6 +406,7 @@ def extend(root, sid):
         row = db.execute('SELECT snapshot FROM validation_sessions WHERE id=?', (sid,)).fetchone()
         if not row: raise CatalogError('not_found')
         snap = json.loads(row['snapshot'])
+        require_visible(root, snap)
         if snap['stage'] != 'complete' or not snap.get('can_extend') or snap.get('extended'):
             raise CatalogError('validation_extension_unavailable')
         population = _load_population(root, sid)
@@ -453,6 +469,7 @@ def view_session(root, sid, ctx=None, include_items=True, item_id=None):
         row = db.execute('SELECT * FROM validation_sessions WHERE id=?', (sid,)).fetchone()
         if not row: raise CatalogError('not_found')
         snap = json.loads(row['snapshot'])
+        require_visible(root, snap)
         taxon = names_for(db.execute('SELECT * FROM species WHERE id=?', (row['species_id'],)).fetchone())
         items = answered_items(db, sid)
         counts = {'total': len(items), 'answered': sum(i['verdict'] is not None for i in items),

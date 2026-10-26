@@ -15,7 +15,8 @@
       "../../poc/models/kinglet/": "models/kinglet/",
       "../../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
       "licenses/APACHE-2.0.txt": "licenses/APACHE-2.0.txt",
-      "licenses/BIRDNET-MODEL-LICENSE.txt": "licenses/BIRDNET-MODEL-LICENSE.txt"
+      "licenses/BIRDNET-MODEL-LICENSE.txt": "licenses/BIRDNET-MODEL-LICENSE.txt",
+      "../../poc/models/birdnet-v3/": "models/birdnet-v3/"
     },
     "windows": {
       "webviewInstallMode": {

@@ -6,7 +6,10 @@
 
 配布するのは、BirdNET 2.4 と Perch V2 を含む **Echoroo Lite の1種類だけ**です。
 試験用の Kinglet-S (preview) と Kinglet-XS (preview) も同梱します。
-両モデルは Perch 2.0 から蒸留した日本の鳥317種向けのモデル（Apache-2.0）で、スコアは未較正です。
+Kingletの両モデルは Perch 2.0 から蒸留した日本の鳥317種向けのモデル（Apache-2.0）で、スコアは未較正です。
+BirdNET+ V3.0 (preview) も比較用に同梱します（CC BY-SA 4.0、研究・評価用、密猟・軍事目的は禁止）。
+Powered by BirdNET。詳しくは[第三者通知](../THIRD_PARTY_NOTICES.md)をご覧ください。
+初回にメインAIを1つ選びます。既定はPerch V2で、追加の比較AIは任意です。
 このアプリの利用条件は **非商用・研究用**です。BirdNET 2.4 のモデルが
 CC BY-NC-SA 4.0 で提供されているためです。鳥の鳴き声の録音は同梱しません。
 クイズには、自分の録音や、自分のAPIキーで取得した Xeno-Canto の音源を追加して使います。
@@ -85,6 +88,10 @@ your own recordings or Xeno-Canto with your own API key to use the quiz.
 The app also bundles experimental Kinglet-S (preview) and Kinglet-XS (preview),
 Apache-2.0 models distilled from Perch 2.0 for 317 Japanese bird species.
 Their scores are uncalibrated; the app's non-commercial / research terms remain.
+BirdNET+ V3.0 (preview) is also bundled for comparison (CC BY-SA 4.0, research
+and evaluation; poaching and military use prohibited). **Powered by BirdNET**.
+See [third-party notices](../THIRD_PARTY_NOTICES.md). On first run choose one
+main AI (Perch V2 by default); comparison AIs are optional.
 
 The app is not code-signed, so the operating system warns on first launch. Open it as follows.
 

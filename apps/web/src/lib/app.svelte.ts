@@ -5,9 +5,11 @@ export type Site = { id: number; name: string; timezone: string; latitude: numbe
 export type Dataset = { id: number; name: string; site_id: number; folder: string };
 export type Job = { id: number; dataset_id: number; status: string; stage: string; done: number; total: number;
   error: string | null; created_at: string };
-/** A detection AI from GET /models, in display order. */
-export type Model = { id: string; name: string; window_s: number; available: boolean; enabled: boolean; required: boolean;
-  experimental: boolean; species_count: number | null; license: string };
+/** A detection AI from GET /models, in display order; `seconds_per_hour` is measured on this PC. */
+export type Model = { id: string; name: string; window_s: number; available: boolean; enabled: boolean; main_capable: boolean;
+  experimental: boolean; species_count: number | null; license: string; seconds_per_hour: number | null };
+/** GET/PUT /models: one main AI (also used for the similar-sound search) and optional AIs to compare. */
+export type ModelSettings = { main: string; extra: string[]; confirmed: boolean; models: Model[] };
 export type Recording = { id: number; dataset_id: number; path: string; original_time: string; recorded_at: string;
   timezone: string; seconds: number };
 
@@ -21,8 +23,8 @@ export const app = $state({
   /** Frequency axis of every spectrogram; one choice for the whole app. */
   frequencyScale: 'mel' as FrequencyScale,
   connected: false, connectionError: '',
-  /** Detection AIs; the settings page chooses which ones analysis uses. */
-  models: [] as Model[],
+  /** Detection AIs; chosen on first run and in Settings. */
+  ai: { main: 'perch', extra: [], confirmed: true, models: [] } as ModelSettings,
   dataFolder: '',
   sites: [] as Site[], datasets: [] as Dataset[], jobs: [] as Job[],
   datasetId: null as number | null,
@@ -95,7 +97,7 @@ export function startSession() {
       const health = await connect();
       app.dataFolder = health.data_folder;
       if (health.status !== 'ok') throw Error(health.detail || 'data_incompatible');
-      app.models = await api<Model[]>('/models');
+      app.ai = await api<ModelSettings>('/models');
       await refreshCatalog(); app.connected = true;
     }
     catch (e) { app.connectionError = e instanceof Error ? e.message : 'unknown_error'; return; }

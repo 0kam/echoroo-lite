@@ -12,6 +12,18 @@ are bundled in the app.
   The official model-licence statement is
   <https://birdnet-team.github.io/birdnet/#license>. A copy of this pointer is
   bundled as `licenses/BIRDNET-MODEL-LICENSE.txt`.
+- **BirdNET+ V3.0 (preview), developer preview 3.1** — K. Lisa Yang Center for
+  Conservation Bioacoustics (Cornell University), Chemnitz University of
+  Technology, and Museum für Naturkunde Berlin. **Powered by BirdNET**.
+  [Zenodo record 20703646](https://zenodo.org/records/20703646), licensed under
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), with the
+  supplied `models/birdnet-v3/TERMS_OF_USE.txt`. Provided solely for research and
+  evaluation. Poaching (including tracking to facilitate illegal capture, harm,
+  trade or exploitation) and any military use are prohibited for the model and
+  derivatives. Attribution, license link, indication of changes and share-alike
+  conditions apply. Bundled weights and labels are unmodified; the app uses
+  only the Japanese-bird subset for displayed candidates. Outputs are
+  uncalibrated scores, not evidence of presence.
 - **Perch V2** — Google. Echoroo Lite bundles the Apache-2.0 ONNX conversion and
   its labels from [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx)
   and [cgeorgiaw/Perch](https://huggingface.co/cgeorgiaw/Perch). Licensed under
@@ -20,7 +32,7 @@ are bundled in the app.
   distilled from Perch 2.0, covering 317 Japanese bird species. Licensed under
   Apache-2.0; covered by the bundled `licenses/APACHE-2.0.txt`. Preview1 weights
   and class lists were supplied by the model author; their pinned release assets
-  are at <https://github.com/0kam/echoroo-lite/releases/tag/models-kinglet-preview1>.
+  are at <https://github.com/0kam/kinglet/releases/tag/v0.1.0-preview1>.
 
 ## Taxonomy sources
 

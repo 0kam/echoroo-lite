@@ -66,7 +66,8 @@ class JobRequest(BaseModel):
 
 
 class ModelSelection(BaseModel):
-    enabled: list[str]
+    main: str
+    extra: list[str]
 
 
 class SpeciesRequest(BaseModel):
@@ -231,6 +232,7 @@ class QuizEnabledRequest(BaseModel):
 
 
 def create_app(root, models, token):
+    model_registry.configure_birdnet(models)
     compatible = initialize(root)
     if compatible:
         initialize_species(root)
@@ -319,7 +321,19 @@ def create_app(root, models, token):
     @app.put('/models')
     def select_models(body: ModelSelection):
         with lock:
-            return model_registry.set_enabled(root, models, body.enabled)
+            return model_registry.set_selection(root, models, body.main, body.extra)
+
+    @app.post('/models/benchmark')
+    def benchmark_models():
+        if not lock.acquire(blocking=False):
+            raise HTTPException(409, 'job_busy')
+        try:
+            if worker and worker.is_alive():
+                raise HTTPException(409, 'job_busy')
+            from model_benchmark import benchmark
+            return benchmark(root, models)
+        finally:
+            lock.release()
 
     @app.get('/datasets/{dataset_id}/overview')
     def dataset_overview(dataset_id: int, start_date: date | None = None, end_date: date | None = None):
@@ -346,6 +360,8 @@ def create_app(root, models, token):
             result=[]
             for row in rows:
                 snap=json.loads(row['snapshot'])
+                if not all(model_registry.result_visible(root, r) for r in snap['results']):
+                    continue
                 result.append({'id':row['id'],'path':row['path'],'created_at':row['created_at'],'results':snap['results'],
                     'format':snap.get('format'),'folder_path':snap.get('folder_path')})
             return result
@@ -750,6 +766,8 @@ def create_app(root, models, token):
                 (SELECT MAX(id) FROM analyses WHERE recording_id=? GROUP BY engine)""", (recording,)).fetchall()
             output = []
             for analysis in analyses:
+                if analysis['engine'] not in model_registry.selected_engines(root):
+                    continue
                 meta = json.loads(analysis["metadata"])
                 if analysis["engine"] == "perch":
                     from predictions import perch_candidates
