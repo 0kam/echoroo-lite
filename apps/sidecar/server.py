@@ -527,11 +527,6 @@ def create_app(root, models, token):
                 raise CatalogError('not_found')
         return {'enabled': body.enabled}
 
-    @app.get('/quiz/clips/{clip_id}/image')
-    def quiz_image(clip_id: int):
-        from quiz import clip_image
-        return FileResponse(clip_image(root, clip_id), media_type='image/jpeg')
-
     @app.post('/quiz/sets')
     def quiz_set(body: QuizSetRequest):
         from quiz import save_set

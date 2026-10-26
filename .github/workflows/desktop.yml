@@ -32,36 +32,20 @@ jobs:
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
       - run: uv pip install -r apps/sidecar/requirements-dev.txt
-      - name: Provision the pinned models for real inference and both editions
+      - name: Provision the pinned BirdNET and Perch models
         run: python scripts/setup_models.py
       - run: python -m unittest discover -s apps/sidecar -p 'test_*.py'
       - run: npm ci
       - run: npm run check
       - run: npm run build
       - run: python scripts/freeze_sidecar.py
-      - name: Check frozen startup and quiz without models
-        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --parent-eof
-      - name: Provision Perch-only models
-        run: python scripts/setup_models.py --perch-only --output "$env:RUNNER_TEMP/echoroo-perch-models"
-      - name: Select the first bundled quiz audio
-        run: |
-          $sample = python -c "import json, pathlib; p=pathlib.Path('apps/sidecar/data/quiz/manifest.json'); d=json.loads(p.read_text(encoding='utf-8')); print(p.parent / d['items'][0]['audio_file'])"
-          "QUIZ_SAMPLE_AUDIO=$sample" >> $env:GITHUB_ENV
-      - name: Check frozen Perch-only inference
-        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models "$env:RUNNER_TEMP/echoroo-perch-models" --sample-audio "$env:QUIZ_SAMPLE_AUDIO" --data "$env:RUNNER_TEMP/echoroo-perch-data"
-      - name: Check frozen inference, search, reports and quiz with supplied audio
-        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio "$env:QUIZ_SAMPLE_AUDIO" --diagnostics --data "$env:RUNNER_TEMP/echoroo-inference-data"
+      - name: Check frozen inference, search and reports with supplied audio
+        run: python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio scripts/fixtures/horornis-diphone-xc1177906.mp3 --diagnostics --data "$env:RUNNER_TEMP/echoroo-inference-data"
       - run: npx tauri build --config tauri.bundle.conf.json --bundles nsis
         working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-standard-preview
-          path: apps/desktop/target/release/bundle/
-      - run: npx tauri build --config tauri.bundle.conf.json --config tauri.birdnet.conf.json --bundles nsis
-        working-directory: apps/desktop
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-birdnet-preview
+          name: Echoroo-Lite-0.9.0-windows-x86_64
           path: apps/desktop/target/release/bundle/
       - name: Check installation and desktop preview with analysed audio
         timeout-minutes: 8

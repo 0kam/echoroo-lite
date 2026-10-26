@@ -14,18 +14,12 @@ import numpy as np
 import soundfile as sf
 from fastapi.testclient import TestClient
 
-from quiz_test_bundle import quiz_bundle
 from server import WorkflowExportRequest, create_app
 from storage import CatalogError, connect
 from workflow_export import export
 
 
 class HtmlReportCheck(unittest.TestCase):
-    def setUp(self):
-        self.bundle = quiz_bundle()
-        self.bundle.__enter__()
-        self.addCleanup(self.bundle.__exit__, None, None, None)
-
     def test_presence_report_and_immutable_audio_suite(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);audio=root/'input';audio.mkdir();output=root/'exports';output.mkdir()
@@ -51,6 +45,10 @@ class HtmlReportCheck(unittest.TestCase):
                     client.post('/presence/marks',json={'dataset_id':1,'species_id':species['id'],'recording_id':row['recording_id'],
                         'start_s':row['start_s'],'end_s':row['end_s'],'marked':True})
                 # Practice is supplementary, including if completed after field answers.
+                for taxon in (species, client.get('/species?q=Parus%20minor').json()[0]):
+                    added=client.post('/quiz/clips',json={'species_id':taxon['id'],'source_kind':'recording',
+                        'source_id':1,'start_s':10,'end_s':15})
+                    self.assertEqual(added.status_code,200,added.text)
                 library=client.get('/quiz/library').json()
                 clip=next(c for c in library['clips'] if c['species_id']==species['id'])
                 other=next(c for c in library['clips'] if c['species_id']!=species['id'])

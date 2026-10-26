@@ -1,4 +1,6 @@
 {
+  "productName": "Echoroo Lite",
+  "identifier": "org.echoroo.lite",
   "bundle": {
     "active": true,
     "targets": "all",
@@ -6,9 +8,13 @@
       "binaries/echoroo-sidecar"
     ],
     "resources": {
+      "../../poc/models/birdnet/acoustic-models/v2.4/": "models/birdnet/acoustic-models/v2.4/",
+      "../../poc/models/birdnet/geo-models/v2.4/": "models/birdnet/geo-models/v2.4/",
       "../../poc/models/perch/perch_v2_no_dft.onnx": "models/perch/perch_v2_no_dft.onnx",
       "../../poc/models/perch-labels/assets/labels.csv": "models/perch-labels/assets/labels.csv",
-      "licenses/APACHE-2.0.txt": "licenses/APACHE-2.0.txt"
+      "../../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
+      "licenses/APACHE-2.0.txt": "licenses/APACHE-2.0.txt",
+      "licenses/BIRDNET-MODEL-LICENSE.txt": "licenses/BIRDNET-MODEL-LICENSE.txt"
     },
     "windows": {
       "webviewInstallMode": {

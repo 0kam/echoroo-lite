@@ -2,10 +2,11 @@
 
 Offline, single-user desktop edition of Echoroo — the human×machine bird-call
 annotation loop, rebuilt as a Tauri app with a Python sidecar and SQLite.
-The standard edition uses Perch V2. A separately distributed non-commercial
-edition adds BirdNET 2.4.
+The single distributed edition includes BirdNET 2.4 and Perch V2 and is for
+non-commercial / research use.
 
 - Installation (Windows, macOS, Linux; unsigned-app warnings): [docs/install-guide.md](docs/install-guide.md)
+- Third-party models, data and licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 - Implementation status and remaining work: [docs/implementation-status.md](docs/implementation-status.md)
 - UI review handoff: [docs/UI-REVIEW-HANDOFF-2026-09-24.md](docs/UI-REVIEW-HANDOFF-2026-09-24.md)
 - Fixed 30-window validation QA: [docs/validation-effort-qa-2026-09-24.md](docs/validation-effort-qa-2026-09-24.md)
@@ -25,9 +26,10 @@ models, saves scores and embeddings, and searches by a spectrogram-selected audi
 interval. Xeno-Canto key settings, search and selected downloads are implemented and
 verified against the live service in the Mac release app. Reports provide species
 summaries, evidence audio, spiral plots and portable HTML reports with CSV/SVG/PNG/audio
-ZIP exports. A practice quiz with bundled Xeno-Canto recordings (CC BY, CC BY-SA or CC0) supports custom sets, selected audio clips and
-saved first answers. Windows acceptance and an independent, unseen-audio capability test
-remain pending.
+ZIP exports. The practice quiz uses clips added by users from their own recordings
+or Xeno-Canto with their own API key. No bird-call recordings are bundled in the app.
+It supports custom sets, selected audio clips and saved first answers. Windows
+acceptance and an independent, unseen-audio capability test remain pending.
 
 Each species page answers two questions with two cards (proposal:
 [species flow](docs/species-flow-proposal-2026-09-30.md)).
@@ -77,15 +79,14 @@ From the repository root on macOS:
 uv venv --python 3.11
 uv pip install --python .venv/bin/python -r apps/sidecar/requirements-dev.txt
 npm ci
-.venv/bin/python scripts/setup_models.py --perch-only --output .local-data/perch-models
-ECHOROO_MODELS=.local-data/perch-models npm run desktop
+.venv/bin/python scripts/setup_models.py
+npm run desktop
 ```
 
 On Windows, create `.venv` with Python 3.11 and replace `.venv/bin/python` with
 `.venv/Scripts/python.exe`. Install the Python requirements with that interpreter
-(`python -m pip install -r ...`) or uv. Developers use `setup_models.py --perch-only`
-for the standard edition, or omit `--perch-only` for the BirdNET development preview
-and both release builds.
+(`python -m pip install -r ...`) or uv. Developers run `setup_models.py` without
+`--perch-only`; development and release builds both use the full BirdNET and Perch models.
 Installed apps already include these models and need no model setup or network access for analysis.
 Do not run `uv venv` over an existing environment you want to keep.
 
@@ -152,13 +153,12 @@ Mac `.app` and DMG builds have passed. Native Mac checks cover starting, saving,
 resuming and correcting evaluations, results and local HTML playback. Windows has
 not been tested. See the [fixed-sample QA record](docs/validation-effort-qa-2026-09-24.md).
 
-Open **Bird-call quiz** to practice with the bundled Xeno-Canto clips (13 Japanese birds whose
-recordings are CC BY, CC BY-SA or CC0; credits are shown after each answer and in
-`apps/sidecar/data/quiz/selection.json`; rebuild with `scripts/bundle_quiz.py`),
-without importing field recordings first. Select species/audio and save a named set,
-then start a session. Answers, unknowns and progress are saved; results allow review
-and replay. **Add a question from audio** uses audio chosen on this PC or Xeno-Canto,
-with a spectrogram-selected 0.2–60-second interval copied into app data.
+Open **Bird-call quiz** and use **Add a question from audio** to add clips from
+this PC or Xeno-Canto with your own API key. No bird-call recordings are bundled.
+A spectrogram-selected 0.2–60-second interval is copied into app data, with source
+credits retained. No field-recording import is required. Select at least two
+species and save a named set, then start a session. Answers, unknowns and progress
+are saved; results allow review and replay. Credits and licences appear after each answer.
 These are learning results, not estimates of identification ability or field precision/recall.
 See [quiz implementation and source details](docs/quiz-implementation.md).
 
@@ -200,17 +200,17 @@ cargo check --manifest-path apps/desktop/Cargo.toml
 .venv/bin/python scripts/setup_models.py
 .venv/bin/python scripts/freeze_sidecar.py
 npm run desktop:build
-npm run desktop:build:birdnet
 ```
 
 Freeze on the target OS. Binaries use Tauri's host-triple naming convention and
 are excluded from Git. Run `setup_models.py` before `npm run desktop:build`; the build
-fails if a required model is absent. The standard bundle contains only Perch;
-`desktop:build:birdnet` additionally contains BirdNET 2.4 and uses a separate app
-identifier and data folder. Installed users do not need a separate model setup.
+fails if a required model is absent. The bundle contains BirdNET 2.4 and Perch V2
+under the `org.echoroo.lite` identifier. Installed users do not need a separate model setup.
 Model and label provenance, hashes, and unresolved distribution terms are recorded
-in [Model sources](docs/model-sources.md), including the eBird taxonomy used for species-page links. BirdNET's model terms include a
-noncommercial condition; permission for the intended business use is not yet established.
+in [Model sources](docs/model-sources.md), including the eBird taxonomy used for species-page links.
+This distribution is for non-commercial / research use because BirdNET 2.4 is
+CC BY-NC-SA 4.0. No bird-call recordings are bundled; see the
+[third-party notices](THIRD_PARTY_NOTICES.md).
 Windows CI has passed all eight API tests, frozen BirdNET/Perch inference on supplied
 audio, searches, saved judgements, reports and CSV/audio exports, quizzes and clean shutdown.
 EXE/MSI creation, NSIS installation and English/Japanese desktop startup also pass,

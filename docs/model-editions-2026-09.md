@@ -1,5 +1,10 @@
 # 標準版と BirdNET 付き版（2026-09-30 設計案）
 
+> **2026-10-24 に廃止。** この2版計画は同日の合意で置き換えた。配布するのは
+> BirdNET 2.4 と Perch V2 を含む、非商用の `Echoroo Lite`（`org.echoroo.lite`）1種類だけである。
+> 以下は過去の設計記録として残す。現行の決定は [requirements.md](requirements.md) と
+> [release-plan-2026-10.md](release-plan-2026-10.md) を参照する。
+
 背景と了承事項は [requirements.md](requirements.md) の「初回導入」「検出・埋め込みモデルの構成」。
 ライセンス調査の要点は [model-sources.md](model-sources.md) に記録する。
 

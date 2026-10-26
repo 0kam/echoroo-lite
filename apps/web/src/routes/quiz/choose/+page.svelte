@@ -42,7 +42,7 @@
     await refresh(); setId = String(result.id); setName = ''; notify('quizSetSaved');
   }, { toast: true });
   onMount(() => { void (async () => {
-    try { await refresh(); if (library) { setId = String(library.sets.find(s=>s.bundled_key)?.id??''); chooseSet(); } if(context.species){const target=library?.clips.find(c=>c.enabled&&c.species_id===context.species);if(target){const others=(library?.clips??[]).filter(c=>c.enabled&&c.species_id!==context.species);selected=[target.id,...others.filter((c,i)=>others.findIndex(x=>x.species_id===c.species_id)===i).slice(0,3).map(c=>c.id)];setId='';}} }
+    try { await refresh(); chooseSet(); if(context.species){const target=library?.clips.find(c=>c.enabled&&c.species_id===context.species);if(target){const others=(library?.clips??[]).filter(c=>c.enabled&&c.species_id!==context.species);selected=[target.id,...others.filter((c,i)=>others.findIndex(x=>x.species_id===c.species_id)===i).slice(0,3).map(c=>c.id)];setId='';}} }
     catch (e) { loadError = e instanceof Error ? e.message : 'unknown_error'; }
     try{const saved=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(saved){selected=saved.selected.filter((id:number)=>library?.clips.some(c=>c.id===id&&c.enabled));setId=saved.setId;filter=saved.filter;}}catch{}
     const added=Number(new URL(page.url.hash.slice(1),page.url).searchParams.get('added'));
@@ -53,7 +53,7 @@
 <div class="page narrow"><div class="crumbs"><a href={`${resolve('/quiz')}${continuation}`}>{t('uBackQuiz')}</a></div>
   <h1>{t('uQuizChoose')}</h1>
   {#if loadError}<p class="error">{t(loadError)}</p>{:else if library}
-    <section class="panel"><label>{t('uQuizSaved')}<select bind:value={setId} onchange={chooseSet}><option value="">{t('quizAllClips')}</option>{#each library.sets as set}<option value={String(set.id)}>{set.bundled_key?t('quizSampleSet'):set.name}</option>{/each}</select></label>
+    <section class="panel"><label>{t('uQuizSaved')}<select bind:value={setId} onchange={chooseSet}><option value="">{t('quizAllClips')}</option>{#each library.sets.filter(set=>set.clip_ids.some(id=>library?.clips.some(c=>c.id===id&&c.enabled))) as set}<option value={String(set.id)}>{set.name}</option>{/each}</select></label>
       <label>{t('quizFilter')}<input bind:value={filter}/></label>
       <div class="birds">{#each birds as bird}<label class="checkbox bird"><input type="checkbox" checked={visible.some(c=>c.species_id===bird.id&&selected.includes(c.id))} onchange={e=>{const ids=library!.clips.filter(c=>c.enabled&&c.species_id===bird.id).map(c=>c.id);selected=e.currentTarget.checked?[...new Set([...selected,...ids])]:selected.filter(id=>!ids.includes(id));setId='';}}/><span>{commonName(bird,app.locale)}<i class="scientific-name">{bird.scientific_name}</i></span></label>{/each}</div>
       <Button variant="primary" pending={start.pending} disabled={speciesCount<2} onclick={()=>start.run()}>{t('quizStart')} · {speciesCount} {t('quizSpecies')}</Button>

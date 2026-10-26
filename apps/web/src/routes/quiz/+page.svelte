@@ -14,17 +14,16 @@
   const context = quizContext(page.url);
   const returnUrl = context.returnPath ? `${resolve('/datasets')}${context.returnPath.slice('/datasets'.length)}` : '';
   const continuation = context.query ? `?${context.query}` : '';
-  let library = $state<QuizLibrary | null>(null), selected = $state<number[]>([]), setId = $state('');
-  const focused = $derived(library?.clips.find(clip => clip.enabled && clip.species_id === context.species));
+  let library = $state<QuizLibrary | null>(null), selected = $state<number[]>([]);
+  const enabled = $derived((library?.clips ?? []).filter(clip => clip.enabled));
+  const focused = $derived(enabled.find(clip => clip.species_id === context.species));
+  // Nothing ships with the app: until the user has added calls of two birds, adding them is the only task.
+  const ready = $derived(new Set(enabled.map(clip => clip.species_id)).size >= 2);
   let count = $state(10), loadError = $state('');
-  const speciesCount = $derived(new Set((library?.clips ?? []).filter(clip => selected.includes(clip.id) && clip.enabled).map(clip => clip.species_id)).size);
+  const speciesCount = $derived(new Set(enabled.filter(clip => selected.includes(clip.id)).map(clip => clip.species_id)).size);
   async function refresh() {
     library = await api<QuizLibrary>('/quiz/library');
-    selected = selected.filter(id => library!.clips.some(clip => clip.id === id && clip.enabled));
-  }
-  function chooseSet() {
-    const ids = setId ? library?.sets.find(set => set.id === Number(setId))?.clip_ids ?? [] : library?.clips.map(clip => clip.id) ?? [];
-    selected = ids.filter(id => library?.clips.some(clip => clip.id === id && clip.enabled));
+    selected = selected.filter(id => enabled.some(clip => clip.id === id));
   }
   const start = createTask(async () => {
     const session = await api<QuizSession>('/quiz/sessions', { clip_ids: selected, count });
@@ -32,7 +31,7 @@
     await goto(`${resolve(`/quiz/${session.id}`)}${continuation}`);
   }, { toast: true });
   onMount(() => { void (async () => {
-    try { await refresh(); if (library) { setId = String(library.sets.find(s=>s.bundled_key)?.id??''); chooseSet(); } if(context.species){const target=library?.clips.find(c=>c.enabled&&c.species_id===context.species);if(target){const others=(library?.clips??[]).filter(c=>c.enabled&&c.species_id!==context.species);selected=[target.id,...others.filter((c,i)=>others.findIndex(x=>x.species_id===c.species_id)===i).slice(0,3).map(c=>c.id)];setId='';}} }
+    try { await refresh(); selected = enabled.map(c => c.id); if(focused){const others=enabled.filter(c=>c.species_id!==context.species);selected=[focused.id,...others.filter((c,i)=>others.findIndex(x=>x.species_id===c.species_id)===i).slice(0,3).map(c=>c.id)];} }
     catch (e) { loadError = e instanceof Error ? e.message : 'unknown_error'; }
   })(); });
 </script>
@@ -43,13 +42,22 @@
   {:else if !library}<p role="status">{t('loading')}</p>
   {:else}
     {#if focused}<section class="panel"><h2>{commonName(focused.species,app.locale)}</h2><p>{t('wPractice')}</p><AudioRegion source={focused.source} start={0} end={focused.seconds} fixedRange/></section>{/if}
-    <section class="panel"><h2>{context.species?`${speciesCount} ${t('uBirdQuiz')}`:t('uQuizAll')}</h2>
-      <Button variant="primary" size="lg" pending={start.pending} disabled={speciesCount<2} onclick={()=>start.run()}>{t('quizStart')}</Button>
-      {#if start.error}<p class="error" role="alert">{t(start.error)}</p>{/if}
-    </section>
+    {#if ready}
+      <section class="panel"><h2>{context.species?`${speciesCount} ${t('uBirdQuiz')}`:t('uQuizAll')}</h2>
+        <Button variant="primary" size="lg" pending={start.pending} disabled={speciesCount<2} onclick={()=>start.run()}>{t('quizStart')}</Button>
+        {#if start.error}<p class="error" role="alert">{t(start.error)}</p>{/if}
+      </section>
+    {:else}
+      <section class="panel"><p>{t('uQuizEmptyHint')}</p>
+        <Button variant="primary" size="lg" href={`${resolve('/quiz/add')}${continuation}`}>{t('uQuizAdd')}</Button>
+      </section>
+    {/if}
     {@const unfinished=library.sessions.find(s=>s.answered<s.count)}
     {#if unfinished&&!context.species}<Button href={`${resolve(`/quiz/${unfinished.id}`)}${continuation}`}>{t('uQuizResume')}</Button>{/if}
-    <div class="actions"><Button href={`${resolve('/quiz/choose')}${continuation}`}>{t('uQuizCustom')}</Button><Button href={`${resolve('/quiz/add')}${continuation}`}>{t('uQuizAdd')}</Button><Button href={`${resolve('/quiz/history')}${continuation}`}>{t('uQuizHistory')}</Button></div>
+    <div class="actions">
+      {#if ready}<Button href={`${resolve('/quiz/choose')}${continuation}`}>{t('uQuizCustom')}</Button><Button href={`${resolve('/quiz/add')}${continuation}`}>{t('uQuizAdd')}</Button>{/if}
+      {#if library.sessions.length}<Button href={`${resolve('/quiz/history')}${continuation}`}>{t('uQuizHistory')}</Button>{/if}
+    </div>
     <p class="muted">{t('quizPracticeHint')}</p>
   {/if}
 </div>

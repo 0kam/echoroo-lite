@@ -21,17 +21,17 @@ jobs:
             target: x86_64-pc-windows-msvc
             bundles: nsis
             artifact: windows-x86_64
-            installer_count: 2
+            installer_count: 1
           - os: macos-15
             target: aarch64-apple-darwin
             bundles: dmg
             artifact: macos-aarch64
-            installer_count: 2
+            installer_count: 1
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: deb,appimage
             artifact: linux-x86_64
-            installer_count: 4
+            installer_count: 2
     env:
       SIGNING_APPLE_CERTIFICATE: ${{ matrix.os == 'macos-15' && secrets.APPLE_CERTIFICATE || '' }}
       SIGNING_APPLE_CERTIFICATE_PASSWORD: ${{ matrix.os == 'macos-15' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
@@ -66,29 +66,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libayatana-appindicator3-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
       - run: uv pip install -r apps/sidecar/requirements-dev.txt
-      - name: Provision the pinned models for both editions
+      - name: Provision the pinned BirdNET and Perch models
         run: python scripts/setup_models.py
       - run: python -m unittest discover -s apps/sidecar -p 'test_*.py'
       - run: npm ci
       - run: npm run check
       - run: npm run build
       - run: python scripts/freeze_sidecar.py
-      - name: Provision Perch-only models
+      - name: Check frozen full-model inference
         shell: bash
-        run: python scripts/setup_models.py --perch-only --output "$RUNNER_TEMP/echoroo-perch-models"
-      - name: Select the first bundled quiz audio
-        shell: bash
-        run: |
-          sample=$(python -c "import json, pathlib; p=pathlib.Path('apps/sidecar/data/quiz/manifest.json'); d=json.loads(p.read_text(encoding='utf-8')); print(p.parent / d['items'][0]['audio_file'])")
-          echo "QUIZ_SAMPLE_AUDIO=$sample" >> "$GITHUB_ENV"
-      - name: Check frozen Perch-only inference
-        shell: bash
-        run: python scripts/check_frozen.py "apps/desktop/binaries/echoroo-sidecar-${{ matrix.target }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}" --models "$RUNNER_TEMP/echoroo-perch-models" --sample-audio "$QUIZ_SAMPLE_AUDIO" --data "$RUNNER_TEMP/echoroo-perch-data"
-      - name: Prepare full-model Windows installation evidence
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: python scripts/check_frozen.py "apps/desktop/binaries/echoroo-sidecar-${{ matrix.target }}.exe" --models poc/models --sample-audio "$QUIZ_SAMPLE_AUDIO" --diagnostics --data "$RUNNER_TEMP/echoroo-inference-data"
-      - name: Build both desktop editions
+        run: python scripts/check_frozen.py "apps/desktop/binaries/echoroo-sidecar-${{ matrix.target }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}" --models poc/models --sample-audio scripts/fixtures/horornis-diphone-xc1177906.mp3 --diagnostics --data "$RUNNER_TEMP/echoroo-inference-data"
+      - name: Build desktop installer
         shell: bash
         run: |
           signing_config=()
@@ -110,19 +98,13 @@ jobs:
           bundle_dir="apps/desktop/target/${{ matrix.target }}/release/bundle"
           mkdir -p release-assets
           stage_installers() {
-            local edition="$1"
             while IFS= read -r -d '' source; do
-              local name
-              name=$(basename "$source")
-              if [[ "$edition" == "birdnet" && "$name" != *BirdNET* ]]; then
-                name="BirdNET-$name"
-              fi
-              cp "$source" "release-assets/$name"
+              cp "$source" "release-assets/$(basename "$source")"
             done < <(find "$bundle_dir" -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -print0)
           }
 
           (cd apps/desktop && npx tauri build --target "${{ matrix.target }}" --config tauri.bundle.conf.json "${signing_config[@]}" --bundles "${{ matrix.bundles }}")
-          stage_installers standard
+          stage_installers
 
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             installer=$(find "$bundle_dir/nsis" -maxdepth 1 -type f -name '*.exe' -print -quit)
@@ -132,16 +114,11 @@ jobs:
             pwsh -NoProfile -File scripts/check_windows_install.ps1 -Installer "$installer" -Data "$RUNNER_TEMP/echoroo-inference-data"
           fi
 
-          rm -rf "$bundle_dir"
-          (cd apps/desktop && npx tauri build --target "${{ matrix.target }}" --config tauri.bundle.conf.json --config tauri.birdnet.conf.json "${signing_config[@]}" --bundles "${{ matrix.bundles }}")
-          stage_installers birdnet
-
           count=$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')
           test "$count" -eq "${{ matrix.installer_count }}"
-          find release-assets -maxdepth 1 -type f -name '*BirdNET*' -print -quit | grep -q .
       - uses: actions/upload-artifact@v4
         with:
-          name: Echoroo-Lite-${{ matrix.artifact }}
+          name: Echoroo-Lite-0.9.0-${{ matrix.artifact }}
           path: release-assets/
           if-no-files-found: error
 

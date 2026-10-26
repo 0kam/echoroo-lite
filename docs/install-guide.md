@@ -2,14 +2,12 @@
 
 [English](#installation-echoroo-lite-090)
 
-## どちらの版を入れるか
+## 利用条件
 
-| 版 | 中身 | 利用条件 |
-|---|---|---|
-| Echoroo Lite（標準版） | Perch のみで解析 | 仕事での利用を含め、制限なし（Perch は Apache-2.0） |
-| Echoroo Lite BirdNET | BirdNET と Perch で解析し、場違いな種の注意も出す | **非商用に限る**（BirdNET のモデルは CC BY-NC-SA 4.0）。企業や自治体の業務で使う場合は、BirdNET の権利者に確認してください |
-
-2つの版は保存先が別なので、同じパソコンに両方入れても混ざりません。
+配布するのは、BirdNET 2.4 と Perch V2 を含む **Echoroo Lite の1種類だけ**です。
+このアプリの利用条件は **非商用・研究用**です。BirdNET 2.4 のモデルが
+CC BY-NC-SA 4.0 で提供されているためです。鳥の鳴き声の録音は同梱しません。
+クイズには、自分の録音や、自分のAPIキーで取得した Xeno-Canto の音源を追加して使います。
 
 このアプリには開発元の電子署名がありません。そのため、初めて開くときに OS が警告を出します。下の手順で開いてください。
 
@@ -64,26 +62,24 @@ sudo apt install gstreamer1.0-plugins-good gstreamer1.0-libav
 
 ## データの保存場所とアンインストール
 
-| OS | 保存場所（標準版） |
+| OS | 保存場所 |
 |---|---|
 | Windows | `%APPDATA%\org.echoroo.lite` |
 | macOS | `~/Library/Application Support/org.echoroo.lite` |
 | Linux | `~/.local/share/org.echoroo.lite` |
 
-BirdNET 付き版は `org.echoroo.lite.birdnet` です。アプリを削除しても、このフォルダは残ります。完全に消すときは、このフォルダも削除してください。
+アプリを削除しても、このフォルダは残ります。完全に消すときは、このフォルダも削除してください。
 
 ---
 
 # Installation (Echoroo Lite 0.9.0)
 
-## Which edition
+## Terms of use
 
-| Edition | Contents | Terms |
-|---|---|---|
-| Echoroo Lite (standard) | Analysis with Perch | No restriction, including work use (Perch: Apache-2.0) |
-| Echoroo Lite BirdNET | BirdNET and Perch, plus range cautions | **Non-commercial only** (BirdNET models: CC BY-NC-SA 4.0). For company or government work, ask the BirdNET rights holders first |
-
-The editions keep separate data, so both can be installed on one computer.
+There is **one Echoroo Lite edition**, containing BirdNET 2.4 and Perch V2. It is
+for **non-commercial / research use** because the BirdNET 2.4 models are
+CC BY-NC-SA 4.0. No bird-call recordings are bundled in the app. Add clips from
+your own recordings or Xeno-Canto with your own API key to use the quiz.
 
 The app is not code-signed, so the operating system warns on first launch. Open it as follows.
 
@@ -111,5 +107,5 @@ If macOS says the app "is damaged", the download was corrupted; download it agai
 
 ## Data and uninstalling
 
-Data stays in `org.echoroo.lite` (BirdNET edition: `org.echoroo.lite.birdnet`) under the app-data folder
+Data stays in `org.echoroo.lite` under the app-data folder
 (Windows `%APPDATA%`, macOS `~/Library/Application Support`, Linux `~/.local/share`). Delete that folder to remove all data.

@@ -12,35 +12,41 @@ from fastapi.testclient import TestClient
 
 from audio import add_reference
 from quiz import clip_view
-from quiz_test_bundle import quiz_bundle
 from server import create_app
 from storage import connect
 
 
 class QuizTest(unittest.TestCase):
-    def setUp(self):
-        self.bundle = quiz_bundle()
-        self.bundle.__enter__()
-        self.addCleanup(self.bundle.__exit__, None, None, None)
-
     def test_practice_lifecycle(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             app = create_app(root, root / 'models', 'quiz-test')
             headers = {'Authorization': 'Bearer quiz-test'}
             with TestClient(app, headers=headers) as client:
+                self.assertEqual(client.get('/quiz/library').json(), {'clips': [], 'sets': [], 'sessions': []})
+                self.assertFalse((root / 'quiz').exists())
+                original = root / 'practice.wav'
+                sf.write(original, np.linspace(-.1, .1, 32000), 32000)
+                reference = client.post('/references', json={'path': str(original)}).json()
+                for name in ('Horornis diphone', 'Parus minor', 'Phasianus versicolor', 'Picus awokera'):
+                    species = client.get('/species', params={'q': name}).json()[0]
+                    added = client.post('/quiz/clips', json={
+                        'source_kind': 'reference', 'source_id': reference['id'], 'species_id': species['id'],
+                        'start_s': 0, 'end_s': 1, 'sound_type': 'song', 'note': 'A section was cut.',
+                        'credit': {'recordist': 'Fixture', 'license': 'https://creativecommons.org/licenses/by/4.0/'}})
+                    self.assertEqual(added.status_code, 200, added.text)
                 library = client.get('/quiz/library').json()
                 clips = library['clips']
                 self.assertEqual((len(clips), len({c['species_id'] for c in clips})), (4, 4))
-                self.assertEqual(client.get('/references').json(), [])
+                self.assertTrue(all(c['bundled_key'] is None for c in clips))
+                self.assertEqual(library['sets'], [])
+                self.assertEqual([r['id'] for r in client.get('/references').json()], [reference['id']])
                 self.assertEqual(client.get('/quiz/library').json()['sets'], library['sets'])
                 kiji = next(c for c in clips if c['species']['scientific_name'] == 'Phasianus versicolor')
                 self.assertEqual(kiji['species']['common_names'], {'ja': 'キジ', 'en': 'Green Pheasant'})
                 for clip in clips:
                     audio, rate = sf.read(clip['source']['path'])
                     self.assertTrue(len(audio) and np.isfinite(audio).all())
-                image = client.get(f"/quiz/clips/{clips[0]['id']}/image")
-                self.assertEqual((image.status_code, image.json()['detail']), (400, 'not_found'))
                 ids = [c['id'] for c in clips]
                 self.assertEqual(client.post('/quiz/sessions', json={'clip_ids': ids[:1]}).json()['detail'], 'quiz_min_species')
                 session = client.post('/quiz/sessions', json={'clip_ids': ids, 'count': 3}).json()
@@ -67,7 +73,6 @@ class QuizTest(unittest.TestCase):
                 self.assertFalse({'path','species','clip','source'} & plot.json().keys())
                 result = client.post(f'/quiz/sessions/{sid}/answers', json={'position': 0, 'species_id': correct}).json()
                 self.assertEqual(result['question']['feedback']['status'], 'correct')
-                self.assertIsNone(result['question']['feedback']['clip']['metadata']['image_file'])
                 self.assertEqual(result['question']['feedback']['clip']['metadata']['credit']['license'],
                                  'https://creativecommons.org/licenses/by/4.0/')
                 self.assertIn('section was cut', result['question']['feedback']['clip']['metadata']['note'])
@@ -103,6 +108,10 @@ class QuizTest(unittest.TestCase):
                 self.assertEqual(retrim['metadata']['original_quiz_clip_id'], added['id'])
                 saved_set = client.post('/quiz/sets', json={'name': 'My practice', 'clip_ids': [added['id'], clips[1]['id']]}).json()
                 self.assertIsInstance(saved_set['id'], int)
+                saved = client.get('/quiz/library').json()['sets'][0]
+                self.assertNotIn('set', saved)
+                self.assertIsNone(saved['bundled_key'])
+                self.assertEqual(saved['clip_ids'], [added['id'], clips[1]['id']])
                 client.post(f"/quiz/clips/{added['id']}/enabled", json={'enabled': False})
                 self.assertEqual(client.post('/quiz/sessions', json={'clip_ids': [added['id'], clips[1]['id']]}).json()['detail'], 'quiz_selection_missing')
                 client.post(f"/quiz/clips/{added['id']}/enabled", json={'enabled': True})
@@ -122,11 +131,18 @@ class QuizTest(unittest.TestCase):
             reference = add_reference(root, old_audio)
             with connect(root) as db:
                 species = db.execute("SELECT * FROM species WHERE scientific_name='Horornis diphone'").fetchone()
-                metadata = {'key': 'koe-e-lab-v1:uguisu', 'sound_type': 'song', 'image_file': 'img/uguisu.jpg',
-                            'credit': {}, 'note': ''}
-                clip_id = db.execute('INSERT INTO quiz_clips(species_id,reference_id,bundled_key,metadata) VALUES(?,?,?,?)',
-                    (species['id'], reference['id'], 'koe-e-lab-v1:uguisu', json.dumps(metadata))).lastrowid
-                clip = clip_view(db, db.execute('SELECT * FROM quiz_clips WHERE id=?', (clip_id,)).fetchone())
+                old_clips = {}
+                for bundled_key, image in (('koe-e-lab-v1:uguisu', 'img/uguisu.jpg'),
+                                           ('xeno-canto-v1:uguisu', 'img/xc.jpg')):
+                    metadata = {'key': bundled_key, 'sound_type': 'song', 'image_file': image,
+                                'credit': {}, 'note': ''}
+                    clip_id = db.execute(
+                        'INSERT INTO quiz_clips(species_id,reference_id,bundled_key,metadata) VALUES(?,?,?,?)',
+                        (species['id'], reference['id'], bundled_key, json.dumps(metadata))).lastrowid
+                    old_clips[bundled_key] = clip_view(
+                        db, db.execute('SELECT * FROM quiz_clips WHERE id=?', (clip_id,)).fetchone())
+                clip = old_clips['koe-e-lab-v1:uguisu']
+                clip_id = clip['id']
                 snapshot = {'purpose': 'practice', 'clip_ids': [clip_id], 'requested_count': 1,
                             'method': 'uniform_clips_without_replacement_v1',
                             'questions': [{'clip': clip, 'choices': [clip['species']]}]}
@@ -135,21 +151,39 @@ class QuizTest(unittest.TestCase):
                                         (json.dumps(snapshot), json.dumps(answers))).lastrowid
                 db.execute("INSERT INTO quiz_sets(name,clip_ids,bundled_key) VALUES('old',?,'koe-e-lab-v1')",
                            (json.dumps([clip_id]),))
-            old_audio.unlink()
+                old_xc = old_clips['xeno-canto-v1:uguisu']
+                xc_snapshot = {**snapshot, 'clip_ids': [old_xc['id']],
+                               'questions': [{'clip': old_xc, 'choices': [old_xc['species']]}]}
+                xc_session_id = db.execute('INSERT INTO quiz_sessions(snapshot,answers) VALUES(?,?)',
+                                           (json.dumps(xc_snapshot), json.dumps(answers))).lastrowid
+                db.execute("INSERT INTO quiz_sets(name,clip_ids,bundled_key) VALUES('old xc',?,'xeno-canto-v1')",
+                           (json.dumps([old_xc['id']]),))
+            original_audio = old_audio.read_bytes()
             with TestClient(app, headers=headers) as client:
                 library = client.get('/quiz/library').json()
-                retired = next(row for row in library['clips'] if row['id'] == clip_id)
-                self.assertEqual(retired['enabled'], 0)
-                self.assertEqual({row['bundled_key'] for row in library['sets']}, {None, 'xeno-canto-v1'})
+                retired = [row for row in library['clips'] if row['id'] in {clip['id'] for clip in old_clips.values()}]
+                self.assertEqual([row['enabled'] for row in retired], [0, 0])
+                self.assertEqual(len(library['sets']), 2)
+                self.assertEqual({row['bundled_key'] for row in library['sets']}, {None})
+                self.assertEqual(client.get('/quiz/library').json(), library)
+                self.assertEqual(old_audio.read_bytes(), original_audio)
+                self.assertEqual(client.post('/quiz/sessions', json={'clip_ids': [c['id'] for c in retired]}).json()['detail'],
+                                 'quiz_selection_missing')
                 history = client.get(f'/quiz/sessions/{session_id}')
                 self.assertEqual((history.status_code, history.json()['answered'], history.json()['correct']), (200, 1, 1))
-                self.assertIsNone(history.json()['review'][0]['clip']['metadata']['image_file'])
-                with patch('quiz.checked_source', side_effect=AssertionError('retired audio was read')):
-                    unavailable = client.get(f'/quiz/sessions/{session_id}/questions/0/audio')
-                self.assertEqual((unavailable.status_code, unavailable.json()['detail']), (400, 'quiz_audio_unavailable'))
+                xc_history = client.get(f'/quiz/sessions/{xc_session_id}').json()
+                self.assertEqual(xc_history['correct'], 1)
+                for retired_session in (session_id, xc_session_id):
+                    with patch('quiz.checked_source', side_effect=AssertionError('retired audio was read')):
+                        unavailable = client.get(f'/quiz/sessions/{retired_session}/questions/0/audio')
+                    self.assertEqual((unavailable.status_code, unavailable.json()['detail']), (400, 'quiz_audio_unavailable'))
+                    plot = client.get(f'/quiz/sessions/{retired_session}/questions/0/spectrogram?start_s=0&end_s=1')
+                    self.assertEqual(plot.json()['detail'], 'quiz_audio_unavailable')
             with connect(root) as db:
                 saved = db.execute('SELECT snapshot,answers FROM quiz_sessions WHERE id=?', (session_id,)).fetchone()
                 self.assertEqual(tuple(saved), (json.dumps(snapshot), json.dumps(answers)))
+                xc_saved = db.execute('SELECT snapshot,answers FROM quiz_sessions WHERE id=?', (xc_session_id,)).fetchone()
+                self.assertEqual(tuple(xc_saved), (json.dumps(xc_snapshot), json.dumps(answers)))
 
 
 if __name__ == '__main__':

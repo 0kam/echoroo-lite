@@ -34,10 +34,19 @@ function Find-DesktopAction([string]$Name) {
     throw "The desktop action is not accessible: $Name"
 }
 
-function Press-DesktopAction([string]$Name) {
-    $element = Find-DesktopAction $Name
+function Invoke-DesktopElement($element) {
+    # WebView2 exposes links and buttons with the Invoke pattern; focus and Enter is the fallback.
+    $pattern = $null
+    if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
+        $pattern.Invoke()
+        return
+    }
     $element.SetFocus()
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+}
+
+function Press-DesktopAction([string]$Name) {
+    Invoke-DesktopElement (Find-DesktopAction $Name)
 }
 
 function Press-FirstTableAction {
@@ -49,8 +58,7 @@ function Press-FirstTableAction {
         $element = $table.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
             [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $type))
         if ($null -ne $element) {
-            $element.SetFocus()
-            [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+            Invoke-DesktopElement $element
             return
         }
     }
@@ -116,15 +124,11 @@ try {
         $window = Wait-ForDesktopText 'いつ・どれくらいか' 'echoroo-startup-species-counting'
 
         Press-DesktopAction '鳴き声クイズ'
-        $window = Wait-ForDesktopText 'クイズを始める' 'echoroo-startup-quiz'
-        Press-DesktopAction 'クイズを始める'
-        $window = Wait-ForDesktopText '声を聞いて、どの鳥か選んでください。' 'echoroo-startup-quiz-question'
-        Press-DesktopAction 'わからない'
-        $window = Wait-ForDesktopText '次の問題' 'echoroo-startup-quiz-feedback'
-        Write-Output 'Installed Japanese desktop opened the current site, species and quiz flow.'
+        $window = Wait-ForDesktopText 'クイズに使う鳴き声を追加' 'echoroo-startup-quiz'
+        Write-Output 'Installed Japanese desktop opened the current site, species and empty quiz page.'
     }
     Close-Desktop
-    Write-Output 'NSIS installation, installed sidecar API/quiz, English/Japanese site list, locale persistence and shutdown passed.'
+    Write-Output 'NSIS installation, installed sidecar API, English/Japanese site list, locale persistence and shutdown passed.'
 } finally {
     if (-not $application.HasExited) { Stop-Process -Id $application.Id -Force }
 }

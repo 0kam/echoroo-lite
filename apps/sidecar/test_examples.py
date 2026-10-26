@@ -12,16 +12,12 @@ import soundfile as sf
 import examples  # noqa: F401  Imported before patching species.ebird_codes.
 from examples import fetch_xeno_canto
 from fastapi.testclient import TestClient
-from quiz_test_bundle import quiz_bundle
 from server import create_app
 from storage import connect
 
 
 class ExamplesCheck(unittest.TestCase):
     def setUp(self):
-        self.bundle = quiz_bundle()
-        self.bundle.__enter__()
-        self.addCleanup(self.bundle.__exit__, None, None, None)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -56,7 +52,7 @@ class ExamplesCheck(unittest.TestCase):
         return response.json()
 
     def test_order_exclusion_and_snapshots(self):
-        warbler = self.species[0]  # Horornis diphone is in the bundled quiz.
+        warbler = self.species[0]
         xc = self.root / 'XC1.wav'
         sf.write(xc, np.zeros(20000), 1000)
         reference = self.post('/references', {'path': str(xc)})
@@ -68,6 +64,8 @@ class ExamplesCheck(unittest.TestCase):
             # A sound confirmed on the presence list; newer than any check answer.
             db.execute("INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,created_at) VALUES(1,?,1,300,305,'2999-01-01 00:00:00')",
                        (warbler['id'],))
+        self.post('/quiz/clips', {'species_id': warbler['id'], 'source_kind': 'reference',
+                                 'source_id': reference['id'], 'start_s': 10, 'end_s': 15})
         free = self.examples(warbler)
         self.assertTrue(free['in_quiz'])
         self.assertEqual(free['ebird_code'], 'jabwar')  # From the shipped eBird taxonomy mapping.

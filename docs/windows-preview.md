@@ -16,18 +16,18 @@
 
 `.github/workflows/desktop.yml` はWindows x64・Python 3.11で次を実行する。
 
-1. Pythonの全APIテスト、Svelteの型検査・静的ビルド。
-2. Pythonサービスを凍結する。モデルのない状態で起動し、認証・26種クイズ・音声取得・
-   親パイプ切断時の正常終了を検査する。
-3. 固定版モデルを準備し、同梱したウグイスの実音声を最大30秒のWAVに変換する。凍結サービスで
-   BirdNET／Perch推論、埋め込み検索、保存検索、抽出・不明保存、報告CSV／根拠音ZIP、
-   26種のクイズ、認証、通常の終了通知による正常終了を確認する。
-4. Tauriのインストーラーを `windows-preview` 成果物へ保存する。NSISをサイレントインストールし、
-   インストール先のサービスとデスクトップ起動を検査する。
+1. 固定版の BirdNET 2.4・Perch V2 を準備し、Pythonの全APIテスト、Svelteの型検査・静的ビルド。
+2. Pythonサービスを凍結する。アプリにクイズ用の録音は同梱しない（2026-10-26決定）。
+3. CI専用の `scripts/fixtures/horornis-diphone-xc1177906.mp3` を繰り返して30秒のWAVを2日分作り、
+   凍結サービスで BirdNET／Perch推論、埋め込み検索、保存検索、抽出・不明保存、
+   報告CSV／根拠音ZIP、認証、通常の終了通知による正常終了を確認する。
+   出題には2種が必要なため、1種のfixtureからクイズは作らない。
+4. Tauriの単一版インストーラーを `Echoroo-Lite-0.9.0-windows-x86_64` 成果物へ保存する。
+   NSISをサイレントインストールし、インストール先のサービスとデスクトップ起動を検査する。
    英語から日本語への切り替えと、再起動後の日本語設定の保持も検査する。
-   実解析で保持した検査データから両モデルの結果、検索・判定履歴、24時間セルの報告図、
-   クイズの出題と「わからない」のフィードバックを画面で開く検査も通過した。
-   各時点の画面とアクセシビリティ上の接続状態を `windows-startup` に保存する。
+   実解析データの地点・種ページを開き、「鳴き声クイズ」から空のクイズページを開いて
+   「クイズに使う鳴き声を追加」の表示を待つ。各時点の画面とアクセシビリティ情報を
+   `windows-startup` に保存する。新しい構成のWindows実行結果は未確認。
 
 2026-09-09、[PR #1](https://github.com/0kam/echoroo-lite/pull/1)の `f5db87e` を検査した
 [Windows CI](https://github.com/0kam/echoroo-lite/actions/runs/34309839504)で、次が通過した。
@@ -102,7 +102,7 @@ CSSによって画面起動検査が失敗した。非表示指定を削除し�
 ```powershell
 python scripts/setup_models.py
 python scripts/freeze_sidecar.py
-python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3
+python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-x86_64-pc-windows-msvc.exe --models poc/models --sample-audio scripts/fixtures/horornis-diphone-xc1177906.mp3
 npm run desktop:build
 ```
 
@@ -193,7 +193,7 @@ loopbackへの接続が成功することを事前確認し、同じ制限を次
 モデルは事前配置済み。PC全体のネットワーク設定は変更していない。
 
 ```sh
-/usr/bin/sandbox-exec -p '(version 1) (allow default) (deny network-outbound) (allow network-outbound (remote ip "localhost:*"))' .venv/bin/python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-aarch64-apple-darwin --models poc/models --sample-audio apps/sidecar/data/quiz/mp3/uguisu_song_01.mp3
+/usr/bin/sandbox-exec -p '(version 1) (allow default) (deny network-outbound) (allow network-outbound (remote ip "localhost:*"))' .venv/bin/python scripts/check_frozen.py apps/desktop/binaries/echoroo-sidecar-aarch64-apple-darwin --models poc/models --sample-audio scripts/fixtures/horornis-diphone-xc1177906.mp3
 ```
 
 30秒の実音声で両モデル解析33.37秒、参照登録・描画取得・類似検索1.14秒、

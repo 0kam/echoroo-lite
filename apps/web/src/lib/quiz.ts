@@ -1,11 +1,11 @@
 import type { AudioSource } from './AudioRegion.svelte';
 import type { Species } from './species';
 export type QuizClip = { id: number; reference_id: number; species_id: string; species: Species; seconds: number;
-  enabled: number; source: AudioSource; metadata: { audio_file?: string; image_file?: string; note: string;
+  enabled: number; source: AudioSource; metadata: { audio_file?: string; note: string;
     source: string; sound_type: string; label_source: string; original_source?: AudioSource;
-    credit: { recordist?: string; source_url?: string; license?: string; photographer?: string; image_license?: string };
+    credit: { recordist?: string; source_url?: string; license?: string };
     xeno_canto?: {id: number; recordist: string; license: string}; } };
-export type QuizLibrary = { clips: QuizClip[]; sets: {id: number; name: string; bundled_key: string | null; clip_ids: number[]}[];
+export type QuizLibrary = { clips: QuizClip[]; sets: {id: number; name: string; clip_ids: number[]}[];
   sessions: {id: number; count: number; answered: number; created_at: string}[] };
 export type QuizFeedback = {position: number; status: string; clip: QuizClip; answer: Species | null; answered_at: string};
 export type QuizSession = {id: number; count: number; answered: number; complete: boolean; correct: number; unknown: number;

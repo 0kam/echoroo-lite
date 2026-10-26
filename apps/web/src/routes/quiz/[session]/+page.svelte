@@ -12,6 +12,8 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   import { fill } from '$lib/workflow';
+  import { openExternal } from '$lib/files';
+  import { licenseName } from '$lib/XenoCantoSearch.svelte';
   const context = quizContext(page.url);
   const quizUrl = `${resolve('/quiz')}${context.query ? `?${context.query}` : ''}`;
   const sessionId = $derived(Number(page.params.session));
@@ -62,16 +64,19 @@
           <Button class="choice unknown" pending={answer.pending && answering === 'unknown'} disabled={answer.pending} onclick={() => answer.run(null)}>{t('quizUnknown')}</Button></div>
         {:else}
           {@const feedback = question.feedback}
+          {@const credit = feedback.clip.metadata.credit}
+          {@const xc = feedback.clip.metadata.xeno_canto}
+          {@const url = credit.source_url || (xc ? `https://xeno-canto.org/${xc.id}` : '')}
+          {@const xcId = xc?.id ?? url.match(/xeno-canto\.org\/(\d+)/)?.[1]}
+          {@const license = credit.license || xc?.license || ''}
           <div class="feedback" aria-live="polite" tabindex="-1" bind:this={feedbackElement}>
             <h2>{t(`quiz_${feedback.status}`)}</h2>
             <p>{t('quizCorrectAnswer')}: <strong>{commonName(feedback.clip.species, app.locale)}</strong> · <i>{feedback.clip.species.scientific_name}</i></p>
             <p>{t('quizYourAnswer')}: {#if feedback.answer}{commonName(feedback.answer, app.locale)} · <i>{feedback.answer.scientific_name}</i>{:else}{t('quizUnknown')}{/if}</p>
-            {#if feedback.clip.metadata.image_file}<img class="bird-photo" src={mediaURL(`/quiz/clips/${feedback.clip.id}/image`)} alt={commonName(feedback.clip.species, app.locale)} />{/if}
             <p>{t(`quizSound_${feedback.clip.metadata.sound_type}`)}</p>
             {#if feedback.clip.metadata.note}<p>{feedback.clip.metadata.note}</p>{/if}
-            <p class="muted">{t('quizCredit')}: {feedback.clip.metadata.credit.recordist || t('quizCreditMissing')} {feedback.clip.metadata.credit.source_url ?? ''} · {feedback.clip.metadata.credit.license || t('quizLicenseMissing')}</p>
-            {#if feedback.clip.metadata.image_file}<p class="muted">{t('quizPhotoCredit')}: {feedback.clip.metadata.credit.photographer || t('quizCreditMissing')} · {feedback.clip.metadata.credit.image_license || t('quizLicenseMissing')}</p>{/if}
-            {#if feedback.clip.metadata.xeno_canto}<p class="muted">XC{feedback.clip.metadata.xeno_canto.id} · {feedback.clip.metadata.xeno_canto.recordist} · {feedback.clip.metadata.xeno_canto.license}</p>{/if}
+            <p class="muted">{t('quizCredit')}: {credit.recordist || xc?.recordist || t('quizCreditMissing')}{#if url} · <a href={url} onclick={e => { e.preventDefault(); void openExternal(url); }}>{xcId ? `XC${xcId}` : url.replace(/^(https?:)?\/\//, '').split('/')[0]}</a>{/if}
+              · {#if /^(https?:)?\/\//.test(license)}<a href={license} onclick={e => { e.preventDefault(); void openExternal(license); }}>{licenseName(license)}</a>{:else}{license || t('quizLicenseMissing')}{/if}</p>
           </div>
           <Button class="next" variant="primary" pending={advance.pending} onclick={() => advance.run()}>{t(session.complete ? 'quizShowResults' : 'quizNext')}</Button>
         {/if}
@@ -105,7 +110,6 @@
   .choices :global(.choice) { justify-content: flex-start; text-align: left; white-space: normal; min-height: 72px; }
   .choices :global(.unknown) { min-height: 50px; }
   .feedback { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid rgb(var(--primary-200)); padding: 16px; border-radius: 6px; }
-  .bird-photo { max-width: 100%; width: 320px; max-height: 240px; object-fit: contain; border-radius: 4px; }
   :global(.next) { margin-top: 16px; }
   .result-score { margin: 12px 0; font-size: 28px; color: rgb(var(--primary-700)); }
   .review-heading { margin-top: 24px; }
