@@ -18,7 +18,7 @@ import soundfile as sf
 from fastapi.testclient import TestClient
 
 from analysis import digest
-from models import REGISTRY, settings, machine_fingerprint
+from models import REGISTRY, default_threshold, settings, machine_fingerprint
 from server import create_app
 from species import bundled_names
 from storage import connect
@@ -27,7 +27,7 @@ from storage import connect
 def model_files(directory):
     names = ['Horornis diphone', 'Phoebastria albatrus']
     names += [name for name in bundled_names() if name not in names][:315]
-    for engine in ('perch', 'kinglet-s', 'kinglet-xs'):
+    for engine in ('perch', 'kinglet-b', 'kinglet-s', 'kinglet-xs'):
         model, labels = (directory / name for name in REGISTRY[engine]['files'])
         model.parent.mkdir(parents=True, exist_ok=True)
         model.write_bytes(engine.encode())
@@ -37,8 +37,9 @@ def model_files(directory):
             if engine == 'perch':
                 writer.writerows([['label'], ['Horornis diphone'], ['Other']])
             else:
-                writer.writerow(['index', 'ebird_code', 'scientific_name', 'japanese_name'])
-                writer.writerows((i, str(i), name, '') for i, name in enumerate(names))
+                writer.writerow(['index', 'ebird_code', 'scientific_name', 'japanese_name',
+                                 'logit_bg_p99', 'score_bg_p99', 'logit_bg_p999', 'score_bg_p999'])
+                writer.writerows((i, str(i), name, '', -2, .12, -1, .27) for i, name in enumerate(names))
     return names
 
 
@@ -74,7 +75,7 @@ class FakeSession:
         assert wave.dtype == np.float32 and wave.shape[1] == 160000
         assert np.max(np.abs(wave)) <= 1
         logits = np.full((len(wave), 317), -8., dtype=np.float32)
-        logits[:, :2] = 2 if self.engine == 'kinglet-s' else -4
+        logits[:, :2] = 2 if self.engine in ('kinglet-b', 'kinglet-s') else -4
         return [np.ones((len(wave),1536), dtype=np.float32) if name == 'embedding' else logits for name in outputs]
 
 
@@ -176,9 +177,17 @@ class ModelsTest(unittest.TestCase):
                                  dict(main='perch', extra=[], confirmed=False))
                 models = settings['models']
                 self.assertEqual([m['id'] for m in models], list(REGISTRY))
+                self.assertEqual(list(REGISTRY), ['perch','kinglet-b','kinglet-s','kinglet-xs','birdnet','birdnet-v3'])
+                self.assertEqual({m['id']: m['default_threshold'] for m in models},
+                    {'perch': .1, 'kinglet-b': .5, 'kinglet-s': .5, 'kinglet-xs': .5, 'birdnet': .1, 'birdnet-v3': .1})
+                self.assertEqual(default_threshold('custom'), .5)
+                self.assertEqual([m['name'] for m in models[1:4]], ['Kinglet-B', 'Kinglet-S', 'Kinglet-XS'])
+                for model in models[1:4]:
+                    self.assertTrue(model['main_capable'])
+                    self.assertFalse(model['experimental'])
                 self.assertEqual([m['id'] for m in models if m['enabled']], ['perch'])
                 self.assertEqual(set(models[0]), {'id','name','window_s','available','enabled','main_capable',
-                                               'experimental','species_count','license','seconds_per_hour','seconds_per_file'})
+                                               'experimental','default_threshold','species_count','license','seconds_per_hour','seconds_per_file'})
                 for main, extra in [('unknown', []), ('birdnet', []), ('birdnet-v3', []),
                                     ('perch', ['unknown']), ('perch', ['birdnet']), ('perch', ['perch'])]:
                     response = chosen(client, main, extra)
@@ -230,6 +239,61 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual(client.post('/jobs',json={'dataset_id':1}).status_code,200)
                 self.assertEqual(wait_job(client)['status'],'complete')
 
+    def test_calibrated_kinglet_thresholds_across_views_presence_and_export(self):
+        import zipfile
+        for engine in ('kinglet-b', 'kinglet-s', 'kinglet-xs'):
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp); directory = root/'models'; model_files(directory)
+                classes = directory/REGISTRY[engine]['files'][1]
+                with classes.open(newline='') as stream:
+                    rows = list(csv.DictReader(stream))
+                with classes.open('w', newline='') as stream:
+                    writer = csv.DictWriter(stream, fieldnames=list(reversed(rows[0])))
+                    writer.writeheader(); writer.writerows(rows)
+                audio = root/'audio'; audio.mkdir()
+                sf.write(audio/'20240808_060000.wav', np.full(32000*30, .25), 32000)
+
+                class CalibratedSession(FakeSession):
+                    def run(self, outputs, inputs):
+                        logits, embedding = super().run(outputs, inputs)
+                        probabilities = np.array([.05, .2, .49, .5, .8, .99])
+                        logits[:, 0] = np.log(probabilities/(1-probabilities))
+                        return logits, embedding
+
+                data = root/'data'
+                with TestClient(create_app(data, directory, 'test'), headers={'Authorization':'Bearer test'}) as client, \
+                        patch('analysis.load_onnx', return_value=(CalibratedSession(engine, None), digest(directory/REGISTRY[engine]['files'][0]))):
+                    client.put('/models', json={'main':engine, 'extra':[]})
+                    client.post('/imports', json=dict(folder=str(audio), site_name='Site', dataset_name='Data',
+                        timezone='Asia/Tokyo', latitude=35, longitude=138))
+                    self.assertEqual(client.post('/jobs', json={'dataset_id':1}).status_code, 200)
+                    self.assertEqual(wait_job(client)['status'], 'complete')
+                    target = client.get('/species?q=Horornis diphone').json()[0]
+                    overview = client.get('/datasets/1/overview').json()
+                    entry = next(s for s in overview['species'] if s['species']['id'] == target['id'])['models'][0]
+                    self.assertEqual((entry['threshold'], entry['candidate_windows']), (.5, 3))
+                    detail = client.get(f"/datasets/1/species/{target['id']}").json()
+                    self.assertEqual(detail['selected'], engine)
+                    self.assertEqual(detail['report']['threshold'], .5)
+                    self.assertEqual(detail['report']['summaries'][0]['candidate_windows'], 3)
+                    presence = client.get(f"/datasets/1/species/{target['id']}/presence").json()
+                    self.assertEqual([r['start_s'] for r in presence['rows']], [25, 20, 15])
+                    self.assertTrue(all(m['score'] >= .5 for r in presence['rows'] for m in r['models']))
+                    scope = dict(dataset_id=1, species_id=target['id'], start_date='2024-08-08', end_date='2024-08-08')
+                    check = client.post('/validations', json={**scope, 'model':engine}).json()
+                    self.assertEqual(check['status'], 'in_progress')
+                    self.assertEqual(client.get(f"/datasets/1/species/{target['id']}").json()['report']['threshold'], .5)
+                    overview = client.get('/datasets/1/overview').json()
+                    exported = client.post('/workflow-exports', json={**scope, 'revision':overview['revision'],
+                        'species_ids':[target['id']], 'folder':str(root), 'locale':'en'})
+                    self.assertEqual(exported.status_code, 200, exported.text)
+                    with zipfile.ZipFile(exported.json()['path']) as archive:
+                        snap = json.loads(archive.read('manifest.json'))['results'][0]
+                        self.assertEqual((snap['engine'], snap['threshold']), (engine, .5))
+                        saved = json.loads(archive.read(f"results/{snap['report_id']}.json"))
+                        self.assertEqual(saved['summaries'][0]['candidate_windows'], 3)
+                        self.assertEqual(len(archive.read(f"scores/{snap['figure_id']}.csv").decode('utf-8-sig').splitlines()), 7)
+
     def test_benchmark_all_available_models_and_machine_invalidation(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); directory = root/'models'; model_files(directory); v3_files(directory)
@@ -258,7 +322,7 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual(result['seconds_per_job'], .4)
                 self.assertTrue(all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] == 18
                     and m['seconds_per_file'] == .3 for m in result['models']))
-                self.assertEqual(loads, ['perch','birdnet-v3','kinglet-s','kinglet-xs'])
+                self.assertEqual(loads, ['perch','kinglet-b','kinglet-s','kinglet-xs','birdnet-v3'])
                 expected = [(1,640), *[(1,160)]*3, *[(1,640)]*3, *[(4,640)]*3]
                 self.assertEqual(measurements, [(engine,files,seconds) for engine in REGISTRY for files,seconds in expected])
                 self.assertTrue(all(not path.exists() for path in measured_paths))
@@ -292,7 +356,7 @@ class ModelsTest(unittest.TestCase):
             root=Path(temp); directory=root/'models'; model_files(directory)
             for relative in REGISTRY['birdnet']['files']:
                 path=directory/relative; path.parent.mkdir(parents=True,exist_ok=True); path.touch()
-            for engine in ('kinglet-s','kinglet-xs'):
+            for engine in ('kinglet-b','kinglet-s','kinglet-xs'):
                 for relative in REGISTRY[engine]['files']:(directory/relative).unlink()
             audio=root/'audio'; audio.mkdir()
             sf.write(audio/'20240808_060000.wav',np.full(320000,.25),32000)
@@ -440,6 +504,7 @@ class ModelsTest(unittest.TestCase):
                     db.execute("UPDATE analyses SET metadata=json_set(metadata,'$.model_sha256','old-sha') WHERE engine='kinglet-s' AND recording_id=2")
                 client.put('/models',json={'main':'kinglet-s','extra':['perch']})
                 missing = client.get('/datasets/1/overview').json()
+                self.assertTrue(missing['mixed_models'])
                 self.assertEqual(missing['unanalysed_recordings'],2)
                 self.assertEqual(missing['pending_analysis'],[dict(engine='perch',recordings=2,seconds=20.),
                     dict(engine='kinglet-s',recordings=1,seconds=10.)])
@@ -518,7 +583,7 @@ class ModelsTest(unittest.TestCase):
                 result = next(r for r in client.get('/recordings/1/results').json() if r['engine']=='kinglet-s')
                 self.assertEqual(result['metadata']['species'], names)
                 self.assertEqual(result['metadata']['classes_sha256'], digest(directory / REGISTRY['kinglet-s']['files'][1]))
-                self.assertEqual(result['metadata']['score_type'], 'sigmoid_uncalibrated')
+                self.assertEqual(result['metadata']['score_type'], 'sigmoid_calibrated')
                 self.assertTrue(all(c['species_id'] for c in result['candidates']))
                 self.assertAlmostEqual(result['candidates'][0]['score'], 1/(1+np.exp(-2)), places=6)
                 with np.load(result['scores_path'], allow_pickle=False) as saved:
@@ -547,13 +612,13 @@ class ModelsTest(unittest.TestCase):
                     'species_ids':[target['id']],'folder':str(root),'locale':'en'} )
                 self.assertEqual(exported.status_code,200,exported.text)
                 html = Path(exported.json()['report_path']).read_text()
-                self.assertIn('Kinglet-S (preview)',html)
+                self.assertIn('Kinglet-S',html)
                 import zipfile
                 with zipfile.ZipFile(exported.json()['path']) as archive:
                     manifest = json.loads(archive.read('manifest.json'))
                     snap = next(s for s in manifest['results'] if s['engine']=='kinglet-s')
                     self.assertEqual(len(archive.read(f"scores/{snap['figure_id']}.csv").decode('utf-8-sig').splitlines()),5)
-                    self.assertIn('Kinglet-S (preview)',archive.read(f"figures/{snap['figure_id']}.svg").decode())
+                    self.assertIn('Kinglet-S',archive.read(f"figures/{snap['figure_id']}.svg").decode())
                 client.put('/models', json={'main':'perch','extra':['kinglet-s','kinglet-xs']})
                 client.post('/jobs', json={'dataset_id':1})
                 self.assertEqual(wait_job(client)['status'],'complete')

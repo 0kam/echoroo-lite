@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 from scipy.special import expit, logit
 
+from models import default_threshold
 from reports import analysis_metadata, classification_batches, classification_species_windows, window_in_scope
 from species import names_for
 from storage import CatalogError, checked_source, connect
@@ -73,10 +74,6 @@ def model_key(engine, model_id=None):
 def native_window(engine):
     from models import window_s
     return window_s(engine)
-
-
-def default_threshold(engine):
-    return .5 if engine == 'custom' else .1
 
 
 def logit_scores(scores):

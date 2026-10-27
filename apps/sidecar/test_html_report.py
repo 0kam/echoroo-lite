@@ -40,7 +40,8 @@ class HtmlReportCheck(unittest.TestCase):
                         db.execute("INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,?,'perch',?,?)",(job,rid,json.dumps(meta),str(path)))
                 scope={'dataset_id':1,'species_id':species['id'],'start_date':'2024-08-08','end_date':'2024-08-08'}
                 listed=client.get(f"/datasets/1/species/{species['id']}/presence",params={'start_date':'2024-08-08','end_date':'2024-08-08'}).json()
-                self.assertEqual(len(listed['rows']),60)
+                self.assertEqual(len(listed['rows']),40)
+                self.assertTrue(all(model['score'] >= .1 for row in listed['rows'] for model in row['models']))
                 for row in listed['rows'][:2]:
                     client.post('/presence/marks',json={'dataset_id':1,'species_id':species['id'],'recording_id':row['recording_id'],
                         'start_s':row['start_s'],'end_s':row['end_s'],'marked':True})

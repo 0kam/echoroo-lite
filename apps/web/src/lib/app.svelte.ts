@@ -7,7 +7,7 @@ export type Job = { id: number; dataset_id: number; status: string; stage: strin
   error: string | null; created_at: string };
 /** A detection AI from GET /models, in display order; the speeds are measured on this PC (null until measured). */
 export type Model = { id: string; name: string; window_s: number; available: boolean; enabled: boolean; main_capable: boolean;
-  experimental: boolean; species_count: number | null; license: string; seconds_per_hour: number | null; seconds_per_file: number | null };
+  experimental: boolean; default_threshold: number; species_count: number | null; license: string; seconds_per_hour: number | null; seconds_per_file: number | null };
 /** GET/PUT /models: one main AI (also used for the similar-sound search) and optional AIs to compare.
  * `seconds_per_job` is the fixed start-up time of one analysis on this PC. */
 export type ModelSettings = { main: string; extra: string[]; confirmed: boolean; seconds_per_job: number | null; models: Model[] };

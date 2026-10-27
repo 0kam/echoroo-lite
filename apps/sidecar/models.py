@@ -17,24 +17,28 @@ V3_MODEL = 'BirdNET+_V3.0-preview3.1_Global_11K_FP16_pruned.onnx'
 V3_LABELS = 'BirdNET+_V3.0-preview3.1_Global_11K_Labels.csv'
 REGISTRY = {
     'perch': dict(name='Perch V2', files=('perch/perch_v2_no_dft.onnx', 'perch-labels/assets/labels.csv'),
-                  window_s=5, score_type='softmax_uncalibrated', main_capable=True,
+                  window_s=5, score_type='softmax_uncalibrated', default_threshold=0.1, main_capable=True,
                   experimental=False, species_count=14795, license='Apache-2.0'),
+    'kinglet-b': dict(name='Kinglet-B', files=('kinglet/kinglet-b-v0.1.0.onnx',
+                                            'kinglet/kinglet-b-v0.1.0.classes.csv'),
+                     window_s=5, score_type='sigmoid_calibrated', default_threshold=0.5, main_capable=True,
+                     experimental=False, species_count=317, license='Apache-2.0'),
+    'kinglet-s': dict(name='Kinglet-S', files=('kinglet/kinglet-s-v0.1.0.onnx',
+                                            'kinglet/kinglet-s-v0.1.0.classes.csv'),
+                     window_s=5, score_type='sigmoid_calibrated', default_threshold=0.5, main_capable=True,
+                     experimental=False, species_count=317, license='Apache-2.0'),
+    'kinglet-xs': dict(name='Kinglet-XS', files=('kinglet/kinglet-xs-v0.1.0.onnx',
+                                              'kinglet/kinglet-xs-v0.1.0.classes.csv'),
+                      window_s=5, score_type='sigmoid_calibrated', default_threshold=0.5, main_capable=True,
+                      experimental=False, species_count=317, license='Apache-2.0'),
     'birdnet': dict(name='BirdNET 2.4', files=('birdnet/acoustic-models/v2.4/tf/model-fp32.tflite',
                                             'birdnet/geo-models/v2.4/tf/model-fp32.tflite'),
-                    window_s=3, score_type='sigmoid_uncalibrated', main_capable=False,
+                    window_s=3, score_type='sigmoid_uncalibrated', default_threshold=0.1, main_capable=False,
                     experimental=False, species_count=6522, license='CC-BY-NC-SA-4.0'),
     'birdnet-v3': dict(name='BirdNET+ V3.0 (preview)',
                        files=('birdnet-v3/' + V3_MODEL, 'birdnet-v3/' + V3_LABELS, 'birdnet-v3/TERMS_OF_USE.txt'),
-                       window_s=5, score_type='probability_uncalibrated', main_capable=False,
+                       window_s=5, score_type='probability_uncalibrated', default_threshold=0.1, main_capable=False,
                        experimental=True, species_count=11560, license='CC-BY-SA-4.0'),
-    'kinglet-s': dict(name='Kinglet-S (preview)', files=('kinglet/kinglet-s-preview1.onnx',
-                                                      'kinglet/kinglet-s-preview1.classes.csv'),
-                     window_s=5, score_type='sigmoid_uncalibrated', main_capable=True,
-                     experimental=True, species_count=317, license='Apache-2.0'),
-    'kinglet-xs': dict(name='Kinglet-XS (preview)', files=('kinglet/kinglet-xs-preview1.onnx',
-                                                        'kinglet/kinglet-xs-preview1.classes.csv'),
-                      window_s=5, score_type='sigmoid_uncalibrated', main_capable=True,
-                      experimental=True, species_count=317, license='Apache-2.0'),
 }
 Engine = Literal[tuple(REGISTRY)]
 ValidationEngine = Literal[(*REGISTRY, 'custom')]
@@ -47,6 +51,10 @@ def available(directory, engine):
 
 def window_s(engine):
     return 5 if engine == 'custom' else REGISTRY[engine]['window_s']
+
+
+def default_threshold(engine):
+    return 0.5 if engine == 'custom' else REGISTRY[engine]['default_threshold']
 
 
 def configure_birdnet(directory):
@@ -172,7 +180,7 @@ def list_models(root, directory=None):
         seconds = costs.get('seconds_per_hour')
         seconds = seconds if type(seconds) is int and seconds >= 0 else None
         result.append(dict(id=engine, **{key: model[key] for key in
-            ('name', 'window_s', 'main_capable', 'experimental', 'species_count', 'license')},
+            ('name', 'window_s', 'main_capable', 'experimental', 'default_threshold', 'species_count', 'license')},
             available=available(directory, engine), enabled=engine == data['main'] or engine in data['extra'],
             seconds_per_hour=seconds, seconds_per_file=_decimal_seconds(costs.get('seconds_per_file'))))
     return dict(main=data['main'], extra=data['extra'], confirmed=data['confirmed'], models=result,

@@ -7,7 +7,7 @@ from functools import lru_cache
 from types import SimpleNamespace
 
 from reports import detection, options, snapshot_view
-from models import enabled_engines, selected_engines, main_identity, main_engine, model_identity
+from models import default_threshold, enabled_engines, selected_engines, main_identity, main_engine, model_identity
 from species import canonical_scientific_name, names_for
 from storage import CatalogError, checked_source, connect
 
@@ -40,7 +40,7 @@ def build_fingerprint(root, dataset_id):
 
 @lru_cache(maxsize=8)
 def cached_options(root, dataset_id, revision, selection):
-    return cached(root, ['options-v5', dataset_id, revision, selection], lambda: options(root, dataset_id))
+    return cached(root, ['options-v6', dataset_id, revision, selection], lambda: options(root, dataset_id))
 
 
 def context(root, dataset_id, first=None, last=None):
@@ -121,7 +121,8 @@ def cached(root, key, build):
     return snapshot
 
 
-def detection_snapshot(root, ctx, model, species_id=None, threshold=.1):
+def detection_snapshot(root, ctx, model, species_id=None, threshold=None):
+    threshold = default_threshold(model['engine']) if threshold is None else threshold
     body = SimpleNamespace(dataset_id=ctx['dataset']['id'], engine=model['engine'], model_sha256=model['model_sha256'],
         threshold=threshold, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']),
         species_id=species_id, base_report_id=None)
@@ -172,7 +173,6 @@ def current_validations(root, ctx):
 
 def threshold_for(quality, model):
     """Use a decided threshold, otherwise the documented model default."""
-    from validation import default_threshold
     if quality and quality['applicable'] and quality['models'].get(model['engine']) == model['model_sha256']:
         chosen = quality['thresholds'].get(model['engine'])
         if chosen and chosen['threshold'] is not None:
@@ -210,7 +210,7 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None, birdnet=True):
     ctx = context(root, dataset_id, first, last)
-    result = cached(root, ['overview-v16', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet,
+    result = cached(root, ['overview-v17', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet,
                          enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx, birdnet))
     from analysis import pending_pairs
@@ -258,7 +258,7 @@ def build_overview(root, dataset_id, ctx, birdnet=True):
             if key != model['engine']:
                 continue
             threshold = threshold_for(quality[sid, key], model)
-            if sid in found and threshold == .1:
+            if sid in found and threshold == default_threshold(model['engine']):
                 continue
             summaries = detection_snapshot(root, ctx, model, sid, threshold)['summaries']
             summary = next((s for s in summaries if s['species']['id'] == sid), None)

@@ -60,7 +60,7 @@ class PrefetchTest(unittest.TestCase):
                 path = Path(folder)/f'{index}.flac'
                 sf.write(path, rng.normal(0, .1, round(rate*seconds)).astype(np.float32), rate, subtype='PCM_16')
                 rows.append(record(path, index+1))
-            for engine in ('kinglet-s', 'kinglet-xs'):
+            for engine in ('kinglet-b', 'kinglet-s', 'kinglet-xs'):
                 with self.subTest(engine=engine), analysis.prefetch_audio(rows) as read:
                     for row in rows:
                         native, rate = sf.read(row['path'], dtype='float32')

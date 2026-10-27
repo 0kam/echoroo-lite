@@ -29,11 +29,12 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO/'apps/sidecar'))
 import numpy as np
 import soundfile as sf
+from models import default_threshold
 
 SHAPES = {'long':(1,3600,48000,'WAV'), 'short':(120,30,48000,'WAV'), 'flac':(20,300,44100,'FLAC')}
-ENGINE_SETS = {'perch':['perch'], 'kinglet-s':['kinglet-s'], 'kinglet-xs':['kinglet-xs'], 'dual':['perch','birdnet'],
-               'all':['perch','birdnet','birdnet-v3','kinglet-s','kinglet-xs'],
-               'onnx':['perch','birdnet-v3','kinglet-s','kinglet-xs']}
+ENGINE_SETS = {'perch':['perch'], 'kinglet-b':['kinglet-b'], 'kinglet-s':['kinglet-s'], 'kinglet-xs':['kinglet-xs'],
+               'dual':['perch','birdnet'], 'all':['perch','kinglet-b','kinglet-s','kinglet-xs','birdnet','birdnet-v3'],
+               'onnx':['perch','kinglet-b','kinglet-s','kinglet-xs','birdnet-v3']}
 VARIANTS = ['current', 'legacy', 'no-prefetch', 'eager-windows', *[f'threads-{n}' for n in (1,2,4,6,8,12,0)], 'inter-2', 'parallel',
             'graph-disabled','graph-basic','graph-extended','arena-off','no-spin', 'coreml',
             *[f'batch-{n}' for n in (1,2,4,8,16,32,64)],'batch16-no-arena','batch32-no-arena', 'no-copies', 'fft', 'poly-fast',
@@ -337,7 +338,7 @@ def snapshot(root,target):
                 if scores.ndim==2: arrays[engine+'.top1'].append(scores.argmax(axis=1))
             allowed=candidate_list(db,row)
             labels,starts,probabilities,_=classification_windows(row,row['seconds'],allowed)
-            arrays[engine+'.detections'].append(probabilities>=.1)
+            arrays[engine+'.detections'].append(probabilities>=default_threshold(engine))
             vectors=[np.frombuffer(r[0],dtype='<f4') for r in db.execute('''SELECT v.embedding FROM segments s
                 JOIN vectors v ON v.rowid=s.id WHERE s.analysis_id=? ORDER BY s.start_s''',(row['id'],))]
             if vectors: arrays[engine+'.embeddings'].append(np.stack(vectors))
@@ -394,7 +395,8 @@ def birdnet_acoustic_probe(args):
         results.append(dict(threads=threads,batch=batch,seconds=60,wall_s=median(times),
             seconds_per_hour=median(times)*60,max_abs_scores=float(np.max(np.abs(probabilities-reference))),
             top1_changes=int(np.count_nonzero(probabilities.argmax(axis=1)!=reference.argmax(axis=1))),
-            detection_changes=int(np.count_nonzero((probabilities>=.1)!=(reference>=.1)))))
+            detection_changes=int(np.count_nonzero((probabilities>=default_threshold('birdnet'))!=
+                                                  (reference>=default_threshold('birdnet'))))))
         backend.unload()
         print('BirdNET acoustic only',results[-1],flush=True)
     output=args.output or args.work_dir/'birdnet-acoustic.json'
@@ -469,7 +471,7 @@ def main():
     parser.add_argument('--work-dir',type=Path,default=Path(tempfile.gettempdir())/'echoroo-analysis-bench')
     parser.add_argument('--output',type=Path)
     parser.add_argument('--shapes',default='long,short,flac')
-    parser.add_argument('--engine-sets',default='perch,kinglet-s,dual,all')
+    parser.add_argument('--engine-sets',default='perch,kinglet-b,kinglet-s,dual,all')
     parser.add_argument('--variant',choices=VARIANTS,default='current')
     parser.add_argument('--repeats',type=int,default=3)
     parser.add_argument('--scale',type=float,default=1.,help='Diagnostic subset only; 1 is the requested full workload')

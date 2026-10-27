@@ -7,16 +7,14 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 
-KINGLET_BASE_URL = 'https://github.com/0kam/kinglet/releases/download/v0.1.0-preview1/'
+KINGLET_BASE_URL = 'https://github.com/0kam/kinglet/releases/download/v0.1.0/'
 KINGLET_ASSETS = (
-    ('kinglet-s-preview1.onnx', 'kinglet-s-preview1_efficientnet_lite0.onnx',
-     'a21fdfc6f3356e209d800656fc0ce1977a6fb37935eafef69998f7d94098cc03'),
-    ('kinglet-xs-preview1.onnx', 'kinglet-xs-preview1_mobilenetv4s.onnx',
-     '4da91d8725e909e8e85fe3333b2b57d7a300b3f9bd1956b7b7119441da622442'),
-    ('kinglet-s-preview1.classes.csv', 'kinglet-s-preview1_efficientnet_lite0.classes.csv',
-     '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
-    ('kinglet-xs-preview1.classes.csv', 'kinglet-xs-preview1_mobilenetv4s.classes.csv',
-     '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
+    ('kinglet-b-v0.1.0.onnx', 'c248cad949e5b3e50cb84ee22c8deb4c8e8615cb2097c3cf3d155184af92b2e9'),
+    ('kinglet-s-v0.1.0.onnx', '9d6556f6b8679b65dfb4f0e50f80c461e645b7fe58f6409304398de6a853ff96'),
+    ('kinglet-xs-v0.1.0.onnx', 'a59e9887dcda13d5c226186dd459fb88a71cc6767151f802848ae6725b088ece'),
+    ('kinglet-b-v0.1.0.classes.csv', '08d38f9693b5012ed6ed782e6c00d827c7ca1e62087d401daf488dc434b04e3d'),
+    ('kinglet-s-v0.1.0.classes.csv', '5d340861ba77549b8293ebea14f51ac80ebd32cbf8a06963f6b2eae270d126bd'),
+    ('kinglet-xs-v0.1.0.classes.csv', 'd259e144144b66a2382aeea96e3877b78c6b32bbca9a8f4921b758c25c7d0b70'),
 )
 
 V3_ASSETS = (
@@ -44,7 +42,7 @@ assets = [
 if not args.perch_only:
     assets.extend(('birdnet-v3/' + name, 'https://zenodo.org/api/records/20703646/files/'
                    + urllib.parse.quote(name, safe='') + '/content', sha) for name, sha in V3_ASSETS)
-    assets.extend(('kinglet/' + name, KINGLET_BASE_URL + original, sha) for name, original, sha in KINGLET_ASSETS)
+    assets.extend(('kinglet/' + name, KINGLET_BASE_URL + name, sha) for name, sha in KINGLET_ASSETS)
 
 
 def digest(path):
@@ -61,10 +59,7 @@ for relative, url, expected in assets:
     temporary = path.with_suffix(path.suffix + ".download")
     try:
         if relative.startswith('kinglet/') and args.kinglet_from:
-            name, original, _ = next(asset for asset in KINGLET_ASSETS if asset[0] == path.name)
-            source = args.kinglet_from / name
-            if not source.is_file():
-                source = args.kinglet_from / original
+            source = args.kinglet_from / path.name
             if digest(source) != expected:
                 raise RuntimeError(f'Model checksum mismatch: {source}')
             shutil.copyfile(source, temporary)

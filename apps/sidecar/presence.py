@@ -42,7 +42,7 @@ def merge_candidates(rows):
 def candidates(root, dataset_id, species_id, source, first=None, last=None, birdnet=True):
     """The sounds most likely to be this species, from the top down."""
     from custom_models import list_models
-    from results_workflow import context, region_statuses
+    from results_workflow import context, current_validations, region_statuses, threshold_for
     from search_runs import site_run, top_hits
     from validation import model_windows
     ctx = context(root, dataset_id, first, last)
@@ -60,20 +60,24 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None, bird
             rows[hit['recording_id'], hit['start_s'], hit['end_s']] = {'score': hit['similarity'], 'models': [], 'run_id': run['id']}
     else:
         lists = []
+        quality = current_validations(root, ctx)
         from results_workflow import cached
         for model in ctx['models']:
+            threshold = threshold_for(quality.get((species_id, model['engine'])), model)
             windows = cached(root, ['presence-top-v1', ctx['fingerprint'], ctx['start_date'], ctx['end_date'],
                                     species_id, model['engine'], model['model_sha256']],
                              lambda model=model: sorted(model_windows(root, ctx, species_id, model['engine'])[0],
                                                         key=lambda w: -w['score'])[:LIST_SIZE])
-            lists.append((model['engine'], windows))
+            lists.append((model['engine'], [w for w in windows if w['score'] >= threshold]))
         for model in list_models(root, ctx, species_id):
             if model['applicable']:
+                threshold = threshold_for(quality.get((species_id, f"custom:{model['id']}")),
+                                          {'engine': 'custom', 'model_sha256': model['artifact_sha256']})
                 windows = cached(root, ['presence-top-v1', ctx['fingerprint'], ctx['start_date'], ctx['end_date'],
                                         species_id, 'custom', model['id'], model['artifact_sha256']],
                                  lambda model=model: sorted(model_windows(root, ctx, species_id, 'custom', model['id'])[0],
                                                             key=lambda w: -w['score'])[:LIST_SIZE])
-                lists.append(('custom', windows))
+                lists.append(('custom', [w for w in windows if w['score'] >= threshold]))
         # Interleave each model's ranking so no single AI decides which sounds come first.
         for rank in range(LIST_SIZE):
             for name, windows in lists:

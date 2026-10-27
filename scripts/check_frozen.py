@@ -60,6 +60,9 @@ with ExitStack() as stack:
                 return json.load(response)
         assert api("/health")["status"] == "ok"
         selection = api('/models')
+        thresholds = {m['id']: m['default_threshold'] for m in selection['models']}
+        assert thresholds == {'perch': .1, 'kinglet-b': .5, 'kinglet-s': .5, 'kinglet-xs': .5,
+                              'birdnet': .1, 'birdnet-v3': .1}, thresholds
         assert selection['main'] == 'perch' and selection['confirmed'] is False, selection
         assert selection['seconds_per_job'] is None
         assert all(m['seconds_per_hour'] is None and m['seconds_per_file'] is None for m in selection['models'])
@@ -147,7 +150,7 @@ with ExitStack() as stack:
             for engine in sorted(engines):
                 model = next(m for m in options['models'] if m['engine'] == engine)
                 report = api('/reports/detection', {**dates, 'dataset_id': imported['dataset_id'], 'engine': engine,
-                    'model_sha256': model['model_sha256'], 'threshold': .1, 'species_id': target['id']})
+                    'model_sha256': model['model_sha256'], 'threshold': thresholds[engine], 'species_id': target['id']})
                 assert report['window_s'] == (3 if engine == 'birdnet' else 5) and report['quality'] == 'not_evaluated'
                 assert sum(c['recorded_seconds'] for c in report['cells']) > 0
             exported = api(f"/reports/{report['id']}/export", {'folder': temp,

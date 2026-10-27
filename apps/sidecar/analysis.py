@@ -14,7 +14,7 @@ import numpy as np
 import soundfile as sf
 
 from audio import resample
-from models import REGISTRY, available, enabled_engines, main_engine, window_s, configure_birdnet, file_sha256
+from models import REGISTRY, available, default_threshold, enabled_engines, main_engine, window_s, configure_birdnet, file_sha256
 
 from species import birdnet_species_mapping
 from storage import CatalogError, checked_source, connect
@@ -104,7 +104,7 @@ def pending_pairs(root, models, records, site):
         return {}
     hashes = {engine: file_sha256(Path(models) / REGISTRY[engine]['files'][0]) for engine in engines}
     classes = {engine: file_sha256(Path(models) / REGISTRY[engine]['files'][1])
-               for engine in engines if REGISTRY[engine]['experimental']}
+               for engine in engines if engine not in ('perch', 'birdnet')}
     with connect(root) as db:
         latest = {(r['recording_id'], r['engine']): r for r in db.execute('''SELECT a.*,
             EXISTS (SELECT 1 FROM segments s JOIN vectors v ON v.rowid=s.id WHERE s.analysis_id=a.id) AS embedded
@@ -316,7 +316,7 @@ def prepare_models(models, engines, site, progress=None):
                      "species": species, "species_mapping_sha256": species_mapping_sha256(),
                      "score_type": "sigmoid_uncalibrated", "window_s": 3,
                      "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
-                     "display_threshold": 0.1}
+                     "display_threshold": default_threshold('birdnet')}
     session = None
     if 'perch' in engines:
         progress("loading_perch", 0)
@@ -368,7 +368,7 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None):
                     for engine, (_, names, meta) in detectors.items() if engine not in ('perch', 'birdnet')}
                 # Other engine sets retain their shared whole-recording decode and original batches.
                 reader = (resources.enter_context(prefetch_audio([r for r in records if pending.get(r['id'])]))
-                          if len(engines) == 1 and engines <= {'kinglet-s', 'kinglet-xs'} else None)
+                          if len(engines) == 1 and all(engine.startswith('kinglet-') for engine in engines) else None)
                 for record in records:
                     if cancel.is_set():
                         break
@@ -396,7 +396,7 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None):
                         groups = {}
                         for row in rows:
                             start, end = float(row["start_time"]), min(float(row["end_time"]), record["seconds"])
-                            if row["confidence"] >= 0.1:
+                            if row["confidence"] >= default_threshold('birdnet'):
                                 groups.setdefault(start, []).append((start, end, str(row["species_name"]), float(row["confidence"])))
                         candidates = [row for group in groups.values() for row in sorted(group, key=lambda r: -r[3])[:5]]
                         checked_source(record)

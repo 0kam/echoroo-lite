@@ -310,7 +310,7 @@ def read_classification_windows(analysis, seconds, allowed):
             labels = labels[included]
             scores = softmax(logits.astype(np.float64), axis=1)[:slots, included]
             present = np.ones(len(scores), dtype=bool)
-        elif REGISTRY[analysis['engine']]['experimental']:
+        elif analysis['engine'] != 'birdnet':
             labels, scores = saved['labels'], saved['scores']
             if (labels.ndim != 1 or scores.ndim != 2 or scores.shape[1] != len(labels)
                     or not np.isfinite(scores).all() or np.any((scores < 0) | (scores > 1))):
