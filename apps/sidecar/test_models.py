@@ -309,6 +309,12 @@ class ModelsTest(unittest.TestCase):
                 measured_paths.extend(paths)
                 seconds = sum(sf.info(path).duration for path in paths)
                 measurements.append((engine, len(paths), seconds))
+                if data.name.endswith('-warmup'):
+                    return len(paths), seconds, 999.
+                if len(paths) == 4:
+                    samples = np.concatenate([sf.read(path, dtype='float32')[0] for path in paths])
+                    np.testing.assert_array_equal(samples,
+                        sf.read(paths[0].with_name('BENCHMARK_80_20240808_060000.wav'), dtype='float32')[0])
                 return len(paths), seconds, .4 + len(paths)*.3 + seconds/3600*18
             data = root/'data'
             with TestClient(create_app(data, directory, 'test'), headers={'Authorization':'Bearer test'}) as client, \
@@ -323,7 +329,7 @@ class ModelsTest(unittest.TestCase):
                 self.assertTrue(all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] == 18
                     and m['seconds_per_file'] == .3 for m in result['models']))
                 self.assertEqual(loads, ['perch','kinglet-b','kinglet-s','kinglet-xs','birdnet-v3'])
-                expected = [(1,640), *[(1,160)]*3, *[(1,640)]*3, *[(4,640)]*3]
+                expected = [(1,20), (1,20), (1,80), (4,80)]
                 self.assertEqual(measurements, [(engine,files,seconds) for engine in REGISTRY for files,seconds in expected])
                 self.assertTrue(all(not path.exists() for path in measured_paths))
                 with connect(data) as db:
@@ -343,13 +349,59 @@ class ModelsTest(unittest.TestCase):
     def test_benchmark_fit_separates_audio_file_and_job_costs(self):
         from model_benchmark import fit_costs
         samples=[(files,seconds,.4+files*.3+18*seconds/3600)
-                 for files,seconds in ((1,160),(1,640),(4,640))]
+                 for files,seconds in ((1,20),(1,80),(4,80))]
         self.assertEqual(fit_costs(samples),dict(seconds_per_job=.4,seconds_per_hour=18,seconds_per_file=.3))
-        for samples in ([(1,160,.5),(1,640,.4),(4,640,.6)],[(1,160,.1),(1,640,2.),(4,640,.5)]):
-            result=fit_costs(samples)
-            self.assertGreaterEqual(result['seconds_per_job'],0)
-            self.assertGreaterEqual(result['seconds_per_hour'],0)
-            self.assertGreaterEqual(result['seconds_per_file'],0)
+        self.assertEqual(fit_costs([(1,20,.5),(1,80,.4),(4,80,.7)]),
+                         dict(seconds_per_job=.4,seconds_per_hour=0,seconds_per_file=.1))
+        self.assertEqual(fit_costs([(1,20,.1),(1,80,.7),(4,80,.4)]),
+                         dict(seconds_per_job=0.,seconds_per_hour=36,seconds_per_file=0.))
+
+    def test_benchmark_one_engine_preserves_other_costs_and_selection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); directory = root/'models'; model_files(directory)
+            data = root/'data'; measured = []
+            costs = dict(job=.8, file=.3, hour=18)
+            def job(data, paths, models, engine, loaded):
+                measured.append(engine)
+                files, seconds = len(paths), sum(sf.info(path).duration for path in paths)
+                return files, seconds, costs['job'] + files*costs['file'] + seconds/3600*costs['hour']
+            def load(directory, engine):
+                return FakeSession(engine, None), digest(directory/REGISTRY[engine]['files'][0])
+            with TestClient(create_app(data, directory, 'test'), headers={'Authorization':'Bearer test'}) as client, \
+                    patch('analysis.load_onnx', side_effect=load), \
+                    patch('model_benchmark.benchmark_job', side_effect=job):
+                client.put('/models', json={'main':'kinglet-s', 'extra':['perch']})
+                first = client.post('/models/benchmark', json={'engine':'kinglet-b'})
+                self.assertEqual(first.status_code, 200, first.text)
+                self.assertEqual(measured, ['kinglet-b']*4)
+                self.assertEqual(settings(data)['benchmark']['models'],
+                                 {'kinglet-b':dict(seconds_per_hour=18,seconds_per_file=.3)})
+                self.assertEqual(first.json()['seconds_per_job'], .8)
+                costs.update(job=.2, file=.1, hour=12)
+                second = client.post('/models/benchmark', json={'engine':'kinglet-xs'})
+                self.assertEqual(second.status_code, 200, second.text)
+                self.assertEqual(measured, ['kinglet-b']*4 + ['kinglet-xs']*4)
+                self.assertEqual(settings(data)['benchmark']['models'],
+                    {'kinglet-b':dict(seconds_per_hour=18,seconds_per_file=.3),
+                     'kinglet-xs':dict(seconds_per_hour=12,seconds_per_file=.1)})
+                self.assertEqual(second.json()['seconds_per_job'], .8)
+                costs.update(job=1.2, file=.2, hour=24)
+                last = client.post('/models/benchmark', json={'engine':'kinglet-b'})
+                self.assertEqual(last.status_code, 200, last.text)
+                self.assertEqual(settings(data)['benchmark']['models'],
+                    {'kinglet-b':dict(seconds_per_hour=24,seconds_per_file=.2),
+                     'kinglet-xs':dict(seconds_per_hour=12,seconds_per_file=.1)})
+                self.assertEqual(last.json()['seconds_per_job'], 1.2)
+                self.assertEqual({k:last.json()[k] for k in ('main','extra','confirmed')},
+                                 dict(main='kinglet-s',extra=['perch'],confirmed=True))
+                self.assertEqual(client.get('/models').json(), last.json())
+                self.assertTrue(all(m['seconds_per_hour'] is None for m in last.json()['models']
+                                    if m['id'] not in ('kinglet-b','kinglet-xs')))
+                for engine in ('unknown','birdnet','birdnet-v3'):
+                    response = client.post('/models/benchmark', json={'engine':engine})
+                    self.assertEqual((response.status_code,response.json()),(400,{'detail':'invalid_input'}))
+                    self.assertEqual(client.get('/models').json(), last.json())
+                self.assertEqual(measured, ['kinglet-b']*4 + ['kinglet-xs']*4 + ['kinglet-b']*4)
 
     def test_benchmark_then_birdnet_job_preserves_import_time_model_directory(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -412,8 +464,9 @@ class ModelsTest(unittest.TestCase):
                 client.post('/jobs',json={'dataset_id':1})
                 self.assertTrue(entered.wait(5))
                 try:
-                    response=client.post('/models/benchmark')
-                    self.assertEqual((response.status_code,response.json()),(409,{'detail':'job_busy'}))
+                    for body in (None, {'engine':'kinglet-b'}):
+                        response=client.post('/models/benchmark',json=body)
+                        self.assertEqual((response.status_code,response.json()),(409,{'detail':'job_busy'}))
                 finally:
                     release.set()
 

@@ -17,11 +17,21 @@
     catch (e) { if (!firstRun) { main = app.ai.main; extra = [...app.ai.extra]; } throw e; }
     added ||= [main, ...extra].some(id => !before.has(id));
   });
-  // Only the speeds are taken, so a choice not saved yet stays on screen.
-  const measure = createTask(async () => { app.ai.models = (await api<ModelSettings>('/models/benchmark', {})).models; });
+  // One AI per call, so each time shows up as soon as it is known; only speeds are taken, so a choice not saved yet stays on screen.
+  let measuring = $state(''), stopped = false;
+  const measure = createTask(async () => {
+    for (const { id, name } of usable) {
+      if (stopped) return;
+      measuring = name;
+      const fresh = await api<ModelSettings>('/models/benchmark', { engine: id });
+      const speed = fresh.models.find(model => model.id === id), model = app.ai.models.find(model => model.id === id);
+      if (speed && model) { model.seconds_per_hour = speed.seconds_per_hour; model.seconds_per_file = speed.seconds_per_file; }
+      app.ai.seconds_per_job = fresh.seconds_per_job;
+    }
+  });
   function choose(id: string) { main = id; extra = extra.filter(item => item !== id); if (!firstRun) save.run(); }
   function toggle(id: string, on: boolean) { extra = on ? [...extra, id] : extra.filter(item => item !== id); if (!firstRun) save.run(); }
-  onMount(() => { if (firstRun) measure.run(); });
+  onMount(() => { if (firstRun) measure.run(); return () => { stopped = true; }; });
 </script>
 
 {#snippet about(model: Model)}
@@ -46,7 +56,7 @@
     {/each}
   </fieldset>
   <p class="muted">{t('modelsHidden')}</p>
-  {#if measure.pending}<p class="muted" role="status">{t('modelsMeasuring')}</p>{/if}
+  {#if measure.pending}<p class="muted" role="status">{fill('modelsMeasuring', { name: measuring })}</p>{/if}
   {#if measure.error}<p class="error" role="alert">{t(measure.error)}</p>{/if}
   {#if save.error}<p class="error" role="alert">{t(save.error)}</p>{/if}
   {#if firstRun}

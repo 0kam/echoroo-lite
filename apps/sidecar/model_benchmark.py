@@ -2,27 +2,26 @@
 import json
 import tempfile
 import threading
-import shutil
 from pathlib import Path
-from statistics import median
 from time import perf_counter
 
 import numpy as np
 import soundfile as sf
 
 from analysis import prepare_models, run
-from models import REGISTRY, available, list_models, save_benchmark
+from models import REGISTRY, available, list_models, save_benchmark, settings
 from species import initialize_species
 from storage import CatalogError, connect, initialize, inspect_audio
 
 
 def fit_costs(samples):
-    """Fit real job time = job fixed + files * fixed + hours * marginal."""
-    from scipy.optimize import nnls
-    matrix = np.array([[1, files, seconds/3600] for files, seconds, _ in samples])
-    job, fixed, marginal = nnls(matrix, np.array([elapsed for _, _, elapsed in samples]))[0]
-    return dict(seconds_per_job=round(float(job), 1), seconds_per_hour=round(float(marginal)),
-                seconds_per_file=round(float(fixed), 1))
+    """Separate audio, file and job costs from three warmed jobs; clamp timing noise."""
+    short, long, split = samples
+    marginal = max(0., (long[2] - short[2]) * 3600 / (long[1] - short[1]))
+    fixed = max(0., (split[2] - long[2]) / (split[0] - long[0]))
+    job = max(0., short[2] - short[1] / 3600 * marginal - short[0] * fixed)
+    return dict(seconds_per_job=round(job, 1), seconds_per_hour=round(marginal),
+                seconds_per_file=round(fixed, 1))
 
 
 def benchmark_job(data, paths, models, engine, loaded):
@@ -52,43 +51,42 @@ def benchmark_job(data, paths, models, engine, loaded):
     return len(records), sum(r['seconds'] for r in records), elapsed
 
 
-def benchmark(root, models):
+def benchmark(root, models, engine=None):
+    if engine is not None and (engine not in REGISTRY or not available(models, engine)):
+        raise CatalogError('invalid_input')
+    engines = (engine,) if engine is not None else REGISTRY
+    previous = settings(root)['benchmark'] if engine is not None else {}
     rate = 48000
     rng = np.random.default_rng(20261026)
-    minute = rng.normal(0, .005, rate * 60).astype(np.float32)
+    audio = rng.normal(0, .005, rate * 80).astype(np.float32)
     t = np.arange(rate, dtype=np.float32) / rate
     for second in (5, 20, 40):
-        minute[second * rate:(second + 1) * rate] += .05 * np.sin(2 * np.pi * (1200 * t + 800 * t * t))
+        audio[second * rate:(second + 1) * rate] += .05 * np.sin(2 * np.pi * (1200 * t + 800 * t * t))
     results, job_costs = {}, []
     with tempfile.TemporaryDirectory(prefix='echoroo-benchmark-') as folder:
         folder = Path(folder).resolve()
         paths = {}
-        # Align lengths to the 32-window Kinglet batch, including steady-state prefetch.
-        for seconds in (160, 640):
+        for seconds in (20, 80):
             path = folder / f'BENCHMARK_{seconds}_20240808_060000.wav'
-            with sf.SoundFile(path, 'w', samplerate=rate, channels=1, subtype='PCM_16') as output:
-                for start in range(0, seconds, 60):
-                    output.write(minute[:min(60, seconds-start)*rate])
+            sf.write(path, audio[:seconds*rate], rate, subtype='PCM_16')
             paths[seconds] = path
-        short_files = [paths[160]]
-        for clock in ('060240', '060520', '060800'):
-            path = folder / f'BENCHMARK_160_20240808_{clock}.wav'
-            shutil.copyfile(paths[160], path)
+        short_files = [paths[20]]
+        for index, clock in enumerate(('060020', '060040', '060100'), start=1):
+            path = folder / f'BENCHMARK_20_20240808_{clock}.wav'
+            sf.write(path, audio[index*20*rate:(index+1)*20*rate], rate, subtype='PCM_16')
             short_files.append(path)
-        for engine in REGISTRY:
+        for engine in engines:
             if not available(models, engine):
                 continue
             site = dict(latitude=35, longitude=138)
             with prepare_models(models, [engine], site) as loaded:
-                benchmark_job(folder / f'{engine}-warmup', [paths[640]], models, engine, loaded)
-                samples = []
-                for index, inputs in enumerate(([paths[160]], [paths[640]], short_files)):
-                    measured = [benchmark_job(folder / f'{engine}-{index}-{repeat}', inputs, models, engine, loaded)
-                                for repeat in range(3)]
-                    samples.append((measured[0][0], measured[0][1], median(row[2] for row in measured)))
+                benchmark_job(folder / f'{engine}-warmup', [paths[20]], models, engine, loaded)
+                samples = [benchmark_job(folder / f'{engine}-{index}', inputs, models, engine, loaded)
+                           for index, inputs in enumerate(([paths[20]], [paths[80]], short_files))]
                 results[engine] = fit_costs(samples)
                 job_costs.append(results[engine].pop('seconds_per_job'))
             del loaded
-    # Shared job setup/result preparation is counted once, using the largest measured median.
-    save_benchmark(root, results, round(max(job_costs, default=0.), 1))
+    # Count shared job setup/result preparation once, using the largest fitted cost.
+    save_benchmark(root, {**previous.get('models', {}), **results},
+                   round(max([previous.get('seconds_per_job', 0.), *job_costs]), 1))
     return list_models(root, models)

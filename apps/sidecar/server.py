@@ -70,6 +70,10 @@ class ModelSelection(BaseModel):
     extra: list[str]
 
 
+class ModelBenchmarkRequest(BaseModel):
+    engine: str | None = None
+
+
 class SpeciesRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     scientific_name: str = Field(min_length=1, max_length=200)
@@ -326,14 +330,14 @@ def create_app(root, models, token):
             return model_registry.set_selection(root, models, body.main, body.extra)
 
     @app.post('/models/benchmark')
-    def benchmark_models():
+    def benchmark_models(body: ModelBenchmarkRequest | None = None):
         if not lock.acquire(blocking=False):
             raise HTTPException(409, 'job_busy')
         try:
             if worker and worker.is_alive():
                 raise HTTPException(409, 'job_busy')
             from model_benchmark import benchmark
-            return benchmark(root, models)
+            return benchmark(root, models, body.engine if body else None)
         finally:
             lock.release()
 

@@ -69,7 +69,10 @@ with ExitStack() as stack:
         selection = api('/models', {'main': 'perch', 'extra': [m['id'] for m in selection['models']
             if m['available'] and m['id'] != 'perch']}, method='PUT')
         assert selection['confirmed'] is True
-        measured = api('/models/benchmark', {}, method='POST')
+        started = time.perf_counter()
+        for model in selection['models']:
+            if model['available']:
+                measured = api('/models/benchmark', {'engine': model['id']}, method='POST')
         assert all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] >= 0
                    for m in measured['models'] if m['available']), measured
         assert all(isinstance(m['seconds_per_file'], (int,float)) and m['seconds_per_file'] >= 0
@@ -78,7 +81,8 @@ with ExitStack() as stack:
         assert isinstance(measured['seconds_per_job'], (int,float)) and measured['seconds_per_job'] >= 0
         assert all('minutes_per_hour' not in m for m in measured['models']), measured
         print('Sequential offline marginal benchmark:', {m['id']: {key:m[key] for key in
-            ('seconds_per_hour','seconds_per_file')} for m in measured['models']}, 'seconds_per_job:', measured['seconds_per_job'])
+            ('seconds_per_hour','seconds_per_file')} for m in measured['models']}, 'seconds_per_job:', measured['seconds_per_job'],
+            'total_wall_s:', round(time.perf_counter() - started, 2))
         species = api("/species?q=Certhia%20familiaris")
         assert species[0]["common_names"]["ja"] == "キバシリ", species
         assert api('/xeno-canto/key') == {'configured': False}
