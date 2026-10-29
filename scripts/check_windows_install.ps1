@@ -78,7 +78,8 @@ function Wait-ForDesktopText([string]$Text, [string]$EvidenceName, [int]$Minimum
             $elements = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
             $names = @($elements | ForEach-Object { $_.Current.Name })
         }
-        $matches = @($names | Where-Object { $_ -eq $Text }).Count
+        # Links may carry a decorative arrow in their accessible name (for example '‹ 種の一覧に戻る').
+        $matches = @($names | Where-Object { ($_ -replace '^[‹›]\s*|\s*[‹›]$', '') -eq $Text }).Count
     } until ($matches -ge $MinimumCount -or [DateTime]::UtcNow -ge $deadline)
     $names | Out-File (Join-Path $env:RUNNER_TEMP "$EvidenceName.txt") -Encoding utf8
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds

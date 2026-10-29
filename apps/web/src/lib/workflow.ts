@@ -129,7 +129,9 @@ export function remainingSounds(models:Countable[]):number {
   const population=defaultModel(models)?.eligible_windows??Infinity;
   return Math.min(CHECK_SOUNDS,population);
 }
-export const workload = (sounds:number) => ({low:duration(sounds*8),high:duration(sounds*10)});
+// One value when both ends round to the same text (not "3 min–3 min").
+export const workload = (sounds:number) => {const low=duration(sounds*8),high=duration(sounds*10);
+  return {time:low===high?low:`${low}${app.locale==='ja'?'〜':'–'}${high}`};};
 // `return=` carries the in-app page to go back to (hash routing); anything not matching `allowed` is ignored.
 export const returnPath = (url:URL,allowed:RegExp) => {const path=new URL(url.hash.slice(1)||url.pathname+url.search,url).searchParams.get('return')??'';return allowed.test(path)?path:'';};
 export const appHref = (path:string) => `${resolve('/')}${path.slice(1)}`;

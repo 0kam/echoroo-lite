@@ -65,7 +65,7 @@
     {#if result.species.length&&result.analysed_recordings===result.records&&!result.location_stale}<section class="panel next-step">
       <p><strong>{t(!next?'wNextExport':groups.confirmed.length?'wNextMore':'wNextListen')}</strong></p>
       <p>{fill('wProgress',{total:result.species.length-(stage==='check'?groups.few.length:0)-(stage==='rare'?0:groups.rare.length),confirmed:groups.confirmed.length,missed:groups.missed.length})}</p>
-      {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,low:effort.low,high:effort.high})}</p>{/if}
+      {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,time:effort.time})}</p>{/if}
       <div class="actions">{#if next}<Button variant="primary" href={speciesHref(next)}>{fill('wNextOpen',{name:commonName(next.species,app.locale)||next.species.scientific_name})}</Button>{/if}
         <Button variant={next?'default':'primary'} href={reports}>{t('wExport')}</Button></div></section>{/if}
     <section class="panel stack"><div class="section-heading"><div class="stat-row"><span>{fill('wRecordingsAnalysed',{analysed:result.analysed_recordings,records:result.records})}</span>

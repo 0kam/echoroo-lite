@@ -99,7 +99,7 @@
         <h2 id="activity-title">{t('sActivityTitle')}</h2>
         {#if result.checks.length}<p class="status"><strong>{activityText(result.checks)}</strong></p>{/if}
         <p class="muted">{t(result.checks.length>1?'sActivityHint':'sActivityHintOne')}</p>
-        {#if remaining&&result.checks.length}<p class="muted">{fill('sWorkload',{n:remaining,low:effort.low,high:effort.high})}</p>{/if}
+        {#if remaining&&result.checks.length}<p class="muted">{fill('sWorkload',{n:remaining,time:effort.time})}</p>{/if}
         {#each ordered as item (item.key)}<div class="check-row">
           <div class="check-name"><strong>{checkName(item)} <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></strong><span>{checkText(item.validation)}</span></div>
           <Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>

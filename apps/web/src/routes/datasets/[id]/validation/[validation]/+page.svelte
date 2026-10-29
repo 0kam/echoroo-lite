@@ -59,7 +59,7 @@
         {:else}<Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{/if}
         {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
-    {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill('wValidationPlan',{total:validation.counts.total,low:effort.low,high:effort.high})}</p>
+    {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill('wValidationPlan',{total:validation.counts.total,time:effort.time})}</p>
       <p><strong>{t('refListenFirst')}</strong></p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
     {:else}
       <div class="with-examples"><section class="panel">
