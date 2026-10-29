@@ -138,8 +138,8 @@ class AnalysisCostsTest(unittest.TestCase):
                 shared = saved_results(data)
                 # File changes without a catalog revision must still invalidate the estimate.
                 classes = directory/REGISTRY['kinglet-s']['files'][1]
-                with classes.open('a') as stream:
-                    stream.write('\n')
+                with classes.open('ab') as stream:
+                    stream.write(b'\n')
                 self.assertEqual(client.get('/datasets/1/overview').json()['pending_analysis'],
                                  [dict(engine='kinglet-s',recordings=2,seconds=17.875)])
                 classes.write_bytes(classes.read_bytes()[:-1])

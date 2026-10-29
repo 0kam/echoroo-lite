@@ -546,7 +546,7 @@ class ModelsTest(unittest.TestCase):
                 visible=client.get('/datasets/1/overview').json()
                 exported=client.post('/workflow-exports',json={**body,'revision':visible['revision'],'species_ids':[target['id']],'folder':str(root),'locale':'en'})
                 self.assertEqual(exported.status_code,200,exported.text)
-                self.assertIn('BirdNET+ V3.0 (preview)',Path(exported.json()['report_path']).read_text())
+                self.assertIn('BirdNET+ V3.0 (preview)',Path(exported.json()['report_path']).read_text(encoding='utf-8'))
                 with connect(data) as db:
                     count=db.execute('SELECT COUNT(*) FROM analyses').fetchone()[0]
                 client.put('/models',json={'main':'perch','extra':[]})
@@ -706,7 +706,7 @@ class ModelsTest(unittest.TestCase):
                 exported = client.post('/workflow-exports', json={**body,'revision':overview['revision'],
                     'species_ids':[target['id']],'folder':str(root),'locale':'en'} )
                 self.assertEqual(exported.status_code,200,exported.text)
-                html = Path(exported.json()['report_path']).read_text()
+                html = Path(exported.json()['report_path']).read_text(encoding='utf-8')
                 self.assertIn('Kinglet-S',html)
                 import zipfile
                 with zipfile.ZipFile(exported.json()['path']) as archive:
