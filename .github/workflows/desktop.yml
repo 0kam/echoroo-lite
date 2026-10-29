@@ -47,7 +47,7 @@ jobs:
         # A full artifact quota must not hide the installation check below.
         continue-on-error: true
         with:
-          name: Echoroo-Lite-0.9.0-windows-x86_64
+          name: Echoroo-Lite-0.1.0-windows-x86_64
           path: apps/desktop/target/release/bundle/
       - name: Check installation and desktop preview with analysed audio
         timeout-minutes: 8

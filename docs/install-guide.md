@@ -1,4 +1,4 @@
-# インストールの手順（Echoroo Lite 0.9.0）
+# インストールの手順（Echoroo Lite 0.1.0）
 
 [English](#installation-echoroo-lite-090)
 
@@ -18,7 +18,7 @@ CC BY-NC-SA 4.0 で提供されているためです。鳥の鳴き声の録音�
 
 ## Windows 10 / 11（64ビット）
 
-1. `Echoroo Lite_0.9.0_x64-setup.exe` をダウンロードして開きます。
+1. `Echoroo Lite_0.1.0_x64-setup.exe` をダウンロードして開きます。
 2. 「WindowsによってPCが保護されました」と出たら、**「詳細情報」**を押し、**「実行」**を押します。
 3. 案内に沿ってインストールします。必要なら Microsoft Edge WebView2 も自動で入ります（インターネット接続が必要です）。
 4. スタートメニューの「Echoroo Lite」から起動します。
@@ -27,7 +27,7 @@ CC BY-NC-SA 4.0 で提供されているためです。鳥の鳴き声の録音�
 
 Intel の Mac には対応していません。
 
-1. `Echoroo Lite_0.9.0_aarch64.dmg` をダウンロードして開き、「Echoroo Lite」を「アプリケーション」フォルダへドラッグします。
+1. `Echoroo Lite_0.1.0_aarch64.dmg` をダウンロードして開き、「Echoroo Lite」を「アプリケーション」フォルダへドラッグします。
 2. 「アプリケーション」フォルダの「Echoroo Lite」を開きます。
    「“Echoroo Lite”は開いていません」「開発元を検証できません」と出たら、**「完了」**（または「キャンセル」）を押します。
 3. **システム設定 → プライバシーとセキュリティ** を開き、下の方の「“Echoroo Lite”は使用をブロックされました」の横にある **「このまま開く」** を押します。
@@ -41,7 +41,7 @@ Intel の Mac には対応していません。
 ### .deb（Ubuntu・Debian 系）
 
 ```bash
-sudo apt install ./echoroo-lite_0.9.0_amd64.deb
+sudo apt install ./echoroo-lite_0.1.0_amd64.deb
 ```
 
 音声の再生に必要な GStreamer のプラグインも一緒に入ります。
@@ -49,8 +49,8 @@ sudo apt install ./echoroo-lite_0.9.0_amd64.deb
 ### AppImage（その他の配布物）
 
 ```bash
-chmod +x Echoroo.Lite_0.9.0_amd64.AppImage
-./Echoroo.Lite_0.9.0_amd64.AppImage
+chmod +x Echoroo.Lite_0.1.0_amd64.AppImage
+./Echoroo.Lite_0.1.0_amd64.AppImage
 ```
 
 音が出ない場合は、GStreamer のプラグインを入れてください（Ubuntu の例）。
@@ -77,7 +77,7 @@ sudo apt install gstreamer1.0-plugins-good gstreamer1.0-libav
 
 ---
 
-# Installation (Echoroo Lite 0.9.0)
+# Installation (Echoroo Lite 0.1.0)
 
 ## Terms of use
 
@@ -99,7 +99,7 @@ The app is not code-signed, so the operating system warns on first launch. Open 
 
 ## Windows 10 / 11 (64-bit)
 
-1. Download and open `Echoroo Lite_0.9.0_x64-setup.exe`.
+1. Download and open `Echoroo Lite_0.1.0_x64-setup.exe`.
 2. If "Windows protected your PC" appears, click **More info**, then **Run anyway**.
 3. Follow the installer. Microsoft Edge WebView2 is installed if missing (internet required).
 
@@ -107,7 +107,7 @@ The app is not code-signed, so the operating system warns on first launch. Open 
 
 Intel Macs are not supported.
 
-1. Open `Echoroo Lite_0.9.0_aarch64.dmg` and drag Echoroo Lite to Applications.
+1. Open `Echoroo Lite_0.1.0_aarch64.dmg` and drag Echoroo Lite to Applications.
 2. Open it from Applications. If macOS says it cannot verify the developer, click **Done** (or Cancel).
 3. Open **System Settings → Privacy & Security**, find "Echoroo Lite was blocked", click **Open Anyway**, authenticate, and click **Open**.
 4. Later launches open normally.
@@ -116,7 +116,7 @@ If macOS says the app "is damaged", the download was corrupted; download it agai
 
 ## Linux (64-bit, e.g. Ubuntu 22.04 or later)
 
-- `.deb`: `sudo apt install ./echoroo-lite_0.9.0_amd64.deb` (installs the GStreamer plugins needed for audio).
+- `.deb`: `sudo apt install ./echoroo-lite_0.1.0_amd64.deb` (installs the GStreamer plugins needed for audio).
 - AppImage: `chmod +x` the file and run it. If there is no sound, install `gstreamer1.0-plugins-good` and `gstreamer1.0-libav`.
 
 ## Data and uninstalling

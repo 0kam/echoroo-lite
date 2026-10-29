@@ -118,7 +118,7 @@ jobs:
           test "$count" -eq "${{ matrix.installer_count }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: Echoroo-Lite-0.9.0-${{ matrix.artifact }}
+          name: Echoroo-Lite-0.1.0-${{ matrix.artifact }}
           path: release-assets/
           if-no-files-found: error
 
