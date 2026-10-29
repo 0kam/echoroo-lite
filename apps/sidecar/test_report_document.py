@@ -77,8 +77,8 @@ class ReportDocumentTest(unittest.TestCase):
         cards=[block['cards'] for block in content if block['type']=='cards']
         self.assertEqual([[card['id'] for card in group] for group in cards],[['F001'],['F002','F003']])
         rendered=str(content)
-        self.assertIn('数え方が決まった（BirdNET 2.4）',rendered)
-        self.assertIn('数え方を決められなかった（AIの誤りが多いか、答えがばらついた）',rendered)
+        self.assertIn('精度を確かめ、スコアの区切りが決まった（BirdNET 2.4）',rendered)
+        self.assertIn('精度を確かめたが、スコアの区切りを決められなかった（誤検出が多いか、答えがばらついた）',rendered)
         self.assertNotIn('基準',rendered)
 
 

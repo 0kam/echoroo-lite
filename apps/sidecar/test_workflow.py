@@ -2,6 +2,7 @@
 import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,12 +13,6 @@ from scipy.special import expit
 
 from server import create_app
 from storage import connect
-
-
-def enable_birdnet(root):
-    for relative in ('birdnet/acoustic-models/v2.4/tf/model-fp32.tflite',
-                     'birdnet/geo-models/v2.4/tf/model-fp32.tflite'):
-        path=root/relative;path.parent.mkdir(parents=True,exist_ok=True);path.touch()
 
 
 class WorkflowCheck(unittest.TestCase):
@@ -64,13 +59,15 @@ class WorkflowCheck(unittest.TestCase):
                     self.assertEqual(client.get('/datasets/1/overview').status_code,200)
                     self.assertTrue(batches.called)
 
-    def test_region_status_uses_saved_birdnet_species_for_all_payloads(self):
+    @patch('results_workflow.predict_species', return_value=frozenset({'Horornis diphone'}))
+    def test_region_status_uses_geo_for_all_payloads_without_birdnet(self, predict):
         from analysis import save
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
-            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':[],'confirmed':True}))
             sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
-            enable_birdnet(root)
+            geo=root/'birdnet/geo-models/v2.4/tf/model-fp32.tflite'
+            geo.parent.mkdir(parents=True);geo.touch()
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
                 usual=client.get('/species?q=Horornis diphone').json()[0]
@@ -79,28 +76,35 @@ class WorkflowCheck(unittest.TestCase):
                 with connect(root) as db:
                     record=dict(db.execute('SELECT * FROM recordings').fetchone())
                     job=db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(1,'done',1)").lastrowid
-                label='Horornis diphone_Japanese Bush Warbler'
-                save(root,job,record,'birdnet',{'model_sha256':'birdnet','species':[label]},dict(
-                    labels=np.repeat(label,5),scores=np.arange(5)/10,start_s=np.arange(5)*3,end_s=np.arange(1,6)*3),[])
+                labels=[taxon['scientific_name'] for taxon in (usual,unusual,unmapped)]
+                save(root,job,record,'perch',{'model_sha256':'perch','candidate_filter':{'species':labels}},dict(
+                    labels=labels+['Other'],logits=np.log(np.tile([.4,.3,.2,.1],(3,1)))),[])
                 with connect(root) as db:
                     db.executemany('''INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s)
                         VALUES(1,?,1,0,3)''',((taxon['id'],) for taxon in (usual,unusual,unmapped)))
                 expected={usual['id']:'usual',unusual['id']:'unusual',unmapped['id']:None}
-                overview={row['species']['id']:row['region'] for row in client.get('/datasets/1/overview').json()['species']}
+                payload=client.get('/datasets/1/overview').json()
+                overview={row['species']['id']:row['region'] for row in payload['species']}
                 self.assertEqual({sid:overview[sid] for sid in expected},expected)
                 for taxon in (usual,unusual,unmapped):
                     detail=client.get(f"/datasets/1/species/{taxon['id']}").json()
                     listed=client.get(f"/datasets/1/species/{taxon['id']}/presence",params={'source':'search'}).json()
                     self.assertEqual((detail['region'],listed['region']),(expected[taxon['id']],)*2)
-                (root/'birdnet/geo-models/v2.4/tf/model-fp32.tflite').unlink()
+                exported=client.post('/workflow-exports',json={'dataset_id':1,'start_date':'2024-08-08',
+                    'end_date':'2024-08-08','species_ids':list(expected),'revision':payload['revision'],
+                    'folder':str(root),'locale':'en'})
+                self.assertEqual(exported.status_code,200,exported.text)
+                with zipfile.ZipFile(exported.json()['path']) as archive:
+                    manifest=json.loads(archive.read('manifest.json'))
+                self.assertEqual({row['species_id']:row['region'] for row in manifest['presence']},expected)
+                geo.unlink()
                 self.assertIsNone(client.get(f"/datasets/1/species/{unusual['id']}").json()['region'])
 
-    def test_region_status_is_null_without_birdnet_analysis(self):
+    def test_region_status_is_null_without_geo_model(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)
             (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
             sf.write(root/'20240808_060000.wav',np.zeros(15000),1000)
-            enable_birdnet(root)
             with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
                 species=client.get('/species?q=Horornis diphone').json()[0]

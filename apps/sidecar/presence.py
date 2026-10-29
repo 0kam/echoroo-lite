@@ -39,7 +39,7 @@ def merge_candidates(rows):
     return result
 
 
-def candidates(root, dataset_id, species_id, source, first=None, last=None, birdnet=True):
+def candidates(root, dataset_id, species_id, source, first=None, last=None):
     """The sounds most likely to be this species, from the top down."""
     from custom_models import list_models
     from results_workflow import context, current_validations, region_statuses, threshold_for
@@ -94,7 +94,7 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None, bird
                        'source': {'id': rid, 'kind': 'recording', 'path': record['path'], 'seconds': record['seconds']},
                        'local_time': window_key(record, start, zone)[1]})
     result = merge_candidates(result)[:LIST_SIZE]
-    region = region_statuses(root, ctx, [taxon['scientific_name']], birdnet)[taxon['scientific_name']]
+    region = region_statuses(root, ctx, [taxon['scientific_name']])[taxon['scientific_name']]
     return {'species': names_for(taxon), 'source': source, 'run_id': run['id'] if run else None, 'rows': result,
             'has_ai': bool(ctx['models']), 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'site': ctx['site'], 'presence': summary, 'region': region}

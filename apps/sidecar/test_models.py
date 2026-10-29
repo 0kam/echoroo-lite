@@ -132,6 +132,10 @@ def fake_birdnet(directory, calls):
         else:
             model.predict = lambda *a, **kw: SimpleNamespace(to_structured_array=lambda:
                 np.array([(label,)], dtype=[('species_name','U128')]))
+            @contextmanager
+            def geo_predict_session(**kwargs):
+                yield SimpleNamespace(run=model.predict)
+            model.predict_session = geo_predict_session
         return model
 
     modules['birdnet'].load = load
@@ -458,7 +462,7 @@ class ModelsTest(unittest.TestCase):
                 response=client.post('/models/benchmark')
                 self.assertEqual(response.status_code,200,response.text)
                 self.assertEqual(bird['app_data'],(directory/'birdnet').resolve())
-                self.assertEqual(bird['loads'],['acoustic','geo'])
+                self.assertEqual(bird['loads'],['acoustic','geo','geo'])
                 with connect(data) as db:
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM recordings').fetchone()[0],1)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM analyses').fetchone()[0],0)
@@ -468,7 +472,7 @@ class ModelsTest(unittest.TestCase):
                 job=wait_job(client)
                 self.assertEqual((job['status'],job['error']),('complete',None))
                 self.assertEqual({r['engine'] for r in client.get('/recordings/1/results').json()},{'perch','birdnet'})
-                self.assertEqual(bird['loads'],['acoustic','geo','acoustic','geo'])
+                self.assertEqual(bird['loads'],['acoustic','geo','geo','acoustic','geo'])
 
     def test_old_benchmarks_are_dropped_without_changing_selection(self):
         for old in ({'minutes_per_hour':{'perch':.3}}, {'seconds_per_hour':{'perch':67}},

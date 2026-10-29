@@ -2,11 +2,12 @@
 import hashlib
 import json
 import zlib
-from datetime import date
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 from types import SimpleNamespace
 
 from reports import detection, options, snapshot_view
+from region import model_key as geo_model_key, predict_species, week_number
 from models import default_threshold, enabled_engines, selected_engines, main_identity, main_engine, model_identity
 from species import canonical_scientific_name, names_for
 from storage import CatalogError, checked_source, connect
@@ -78,31 +79,42 @@ def context(root, dataset_id, first=None, last=None):
     with connect(root) as db:
         revision.append([tuple(r) for r in db.execute('SELECT id,answers FROM quiz_sessions ORDER BY id')])
     result['revision']=hashlib.sha256(json.dumps([result['fingerprint'],data_revision,revision,selected_engines(root),
-        main_identity(root),identities,len(complete),stale]).encode()).hexdigest()
+        main_identity(root),identities,len(complete),stale,result['start_date'],result['end_date'],
+        geo_model_key(root)]).encode()).hexdigest()
     return result
 
 
-def region_statuses(root, ctx, scientific_names, birdnet=True):
-    """Compare app species with the latest saved BirdNET range list in this period."""
+def region_statuses(root, ctx, scientific_names):
+    """Mark species predicted at this site in any recorded week of the period."""
     from zoneinfo import ZoneInfo
-    from reports import analysis_metadata, scope_records
+    from reports import scope_records
     from species import birdnet_species_mapping
     names = tuple(scientific_names)
-    if not birdnet or 'birdnet' not in selected_engines(root):
+    key = geo_model_key(root)
+    if not names or key[1] is None:
         return dict.fromkeys(names)
+    zone = ZoneInfo(ctx['site']['timezone'])
     with connect(root) as db:
         records = scope_records([dict(r) for r in db.execute(
             'SELECT * FROM site_recordings WHERE scope_id=?', (ctx['dataset']['id'],))],
-            ZoneInfo(ctx['site']['timezone']), ctx['start_date'], ctx['end_date'])
-        recording_ids = {record['id'] for record in records}
-        analyses = db.execute('''SELECT a.recording_id,a.metadata FROM analyses a
-            JOIN site_recordings r ON r.id=a.recording_id
-            WHERE r.scope_id=? AND a.engine='birdnet' ORDER BY a.id DESC''', (ctx['dataset']['id'],))
-        analysis = next((row for row in analyses if row['recording_id'] in recording_ids), None)
-    labels = analysis_metadata(analysis['metadata']).get('species') if analysis else None
-    if labels is None:
+            zone, ctx['start_date'], ctx['end_date'])
+    first, last = date.fromisoformat(ctx['start_date']), date.fromisoformat(ctx['end_date'])
+    weeks = set()
+    for record in records:
+        start = datetime.fromisoformat(record['recorded_at'])
+        day = max(first, start.astimezone(zone).date())
+        end = min(last, (start + timedelta(seconds=record['seconds'], microseconds=-1)).astimezone(zone).date())
+        while day <= end:
+            weeks.add(week_number(day))
+            day += timedelta(days=1)
+    if not weeks:
         return dict.fromkeys(names)
-    usual = {str(label).partition('_')[0] for label in labels}
+    try:
+        usual = set().union(*(predict_species(key, ctx['site']['latitude'], ctx['site']['longitude'], week)
+                              for week in sorted(weeks)))
+    except Exception:
+        # A missing or unusable optional geo model must never break result pages.
+        return dict.fromkeys(names)
     app_to_birdnet = {app: birdnet for birdnet, app in birdnet_species_mapping().items()}
     return {name: None if name not in app_to_birdnet else
             'usual' if app_to_birdnet[name] in usual else 'unusual' for name in names}
@@ -208,11 +220,11 @@ def counting_status(validations):
     return 'not_started'
 
 
-def overview(root, dataset_id, first=None, last=None, birdnet=True):
+def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    result = cached(root, ['overview-v17', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'], birdnet,
+    result = cached(root, ['overview-v18', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
                          enabled_engines(root)],
-                  lambda: build_overview(root, dataset_id, ctx, birdnet))
+                  lambda: build_overview(root, dataset_id, ctx))
     from analysis import pending_pairs
     from models import settings
     directory = settings(root).get('directory', root)
@@ -227,7 +239,7 @@ def overview(root, dataset_id, first=None, last=None, birdnet=True):
     return {**result, 'pending_analysis':estimates}
 
 
-def build_overview(root, dataset_id, ctx, birdnet=True):
+def build_overview(root, dataset_id, ctx):
     from zoneinfo import ZoneInfo
     from custom_models import list_models
     from presence import empty, summaries
@@ -286,7 +298,7 @@ def build_overview(root, dataset_id, ctx, birdnet=True):
     for sid in [*searched, *presence, *(sid for sid, _ in quality)]:
         if sid in named:
             add(named[sid])
-    regions = region_statuses(root, ctx, (row['species']['scientific_name'] for row in rows.values()), birdnet)
+    regions = region_statuses(root, ctx, (row['species']['scientific_name'] for row in rows.values()))
     for row in rows.values():
         row['counting_status'] = counting_status(model.get('validation') for model in row['models'])
         row['region'] = regions[row['species']['scientific_name']]
@@ -296,7 +308,7 @@ def build_overview(root, dataset_id, ctx, birdnet=True):
                                                            -len(r['presence']['evidence']), r['species']['scientific_name']))}
 
 
-def species_result(root, dataset_id, species_id, first=None, last=None, engine='auto', cell_date=None, hour=None, model_id=None, birdnet=True):
+def species_result(root, dataset_id, species_id, first=None, last=None, engine='auto', cell_date=None, hour=None, model_id=None):
     """One species: presence, each model's check, and the time chart of the chosen model."""
     from custom_models import list_models
     from presence import empty, summaries
@@ -337,7 +349,7 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
         attach_validation(snap, selected['validation'])
     with connect(root) as db:
         report = snapshot_view(db, snap, cell_date=cell_date, hour=hour) if snap else None
-    region = region_statuses(root, ctx, [taxon['scientific_name']], birdnet)[taxon['scientific_name']]
+    region = region_statuses(root, ctx, [taxon['scientific_name']])[taxon['scientific_name']]
     return {**ctx, 'species': taxon, 'checks': checks, 'counting_status': overall_status,
             'selected': selected['key'] if selected else None, 'report': report,
             'search': search_for(root, ctx, species_id), 'presence': summaries(root, ctx, species_id).get(species_id, empty()),

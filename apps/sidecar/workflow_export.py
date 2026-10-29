@@ -95,7 +95,7 @@ def score_tables(root,db,folder,snapshots,records,cancel=None):
                 writers[snap['figure_id']].writerows([row[k] for k in fields] for row in score_windows(root,snap['model_id']))
 
 
-def export(root,body,cancel=None,birdnet=True):
+def export(root,body,cancel=None):
     from custom_models import list_models
     from presence import empty,summaries
     from quiz import report_results
@@ -203,7 +203,7 @@ def export(root,body,cancel=None,birdnet=True):
                 from species import names_for
                 for sid in presence:
                     if sid not in taxa:taxa[sid]=names_for(db.execute('SELECT * FROM species WHERE id=?',(sid,)).fetchone())
-                regions=region_statuses(root,ctx,(taxon['scientific_name'] for taxon in taxa.values()),birdnet)
+                regions=region_statuses(root,ctx,(taxon['scientific_name'] for taxon in taxa.values()))
                 for sid,item in presence.items():
                     if cancel and cancel.is_set():raise CatalogError('cancelled')
                     for entry in item['evidence']:

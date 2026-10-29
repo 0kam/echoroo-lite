@@ -343,21 +343,17 @@ def create_app(root, models, token):
 
     @app.get('/datasets/{dataset_id}/overview')
     def dataset_overview(dataset_id: int, start_date: date | None = None, end_date: date | None = None):
-        from analysis import birdnet_available
         from results_workflow import overview
-        return overview(root,dataset_id,start_date.isoformat() if start_date else None,end_date.isoformat() if end_date else None,
-                        birdnet_available(models))
+        return overview(root,dataset_id,start_date.isoformat() if start_date else None,end_date.isoformat() if end_date else None)
 
     @app.get('/datasets/{dataset_id}/species/{species_id}')
     def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
                          engine: SpeciesEngine = 'auto',
                          model_id: int | None = Query(default=None,ge=1),
                          cell_date: date | None = None, hour: int | None = Query(default=None,ge=0,le=23)):
-        from analysis import birdnet_available
         from results_workflow import species_result
         return species_result(root,dataset_id,species_id,start_date.isoformat() if start_date else None,
-            end_date.isoformat() if end_date else None,engine,cell_date.isoformat() if cell_date else None,hour,model_id,
-            birdnet_available(models))
+            end_date.isoformat() if end_date else None,engine,cell_date.isoformat() if cell_date else None,hour,model_id)
 
     @app.get('/datasets/{dataset_id}/exports')
     def workflow_exports(dataset_id: int):
@@ -374,11 +370,10 @@ def create_app(root, models, token):
 
     @app.post('/workflow-exports')
     def workflow_export(body: WorkflowExportRequest):
-        from analysis import birdnet_available
         from workflow_export import export
         with lock:
             operation_cancel.clear()
-            try:return export(root,body,operation_cancel,birdnet_available(models))
+            try:return export(root,body,operation_cancel)
             except OSError:raise CatalogError('report_write_failed') from None
 
     @app.post('/workflow-exports/{export_id}/open')
@@ -389,10 +384,9 @@ def create_app(root, models, token):
     @app.get('/datasets/{dataset_id}/species/{species_id}/presence')
     def presence_list(dataset_id: int, species_id: str, source: Literal['ai', 'search'] = 'ai',
                       start_date: date | None = None, end_date: date | None = None):
-        from analysis import birdnet_available
         from presence import candidates
         return candidates(root, dataset_id, species_id, source, start_date.isoformat() if start_date else None,
-                          end_date.isoformat() if end_date else None, birdnet_available(models))
+                          end_date.isoformat() if end_date else None)
 
     @app.post('/presence/marks')
     def presence_mark(body: PresenceMark):
