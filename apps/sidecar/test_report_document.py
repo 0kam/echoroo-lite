@@ -52,6 +52,11 @@ class ReportDocumentTest(unittest.TestCase):
             self.assertIn(messages(locale)['region_unusual_note'],rendered)
             self.assertIn(messages(locale)['region_source'],rendered)
 
+    def test_decided_check_states_threshold_and_precision(self):
+        snap=snapshot()
+        rendered=str(blocks(manifest(snap,'en'),[snap],{'per_species':[]}))
+        self.assertIn('BirdNET 2.4: Of detections scoring 0.40 or higher, about 50% were correct (90% range 30%–70%, 60 sounds checked)',rendered)
+
     def test_quality_csv_has_new_metrics_without_old_goal_fields(self):
         snap=snapshot();result=snap['validation']['results']['birdnet']
         result['multiplier']={'value':123,'low':100,'high':150}
@@ -86,8 +91,8 @@ class ReportDocumentTest(unittest.TestCase):
         cards=[block['cards'] for block in content if block['type']=='cards']
         self.assertEqual([[card['id'] for card in group] for group in cards],[['F001'],['F002','F003']])
         rendered=str(content)
-        self.assertIn('精度を確かめ、スコアの区切りが決まった（BirdNET 2.4）',rendered)
-        self.assertIn('精度を確かめたが、スコアの区切りを決められなかった（誤検出が多いか、答えがばらついた）',rendered)
+        self.assertIn('精度を確かめ、スコアの閾値が決まった\\nBirdNET 2.4：スコアの閾値0.40以上の検出のうち、正しかったのは約50%（90%の範囲：30%〜70%、60音を確認）',rendered)
+        self.assertIn('精度を確かめたが、スコアの閾値を決められなかった（誤検出が多いか、答えがばらついた）',rendered)
         self.assertNotIn('基準',rendered)
 
 

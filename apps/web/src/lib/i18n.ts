@@ -525,7 +525,7 @@ export const ja: Record<Key, string> = {
   cell_partial: "一部未解析",
   cell_analysed: "解析済み",
   missingAnalysis: "未解析・対象区間なし",
-  detectionFigureCaution:"確かめて決めたものではない既定のスコアの区切りで、AIが声ありと数えた時間の割合です。個体数ではありません。",
+  detectionFigureCaution:"確かめて決めたものではない既定のスコアの閾値で、AIが声ありと数えた時間の割合です。個体数ではありません。",
   allCells: "全セルを表示",
   recordingEffort: "録音時間",
   evidenceAudio: "検出した音を聞く",

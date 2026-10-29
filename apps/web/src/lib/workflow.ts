@@ -96,9 +96,13 @@ export function speciesGroup(row:Overview['species'][number],recordedSeconds:num
   return !touched&&most<fewBelow(recordedSeconds)?'few':'check';
 }
 type Checked = {engine:string;created_at?:string;validation:Validation|null};
-/** Models whose counting rule was decided by checking. */
+export const share = (value:number|null) => value==null?'—':new Intl.NumberFormat(app.locale,{style:'percent',maximumSignificantDigits:2}).format(value);
+/** Models whose counting rule was decided by checking, each with its share of correct detections when known. */
 export const decidedModels = (models:Checked[]) =>
-  models.filter(model=>model.validation?.applicable&&model.validation.status==='decided').map(checkName);
+  models.filter(model=>model.validation?.applicable&&model.validation.status==='decided').map(model=>{
+    const precision=model.validation!.results[model.validation!.engine]?.precision?.value;
+    return precision==null?checkName(model):fill('wModelPrecision',{model:checkName(model),p:share(precision)});
+  });
 /** "When and how much" of a species. One decided AI is enough (B3); undecided only when no checked AI decided and none is in progress. */
 export function activity(models:Checked[]):'decided'|'in_progress'|'undecided'|'not_started' {
   const states=models.map(model=>model.validation?.applicable?model.validation.status:'not_started');

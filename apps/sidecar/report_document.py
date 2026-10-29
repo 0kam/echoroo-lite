@@ -41,7 +41,11 @@ def status(snap):
 
 def status_text(snap,t):
     value=status(snap)
-    return t['decided_score'].format(score=f"{snap['threshold']:.2f}") if value=='decided' else t[value]
+    if value!='decided':return t[value]
+    score=f"{snap['threshold']:.2f}";p=quality_result(snap).get('precision') or {}
+    if None in (p.get('value'),p.get('low'),p.get('high')):return t['decided_score'].format(score=score)
+    return t['decided_precision'].format(score=score,value=f"{p['value']:.0%}",low=f"{p['low']:.0%}",high=f"{p['high']:.0%}",
+                                         answered=snap['validation']['counts']['answered'])
 
 
 def criterion(snap,t):
@@ -87,10 +91,10 @@ def presence_text(row,t):
     return t['presence_unchecked']
 
 
-def activity_text(row,reliable,t,locale):
+def activity_text(row,reliable,t):
     state=row.get('counting_status','not_started')
     if state=='decided':
-        return t['activity_decided'].format(models=('・' if locale=='ja' else ', ').join(reliable))
+        return t['activity_decided'].format(models='\n'.join(reliable)).rstrip()
     return t['activity_'+state]
 
 
@@ -116,7 +120,7 @@ def blocks(manifest,snapshots,quiz):
     flagged={s['species']['id'] for s in snapshots if s['threshold'] is not None and any(r.get('candidate_windows') for r in s['summaries'])}
     reliable={}
     for snap in snapshots:
-        if status(snap)=='decided':reliable.setdefault(snap['species']['id'],[]).append(method(snap,t))
+        if status(snap)=='decided':reliable.setdefault(snap['species']['id'],[]).append(t['model_result'].format(model=method(snap,t),result=status_text(snap,t)))
     para('ai_flagged_sentence',detected=len(flagged))
     para('presence_sentence',present=sum(r['status']=='confirmed' for r in manifest['presence']))
     para('reliable_sentence',met=len(reliable))
@@ -139,7 +143,7 @@ def blocks(manifest,snapshots,quiz):
         heading(t[title])
         table([t['species_name'],t['presence_column'],t['activity_column']],
             [[name(taxon,locale),presence_text(presence[taxon['id']],t),
-              activity_text({**presence[taxon['id']],'counting_status':overall_state(taxon['id'])},reliable.get(taxon['id'],[]),t,locale)]
+              activity_text({**presence[taxon['id']],'counting_status':overall_state(taxon['id'])},reliable.get(taxon['id'],[]),t)]
              for taxon in taxa],[2.4,2.4,2.4])
     days=(date.fromisoformat(manifest['end_date'])-date.fromisoformat(manifest['start_date'])).days+1
     practice={q['species_id']:q for q in quiz['per_species']}
