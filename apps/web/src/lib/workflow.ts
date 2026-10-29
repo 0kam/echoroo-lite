@@ -7,7 +7,7 @@ export type Metric = { value: number | null; low: number | null; high: number | 
 export type CheckStatus = 'not_started'|'in_progress'|'decided'|'undecided'|'stale';
 /** One check's estimates with 90% ranges; present only after every sound is answered. */
 export type QualityResult = { status:'decided'|'undecided'; threshold:number|null; reason:string|null; density:Metric; count:Metric;
-  precision:Metric|null; recall:Metric|null; recall_status:'estimated'|'not_estimable'|'not_estimable_rare'; auprc:Metric|null; multiplier:Metric|null;
+  precision:Metric|null; recall:Metric|null; recall_status:'estimated'|'not_estimable'|'not_estimable_rare'; auprc:Metric|null;
   unknown:number; disagreement:boolean; answers_per_bin:{heard:number;not_heard:number;unknown:number}[] };
 /** One model's check for one species: 60 mixed sounds, and 18 more when the result is too uncertain. */
 export type Validation = { id:number; dataset_id:number; species:Species; stage:'sample'|'extension'|'complete'; status:CheckStatus;
@@ -114,18 +114,18 @@ export function activityText(models:Checked[]) {
 /** B3: the AI with more detections is the one to check; the others are optional. */
 export const defaultModel = <T extends {candidate_windows?:number|null}>(models:T[]) =>
   models.reduce<T|undefined>((best,model)=>!best||(model.candidate_windows??0)>(best.candidate_windows??0)?model:best,undefined);
-// The agreed check (A2): 60 sounds for one AI, 18 more only when needed, about 8–10 seconds per sound.
-export const CHECK_SOUNDS = 60, EXTRA_SOUNDS = 18;
+// The agreed check (A2): up to 60 sounds for one AI, about 8–10 seconds per sound. New checks never add more sounds.
+export const CHECK_SOUNDS = 60;
 type Countable = Checked & {candidate_windows?:number|null;eligible_windows?:number|null};
-/** Sounds still to answer before "when and how much" is settled, and the most that may be added. A small site has fewer intervals than 60. */
-export function remainingSounds(models:Countable[]):[sounds:number,extra:number] {
+/** Sounds still to answer before "when and how much" is settled. A small site has fewer intervals than 60. */
+export function remainingSounds(models:Countable[]):number {
   const state=activity(models),open=inProgress(models);
-  if(state==='decided'||state==='undecided')return [0,0];
-  if(open)return [open.counts.total-open.counts.answered,open.extended||open.population<=open.counts.total?0:EXTRA_SOUNDS];
+  if(state==='decided'||state==='undecided')return 0;
+  if(open)return open.counts.total-open.counts.answered;
   const population=defaultModel(models)?.eligible_windows??Infinity;
-  return [Math.min(CHECK_SOUNDS,population),population>CHECK_SOUNDS?EXTRA_SOUNDS:0];
+  return Math.min(CHECK_SOUNDS,population);
 }
-export const workload = (sounds:number,extra:number) => ({low:duration(sounds*8),high:duration((sounds+extra)*10)});
+export const workload = (sounds:number) => ({low:duration(sounds*8),high:duration(sounds*10)});
 // `return=` carries the in-app page to go back to (hash routing); anything not matching `allowed` is ignored.
 export const returnPath = (url:URL,allowed:RegExp) => {const path=new URL(url.hash.slice(1)||url.pathname+url.search,url).searchParams.get('return')??'';return allowed.test(path)?path:'';};
 export const appHref = (path:string) => `${resolve('/')}${path.slice(1)}`;

@@ -38,8 +38,8 @@
   // A column that says the same thing on every row becomes one note above the table.
   const anyActivity=$derived(!!result?.species.some(row=>activity(row.models)!=='not_started'));
   // Listening still needed for "when and how much" on the species worth checking (A2, B3: one AI each).
-  const left=$derived([...groups.confirmed,...groups.check].map(row=>remainingSounds(row.models)).filter(([sounds])=>sounds));
-  const effort=$derived(workload(left.reduce((sum,[sounds])=>sum+sounds,0),left.reduce((sum,[,extra])=>sum+extra,0)));
+  const left=$derived([...groups.confirmed,...groups.check].map(row=>remainingSounds(row.models)).filter(Boolean));
+  const effort=$derived(workload(left.reduce((sum,sounds)=>sum+sounds,0)));
   const days=$derived(result?Math.round((Date.parse(result.end_date)-Date.parse(result.start_date))/86400000)+1:0);
   const unanalysed=$derived(result?result.records-result.analysed_recordings:0);
   const estimate=$derived(result?analysisSeconds(result.pending_analysis):null);

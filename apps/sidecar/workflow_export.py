@@ -34,7 +34,7 @@ def digest(path):
 def quality_export(validation,result):
     """Flatten the one-stage check for CSV without hiding 90% intervals."""
     row={}
-    for metric in ('density','count','precision','recall','auprc','multiplier'):
+    for metric in ('density','count','precision','recall','auprc'):
         value=((result or {}).get(metric) or {})
         row.update({f'{metric}_{part}':value.get(part) for part in ('value','low','high')})
     row.update({
@@ -195,7 +195,7 @@ def export(root,body,cancel=None):
                         history=[dict(r) for r in db.execute('''SELECT a.* FROM window_answers a WHERE a.species_id=? AND EXISTS
                             (SELECT 1 FROM validation_items i WHERE i.session_id=? AND i.recording_id=a.recording_id
                              AND i.start_s=a.start_s AND i.end_s=a.end_s) ORDER BY a.id''',(sid,v['id']))]
-                        write_json(folder/'validation'/f"{v['id']}.json",{**dict(saved),'snapshot':json.loads(saved['snapshot']),
+                        write_json(folder/'validation'/f"{v['id']}.json",{**dict(saved),'snapshot':{**json.loads(saved['snapshot']),'results':v['results']},
                             'items':answered,'answer_history':history})
                     write_json(folder/'results'/f'{report_id}.json',{'id':report_id,**snap})
                     index.append({**common, 'feature_engine':snap.get('custom_model',{}).get('engine')})

@@ -18,7 +18,6 @@
     <li>{fill('rDensity',{...shares(result.density),n:about(Math.round(result.count.value??0)),nlow:about(Math.round(result.count.low??0)),nhigh:about(Math.round(result.count.high??0))})}</li>
     {#if result.precision}<li>{fill('rPrecision',shares(result.precision))}</li>{/if}
     {#if result.recall_status==='not_estimable_rare'}<li>{t('rRecallRare')}</li>{:else if result.recall}<li>{fill('rRecall',shares(result.recall))}</li>{/if}
-    {#if result.multiplier}<li>{fill('rMultiplier',{x:about(result.multiplier.value),low:about(result.multiplier.low),high:about(result.multiplier.high)})}</li>{/if}
     {#if result.threshold!=null}<li>{fill('rThreshold',{threshold:+result.threshold.toPrecision(2),window:validation.window_s})}</li>{/if}
     {#if result.unknown}<li>{fill('rUnknown',{n:result.unknown})}</li>{/if}
   </ul>

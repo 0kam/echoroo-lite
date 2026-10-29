@@ -68,11 +68,22 @@ class ReportCheck(unittest.TestCase):
                 self.assertEqual(len(perch['summaries']), 2)
                 self.assertEqual(perch['summaries'][0]['eligible_windows'], 6)
                 self.assertTrue(all(s['species']['scientific_name'] != 'Outside region' for s in perch['summaries']))
+                with connect(root) as db:
+                    saved = json.loads(db.execute('SELECT snapshot FROM reports WHERE id=?', (detection['id'],)).fetchone()[0])
+                    saved['summaries'][0]['multiplier'] = {'value': 123, 'low': 100, 'high': 150}
+                    saved['validation'] = {'method': 'stratified_quantile6_v1', 'results': {
+                        'birdnet': {'precision': {'value': .9}, 'multiplier': {'value': 123}}}}
+                    legacy_snapshot = json.dumps(saved)
+                    db.execute('UPDATE reports SET snapshot=? WHERE id=?', (legacy_snapshot, detection['id']))
                 filtered = client.get(f"/reports/{detection['id']}?cell_date=2024-08-09&hour=0").json()
                 self.assertEqual(filtered['evidence_count'], 0)
+                self.assertNotIn('multiplier', json.dumps(filtered))
+                self.assertEqual(filtered['validation']['results']['birdnet']['precision']['value'], .9)
                 artifact = client.post(f"/reports/{detection['id']}/export", json={'folder': str(root),
                     'audio': [{'recording_id': 1, 'start_s': 3, 'end_s': 6}], 'svg': '<svg xmlns="http://www.w3.org/2000/svg"/>'}).json()
                 with zipfile.ZipFile(artifact['path']) as package:
+                    self.assertNotIn('multiplier', package.read('report.json').decode())
+                    self.assertNotIn('multiplier', package.read('species.csv').decode('utf-8-sig'))
                     self.assertIn('spiral.svg', package.namelist())
                     exported = list(csv.DictReader(io.StringIO(package.read('evidence.csv').decode('utf-8-sig'))))
                     self.assertEqual(len(exported), 1)
@@ -81,6 +92,8 @@ class ReportCheck(unittest.TestCase):
                     self.assertEqual((len(audio), rate), (96000, 32000))
                     quality = list(csv.DictReader(io.StringIO(package.read('quality.csv').decode('utf-8-sig'))))[0]
                     self.assertEqual((quality['precision'], quality['recall'], quality['quality']), ('', '', 'not_evaluated'))
+                with connect(root) as db:
+                    self.assertEqual(db.execute('SELECT snapshot FROM reports WHERE id=?', (detection['id'],)).fetchone()[0], legacy_snapshot)
                 self.assertEqual(client.post('/reports/detection', json={**body, 'end_date': '2026-08-09'}).json()['detail'], 'report_range')
                 self.assertEqual(client.post('/reports/detection', json={**body, 'model_sha256': 'missing'}).json()['detail'], 'no_report_analyses')
                 with connect(root) as db:

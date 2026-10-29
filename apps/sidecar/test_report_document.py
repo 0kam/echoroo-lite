@@ -9,7 +9,7 @@ def snapshot(state='decided', rare=False):
     metric={'value':.5,'low':.3,'high':.7}
     result={'status':state,'threshold':.4 if state=='decided' else None,'density':metric,'count':{'value':50,'low':30,'high':70},
         'precision':metric if state=='decided' else None,'recall':None if rare else metric,'recall_status':'not_estimable_rare' if rare else 'estimated',
-        'auprc':metric,'multiplier':None if rare else metric,'answers_per_bin':[],'unknown':2,'disagreement':True}
+        'auprc':metric,'answers_per_bin':[],'unknown':2,'disagreement':True}
     validation={'id':7,'applicable':True,'stage':'complete','method':'stratified_quantile6_v1','status':state,
         'thresholds':{'birdnet':{'threshold':result['threshold'],'reason':'target_unreachable' if state=='undecided' else None}},
         'results':{'birdnet':result},'counts':{'total':60,'answered':60,'unknown':2,'bins':[]}}
@@ -54,9 +54,18 @@ class ReportDocumentTest(unittest.TestCase):
 
     def test_quality_csv_has_new_metrics_without_old_goal_fields(self):
         snap=snapshot();result=snap['validation']['results']['birdnet']
+        result['multiplier']={'value':123,'low':100,'high':150}
         row=quality_export(snap['validation'],result)
         self.assertEqual((row['density_value'],row['precision_value'],row['unknown'],row['disagreement']),(.5,.5,2,True))
         self.assertNotIn('goal_met',row);self.assertNotIn('precision_lower_95',row)
+        self.assertFalse(any(key.startswith('multiplier') for key in row))
+        for locale in ('ja','en'):
+            self.assertNotIn('multiplier',messages(locale))
+            rendered=str(blocks(manifest(snap,locale),[snap],{'per_species':[]}))
+            self.assertIn('AUPRC',rendered)
+            self.assertNotIn('123.00',rendered)
+            self.assertNotIn('検出数の補正',rendered)
+            self.assertNotIn('Detection count correction',rendered)
 
     def test_report_groups_species_and_moves_unconfirmed_figures_to_appendix(self):
         confirmed=snapshot();not_found=deepcopy(confirmed);unchecked=deepcopy(confirmed)

@@ -73,7 +73,7 @@ def context(root, dataset_id, first=None, last=None):
         # MAX and COUNT together notice new rows and deleted ones (undone marks, deleted checks).
         revision=[tuple(db.execute(f'SELECT COALESCE(MAX(id),0),COUNT(*) FROM {table}').fetchone()) for table in
                   ('search_runs','window_answers','validation_sessions','presence_marks','presence_misses','model_labels','custom_models')]
-        revision.append([tuple(r) for r in db.execute("SELECT id,json_extract(snapshot,'$.stage') FROM validation_sessions ORDER BY id")])
+        revision.append([tuple(r) for r in db.execute("SELECT id,json_extract(snapshot,'$.stage'),json_extract(snapshot,'$.method') FROM validation_sessions ORDER BY id")])
         revision.append([tuple(r) for r in db.execute('SELECT id,names FROM species ORDER BY id')])
     result['names_revision']=hashlib.sha256(json.dumps(revision[-1]).encode()).hexdigest()
     with connect(root) as db:
@@ -157,7 +157,7 @@ def custom_snapshot(root, ctx, model):
         result = report_snapshot(root, ctx, model['id'], threshold)
         result['created_at'] = model['created_at']
         return attach_validation(result, quality)
-    return cached(root, ['custom-report-v3', ctx['revision'], ctx['start_date'], ctx['end_date'], model['id']], build)
+    return cached(root, ['custom-report-v4', ctx['revision'], ctx['start_date'], ctx['end_date'], model['id']], build)
 
 
 def current_validations(root, ctx):
@@ -203,7 +203,7 @@ def attach_validation(snapshot, validation):
                        density=(result or {}).get('density'), count=(result or {}).get('count'),
                        precision=(result or {}).get('precision'), recall=(result or {}).get('recall'),
                        recall_status=(result or {}).get('recall_status'), auprc=(result or {}).get('auprc'),
-                       multiplier=(result or {}).get('multiplier'), answers_per_bin=(result or {}).get('answers_per_bin'),
+                       answers_per_bin=(result or {}).get('answers_per_bin'),
                        disagreement=(result or {}).get('disagreement'), validation_unknown=(result or {}).get('unknown'))
     return snapshot
 
@@ -222,7 +222,7 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    result = cached(root, ['overview-v18', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
+    result = cached(root, ['overview-v19', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
                          enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx))
     from analysis import pending_pairs

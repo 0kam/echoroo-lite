@@ -527,7 +527,19 @@ def get_report(root, report_id, cell_date=None, hour=None):
         return snapshot_view(db, snapshot, row['id'], row['created_at'], cell_date, hour)
 
 
+def strip_multiplier(snapshot):
+    """Remove the retired metric from a decoded report or validation snapshot."""
+    for result in snapshot.get('results', {}).values():
+        result.pop('multiplier', None)
+    for summary in snapshot.get('summaries', ()):
+        summary.pop('multiplier', None)
+    if snapshot.get('validation'):
+        strip_multiplier(snapshot['validation'])
+    return snapshot
+
+
 def snapshot_view(db, snapshot, report_id=0, created_at='', cell_date=None, hour=None):
+    strip_multiplier(snapshot)
     evidence = snapshot['evidence']
     filtered = [e for e in evidence if (cell_date is None or e['date'] == cell_date) and (hour is None or e['hour'] == hour)]
     filtered.sort(key=lambda e: (-e['score'], e['recording_id'], e['start_s']))
@@ -556,7 +568,7 @@ def export_report(root, report_id, folder, svg=None, png=None, audio=(), cancel=
         row = db.execute('SELECT * FROM reports WHERE id=?', (report_id,)).fetchone()
         if row is None:
             raise CatalogError('not_found')
-        snapshot = json.loads(row['snapshot'])
+        snapshot = strip_multiplier(json.loads(row['snapshot']))
         if not result_visible(root, snapshot):
             raise CatalogError('not_found')
         records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (row['dataset_id'],))}

@@ -1,5 +1,7 @@
 """Exercise native windows and the one-stage validation workflow."""
 import json
+import csv
+import io
 import tempfile
 import unittest
 import zipfile
@@ -187,23 +189,20 @@ class WorkflowCheck(unittest.TestCase):
                     second=db.execute('SELECT id FROM validation_items WHERE session_id=? ORDER BY position LIMIT 1 OFFSET 1',(check['id'],)).fetchone()[0]
                     db.execute("INSERT INTO workflow_cache VALUES('keep-after-answer',X'00')")
                 self.assertEqual(client.post(f"/validations/{check['id']}/answers",json={'item_id':second,'verdict':'target'}).json()['detail'],'validation_answer_order')
-                with patch('validation.extension_needed',return_value=True):
+                with patch('validation.extension_needed',return_value=True) as extension_check:
                     while check['question']:
                         q=check['question']; verdict='target' if q['start_s']>=210 else 'other'
                         check=client.post(f"/validations/{check['id']}/answers",json={'item_id':q['id'],'verdict':verdict,'version':q['version']}).json()
                         if check['question']: self.assertEqual(check['results'],{})
+                extension_check.assert_not_called()
                 self.assertIn(check['status'],('decided','undecided'))
                 with connect(root) as db:self.assertTrue(db.execute("SELECT 1 FROM workflow_cache WHERE cache_key='keep-after-answer'").fetchone())
                 self.assertEqual(sum(b['answered'] for b in check['counts']['bins']),43)
-                self.assertTrue(check['can_extend'])
-                check=client.post(f"/validations/{check['id']}/extend").json()
-                self.assertEqual((check['status'],check['results']),('in_progress',{}))
-                self.assertGreater(check['counts']['total'],43)
+                self.assertEqual(check['method'],'detection_top_bin_v1')
+                self.assertFalse(check['can_extend'])
+                self.assertFalse(check['extended'])
+                self.assertNotIn('multiplier',check['results']['birdnet'])
                 self.assertEqual(client.post(f"/validations/{check['id']}/extend").json()['detail'],'validation_extension_unavailable')
-                while check['question']:
-                    q=check['question']; verdict='target' if q['start_s']>=210 else 'other'
-                    check=client.post(f"/validations/{check['id']}/answers",json={'item_id':q['id'],'verdict':verdict}).json()
-                self.assertTrue(check['extended']);self.assertFalse(check['can_extend'])
                 revised=client.get(f"/validations/{check['id']}",params={'item_id':check['history'][0]['id']}).json()
                 q=revised['question'];revised=client.post(f"/validations/{check['id']}/answers",json={
                     'item_id':q['id'],'verdict':'unknown','version':q['version']}).json()
@@ -211,6 +210,37 @@ class WorkflowCheck(unittest.TestCase):
                 self.assertGreater(len(client.get(f'/datasets/1/species/{sid}').json()['presence']['evidence']),0)
                 self.assertEqual(client.post(f"/validations/{check['id']}/evaluation").status_code,404)
                 self.assertEqual(client.post(f"/validations/{check['id']}/recall").status_code,404)
+                detail=client.get(f'/datasets/1/species/{sid}').json()
+                # Reproduce a saved legacy result that still contains the retired field.
+                with connect(root) as db:
+                    snap=json.loads(db.execute('SELECT snapshot FROM validation_sessions WHERE id=?',(check['id'],)).fetchone()[0])
+                    snap['can_extend']=True
+                    db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(snap),check['id']))
+                self.assertFalse(client.get(f"/validations/{check['id']}").json()['can_extend'])
+                self.assertEqual(client.post(f"/validations/{check['id']}/extend").json()['detail'],'validation_extension_unavailable')
+                with connect(root) as db:
+                    snap['method']='stratified_quantile6_v1'
+                    snap['results']['birdnet']['multiplier']={'value':123,'low':100,'high':150}
+                    db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?',(json.dumps(snap),check['id']))
+                legacy=client.get(f"/validations/{check['id']}").json()
+                self.assertNotIn('multiplier',legacy['results']['birdnet'])
+                overview=client.get('/datasets/1/overview').json()
+                self.assertNotEqual(detail['revision'],overview['revision'])
+                self.assertEqual(detail['fingerprint'],overview['fingerprint'])
+                detail=client.get(f'/datasets/1/species/{sid}').json()
+                self.assertNotIn('multiplier',json.dumps(detail))
+                self.assertNotIn('multiplier',json.dumps(overview))
+                exported=client.post('/workflow-exports',json={**scope,'species_ids':[sid],
+                    'revision':overview['revision'],'folder':str(root),'locale':'en'})
+                self.assertEqual(exported.status_code,200,exported.text)
+                with zipfile.ZipFile(exported.json()['path']) as archive:
+                    for filename in ('quality.csv','species.csv'):
+                        fields=next(csv.reader(io.StringIO(archive.read(filename).decode('utf-8-sig'))))
+                        self.assertFalse(any('multiplier' in field for field in fields))
+                    for filename in archive.namelist():
+                        if filename.endswith('.json'):
+                            self.assertNotIn('multiplier',archive.read(filename).decode(),filename)
+                    self.assertNotIn('Detection count correction',archive.read('index.html').decode())
 
 
 if __name__ == '__main__':

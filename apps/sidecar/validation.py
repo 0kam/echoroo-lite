@@ -9,11 +9,12 @@ import numpy as np
 from scipy.special import expit, logit
 
 from models import default_threshold
-from reports import analysis_metadata, classification_batches, classification_species_windows, window_in_scope
+from reports import analysis_metadata, classification_batches, classification_species_windows, strip_multiplier, window_in_scope
 from species import names_for
 from storage import CatalogError, checked_source, connect
 
-METHOD = 'stratified_quantile6_v1'
+METHOD = 'detection_top_bin_v1'
+LEGACY_METHOD = 'stratified_quantile6_v1'
 QUANTILES = np.array([0, .5, .75, .875, .9375, .96875, 1.0])
 SAMPLE_PER_BIN, EXTENSION_PER_BIN = 10, 3
 TARGET_PRECISION, SCORE_FLOOR = .90, 1e-9
@@ -96,6 +97,24 @@ def quantile_strata(scores, seed):
     return strata, edges, bounds
 
 
+def a1_strata(scores, seed, threshold=.1):
+    """Use the detection set as the top bin when it is smaller than the rank bin."""
+    scores = np.asarray(scores, dtype=np.float64)
+    current, edges, _ = quantile_strata(scores, seed)
+    detections = scores >= threshold
+    if detections.sum() >= edges[-1] - edges[-2]:
+        return current
+    rest = np.flatnonzero(~detections)
+    order = rest[np.lexsort((np.random.default_rng(seed).permutation(len(rest)),
+                             logit_scores(scores[rest])))]
+    # Preserve the relative widths of the original five lower rank bins.
+    cuts = np.floor(QUANTILES[:-1] / QUANTILES[-2] * len(rest)).astype(int)
+    strata = np.full(len(scores), 5, dtype=np.int8)
+    for b, (lo, hi) in enumerate(zip(cuts[:-1], cuts[1:])):
+        strata[order[lo:hi]] = b
+    return strata
+
+
 def sample_indices(strata, seed, per_bin, excluded=()):
     rng, excluded, chosen = np.random.default_rng(seed), set(excluded), []
     for b in range(6):
@@ -149,7 +168,7 @@ def estimate(scores, strata, sampled, verdicts, x0, seed, draws=DRAWS):
     rare = point < .01
     if not y_sample[known_sample].any():
         return {**base, 'threshold': None, 'reason': 'no_target', 'precision': None, 'recall': None,
-                'auprc': None, 'multiplier': None, 'curve_density': None, 'disagreement': False,
+                'auprc': None, 'curve_density': None, 'disagreement': False,
                 'recall_status': 'not_estimable_rare' if rare else 'not_estimable'}
 
     A, B = (v.ravel() for v in np.meshgrid(GRID_A, GRID_B, indexing='ij'))
@@ -180,10 +199,9 @@ def estimate(scores, strata, sampled, verdicts, x0, seed, draws=DRAWS):
         precision_draws = tp / tail_total[chosen]
         recall_draws = tp / np.maximum(all_positive, 1)
         precision, recall = _interval(precision_draws), _interval(recall_draws)
-        multiplier = _interval(precision_draws / np.maximum(recall_draws, 1e-12))
     else:
         threshold, reason = None, 'target_unreachable'
-        precision = recall = multiplier = None
+        precision = recall = None
     descending = positives[:, ::-1]
     cumulative = np.cumsum(descending, axis=1)
     total_positive = np.maximum(positives.sum(axis=1), 1)
@@ -191,7 +209,7 @@ def estimate(scores, strata, sampled, verdicts, x0, seed, draws=DRAWS):
     curve_density = _interval(positives.sum(axis=1) / len(x))
     return {**base, 'threshold': threshold, 'reason': reason, 'precision': precision,
             'recall': None if rare else recall, 'recall_status': 'not_estimable_rare' if rare else 'estimated',
-            'auprc': auprc, 'multiplier': None if rare else multiplier, 'curve_density': curve_density,
+            'auprc': auprc, 'curve_density': curve_density,
             'disagreement': not density['low'] <= curve_density['value'] <= density['high'],
             'posterior_edge_mass': edge_mass,
             'grid_edge_ok': max(edge_mass[k] for k in ('a_low', 'a_high', 'b_high')) < .01}
@@ -284,16 +302,25 @@ def start_session(root, body):
         windows = [w for w in windows if (w['recording_id'], w['start_s'], w['end_s']) not in used]
     if not windows: raise CatalogError('validation_no_windows')
     seed = secrets.randbits(63)
-    strata, edges, bounds = quantile_strata([w['score'] for w in windows], seed)
+    scores = np.array([w['score'] for w in windows])
+    threshold = default_threshold(engine)
+    strata = a1_strata(scores, seed, threshold)
+    edges = np.r_[0, np.cumsum(np.bincount(strata, minlength=6))]
+    x, bounds = logit_scores(scores), []
+    for b in range(6):
+        members = x[strata == b]
+        bounds.append({'low_x': float(members.min()) if len(members) else None,
+                       'high_x': float(members.max()) if len(members) else None})
     chosen = sample_indices(strata, seed ^ 0x5A17, SAMPLE_PER_BIN)
-    top = np.flatnonzero(strata == 5)
-    x0 = float(logit_scores([windows[int(i)]['score'] for i in top]).min())
+    top = x[strata == 5]
+    x0 = float(top.min()) if len(top) else float(logit_scores([threshold])[0])
     snapshot = {'method': METHOD, 'stage': 'sample', 'seed': str(seed), 'sample_seed': str(seed ^ 0x5A17),
         'draw_seed': str(seed ^ 0xC0FFEE), 'extension_seed': str(seed ^ 0xE17E),
         'model': key, 'engine': engine, 'model_id': body.model_id,
         'models': models, 'analysis_ids': analyses, 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
         'site': ctx['site'],
-        'N': len(windows), 'window_s': native_window(engine), 'quantile_bounds': QUANTILES.tolist(),
+        'N': len(windows), 'window_s': native_window(engine), 'detection_threshold': threshold,
+        'quantile_bounds': QUANTILES.tolist(),
         'rank_edges': edges.tolist(), 'bin_bounds': bounds, 'bin_weights': [float(np.mean(strata == b)) for b in range(6)],
         'x0': x0, 'priors': {'a': {'distribution': 'normal', 'mean': 0, 'sd': 2.5},
         'b': {'distribution': 'half_normal', 'sd': 1.5}, 'floor': CURVE_FLOOR},
@@ -363,7 +390,7 @@ def _finish(root, db, sid, snap):
     snap['thresholds'] = {snap['engine']: {'threshold': result['threshold'], 'adjusted': result['threshold'] is not None,
                                            'reason': result['reason']}}
     snap['stage'] = 'complete'
-    snap['can_extend'] = not snap['extended'] and extension_needed(result)
+    snap['can_extend'] = snap['method'] == LEGACY_METHOD and not snap['extended'] and extension_needed(result)
     return True
 
 
@@ -404,7 +431,7 @@ def extend(root, sid):
         if not row: raise CatalogError('not_found')
         snap = json.loads(row['snapshot'])
         require_visible(root, snap)
-        if snap['stage'] != 'complete' or not snap.get('can_extend') or snap.get('extended'):
+        if snap['method'] != LEGACY_METHOD or snap['stage'] != 'complete' or not snap.get('can_extend') or snap.get('extended'):
             raise CatalogError('validation_extension_unavailable')
         population = _load_population(root, sid)
         existing_rows = answered_items(db, sid)
@@ -465,7 +492,7 @@ def view_session(root, sid, ctx=None, include_items=True, item_id=None):
     with connect(root) as db:
         row = db.execute('SELECT * FROM validation_sessions WHERE id=?', (sid,)).fetchone()
         if not row: raise CatalogError('not_found')
-        snap = json.loads(row['snapshot'])
+        snap = strip_multiplier(json.loads(row['snapshot']))
         require_visible(root, snap)
         taxon = names_for(db.execute('SELECT * FROM species WHERE id=?', (row['species_id'],)).fetchone())
         items = answered_items(db, sid)
@@ -499,7 +526,8 @@ def view_session(root, sid, ctx=None, include_items=True, item_id=None):
     view = {'id': sid, 'dataset_id': row['dataset_id'], 'species': taxon, 'stage': snap['stage'], 'counts': counts,
         'question': question, 'model': row['model'], 'engine': snap['engine'], 'model_id': snap.get('model_id'),
         'history': history, 'models': snap['models'], 'thresholds': snap['thresholds'], 'results': snap['results'],
-        'can_extend': applicable and bool(snap.get('can_extend')), 'extended': snap.get('extended', False),
+        'can_extend': applicable and snap['method'] == LEGACY_METHOD and bool(snap.get('can_extend')),
+        'extended': snap.get('extended', False),
         'start_date': snap['start_date'], 'end_date': snap['end_date'], 'window_s': snap['window_s'],
         'population': snap['N'], 'method': snap['method'], 'evaluation_scope': snap['evaluation_scope'],
         'reference': snap['reference'], 'sampling_unit': snap['sampling_unit'], 'quantile_bounds': snap['quantile_bounds'],

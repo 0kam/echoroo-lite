@@ -12,8 +12,9 @@ from scipy.special import expit
 from server import ValidationRequest
 from species import initialize_species
 from storage import CatalogError, connect, initialize
-from validation import (CURVE_FLOOR, _load_population, answer, delete_check, estimate, extend, extension_needed,
-                        quantile_strata, sample_indices, start_session, view_session)
+from validation import (CURVE_FLOOR, LEGACY_METHOD, METHOD, QUANTILES, _load_population, a1_strata,
+                        answer, answered_items, delete_check, estimate, extend, extension_needed,
+                        logit_scores, quantile_strata, sample_indices, start_session, view_session)
 
 
 class ValidationEstimatorTest(unittest.TestCase):
@@ -33,6 +34,26 @@ class ValidationEstimatorTest(unittest.TestCase):
         second, _, _ = quantile_strata(scores, 9)
         self.assertTrue(np.array_equal(first, second))
         self.assertEqual(np.bincount(first, minlength=6).tolist(), np.diff(edges).tolist())
+
+    def test_a1_sparse_detections_are_the_top_bin_and_small_bins_are_censused(self):
+        scores = np.full(3200, .02)
+        scores[::500] = .1
+        strata = a1_strata(scores, 9)
+        np.testing.assert_array_equal(strata == 5, scores >= .1)
+        cuts = np.floor(QUANTILES[:-1] / QUANTILES[-2] * np.sum(scores < .1)).astype(int)
+        np.testing.assert_array_equal(np.bincount(strata, minlength=6)[:5], np.diff(cuts))
+        np.testing.assert_array_equal(strata, a1_strata(scores, 9))
+        self.assertFalse(np.array_equal(strata, a1_strata(scores, 10)))
+        sampled = sample_indices(strata, 12, 10)
+        self.assertEqual({i for i, b in sampled if b == 5}, set(np.flatnonzero(scores >= .1)))
+        self.assertEqual(len(sampled), 50 + np.sum(scores >= .1))
+
+    def test_a1_keeps_rank_bins_when_detections_fill_the_top_bin(self):
+        for detections in (10, 40):
+            with self.subTest(detections=detections):
+                scores = np.full(320, .01)
+                scores[:detections] = .1
+                np.testing.assert_array_equal(a1_strata(scores, 9), quantile_strata(scores, 9)[0])
 
     def test_census_reproduces_truth(self):
         scores, truth, strata, _ = self.population(6000)
@@ -63,7 +84,9 @@ class ValidationEstimatorTest(unittest.TestCase):
         verdicts = np.full(len(sampled), 'other'); verdicts[np.argmax(scores[sampled])] = 'target'
         rare = estimate(scores, strata, sampled, verdicts, bounds[5]['low_x'], 4)
         self.assertEqual(rare['recall_status'], 'not_estimable_rare')
-        self.assertIsNone(rare['recall']); self.assertIsNone(rare['multiplier'])
+        self.assertIsNone(rare['recall'])
+        for result in (none, rare):
+            self.assertNotIn('multiplier', result)
         unreachable = estimate(scores, strata, sampled, np.where(scores[sampled] < np.median(scores[sampled]), 'target', 'other'), bounds[5]['low_x'], 5)
         self.assertEqual(unreachable['reason'], 'target_unreachable')
 
@@ -84,7 +107,7 @@ class ValidationEstimatorTest(unittest.TestCase):
         # Windows CI has taken 3.4 s; 10 s still rejects order-of-magnitude slowdowns from normal local runs.
         self.assertLess(time.perf_counter() - started, 10.0)
 
-    def test_large_population_is_external_and_answering_and_extension_work(self):
+    def test_legacy_population_is_external_and_still_resumes_estimates_and_extends(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
@@ -109,7 +132,12 @@ class ValidationEstimatorTest(unittest.TestCase):
                                         end_date=date(2024, 1, 1), model='birdnet')
             with patch('results_workflow.context', return_value=ctx), \
                  patch('validation.model_windows', return_value=(windows, {'birdnet': 'model'}, [1])):
-                check = start_session(root, request)
+                with patch('validation.METHOD', LEGACY_METHOD):
+                    check = start_session(root, request)
+                self.assertEqual(check['method'], LEGACY_METHOD)
+                population = _load_population(root, check['id'])
+                np.testing.assert_array_equal(population['bin'], quantile_strata(scores, int(check['seeds']['rank']))[0])
+                self.assertEqual(start_session(root, request)['id'], check['id'])
                 with connect(root) as db:
                     raw = db.execute('SELECT snapshot FROM validation_sessions WHERE id=?', (check['id'],)).fetchone()[0]
                 self.assertLess(len(raw.encode()), 50_000)
@@ -134,10 +162,67 @@ class ValidationEstimatorTest(unittest.TestCase):
                     check = extend(root, check['id'])
                 self.assertEqual((check['stage'], check['extended']), ('extension', True))
                 self.assertGreater(check['counts']['total'], 60)
+                while check['question']:
+                    question = check['question']
+                    check = answer(root, check['id'], question['id'],
+                                   'target' if question['start_s'] >= 500_000 else 'other')
+                self.assertEqual((check['stage'], check['can_extend']), ('complete', False))
+                with connect(root) as db:
+                    snap = json.loads(db.execute('SELECT snapshot FROM validation_sessions WHERE id=?', (check['id'],)).fetchone()[0])
+                    rows = answered_items(db, check['id'])
+                sampled = [int(round(row['start_s'] / 3)) for row in rows]
+                expected = estimate(scores, population['bin'], sampled, [r['verdict'] for r in rows],
+                                    snap['x0'], int(snap['draw_seed']))
+                expected.update(model_sha256='model', status='decided' if expected['threshold'] is not None else 'undecided')
+                self.assertEqual(check['results']['birdnet'], expected)
+                self.assertEqual(start_session(root, request)['id'], check['id'])
                 delete_check(root, check['id'])
                 self.assertFalse(population_path.exists())
                 with self.assertRaisesRegex(CatalogError, 'validation_population_missing'):
                     _load_population(root, check['id'])
+
+
+class ValidationSessionTest(unittest.TestCase):
+    def test_a1_session_threshold_and_curve_centre_for_empty_and_sparse_top_bins(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            initialize(root); initialize_species(root)
+            source = root / 'source.wav'; source.write_bytes(b'audio')
+            stat = source.stat()
+            with connect(root) as db:
+                db.execute("INSERT INTO sites VALUES(1,'Site','Asia/Tokyo',35,138)")
+                db.execute("INSERT INTO datasets VALUES(1,1,'Data',?)", (str(root),))
+                db.execute('INSERT INTO recordings VALUES(1,1,?,?,?,?,?,?,?,?)',
+                           (str(source), '2024-01-01T00:00:00', 'Asia/Tokyo', '2023-12-31T15:00:00+00:00',
+                            1600, 1, stat.st_size, stat.st_mtime_ns))
+                species_id = db.execute("SELECT id FROM species WHERE scientific_name='Horornis diphone'").fetchone()[0]
+            ctx = {'dataset': {'id': 1}, 'site': {'id': 1, 'timezone': 'Asia/Tokyo'},
+                   'start_date': '2024-01-01', 'end_date': '2024-01-01', 'fingerprint': 'scope'}
+            with patch('results_workflow.context', return_value=ctx), \
+                 patch('validation.require_visible'), patch('validation.custom_model_status', return_value=(True, None)), \
+                 patch('custom_models.training_windows', return_value=set()), patch('validation.secrets.randbits', return_value=9):
+                for engine, threshold in (('perch', .1), ('custom', .5)):
+                    for detections in (0, 2):
+                        with self.subTest(engine=engine, detections=detections):
+                            scores = np.full(320, threshold - .01)
+                            scores[:detections] = threshold + .01
+                            windows = [{'recording_id': 1, 'start_s': float(i*5), 'end_s': float(i*5+5), 'score': score}
+                                       for i, score in enumerate(scores)]
+                            request = ValidationRequest(dataset_id=1, species_id=species_id, start_date=date(2024, 1, 1),
+                                                        end_date=date(2024, 1, 1), model=engine, model_id=1 if engine=='custom' else None)
+                            with patch('validation.model_windows', return_value=(windows, {engine: 'model'}, [1])):
+                                check = start_session(root, request)
+                            population = _load_population(root, check['id'])
+                            np.testing.assert_array_equal(population['bin'] == 5, scores >= threshold)
+                            with connect(root) as db:
+                                snap = json.loads(db.execute('SELECT snapshot FROM validation_sessions WHERE id=?', (check['id'],)).fetchone()[0])
+                            self.assertEqual(snap['method'], METHOD)
+                            self.assertEqual(snap['detection_threshold'], threshold)
+                            self.assertEqual(snap['x0'], logit_scores([threshold + .01 if detections else threshold])[0])
+                            self.assertEqual(check['counts']['bins'][5]['total'], detections)
+                            self.assertEqual(check['bin_bounds'][5]['low_x'], snap['x0'] if detections else None)
+                            self.assertFalse(check['can_extend'])
+                            delete_check(root, check['id'])
 
 
 if __name__ == '__main__':

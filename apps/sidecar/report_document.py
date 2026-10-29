@@ -184,7 +184,7 @@ def blocks(manifest,snapshots,quiz):
         count=numeric_metric(result.get('count') if result else None,t,0)
         precision=metric(result.get('precision') if result else None,t)
         recall=t['rare_recall'] if result and result.get('recall_status')=='not_estimable_rare' else metric(result.get('recall') if result else None,t)
-        extra=t['multiplier']+' '+numeric_metric(result.get('multiplier') if result else None,t)+'\nAUPRC '+numeric_metric(result.get('auprc') if result else None,t)
+        extra='AUPRC '+numeric_metric(result.get('auprc') if result else None,t)
         samples=t['sample_bins'].format(total=validation['counts']['answered'],unknown=validation['counts']['unknown'])
         if result:
             samples+='\n'+' / '.join(t['sample_bin'].format(group=b['bin']+1,heard=b['heard'],not_heard=b['not_heard'],unknown=b['unknown'])

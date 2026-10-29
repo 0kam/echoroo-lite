@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { EXTRA_SOUNDS,fill,modelName,rangeQuery,workload,type Validation } from '$lib/workflow';
+  import { fill,modelName,rangeQuery,workload,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReferencePanel,{type ExampleRef} from '$lib/ReferencePanel.svelte';
@@ -59,7 +59,7 @@
         {:else}<Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{/if}
         {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
-    {:else if !started}{@const extra=validation.population>validation.counts.total?EXTRA_SOUNDS:0}{@const effort=workload(validation.counts.total,extra)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill('wValidationPlan',{total:validation.counts.total,more:extra?t('vMore18'):'',low:effort.low,high:effort.high})}</p>
+    {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill('wValidationPlan',{total:validation.counts.total,low:effort.low,high:effort.high})}</p>
       <p><strong>{t('refListenFirst')}</strong></p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
     {:else}
       <div class="with-examples"><section class="panel">

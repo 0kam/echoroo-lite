@@ -165,20 +165,7 @@ def truth_arrays(data, windows, codes):
     return y, keep, half
 
 
-def a1_strata(scores, seed):
-    current, edges, _ = V.quantile_strata(scores, seed)
-    detections = scores >= .1
-    if detections.sum() >= edges[-1] - edges[-2]:
-        return current
-    rest = np.flatnonzero(~detections)
-    order = rest[np.lexsort((np.random.default_rng(seed).permutation(len(rest)),
-                             V.logit_scores(scores[rest])))]
-    # Preserve the relative widths of the original five lower rank bins.
-    cuts = np.floor(V.QUANTILES[:-1] / V.QUANTILES[-2] * len(rest)).astype(int)
-    strata = np.full(len(scores), 5, dtype=np.int8)
-    for b, (lo, hi) in enumerate(zip(cuts[:-1], cuts[1:])):
-        strata[order[lo:hi]] = b
-    return strata
+a1_strata = V.a1_strata
 
 
 def curve_run(scores, answers, seed, method):

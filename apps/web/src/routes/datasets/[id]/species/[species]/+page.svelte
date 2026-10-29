@@ -58,7 +58,7 @@
   const required=$derived(result?result.checks.find(item=>item.validation?.applicable)??result.checks.find(item=>item.key===defaultModel(counted)?.key)??result.checks[0]:undefined);
   const ordered=$derived(result&&required?[required,...result.checks.filter(item=>item!==required)]:[]);
   const settled=$derived(result?activity(result.checks):'not_started');
-  const left=$derived(remainingSounds(counted)),remaining=$derived(left[0]),effort=$derived(workload(...left));
+  const remaining=$derived(remainingSounds(counted)),effort=$derived(workload(remaining));
   // Every checked AI finished without a counting rule: a species-specific AI is the remaining route (B5).
   const missed=$derived(settled==='undecided');
   const listed=$derived(!!result?.checks.some(item=>item.engine!=='custom'));
@@ -99,7 +99,7 @@
         <h2 id="activity-title">{t('sActivityTitle')}</h2>
         {#if result.checks.length}<p class="status"><strong>{activityText(result.checks)}</strong></p>{/if}
         <p class="muted">{t(result.checks.length>1?'sActivityHint':'sActivityHintOne')}</p>
-        {#if remaining&&result.checks.length}<p class="muted">{fill('sWorkload',{n:remaining,more:left[1]?t('vMore18'):'',low:effort.low,high:effort.high})}</p>{/if}
+        {#if remaining&&result.checks.length}<p class="muted">{fill('sWorkload',{n:remaining,low:effort.low,high:effort.high})}</p>{/if}
         {#each ordered as item (item.key)}<div class="check-row">
           <div class="check-name"><strong>{checkName(item)} <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></strong><span>{checkText(item.validation)}</span></div>
           <Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>
