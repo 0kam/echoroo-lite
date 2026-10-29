@@ -1,23 +1,105 @@
 # Echoroo Lite
 
-Offline, single-user desktop edition of Echoroo — the human×machine bird-call
-annotation loop, rebuilt as a Tauri app with a Python sidecar and SQLite.
-The single distributed edition includes BirdNET 2.4, Perch V2,
-Kinglet-B, Kinglet-S, Kinglet-XS and BirdNET+ V3.0 (preview) and is for
-non-commercial / research use.
+録音から鳥の声をAIで探し、人が聞いて確かめ、その結果を生物多様性のレポートにまとめるデスクトップアプリです。
+自然共生サイトなどでの音によるモニタリングと、その報告書づくりを念頭に置いています。
+解析はインターネットに接続せずにパソコンの中で行います。
 
+[English summary](#english) · [ダウンロード（Releases）](https://github.com/0kam/echoroo-lite/releases) · [インストールの手順](docs/install-guide.md)
+
+> **現時点では日本国内の録音での利用に限ります。** 判定の対象を日本の鳥の一覧に絞り、種名・地域の判定も日本向けに作っているためです。
+> アプリは BirdNET 2.4（CC BY-NC-SA 4.0）を含むため、研究・教育などの**非商用目的に限り**使えます。
+
+## 何を入れて、何をして、何が得られるか
+
+| | 内容 |
+|---|---|
+| **入力** | 録音機で録った WAV / FLAC ファイル（モノラル）のフォルダと、録音した場所（地図で選ぶ）。ファイル名の最後に録音開始の日時（例：`SM2-NP-05_20250710_100000.wav`）が必要です。 |
+| **操作** | ① 録音を追加して解析する → ② AIが見つけた種の一覧から種を開き、音を聞いて「いるか」を確かめる → ③ 必要な種は「AIの精度を確かめる」で最大60音に答え、スコアの閾値を決める → ④ レポートを書き出す |
+| **出力** | HTMLのレポート（地点・期間、人が聞いて確かめた種の一覧、AIの精度、時間帯×日付の図、根拠の音）と、CSV・音声ファイル。報告書の下書きに本文・表・図をそのまま使えます。 |
+
+### 1. 録音を追加して解析する
+
+地図で録音した場所を選び、録音のフォルダを指定します。元のファイルは移動・変更しません。初回は解析に使うAIを選び、このパソコンでの解析の速さ（1時間の録音あたりの時間）を測ります。
+
+![録音した場所と録音の追加](docs/images/01-add-recordings.jpg)
+
+![解析に使うAIの選択](docs/images/05-ai-choice.jpg)
+
+### 2. AIが見つけた種を聞いて確かめる
+
+地点のページに、AIが見つけた種が検出の多い順に並びます。種を開き、AIの点数が高い音から順に聞いて、その種の声なら「この種の声だ」を押します。1つで「いる」と記録されます。
+
+![地点の結果と種の一覧](docs/images/02-site.jpg)
+
+![音を聞いて「いるか」を確かめる](docs/images/03-presence.jpg)
+
+### 3. いつ・どれくらい鳴いたかを見る
+
+種のページでは、日付（内側→外側）と時刻（円周）ごとにAIが声ありと数えた割合を図にします。図のセルを押すと、その時間の音をスペクトログラムで見て聞けます。AIを切り替えて比べることもできます。「AIの精度を確かめる」で答えると、閾値と、その閾値以上の検出のうち正しかった割合がわかります。
+
+![種のページ：時間の図と検出した音](docs/images/04-species.jpg)
+
+### 4. レポートを書き出す
+
+![レポート：種ごとのまとめ](docs/images/06-report-species.jpg)
+
+![レポート：時間ごとの図（AIごと）](docs/images/07-report-figure.jpg)
+
+（画像はアプリの動作を示すための例で、地点名・座標は仮のものです。）
+
+## 使えるAI
+
+| AI | 内容 |
+|---|---|
+| **Perch V2**（既定・おすすめ） | Google が作った鳥の声のAI。最も正確です。 |
+| **Kinglet-B / S / XS** | [Kinglet](https://github.com/0kam/kinglet) は、Perch 2.0 を公開データだけで小さく蒸留した、日本の鳥317種向けの軽量モデルです（Apache-2.0、このアプリの作者が開発）。Perch より約2〜10倍速く（B が最も遅く XS が最も速い）、精度は少し下がります（[モデルカード](https://github.com/0kam/kinglet/blob/main/MODEL_CARD.md)）。解析に時間がかかるパソコンで選んでください。 |
+| **BirdNET 2.4** | 広く使われている鳥の声のAI。比較用に追加できます（非商用）。 |
+| **BirdNET+ V3.0 (preview)** | BirdNET の次の世代の試験版。比較用です。 |
+
+メインのAIは1つ選びます（似た音の検索にも使います）。ほかのAIは、結果を比べたいときだけ追加します。
+
+## 動作環境
+
+| OS | 条件 |
+|---|---|
+| Windows | Windows 10 / 11（64ビット、x64） |
+| macOS | macOS 12 以降、Apple シリコン（M1 以降）。Intel の Mac には対応していません。 |
+| Linux | 64ビット（x86_64）。Ubuntu 22.04 以降など。`.deb` と AppImage を用意しています。 |
+
+- メモリ 8GB 以上をおすすめします。
+- ディスク：アプリ本体に約2GB（AIのモデルを含みます）。解析結果の保存に、録音1時間あたり数十MB（使うAIの数によって増えます）。
+- インストーラーには電子署名がありません。初回の開き方は[インストールの手順](docs/install-guide.md)をご覧ください。
+- 地図の表示と、クイズ用のお手本の取り込み（Xeno-Canto）にはインターネットを使います。
+
+## ライセンス
+
+ソースコードは [Apache License 2.0](LICENSE) です。同梱のAIモデルはそれぞれのライセンスに従います（[第三者通知](THIRD_PARTY_NOTICES.md)）。配布するアプリは BirdNET 2.4 を含むため非商用に限ります。鳥の録音は同梱していません。**Powered by BirdNET.**
+
+## English
+
+Echoroo Lite is a desktop app that finds bird calls in recordings with AI, lets a person listen and confirm them, and turns the results into biodiversity reports. It is designed for acoustic monitoring and reporting at sites such as Japan's OECM sites (自然共生サイト). Analysis runs locally without an internet connection.
+
+- **Japan only for now**: species lists, names and range marks are built for birds in Japan.
+- **Input**: a folder of mono WAV/FLAC files whose names end with the start time (e.g. `SM2-NP-05_20250710_100000.wav`) and the site location.
+- **Steps**: add and analyse recordings → listen to the AI's top sounds to confirm presence → optionally check the AI's accuracy (up to 60 sounds) to set a score threshold → export a report.
+- **Output**: an HTML report (site and period, confirmed species, AI precision, date × time-of-day charts, evidence audio) plus CSV and audio files.
+- **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models distilled from Perch 2.0 for 317 Japanese bird species, by the author of this app), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
+- **Requirements**: Windows 10/11 x64; macOS 12+ on Apple silicon; Linux x86_64 (Ubuntu 22.04+ or similar). 8 GB RAM recommended; about 2 GB of disk for the app plus tens of MB per recorded hour for results. Installers are unsigned.
+- **License**: source code under Apache-2.0; the distributed app is for non-commercial use because it includes BirdNET 2.4 (CC BY-NC-SA 4.0).
+
+## Developer notes
+
+The single distributed edition includes BirdNET 2.4, Perch V2,
+Kinglet-B, Kinglet-S, Kinglet-XS and BirdNET+ V3.0 (preview).
 The default main AI is Perch V2, with no comparison AIs selected. Users can choose
 Perch, Kinglet-B, Kinglet-S or Kinglet-XS as the main AI; similarity search and custom models
-use that AI's saved 1536-dimensional embeddings. Optional comparison AIs include
-BirdNET 2.4, BirdNET+ V3.0 (preview) and the other embedding models. Deselected
+use that AI's saved 1536-dimensional embeddings. Deselected
 results are retained and hidden until selected again. The first-run chooser and
 offline speed benchmark use the [model API contract](docs/model-selection-api.md).
-Kinglet v0.2.0 models are Apache-2.0 models distilled from Perch 2.0 on public
-data, covering 317 Japanese bird species. Scores are softmax probabilities over
-318 classes with the background channel dropped (default detection threshold 0.1).
-See the [model card](https://github.com/0kam/kinglet/blob/main/MODEL_CARD.md). BirdNET+ developer
+Kinglet v0.2.0 scores are softmax probabilities over 318 classes with the background
+channel dropped (default detection threshold 0.1). BirdNET+ developer
 preview 3.1 is comparison-only; its CC BY-SA 4.0 terms restrict use to research
-and evaluation and prohibit poaching and military use. **Powered by BirdNET**.
+and evaluation and prohibit poaching and military use.
 See [model sources](docs/model-sources.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 - Installation (Windows, macOS, Linux; unsigned-app warnings): [docs/install-guide.md](docs/install-guide.md)
