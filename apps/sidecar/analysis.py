@@ -176,7 +176,10 @@ def infer_onnx(detector, engine, audio, count, cancel=None):
                 raise CatalogError('invalid_scores')
         else:
             logits, embedding = detector.run(['logits', 'embedding'], {'waveform': np.clip(waveform, -1, 1)})
-            scores = 1 / (1 + np.exp(-np.clip(logits.astype(np.float64), -709, 709)))
+            if logits.shape != (len(waveform), count + 1):
+                raise CatalogError('invalid_scores')
+            probabilities = np.exp(logits - logits.max(axis=1, keepdims=True))
+            scores = (probabilities / probabilities.sum(axis=1, keepdims=True))[:, :-1]
         if scores.shape != (len(waveform), count) or not np.isfinite(scores).all():
             raise CatalogError('invalid_scores')
         if embedding is not None:

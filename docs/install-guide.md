@@ -5,8 +5,8 @@
 ## 利用条件
 
 配布するのは、BirdNET 2.4 と Perch V2 を含む **Echoroo Lite の1種類だけ**です。
-Kinglet-B・Kinglet-S・Kinglet-XS v0.1.0 も同梱します。
-3モデルは公開データを使って Perch 2.0 から蒸留した日本の鳥317種向けのモデル（Apache-2.0）で、スコアは較正済み、検出の既定閾値は0.5です。
+Kinglet-B・Kinglet-S・Kinglet-XS v0.2.0 も同梱します。
+3モデルは公開データを使って Perch 2.0 から蒸留した日本の鳥317種向けのモデル（Apache-2.0）です。スコアは背景を含む318列で softmax を計算後、背景列を除いた確率で、検出の既定閾値は0.1です。
 BirdNET+ V3.0 (preview) も比較用に同梱します（CC BY-SA 4.0、研究・評価用、密猟・軍事目的は禁止）。
 Powered by BirdNET。詳しくは[第三者通知](../THIRD_PARTY_NOTICES.md)をご覧ください。
 初回にメインAIを1つ選びます。既定はPerch V2で、追加の比較AIは任意です。
@@ -85,9 +85,10 @@ There is **one Echoroo Lite edition**, containing BirdNET 2.4 and Perch V2. It i
 for **non-commercial / research use** because the BirdNET 2.4 models are
 CC BY-NC-SA 4.0. No bird-call recordings are bundled in the app. Add clips from
 your own recordings or Xeno-Canto with your own API key to use the quiz.
-The app also bundles Kinglet-B, Kinglet-S and Kinglet-XS v0.1.0, Apache-2.0
+The app also bundles Kinglet-B, Kinglet-S and Kinglet-XS v0.2.0, Apache-2.0
 models distilled from Perch 2.0 on public data for 317 Japanese bird species.
-Their sigmoid scores are calibrated, with a default detection threshold of 0.5.
+Scores are softmax probabilities over 318 classes with the background channel
+dropped, with a default detection threshold of 0.1.
 The app's non-commercial / research terms remain.
 BirdNET+ V3.0 (preview) is also bundled for comparison (CC BY-SA 4.0, research
 and evaluation; poaching and military use prohibited). **Powered by BirdNET**.

@@ -34,9 +34,9 @@
 | id | name | window_s | main_capable | experimental | default_threshold | species_count | license |
 |---|---|---:|---|---|---:|---:|---|
 | perch | Perch V2 | 5 | true | false | 0.1 | 14795 | Apache-2.0 |
-| kinglet-b | Kinglet-B | 5 | true | false | 0.5 | 317 | Apache-2.0 |
-| kinglet-s | Kinglet-S | 5 | true | false | 0.5 | 317 | Apache-2.0 |
-| kinglet-xs | Kinglet-XS | 5 | true | false | 0.5 | 317 | Apache-2.0 |
+| kinglet-b | Kinglet-B | 5 | true | false | 0.1 | 317 | Apache-2.0 |
+| kinglet-s | Kinglet-S | 5 | true | false | 0.1 | 317 | Apache-2.0 |
+| kinglet-xs | Kinglet-XS | 5 | true | false | 0.1 | 317 | Apache-2.0 |
 | birdnet | BirdNET 2.4 | 3 | false | false | 0.1 | 6522 | CC-BY-NC-SA-4.0 |
 | birdnet-v3 | BirdNET+ V3.0 (preview) | 5 | false | true | 0.1 | 11560 | CC-BY-SA-4.0 |
 
@@ -73,12 +73,14 @@ CはBと同じ音声を4分割する。モデルごとの総音声はウォー�
 `GET /datasets/{id}/overview` の `pending_analysis` は `[{"engine":"kinglet-b","recordings":2,"seconds":60.0}]` の形式。
 旧版の解析はモデルSHAが異なる版として既存の `mixed_models` で扱い、DB移行はしない。
 
-Kingletは [v0.1.0](https://github.com/0kam/kinglet/releases/tag/v0.1.0) の通常版だけを使用する。
+Kingletは [v0.2.0](https://github.com/0kam/kinglet/releases/tag/v0.2.0) の通常版だけを使用する。
 公開データを使って Perch 2.0 から蒸留した Apache-2.0 モデル。
 [モデルカード](https://github.com/0kam/kinglet/blob/main/MODEL_CARD.md)を参照。
 32 kHz・5秒の `waveform:float32[batch,160000]` を入力し、
-`embedding:[batch,1536]` と `logits:[batch,317]` を得る。
-`sigmoid(logits)` を保存し、メタデータは `score_type:"sigmoid_calibrated"`。
-クラスCSVは列名で読み、背景分位の4列は使用しない。
+`embedding:[batch,1536]` と `logits:[batch,318]` を得る。
+背景（その他）を含む318列全体で softmax を計算してから末尾の背景列を除き、
+317種の確率を `scores:[batch,317]` として保存する。除去後の再正規化はしない。
+メタデータは `score_type:"softmax_background_dropped"`。
+クラスCSVは `index,ebird_code,scientific_name,japanese_name` の4列で、列名で読む。
 既定閾値は上表に従い、種ごとに確かめて決めた閾値があれば優先する。
 presence候補もその閾値以上をスコア順で表示する。確認標本と出力する全スコアは閾値未満も含む。

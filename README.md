@@ -12,9 +12,10 @@ use that AI's saved 1536-dimensional embeddings. Optional comparison AIs include
 BirdNET 2.4, BirdNET+ V3.0 (preview) and the other embedding models. Deselected
 results are retained and hidden until selected again. The first-run chooser and
 offline speed benchmark use the [model API contract](docs/model-selection-api.md).
-Kinglet v0.1.0 models are Apache-2.0 models distilled from Perch 2.0 on public
-data, covering 317 Japanese bird species with calibrated sigmoid scores
-(default detection threshold 0.5). See the [model card](https://github.com/0kam/kinglet/blob/main/MODEL_CARD.md). BirdNET+ developer
+Kinglet v0.2.0 models are Apache-2.0 models distilled from Perch 2.0 on public
+data, covering 317 Japanese bird species. Scores are softmax probabilities over
+318 classes with the background channel dropped (default detection threshold 0.1).
+See the [model card](https://github.com/0kam/kinglet/blob/main/MODEL_CARD.md). BirdNET+ developer
 preview 3.1 is comparison-only; its CC BY-SA 4.0 terms restrict use to research
 and evaluation and prohibit poaching and military use. **Powered by BirdNET**.
 See [model sources](docs/model-sources.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
@@ -100,12 +101,12 @@ npm run desktop
 On Windows, create `.venv` with Python 3.11 and replace `.venv/bin/python` with
 `.venv/Scripts/python.exe`. Install the Python requirements with that interpreter
 (`python -m pip install -r ...`) or uv. Developers run `setup_models.py` without
-`--perch-only`; development and release builds include BirdNET 2.4, BirdNET V3, Perch and all three Kinglet v0.1.0 models.
+`--perch-only`; development and release builds include BirdNET 2.4, BirdNET V3, Perch and all three Kinglet v0.2.0 models.
 Installed apps already include these models and need no model setup or network access for analysis.
-Kinglet assets are downloaded from the [v0.1.0 release](https://github.com/0kam/kinglet/releases/tag/v0.1.0)
-under `models/kinglet/kinglet-{b,s,xs}-v0.1.0.onnx` and matching `.classes.csv` names.
+Kinglet assets are downloaded from the [v0.2.0 release](https://github.com/0kam/kinglet/releases/tag/v0.2.0)
+under `models/kinglet/kinglet-{b,s,xs}-v0.2.0.onnx` and matching `.classes.csv` names.
 Only default variants are bundled; gemm-mel variants are excluded. To copy local files instead, use
-`.venv/bin/python scripts/setup_models.py --kinglet-from poc/models/kinglet-v0.1.0`
+`.venv/bin/python scripts/setup_models.py --kinglet-from poc/models/kinglet-v0.2.0`
 with the same pinned checksum verification before copying.
 Do not run `uv venv` over an existing environment you want to keep.
 
@@ -223,7 +224,7 @@ npm run desktop:build
 
 Freeze on the target OS. Binaries use Tauri's host-triple naming convention and
 are excluded from Git. Run `setup_models.py` before `npm run desktop:build`; the build
-fails if a required model is absent. The bundle contains BirdNET 2.4, BirdNET V3, Perch V2 and all three Kinglet v0.1.0 models
+fails if a required model is absent. The bundle contains BirdNET 2.4, BirdNET V3, Perch V2 and all three Kinglet v0.2.0 models
 under the `org.echoroo.lite` identifier. Installed users do not need a separate model setup.
 Model and label provenance, hashes, and unresolved distribution terms are recorded
 in [Model sources](docs/model-sources.md), including the eBird taxonomy used for species-page links.
@@ -259,16 +260,17 @@ Optional real-audio checks (the supplied 30-minute recording):
 ```
 
 The first check keeps test results under ignored `.local-data/m0-smoke`; the frozen
-check uses a temporary catalog. Kinglet v0.1.0 uses calibrated sigmoid scores with a
-default detection threshold of 0.5. BirdNET 2.4 uses uncalibrated sigmoid scores;
+check uses a temporary catalog. Kinglet v0.2.0 applies softmax over all 318 logits,
+then drops the background channel, with a default detection threshold of 0.1.
+BirdNET 2.4 uses uncalibrated sigmoid scores;
 BirdNET V3 uses uncalibrated probability outputs without another sigmoid.
 Perch displays uncalibrated softmax scores over all 14,795 classes, retaining original logits.
 Perch and both BirdNET engines retain a default threshold of 0.1.
 BirdNET candidates use the recording site's saved region list, Perch uses the bundled
 Japanese-bird candidate list, and each Kinglet uses its own 317-class list.
 Filtering does not change scores.
-Existing saved runs are displayed this way without reanalysis. Complete Perch class scores and BirdNET scores
+Kinglet model or class hash changes require reanalysis. Complete Perch class scores and BirdNET scores
 within the recorded geo-filtered label set are stored as non-pickled NPZ arrays;
-Kinglet stores all 317 sigmoid scores per window; BirdNET V3 stores all 11,560 probability scores
+Kinglet stores all 317 species probabilities per window; BirdNET V3 stores all 11,560 probability scores
 with the Japanese-bird candidate filter. Perch and Kinglet embeddings are saved separately in SQLite.
 The UI shows only top candidates. This is not a validated species inventory.

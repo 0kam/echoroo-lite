@@ -61,7 +61,7 @@ with ExitStack() as stack:
         assert api("/health")["status"] == "ok"
         selection = api('/models')
         thresholds = {m['id']: m['default_threshold'] for m in selection['models']}
-        assert thresholds == {'perch': .1, 'kinglet-b': .5, 'kinglet-s': .5, 'kinglet-xs': .5,
+        assert thresholds == {'perch': .1, 'kinglet-b': .1, 'kinglet-s': .1, 'kinglet-xs': .1,
                               'birdnet': .1, 'birdnet-v3': .1}, thresholds
         assert selection['main'] == 'perch' and selection['confirmed'] is False, selection
         assert selection['seconds_per_job'] is None

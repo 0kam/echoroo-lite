@@ -367,7 +367,7 @@ export const en = {
   licenseNonCommercial: 'This app uses the BirdNET 2.4 models to identify bird sounds. Because their license allows only non-commercial use, this app is for non-commercial purposes such as research and education.',
   licenseBirdnet: 'BirdNET 2.4 models — Cornell Lab of Ornithology and Chemnitz University of Technology — CC BY-NC-SA 4.0.',
   licenseBirdnetV3: 'BirdNET+ V3.0 (preview) model — Cornell Lab of Ornithology and Chemnitz University of Technology — CC BY-SA 4.0. Powered by BirdNET. It must not be used for poaching or military purposes.',
-  licenseKinglet: 'Kinglet-B, Kinglet-S, and Kinglet-XS v0.1.0 models — distilled from Perch 2.0 — Apache License 2.0.',
+  licenseKinglet: 'Kinglet-B, Kinglet-S, and Kinglet-XS v0.2.0 models — distilled from Perch 2.0 — Apache License 2.0.',
 };
 export type Key = keyof typeof en;
 export const ja: Record<Key, string> = {
@@ -737,5 +737,5 @@ export const ja: Record<Key, string> = {
   licenseNonCommercial: 'このアプリは、鳥の声の判定に BirdNET 2.4 モデルを使っています。モデルのライセンスが非商用に限られるため、このアプリも研究・教育などの非商用目的でのみ使えます。',
   licenseBirdnet: 'BirdNET 2.4 モデル — Cornell Lab of Ornithology・ケムニッツ工科大学 — CC BY-NC-SA 4.0。',
   licenseBirdnetV3: 'BirdNET+ V3.0（試験版）モデル — Cornell Lab of Ornithology・ケムニッツ工科大学 — CC BY-SA 4.0。Powered by BirdNET。密猟や軍事目的には使えません。',
-  licenseKinglet: 'Kinglet-B・Kinglet-S・Kinglet-XS v0.1.0 モデル — Perch 2.0 から蒸留 — Apache License 2.0。',
+  licenseKinglet: 'Kinglet-B・Kinglet-S・Kinglet-XS v0.2.0 モデル — Perch 2.0 から蒸留 — Apache License 2.0。',
 };

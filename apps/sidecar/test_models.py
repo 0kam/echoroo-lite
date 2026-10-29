@@ -17,11 +17,11 @@ import numpy as np
 import soundfile as sf
 from fastapi.testclient import TestClient
 
-from analysis import digest
+from analysis import digest, infer_onnx
 from models import REGISTRY, default_threshold, settings, machine_fingerprint
 from server import create_app
 from species import bundled_names
-from storage import connect
+from storage import CatalogError, connect
 
 
 def model_files(directory):
@@ -37,9 +37,8 @@ def model_files(directory):
             if engine == 'perch':
                 writer.writerows([['label'], ['Horornis diphone'], ['Other']])
             else:
-                writer.writerow(['index', 'ebird_code', 'scientific_name', 'japanese_name',
-                                 'logit_bg_p99', 'score_bg_p99', 'logit_bg_p999', 'score_bg_p999'])
-                writer.writerows((i, str(i), name, '', -2, .12, -1, .27) for i, name in enumerate(names))
+                writer.writerow(['index', 'ebird_code', 'scientific_name', 'japanese_name'])
+                writer.writerows((i, str(i), name, '') for i, name in enumerate(names))
     return names
 
 
@@ -74,7 +73,7 @@ class FakeSession:
         assert outputs == ['logits', 'embedding'] or outputs == ['embedding'] and set(inputs) == {'waveform'}
         assert wave.dtype == np.float32 and wave.shape[1] == 160000
         assert np.max(np.abs(wave)) <= 1
-        logits = np.full((len(wave), 317), -8., dtype=np.float32)
+        logits = np.full((len(wave), 318), -8., dtype=np.float32)
         logits[:, :2] = 2 if self.engine in ('kinglet-b', 'kinglet-s') else -4
         return [np.ones((len(wave),1536), dtype=np.float32) if name == 'embedding' else logits for name in outputs]
 
@@ -165,6 +164,40 @@ def wait_job(client):
 
 
 class ModelsTest(unittest.TestCase):
+    def test_kinglet_softmax_includes_background_and_is_numerically_stable(self):
+        logits = np.full((2, 318), -1000., dtype=np.float32)
+        logits[:, :2] = [1000., 999.]
+        logits[:, -1] = 1002.
+        logits[1] -= 2000.
+        embedding = np.ones((2, 1536), dtype=np.float32)
+        expected = np.zeros((2, 317), dtype=np.float32)
+        expected[:, :2] = np.exp([-2., -3.]) / (1 + np.exp(-2.) + np.exp(-3.))
+        for engine in ('kinglet-b', 'kinglet-s', 'kinglet-xs'):
+            with self.subTest(engine=engine):
+                detector = SimpleNamespace(run=lambda *args: (logits, embedding))
+                scores, vectors = infer_onnx(detector, engine, np.zeros(160001), 317)
+                self.assertEqual(scores.dtype, np.float32)
+                np.testing.assert_allclose(scores, expected, rtol=1e-6)
+                np.testing.assert_array_equal(vectors, embedding)
+
+    def test_kinglet_background_dominated_window_has_low_species_scores(self):
+        logits = np.full((1, 318), 2., dtype=np.float32)
+        logits[:, -1] = 12.
+        detector = SimpleNamespace(run=lambda *args: (logits, np.ones((1, 1536), dtype=np.float32)))
+        scores, _ = infer_onnx(detector, 'kinglet-s', np.zeros(160000), 317)
+        expected = np.exp(-10.) / (1 + 317 * np.exp(-10.))
+        np.testing.assert_allclose(scores, np.full((1, 317), expected), rtol=1e-6)
+        self.assertTrue(np.all(scores < default_threshold('kinglet-s')))
+        self.assertLess(scores.sum(), .02)
+
+    def test_kinglet_rejects_invalid_logit_shapes(self):
+        for engine in ('kinglet-b', 'kinglet-s', 'kinglet-xs'):
+            for shape in ((1, 318), (2, 317), (2, 319), (318,), (2, 318, 1)):
+                with self.subTest(engine=engine, shape=shape):
+                    detector = SimpleNamespace(run=lambda *args: (np.zeros(shape), np.ones((2, 1536))))
+                    with self.assertRaisesRegex(CatalogError, 'invalid_scores'):
+                        infer_onnx(detector, engine, np.zeros(160001), 317)
+
     def test_registry_selection_migration_defaults_validation_and_persistence(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); directory = root / 'models'; model_files(directory)
@@ -179,7 +212,7 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual([m['id'] for m in models], list(REGISTRY))
                 self.assertEqual(list(REGISTRY), ['perch','kinglet-b','kinglet-s','kinglet-xs','birdnet','birdnet-v3'])
                 self.assertEqual({m['id']: m['default_threshold'] for m in models},
-                    {'perch': .1, 'kinglet-b': .5, 'kinglet-s': .5, 'kinglet-xs': .5, 'birdnet': .1, 'birdnet-v3': .1})
+                    {'perch': .1, 'kinglet-b': .1, 'kinglet-s': .1, 'kinglet-xs': .1, 'birdnet': .1, 'birdnet-v3': .1})
                 self.assertEqual(default_threshold('custom'), .5)
                 self.assertEqual([m['name'] for m in models[1:4]], ['Kinglet-B', 'Kinglet-S', 'Kinglet-XS'])
                 for model in models[1:4]:
@@ -239,7 +272,7 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual(client.post('/jobs',json={'dataset_id':1}).status_code,200)
                 self.assertEqual(wait_job(client)['status'],'complete')
 
-    def test_calibrated_kinglet_thresholds_across_views_presence_and_export(self):
+    def test_softmax_kinglet_thresholds_across_views_presence_and_export(self):
         import zipfile
         for engine in ('kinglet-b', 'kinglet-s', 'kinglet-xs'):
             with self.subTest(engine=engine), tempfile.TemporaryDirectory() as temp:
@@ -253,16 +286,18 @@ class ModelsTest(unittest.TestCase):
                 audio = root/'audio'; audio.mkdir()
                 sf.write(audio/'20240808_060000.wav', np.full(32000*30, .25), 32000)
 
-                class CalibratedSession(FakeSession):
+                class ProbabilitySession(FakeSession):
                     def run(self, outputs, inputs):
                         logits, embedding = super().run(outputs, inputs)
-                        probabilities = np.array([.05, .2, .49, .5, .8, .99])
-                        logits[:, 0] = np.log(probabilities/(1-probabilities))
+                        probabilities = np.array([.005, .02, .09, .11, .8, .99])
+                        logits.fill(-100)
+                        logits[:, 0] = np.log(probabilities)
+                        logits[:, -1] = np.log1p(-probabilities)
                         return logits, embedding
 
                 data = root/'data'
                 with TestClient(create_app(data, directory, 'test'), headers={'Authorization':'Bearer test'}) as client, \
-                        patch('analysis.load_onnx', return_value=(CalibratedSession(engine, None), digest(directory/REGISTRY[engine]['files'][0]))):
+                        patch('analysis.load_onnx', return_value=(ProbabilitySession(engine, None), digest(directory/REGISTRY[engine]['files'][0]))):
                     client.put('/models', json={'main':engine, 'extra':[]})
                     client.post('/imports', json=dict(folder=str(audio), site_name='Site', dataset_name='Data',
                         timezone='Asia/Tokyo', latitude=35, longitude=138))
@@ -271,25 +306,25 @@ class ModelsTest(unittest.TestCase):
                     target = client.get('/species?q=Horornis diphone').json()[0]
                     overview = client.get('/datasets/1/overview').json()
                     entry = next(s for s in overview['species'] if s['species']['id'] == target['id'])['models'][0]
-                    self.assertEqual((entry['threshold'], entry['candidate_windows']), (.5, 3))
+                    self.assertEqual((entry['threshold'], entry['candidate_windows']), (.1, 3))
                     detail = client.get(f"/datasets/1/species/{target['id']}").json()
                     self.assertEqual(detail['selected'], engine)
-                    self.assertEqual(detail['report']['threshold'], .5)
+                    self.assertEqual(detail['report']['threshold'], .1)
                     self.assertEqual(detail['report']['summaries'][0]['candidate_windows'], 3)
                     presence = client.get(f"/datasets/1/species/{target['id']}/presence").json()
                     self.assertEqual([r['start_s'] for r in presence['rows']], [25, 20, 15])
-                    self.assertTrue(all(m['score'] >= .5 for r in presence['rows'] for m in r['models']))
+                    self.assertTrue(all(m['score'] >= .1 for r in presence['rows'] for m in r['models']))
                     scope = dict(dataset_id=1, species_id=target['id'], start_date='2024-08-08', end_date='2024-08-08')
                     check = client.post('/validations', json={**scope, 'model':engine}).json()
                     self.assertEqual(check['status'], 'in_progress')
-                    self.assertEqual(client.get(f"/datasets/1/species/{target['id']}").json()['report']['threshold'], .5)
+                    self.assertEqual(client.get(f"/datasets/1/species/{target['id']}").json()['report']['threshold'], .1)
                     overview = client.get('/datasets/1/overview').json()
                     exported = client.post('/workflow-exports', json={**scope, 'revision':overview['revision'],
                         'species_ids':[target['id']], 'folder':str(root), 'locale':'en'})
                     self.assertEqual(exported.status_code, 200, exported.text)
                     with zipfile.ZipFile(exported.json()['path']) as archive:
                         snap = json.loads(archive.read('manifest.json'))['results'][0]
-                        self.assertEqual((snap['engine'], snap['threshold']), (engine, .5))
+                        self.assertEqual((snap['engine'], snap['threshold']), (engine, .1))
                         saved = json.loads(archive.read(f"results/{snap['report_id']}.json"))
                         self.assertEqual(saved['summaries'][0]['candidate_windows'], 3)
                         self.assertEqual(len(archive.read(f"scores/{snap['figure_id']}.csv").decode('utf-8-sig').splitlines()), 7)
@@ -636,12 +671,15 @@ class ModelsTest(unittest.TestCase):
                 result = next(r for r in client.get('/recordings/1/results').json() if r['engine']=='kinglet-s')
                 self.assertEqual(result['metadata']['species'], names)
                 self.assertEqual(result['metadata']['classes_sha256'], digest(directory / REGISTRY['kinglet-s']['files'][1]))
-                self.assertEqual(result['metadata']['score_type'], 'sigmoid_calibrated')
+                self.assertEqual(result['metadata']['score_type'], 'softmax_background_dropped')
                 self.assertTrue(all(c['species_id'] for c in result['candidates']))
-                self.assertAlmostEqual(result['candidates'][0]['score'], 1/(1+np.exp(-2)), places=6)
+                expected = 1 / (2 + 316 * np.exp(-10))
+                self.assertAlmostEqual(result['candidates'][0]['score'], expected, places=6)
                 with np.load(result['scores_path'], allow_pickle=False) as saved:
                     self.assertEqual(set(saved.files), {'scores','labels'})
                     self.assertEqual(saved['scores'].shape, (3,317))
+                    np.testing.assert_allclose(saved['scores'][:, :2], expected, rtol=1e-6)
+                    np.testing.assert_allclose(saved['scores'][:, 2:], expected * np.exp(-10), rtol=1e-6)
                 kinglet_wave = next(wave for engine, _, wave in calls if engine=='kinglet-s')
                 self.assertEqual(kinglet_wave.shape, (3,160000))
                 self.assertTrue(np.all(kinglet_wave[-1,32000:]==0))

@@ -7,14 +7,14 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 
-KINGLET_BASE_URL = 'https://github.com/0kam/kinglet/releases/download/v0.1.0/'
+KINGLET_BASE_URL = 'https://github.com/0kam/kinglet/releases/download/v0.2.0/'
 KINGLET_ASSETS = (
-    ('kinglet-b-v0.1.0.onnx', 'c248cad949e5b3e50cb84ee22c8deb4c8e8615cb2097c3cf3d155184af92b2e9'),
-    ('kinglet-s-v0.1.0.onnx', '9d6556f6b8679b65dfb4f0e50f80c461e645b7fe58f6409304398de6a853ff96'),
-    ('kinglet-xs-v0.1.0.onnx', 'a59e9887dcda13d5c226186dd459fb88a71cc6767151f802848ae6725b088ece'),
-    ('kinglet-b-v0.1.0.classes.csv', '08d38f9693b5012ed6ed782e6c00d827c7ca1e62087d401daf488dc434b04e3d'),
-    ('kinglet-s-v0.1.0.classes.csv', '5d340861ba77549b8293ebea14f51ac80ebd32cbf8a06963f6b2eae270d126bd'),
-    ('kinglet-xs-v0.1.0.classes.csv', 'd259e144144b66a2382aeea96e3877b78c6b32bbca9a8f4921b758c25c7d0b70'),
+    ('kinglet-b-v0.2.0.onnx', 'bc9b324ba2aef2903436afb98f5dd9945270dd075ef82226c38284939a328cd7'),
+    ('kinglet-s-v0.2.0.onnx', 'f50bcca703d7c0f190ac430fd8d6b2fc64c50e83b402157a34f988fa90c974f6'),
+    ('kinglet-xs-v0.2.0.onnx', '0fb1543a3bf5528b440bcb223d4fe0af2d72c48b46723e2fa7eb35ef2dd7a203'),
+    ('kinglet-b-v0.2.0.classes.csv', '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
+    ('kinglet-s-v0.2.0.classes.csv', '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
+    ('kinglet-xs-v0.2.0.classes.csv', '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
 )
 
 V3_ASSETS = (

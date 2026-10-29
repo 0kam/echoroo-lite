@@ -2,7 +2,7 @@
 
 2026-10-24 の合意により、配布版は BirdNET 2.4 と Perch V2 を含む非商用・研究用の1種類に変更した。
 2026-10-26 の合意により、鳥の鳴き声の録音は同梱しない。
-2026-10-27 の合意により、Kinglet-B・Kinglet-S・Kinglet-XS v0.1.0 の通常版を同梱する。
+2026-10-29 の合意により、Kinglet-B・Kinglet-S・Kinglet-XS v0.2.0 の通常版を同梱する。
 以下の標準版／BirdNET付き版の記述は、それ以前の確認記録である。
 
 実装で使用するモデルと表示名の記録。配布物全体のライセンス確認が完了した記録ではない。
@@ -17,7 +17,7 @@ Pythonライブラリのライセンスと、学習済みモデル・種名・�
 | BirdNET 2.4地域モデル | 同じZenodoレコードの `BirdNET_v2.4_tflite_int8.zip` 内の `meta-model.tflite` | 同上。音響・地域の取得先はインストール済みbirdnetのダウンローダーを確認 |
 | Perch V2 ONNX | [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx)、revision `da88bf8c37c0b3068fc706fe509f633b9fbd28c1`、`perch_v2_no_dft.onnx` | 固定revisionのモデルカードはApache-2.0。Googleのモデルを変換しDFTをMatMulへ置換した版。Lite側で重みを変更していない |
 | Perch V2ラベル | [cgeorgiaw/Perch](https://huggingface.co/cgeorgiaw/Perch)、revision `c3c3c816976a6c1bb75140b8fbaef7397a6f708f`、`assets/labels.csv` | 固定revisionのモデルカードはApache-2.0。学名の一覧として利用 |
-| Kinglet-B / Kinglet-S / Kinglet-XS v0.1.0 | [公開リリース](https://github.com/0kam/kinglet/releases/tag/v0.1.0)、[モデルカード](https://github.com/0kam/kinglet/blob/main/MODEL_CARD.md) | Apache-2.0。公開データを使って Perch 2.0 から蒸留。日本の鳥317種、32 kHz・5秒入力。sigmoid(logits) は較正済みで、検出の既定閾値は0.5。1536次元の埋め込みを保存し、メインAIに選択した場合は検索にも使う。通常版のみ使用 |
+| Kinglet-B / Kinglet-S / Kinglet-XS v0.2.0 | [公開リリース](https://github.com/0kam/kinglet/releases/tag/v0.2.0)、[モデルカード](https://github.com/0kam/kinglet/blob/main/MODEL_CARD.md) | Apache-2.0。公開データを使って Perch 2.0 から蒸留。日本の鳥317種、32 kHz・5秒入力。背景を含む318列の logits 全体に softmax を適用後、末尾の背景列を除いた317種の確率を保存する。検出の既定閾値は Perch と同じ0.1。1536次元の埋め込みを保存し、メインAIに選択した場合は検索にも使う。通常版のみ使用 |
 | BirdNET+ V3.0 (preview) | [Zenodo record 20703646](https://zenodo.org/records/20703646)、developer preview 3.1、Global 11K FP16 pruned ONNX | 同梱 `TERMS_OF_USE.txt` は CC BY-SA 4.0、研究・評価用途、密猟および軍事目的を禁止。帰属表示 **Powered by BirdNET**。重み・ラベルは無改変。32 kHz・5秒、11,560ラベルの確率出力に sigmoid を追加しない。候補は日本の鳥リストとの積集合。比較用のみ、1280次元埋め込みは保存しない |
 | 日本鳥類目録 | 日本鳥学会「日本鳥類目録 改訂第8版」公開xlsx | Part A・Bの種をPerch候補と和名に使用。xlsx自体はコミットせず、URL・SHA-256・名寄せ結果を生成JSONへ記録 |
 | Wikidata | [Wikidata Query Service](https://query.wikidata.org/) | 学名・シノニムの対応と日英ラベルに使用（CC0）。取得日と件数を生成JSONへ記録 |
@@ -53,23 +53,22 @@ BirdNETはインストール済みキャッシュを実測。Perchは取得ス�
 | BirdNET `ja.txt` | `158c5360676d7fc154b95ed7f161cf845be9ca219a67960901463ddd870b6362` |
 | Perch `perch_v2_no_dft.onnx` | `4dcf71c18a147198545944bb5149697e89e3ad2e16637fa8f0edf6d13035a017` |
 | Perch `labels.csv` | `e4d5c0397d8fb08bf90c6b13a34810af53504faad927e472fcc567793c9de057` |
-| `kinglet-b-v0.1.0.onnx` | `c248cad949e5b3e50cb84ee22c8deb4c8e8615cb2097c3cf3d155184af92b2e9` |
-| `kinglet-b-v0.1.0.classes.csv` | `08d38f9693b5012ed6ed782e6c00d827c7ca1e62087d401daf488dc434b04e3d` |
-| `kinglet-s-v0.1.0.onnx` | `9d6556f6b8679b65dfb4f0e50f80c461e645b7fe58f6409304398de6a853ff96` |
-| `kinglet-s-v0.1.0.classes.csv` | `5d340861ba77549b8293ebea14f51ac80ebd32cbf8a06963f6b2eae270d126bd` |
-| `kinglet-xs-v0.1.0.onnx` | `a59e9887dcda13d5c226186dd459fb88a71cc6767151f802848ae6725b088ece` |
-| `kinglet-xs-v0.1.0.classes.csv` | `d259e144144b66a2382aeea96e3877b78c6b32bbca9a8f4921b758c25c7d0b70` |
+| `kinglet-b-v0.2.0.onnx` | `bc9b324ba2aef2903436afb98f5dd9945270dd075ef82226c38284939a328cd7` |
+| `kinglet-b-v0.2.0.classes.csv` | `1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa` |
+| `kinglet-s-v0.2.0.onnx` | `f50bcca703d7c0f190ac430fd8d6b2fc64c50e83b402157a34f988fa90c974f6` |
+| `kinglet-s-v0.2.0.classes.csv` | `1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa` |
+| `kinglet-xs-v0.2.0.onnx` | `0fb1543a3bf5528b440bcb223d4fe0af2d72c48b46723e2fa7eb35ef2dd7a203` |
+| `kinglet-xs-v0.2.0.classes.csv` | `1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa` |
 | BirdNET V3 ONNX | `69cfc8db3ebec163feb6329e546eb56e1aadac2a309f1ee99aecfabd1aa9bd24` |
 | BirdNET V3 `Labels.csv` | `8124b0ea2d187104c5e2cd95a0f937165647e20349c8fd34d4d5ef991821f8f0` |
 | BirdNET V3 `TERMS_OF_USE.txt` | `91b474bddbfdbd7cb2f5d85fd4511eee8af151d899c8450cd0b22000c425bd8f` |
 
 種名JSONは `scripts/build_species_names.py`、モデル準備は `scripts/setup_models.py`。
 配布版は BirdNET 2.4、Perch V2、Kinglet-B、Kinglet-S、Kinglet-XS、BirdNET+ V3.0 (preview) をインストーラーへ同梱する。
-Kinglet は `models/kinglet/kinglet-{b,s,xs}-v0.1.0.onnx` と同名の `.classes.csv` を使う。
+Kinglet は `models/kinglet/kinglet-{b,s,xs}-v0.2.0.onnx` と同名の `.classes.csv` を使う。
 `gemm-mel` 版は使用しない。`scripts/setup_models.py` が固定 SHA-256 を照合し、公開リリースと同じファイル名で保存する。
-`--kinglet-from poc/models/kinglet-v0.1.0` でもハッシュ照合後にローカルからコピーできる。
-クラス表は列名で読み、`index / ebird_code / scientific_name / japanese_name` を識別する。
-`logit_bg_p99 / score_bg_p99 / logit_bg_p999 / score_bg_p999` は使用しない。
+`--kinglet-from poc/models/kinglet-v0.2.0` でもハッシュ照合後にローカルからコピーできる。
+クラス表は `index / ebird_code / scientific_name / japanese_name` の4列で、列名で読む。
 各317学名は既存の表示用種名と一致し、欠けていたアホウドリ（`Phoebastria albatrus`）を
 日英名付きで追加した。保存形式と設定 API は [API 引継ぎ](model-selection-api.md)を参照。
 クイズには[利用者が追加した音源](quiz-implementation.md)だけを使う。
