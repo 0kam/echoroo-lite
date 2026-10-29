@@ -228,8 +228,9 @@ fails if a required model is absent. The bundle contains BirdNET 2.4, BirdNET V3
 under the `org.echoroo.lite` identifier. Installed users do not need a separate model setup.
 Model and label provenance, hashes, and unresolved distribution terms are recorded
 in [Model sources](docs/model-sources.md), including the eBird taxonomy used for species-page links.
-This distribution is for non-commercial / research use because BirdNET 2.4 is
-CC BY-NC-SA 4.0. No bird-call recordings are bundled; see the
+The Echoroo Lite source code is licensed under the [Apache License 2.0](LICENSE).
+The bundled models keep their own licenses; the distributed app is for non-commercial /
+research use because BirdNET 2.4 is CC BY-NC-SA 4.0. No bird-call recordings are bundled; see the
 [third-party notices](THIRD_PARTY_NOTICES.md).
 Windows CI has passed all eight API tests, frozen BirdNET/Perch inference on supplied
 audio, searches, saved judgements, reports and CSV/audio exports, quizzes and clean shutdown.
