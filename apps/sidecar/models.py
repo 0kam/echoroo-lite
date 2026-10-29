@@ -60,6 +60,9 @@ def default_threshold(engine):
 def configure_birdnet(directory):
     # BirdNET resolves its model cache at import time, before benchmarks or jobs.
     os.environ['BIRDNET_APP_DATA'] = str(Path(directory).resolve() / 'birdnet')
+    # Linux defaults to fork once anything fixes the start method; forking this
+    # multi-threaded process deadlocks BirdNET's workers, so always spawn them.
+    os.environ['BIRDNET_START_METHOD'] = 'spawn'
 
 
 def machine_fingerprint():
