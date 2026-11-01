@@ -13,7 +13,7 @@
 
 | | 内容 |
 |---|---|
-| **入力** | 録音機で録った WAV / FLAC ファイル（モノラル）のフォルダと、録音した場所（地図で選ぶ）。ファイル名の最後に録音開始の日時（例：`SM2-NP-05_20250710_100000.wav`）が必要です。 |
+| **入力** | 録音機で録った WAV / FLAC / MP3 ファイル（モノラル）のフォルダと、録音した場所（地図で選ぶ）。ファイル名に録音開始の日時（例：`SM2-NP-05_20250710_100000.wav`、`REC_2025-07-10_10-00-00_001.wav`）が必要です。 |
 | **操作** | ① 録音を追加して解析する → ② AIが見つけた種の一覧から種を開き、音を聞いて「いるか」を確かめる → ③ 必要な種は「AIの精度を確かめる」で最大60音に答え、スコアの閾値を決める → ④ レポートを書き出す |
 | **出力** | HTMLのレポート（地点・期間、人が聞いて確かめた種の一覧、AIの精度、時間帯×日付の図、根拠の音）と、CSV・音声ファイル。報告書の下書きに本文・表・図をそのまま使えます。 |
 
@@ -80,7 +80,7 @@
 Echoroo Lite is a desktop app that finds bird calls in recordings with AI, lets a person listen and confirm them, and turns the results into biodiversity reports. It is designed for acoustic monitoring and reporting at sites such as Japan's OECM sites (自然共生サイト). Analysis runs locally without an internet connection.
 
 - **Japan only for now**: species lists, names and range marks are built for birds in Japan.
-- **Input**: a folder of mono WAV/FLAC files whose names end with the start time (e.g. `SM2-NP-05_20250710_100000.wav`) and the site location.
+- **Input**: a folder of mono WAV/FLAC/MP3 files whose names include the start time (e.g. `SM2-NP-05_20250710_100000.wav`, `REC_2025-07-10_10-00-00_001.wav`) and the site location.
 - **Steps**: add and analyse recordings → listen to the AI's top sounds to confirm presence → optionally check the AI's accuracy (up to 60 sounds) to set a score threshold → export a report.
 - **Output**: an HTML report (site and period, confirmed species, AI precision, date × time-of-day charts, evidence audio) plus CSV and audio files.
 - **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models distilled from Perch 2.0 for 317 Japanese bird species, by the author of this app), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
@@ -195,7 +195,8 @@ Do not run `uv venv` over an existing environment you want to keep.
 In the app, add a site (latitude/longitude and IANA timezone), choose a folder,
 review the import, then register it. The imported recording group gets a folder-based
 name by default and can be renamed later. This slice accepts
-mono WAV/FLAC whose filenames end in `YYYYMMDD_HHMMSS`. It scans subfolders and
+mono WAV/FLAC/MP3 whose filenames contain the start time (`YYYYMMDD_HHMMSS`, `YYYYMMDDTHHMMSS`,
+`YYYY-MM-DD_HH-MM-SS` and similar; the last one in the name is used). It scans subfolders and
 skips registered paths, invalid dates, unsupported channels and unreadable files.
 Choose a recording and run analysis; candidate interval buttons play and stop
 at that interval. Japanese/English is selectable and persisted.
