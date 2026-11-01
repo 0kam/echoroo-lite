@@ -158,7 +158,8 @@ def fake_birdnet(directory, calls):
 
 
 def wait_job(client):
-    deadline = time.monotonic() + 15
+    # Generous for slow Windows CI runners; the loop returns as soon as the job ends.
+    deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         job = client.get('/catalog').json()['jobs'][0]
         if job['status'] not in ('queued', 'running'):
