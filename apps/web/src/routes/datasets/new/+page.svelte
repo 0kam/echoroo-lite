@@ -77,7 +77,7 @@
       <p class="muted">{t('uTimeZoneHint')}</p>
     </section>{/if}
     <section class="panel step-card stack"><h2>{t('uChooseFolder')}</h2><p class="muted">{t('uFolderHint')}</p>
-      <div><p>{t('uFilenameFormat')}</p><ul>{#each filenameExamples as name}<li><code>{name}</code></li>{/each}</ul><p>{fill('uFilenameZone',{zone:scanZone})}</p></div>
+      <div class="muted"><p>{t('uFilenameFormat')}</p><ul>{#each filenameExamples as name}<li><code>{name}</code></li>{/each}</ul><p>{fill('uFilenameZone',{zone:scanZone})}</p></div>
       {#if isTauri()}
         {#if folder}<p>{fill('uChosenFolder',{name:fileName(folder)})} <Button class="link" disabled={register.pending} onclick={()=>browse.run()}>{t('uChooseAnotherFolder')}</Button></p>
         {:else}<Button pending={browse.pending} onclick={()=>browse.run()}>{t('browse')}</Button>{/if}
