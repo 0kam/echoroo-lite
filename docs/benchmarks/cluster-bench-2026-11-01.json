@@ -1,0 +1,1091 @@
+{
+  "status": "completed",
+  "generated_at": "2026-11-01T11:46:32+0900",
+  "seed": 20261101,
+  "platform": {
+    "python": "3.11.15 (main, Jun 23 2026, 15:46:51) [Clang 22.1.3 ]",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "machine": "arm64"
+  },
+  "versions": {
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "sklearn": "1.7.2",
+    "openTSNE": "1.0.4",
+    "onnxruntime": "1.23.2",
+    "soundfile": "0.13.1",
+    "pandas": "2.3.3",
+    "pyarrow": "22.0.0"
+  },
+  "input_sha256s": {
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_030000.wav": "7204bbd53025facf375b70902197f548cfb20c7c6587da85087aee2239f9a4bd",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_030000.wav.csv": "0c8f3bd31eeb43db29d502f45f596648d4df8a1cf4bf0ca1f7360c596f69ccc6",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_040000.wav": "f355c295e0f65c08a7d7ad45a5ef5d3c52766a8707e205650c59475e97caff4e",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_040000.wav.csv": "7a8a6978d6335f24b35abaaffd33eea415db8e5b4b04216859d786d18228fd1f",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_050000.wav": "125d756d824f800e28d69018f62fb2f2245086ecde2f1650735f4240740fd5a0",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_050000.wav.csv": "3f796c067c0703925a1a472a58ebe1063c468af08bf2db9e31586eec576977e9",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_060000.wav": "2f5573839b61df4591fe6a35b8687bb029f9d78a81e365312d9dc19e2a6ba01f",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_060000.wav.csv": "6c4d15f127c0eb8f4bbedfe2f3a8badc6b0eaf9b25ec55785137d40988b14a22",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_070000.wav": "232cc6eb4d633658ecb9a6df1c815e034a474197d0c5631382fb9e0d81e08a75",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_070000.wav.csv": "5d097d8b7a4768d7333e9641561d5a9b4314672d02ba21f442bcb9ab53d520a3",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_170000.wav": "446dd62fa1a8f4c7f4ad8484e61ca87e4689c64fd36f7641d5a8e766c3dea465",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_170000.wav.csv": "9b39ee2c3d1e0ace0e800cf2614266bceec4e4ae4bc7f3c6fc576a12bfdced50",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_180000.wav": "16898d68695e1555e1e4ab9b1a9f573f4f4fd8c819cbfcf097a8d1bf96acfca7",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_180000.wav.csv": "9124fe985dcd5886dd5e260c1e658d4d7ad3f3fb1a52dae96cbb3129c36f8c6c",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_190000.wav": "4336f8d345898f605b2756922d8b888d6aa3b479c248b7d5b2be748692e004ad",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I14_20250601_190000.wav.csv": "ff1e23661323db3b262227838fef71b2bd50c2ee6d31d6e24478c695a2e67d2b",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_030000.wav": "5da4899f7ac80db07954bdcf96f68d3e088ac6f3ad1617a8a03a3e6278821cde",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_030000.wav.csv": "260826651d0cfd4289688c134b9c0bb8a6cbeda90a12f071b8fbe914833d7f23",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_040000.wav": "9eb1925dd578e5212e828f7903be419aec5bc49cad503b8c68fff692b864cce0",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_040000.wav.csv": "757d15e979134dc8f2fbdcaa7dcabcc2ce353cfb3f48a1d804918399fac88535",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_050000.wav": "f027bf0481c797560eea972313d2ecac8a280d12a9fd2b9ba75103f826def527",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_050000.wav.csv": "053c26dce4f7bfc57bc864c9613bc8f481b411f3dc82935c45e26c29907e32ed",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_060000.wav": "c1a37913b6b6e6e66d483b61f2cd977a17f1bd15117607a8252df0491fb7d17f",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_060000.wav.csv": "fbef72f66769a53eac460496d063a25a35a729587aeb4d14720eb9ff870dd346",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_070000.wav": "cc0ff5eeb161500d48d1e5294cd116c7ad987661b93a2cb816d8e92bcdc2e811",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_070000.wav.csv": "2c7aa91819dc620ab93aad3d447b41601fe5b5ae688fce29ecec25e0be362f6f",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_170000.wav": "a964f7f3d0446f31f91f0034db30ed145a5d9561fe5bec8658096ba0e38337fd",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_170000.wav.csv": "3be706f9474a5afaeff691defb711261511e44582c784df01b978e3fa580c3b6",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_180000.wav": "fd50b700a1316d45298f7074004b5858e13223388fa0cc40304241e0b2102382",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_180000.wav.csv": "199b05c90932023621601743d1f48cbcae4829b84c80c653705f6e42eb9df9aa",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_190000.wav": "138935fade3d9fc9f97e0eef343e56a32ae2c9732a6d2c8816f98d4509b6c8c4",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_190000.wav.csv": "26cf5ee825b13b2e1d19767fd7aefc0c3a78ef44701a1f3cc6d7b92ad4ffe351",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_210000.wav": "1d22ac9d2283917f2cccd995581a333e86d453c36ef0f6babf7acc27dec0ca8f",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I15_20250601_210000.wav.csv": "22e9564eadd69cde7435f884493b40ba2e3feee29235482bf644785df13753dd",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_050000.wav": "a0965580b93a8f217749b58f28134dd133394af6008459f755b146e227821d52",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_050000.wav.csv": "6eec96dbb8dbbce27a97af8657f05a5357d27139b42eb268255755eb166656d5",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_060000.wav": "98538c61c6fb762f54aad03f950d798babb9813c99e544d7b2d6dc34b486285a",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_060000.wav.csv": "04d05512cab95dc6621aae224530b5929f5b3cd7c4786e05e4bd390be15278be",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_070000.wav": "69e6f37868a4c95f0c4051beeb985bb3783d2c9ededf4bc952cd507614d77027",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_070000.wav.csv": "4bc80a8beed4ef3cad70b62eb2873e49bc1fbcea21d0b416a7c2b027d3ad39db",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_170000.wav": "90a2af204b59621deb3ff6566ff35530fc79a51deb141bbb43b8e2841a489e77",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_170000.wav.csv": "aeaa4dc72bc583a79e78905bf46024dfeb0ce2d689f0b34f2879127d407a8d7b",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_180000.wav": "d259d944f72854f44056907c8376ec6731449e71a35d154e90c4b0e2909fb072",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_180000.wav.csv": "1a076a3ad58a44844b100ecbe690b55eb7ea3556d23c824254845eccbda79044",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_190000.wav": "f05a04d355773807b29fab73a51f7869ddec6411ceef39802877c555dc12e8c7",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I33_20250601_190000.wav.csv": "977f711589e47146a619c43f0258af10c94856b872e70f78bc31957350a981f7",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_040000.wav": "e57b616aa23998ab561aab033f2ec029f37a93ed64388e392ad345b1b26925e3",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_040000.wav.csv": "58223b329fd1240a5be26ec3a51d9aad07256ff8b11a4167efb7d8ae3cf242f4",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_050000.wav": "0d61adad0d7c04ad71505b32db633154178d4e49c9876a4f7152417001d82215",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_050000.wav.csv": "583e8b80b800cf76764a934ceb4570ee7c4d127bc8232e36af0d80904f6d435b",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_060000.wav": "05137fda785edcf3e813b6af288721729aa5ee5ace9c91c1a8c637e35d614df4",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_060000.wav.csv": "dbd9b718771baf60990fd3f8c3cdd5e6e8a05d9e5011caab6e06947fcaf99a53",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_070000.wav": "11f0a9b8b459093517ef94be7faa4b955ec0a002a0e7669b9f3aa6e3e2393a62",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_070000.wav.csv": "17ea341e8e1c2996f519b442cdfb9d121a625c166edc1572a7a39c978af0071d",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_170000.wav": "7c5efe175825d19690a6253e3f4098a674104ec5095e7739015310ef59b4a1b1",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_170000.wav.csv": "d3bad490e001b9b13fa371843f2b5fbf09f7570b687e0d4175d4f0494b28346d",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_180000.wav": "1b8e38bab85b55ec5bdea241d9e29cf530a3e4b7eb522a8a1d741d032ad6389e",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_180000.wav.csv": "8b1234a382f959a14e26012c3af4990272d50555feaa2de861f44c26561ea001",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_190000.wav": "fd1a9cef0a4817caf9d234394c616e09cf743a352a1a9623280c14dfedd2350f",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I35_20250601_190000.wav.csv": "0a250adfb7176da590145bb561211fbf9eb208ee520dbba2551eb2b0a18bc888",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_040000.wav": "3bb75ac9a696491187ee5dd9b20ef391d7923d2ca861ef6cc7ad8b53e9874ad9",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_040000.wav.csv": "78d812d90a3d66fa783cf842ef74c26da372155baf90e97ac2223c39aec44cf4",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_050000.wav": "a7e74633dd8b6703cecd682af99c0df2ce345be25b9276365fd29761a4c39573",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_050000.wav.csv": "872ed69d0f2782baac7ac5f6775806c6f579bccb0684d3c700e21b6d2f8cbb7f",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_060000.wav": "68d0683133a96dbade0848bbb5a2b1e0d04b6088e208d49117177187e8d1ce78",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_060000.wav.csv": "e2351993fe5ea1432b2ea5782d92c45375050e63e3992ff63ba8a5bb84b46eee",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_070000.wav": "4855bd67f1a81cb4e15c4a735902c53634d66e00a9e25d52888f120be469a352",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_070000.wav.csv": "46dff5bab130f476f9d949264680e5f1f22eca9a10e6f5fd8d91c8eb79023dd6",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_170000.wav": "935e5adf2ab30964ad0aa842e0d2b2107d7a7b1e8552b85d86962b2b3d419a43",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_170000.wav.csv": "34cab2eaac053124dbb8c7945f2362fe6fcaadcedf13b7df3f8ab78d5d461d8a",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_180000.wav": "4914bcc9c94b5f934b539e5be521e2fb77c5805665e3d250d26c8a01214eed91",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_180000.wav.csv": "c6888d8f34593ebe840f813cd6f7a1944187d83adfb23e557081a2c121298c3a",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_190000.wav": "d19a1e5666c016d903bde286eed65f0f24dbf17c6c9671c44310116212546c4c",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I38_20250601_190000.wav.csv": "321fd0323eec2bcc03ad2f9abcfbea9bc1df89a97553af9f4e5b5c54af39aa0e",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_030000.wav": "4afda833917ece39c24f9e08f8a61e83c7e6026df602cfe747671c4cc558dfc5",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_030000.wav.csv": "e0e8d1422131fc37dcb7bc2a113aebd186c3a616b028efcd7810b916e9ea64ff",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_040000.wav": "6d8a942a25a28741c176465cff996faa416266ac7ba4f07c6ab0427d98fa7ea9",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_040000.wav.csv": "f15d5de11f56c4d0c0f3250b42289ad7ae29887ab8f55ef7d5e632942f4d2268",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_050000.wav": "c22e83fdbdb30b8a6bb868892c7fd87030c15d90ea254a844a7e91261cffda32",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_050000.wav.csv": "dbe7cf26d04e8be9cbc4309ef65c285e6a14ca85c170ec7e489f2e1f8ceaa2dd",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_060000.wav": "75d55a3fd4f5a9fd72aa5e68fbc006a1185f0d81812cd08adeb1287633cff6f4",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_060000.wav.csv": "0077c39889873d0b7895a9e9e77815a628314658114717e75913840ec95a5a95",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_070000.wav": "f24480427f25c3d361ce26739d9e1717ad9240e5a2f8efe05c0c578a209de7ee",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_070000.wav.csv": "daa58c180b8aa7e10bc835a668b561da1f22857443fa9a981bd10acdf6fcb4b5",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_170000.wav": "2aa4a96057f2716d1365f6cb18aef4a8fc571cc0b8966ca18c18190a2b1e80a9",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_170000.wav.csv": "0b32b96586efcdee60c0dd3491cf4a665c1f95e976b241ad6f61e0f2f1690f96",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_180000.wav": "a5e2402c7a21754a9fed1806eeaedcfa01b965d3957be410ca88a51a1d8474cf",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_180000.wav.csv": "b6f740f02ec4682f2f1b772e37f27d21c7b2c1ed78c103e8147ba231dcbc33ce",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_190000.wav": "0d37e628c1ee8652b40b5b17838bfa31c9b5db5669674e4b3ec6f22bbb9253d9",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I42_20250601_190000.wav.csv": "a8de2016ff6935554692a084f8a51de9f0fa9661fe3f57e07aee7fb90fdb48d4",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_040000.wav": "610c6b87191bf4038571931977434a84e90c61d3cf29a98a71fe1bc50f0718c3",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_040000.wav.csv": "bec5efcc9161898cab3b5a70dd3102a03ab0302fd09a4de0ff789f4c455abbb7",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_050000.wav": "bd9b68d365d36ed8a40f7ada4939811a86ca8c1dee5a912b8eac1b4ee94ab84d",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_050000.wav.csv": "01942aeff09324b97137b6caa2ed374d2a149e27cdf00838110f262ee7ae13a6",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_060000.wav": "cf4254581dfb13199c16eb07d4f0128c705766d3a654d4754f6b362ef754800b",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_060000.wav.csv": "2f4ed429291417ffaf2561989a36e4e70d5b8306d236f4144f56d7a7e9bb0873",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_070000.wav": "cb7e15d38f8db0d16573604a6769fee1d59ef56743094a241038eb8fa76984c4",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_070000.wav.csv": "9390f465bc424358feb790fee8d37f73b974b137a98a03aae28581fff6386e81",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_170000.wav": "b506029be092fe92704cbb8af0ed7a7a82050624d8080faae33f9cff34d09bd1",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_170000.wav.csv": "cedc2917090e5ccd967f8500ce676a98b2dc1597078a82c5b7ba4e62f45b5c44",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_180000.wav": "8b9acfab3636541de05181cc67e9200321a50c9fdc0085534c83b4d9d6a6f002",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_180000.wav.csv": "383a0468a200e510e21b281c33f4aa20397063a1b9466b31b785165d0fcc4352",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_190000.wav": "3414a11a9c59f31fac6a4009301343880b2cdd23443f1dfcc0dc4f20d52738f8",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I43_20250601_190000.wav.csv": "c29b1d8a3f4d9f6ce7c18a3d9362097914b5d7db1e1f65a071cb7c4c01f08321",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_030000.wav": "4e11f646fff0573a5a9c8592d587007c6390863c8742114f43a980036a17dd8e",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_030000.wav.csv": "8231b11691246f5b4be39d7978d89bf40d33fef59c27d09d82915d0a3cea6b8b",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_040000.wav": "b35ba5586cbfb3ee2b12f3125f3d5178cb624edd08aef653056e627995dc0a00",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_040000.wav.csv": "f8357c65ec9bc8970ff5c4e6a0ac7884fb69116d74f6e50d5d6204cbc0730cb8",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_050000.wav": "ae656f971b3c3e6cb0122493df4a868d38dd3755d3f8d0838a27f2a1d2323351",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_050000.wav.csv": "c8363a8c37df20fde1292df322493b216ae9fd69a44321a822b71717a460bbe1",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_060000.wav": "1bc71879e3e262c928c5441fde2b4373d0c9c156b6de167e7a9023fd43d0e908",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_060000.wav.csv": "3142df12182d4104a4f41ec42c33d73f2f6f58d8a3c121fd23effb1414f6c521",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_070000.wav": "6ef1205de76149a97d0e12e5c567ac7762b15ed2a11dc824aca4554431b2840d",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_070000.wav.csv": "7c8e359334966b2848810c98e3fbaa8a2b0c12983430059d564b29f2084c116b",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_170000.wav": "36cbfad63a17cff7f1dc8c36ff1f11828033d61350c50cb4ccf9f8043c391e8c",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_170000.wav.csv": "8f4eeadc0881eefcfc77fceb65c7416f68e6c19369ee1ea7b382adb802fb1fef",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_180000.wav": "3d77782d5f4945630b2cef0a6c83f314294250ef9b56fd722d0a0b3b9e59f3a1",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_180000.wav.csv": "3d982fbd80a93268b9bcb8cbf0b4ed3edcc7bda929852432feb1451d276351b5",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_190000.wav": "f8f19aeba92cb27f72f6f516dbd70405fdd3e7890ed778c34e0fe474792c2a6a",
+    "/private/tmp/claude-501/-Users-okamoto-NIES-Ecoacoustics-echoroo-lite/a5cb5f10-c87c-4447-9add-4db46eedb5b7/scratchpad/fuji-data/Fuji/I46_20250601_190000.wav.csv": "569a9f4333fcdedc5bee9590e4118b5ffd85052972600827ef1ead045d4a0675",
+    "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/poc/models/perch/perch_v2_no_dft.onnx": "4dcf71c18a147198545944bb5149697e89e3ad2e16637fa8f0edf6d13035a017",
+    "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/apps/sidecar/analysis.py": "40c0e694983f652980f7e8cdacda0360dd6d4259fb1cffaa1cc435b1fe0e3f7e",
+    "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/apps/sidecar/audio.py": "a93e8059675ac41fe509dd70e6ec9657646ea111e06c731001aa4d11f852dd51",
+    "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/apps/sidecar/models.py": "4500c7479fed1e16057ea26ed00a1e6ad70f6a54cf997954803e6afd92332a20"
+  },
+  "parameters": {
+    "windows": {
+      "seconds": 5,
+      "per_clip": 36,
+      "count": 2160
+    },
+    "pca": {
+      "method": "exact_covariance_eigh",
+      "input_dimensions": 1536,
+      "output_dimensions": 50
+    },
+    "A": {
+      "coordinates": "PC1_PC2",
+      "clustering": "scipy.cluster.vq.kmeans2",
+      "initialization": "++",
+      "iterations": 100,
+      "k_grid": [
+        10,
+        15,
+        20,
+        25,
+        30,
+        40,
+        50,
+        60
+      ],
+      "selection": "numpy_mean_euclidean_silhouette",
+      "silhouette_max_points": 4000
+    },
+    "B": {
+      "projection": "openTSNE.TSNE",
+      "perplexity": 30,
+      "metric": "euclidean",
+      "initialization": "pca",
+      "early_exaggeration_iter": 250,
+      "n_iter": 500,
+      "n_jobs": 8,
+      "clustering": "sklearn.cluster.HDBSCAN",
+      "min_cluster_size": "max(5, round(0.0025*n))",
+      "noise": "pseudo-cluster ordered last"
+    },
+    "scale": {
+      "n": 210000,
+      "construction": "tile Fuji embeddings and add Gaussian noise",
+      "noise_sigma": "0.1 * per-feature population std",
+      "per_stage_timeout_seconds": 2700
+    }
+  },
+  "embedding_cache": {
+    "status": "generated",
+    "wall_seconds": 141.46090683387592,
+    "peak_rss_mib": 1403.65625,
+    "path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/fuji-embeddings.npy"
+  },
+  "candidates": {
+    "A": {
+      "status": "completed",
+      "stages": {
+        "pca": {
+          "wall_seconds": 0.5640725418925285,
+          "peak_rss_mib": 184.6875,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "dimensions": 50,
+            "explained_variance": [
+              0.7376103728507835,
+              0.678954170951485,
+              0.5354262047885346,
+              0.35962693113296057,
+              0.29969853466738344,
+              0.2509732497502513,
+              0.20885824940390227,
+              0.19054265555850405,
+              0.17859540195729226,
+              0.16000003020170928,
+              0.1572735111525845,
+              0.1324509171368662,
+              0.12973726899640275,
+              0.1255691770557337,
+              0.11283320585555254,
+              0.10911272399141349,
+              0.1013147367108289,
+              0.0947876211629087,
+              0.09241123169906736,
+              0.08734073998604629,
+              0.0824904481487253,
+              0.07931169917126395,
+              0.07841735833948354,
+              0.0729318551756111,
+              0.07122483511463593,
+              0.07011620303612223,
+              0.06661470077078485,
+              0.06533444600947164,
+              0.061220766353869124,
+              0.05937433134409753,
+              0.057185005350000026,
+              0.055600138993813115,
+              0.05444871029250411,
+              0.0536504835898272,
+              0.05216300985126483,
+              0.049400600290439224,
+              0.048932974189301426,
+              0.04800713445556816,
+              0.0466013003067294,
+              0.04499914552583971,
+              0.043925077019540876,
+              0.04337958103126964,
+              0.04210847531189597,
+              0.040649824952877986,
+              0.03917943573507277,
+              0.037919214037299344,
+              0.03723188486560362,
+              0.036497345109232894,
+              0.03535626625679592,
+              0.03396013493661393
+            ],
+            "input_shape": [
+              2160,
+              1536
+            ]
+          }
+        },
+        "kmeans_and_silhouette": {
+          "wall_seconds": 1.9242595420219004,
+          "peak_rss_mib": 92.203125,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "selected_k": 25,
+            "grid": [
+              {
+                "k": 10,
+                "silhouette": 0.12840017052501962,
+                "inertia": 8800.58203125,
+                "silhouette_sample_n": 2160
+              },
+              {
+                "k": 15,
+                "silhouette": 0.12529419475743594,
+                "inertia": 8201.4814453125,
+                "silhouette_sample_n": 2160
+              },
+              {
+                "k": 20,
+                "silhouette": 0.14496592906990063,
+                "inertia": 7255.9521484375,
+                "silhouette_sample_n": 2160
+              },
+              {
+                "k": 25,
+                "silhouette": 0.15370981914636275,
+                "inertia": 6860.69482421875,
+                "silhouette_sample_n": 2160
+              },
+              {
+                "k": 30,
+                "silhouette": 0.14263227789662974,
+                "inertia": 6560.45361328125,
+                "silhouette_sample_n": 2160
+              },
+              {
+                "k": 40,
+                "silhouette": 0.15317338482030057,
+                "inertia": 5921.24853515625,
+                "silhouette_sample_n": 2160
+              },
+              {
+                "k": 50,
+                "silhouette": 0.15366126679630682,
+                "inertia": 5605.55029296875,
+                "silhouette_sample_n": 2160
+              },
+              {
+                "k": 60,
+                "silhouette": 0.14233592443066234,
+                "inertia": 5347.75732421875,
+                "silhouette_sample_n": 2160
+              }
+            ]
+          }
+        }
+      },
+      "runtime_seconds": 2.488332083914429,
+      "peak_rss_mib": 184.6875,
+      "labels_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/fuji-runs/A/kmeans/labels.npy",
+      "coordinates_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/fuji-runs/A/pca/pca50.npy",
+      "metrics": {
+        "populations": {
+          "single_species_not_unknown": 357,
+          "background_not_unknown": 201,
+          "multi_label_not_unknown": 1205,
+          "multi_label_including_unknown": 1462,
+          "unknown": 397,
+          "excluded_from_labeled_only": 1803,
+          "excluded_from_with_background": 1602
+        },
+        "labeled_only": {
+          "n": 357,
+          "homogeneity": 0.7522301735260812,
+          "nmi": 0.6738566885071925
+        },
+        "with_background": {
+          "n": 558,
+          "homogeneity": 0.674766691939989,
+          "nmi": 0.594870595143493
+        },
+        "exploration_efficiency": {
+          "species_minimum_positive_windows": 5,
+          "positive_population": "all clustered positive windows including multi-label and unknown",
+          "positive_window_counts": {
+            "akagera": 24,
+            "akagerad": 4,
+            "akahara": 215,
+            "aobato": 50,
+            "aogera": 14,
+            "binzui": 7,
+            "enaga": 10,
+            "fukurou": 14,
+            "gojyukara": 2,
+            "hagara": 4,
+            "hashibutogarasu": 92,
+            "higara": 528,
+            "higaraoryamagara": 9,
+            "hiyodori": 83,
+            "hoojiro": 17,
+            "hototgisu": 5,
+            "hototogisu": 136,
+            "ikaru": 21,
+            "juuichi": 26,
+            "kakkou": 13,
+            "kawarahiwa": 63,
+            "kibashiri": 2,
+            "kibitaki": 790,
+            "kibutaki": 1,
+            "kiji": 3,
+            "kijibato": 10,
+            "kikuitadaki": 13,
+            "kisekirei": 5,
+            "kobitaki": 3,
+            "kogera": 6,
+            "komukudori": 33,
+            "koruri": 492,
+            "kosamebitaki": 40,
+            "kosamebitakiorsamebitaki": 4,
+            "kouri": 4,
+            "kurotsugumi": 83,
+            "kurotugumi": 1,
+            "mebosomushikui": 1,
+            "mebosomushikuis.l": 2,
+            "mebosumushikuis.l": 2,
+            "mejiro": 201,
+            "mijiro": 1,
+            "misosazai": 36,
+            "ooruri": 17,
+            "samebitakiorkosamebitaki": 12,
+            "sanshokui": 4,
+            "sendaimushikui": 55,
+            "sendaimushimui": 1,
+            "shijyukara": 182,
+            "soshicho": 12,
+            "soushichou": 27,
+            "taratsugumi": 4,
+            "toratsugumi": 79,
+            "tsutsudori": 11,
+            "uguisu": 522,
+            "uso": 4,
+            "yabusame": 17,
+            "yamagara": 79
+          },
+          "first_hit_ranks": {
+            "akagera": 2,
+            "akahara": 1,
+            "aobato": 1,
+            "aogera": 1,
+            "binzui": 2,
+            "enaga": 1,
+            "fukurou": 3,
+            "hashibutogarasu": 1,
+            "higara": 1,
+            "higaraoryamagara": 1,
+            "hiyodori": 1,
+            "hoojiro": 1,
+            "hototgisu": 4,
+            "hototogisu": 1,
+            "ikaru": 1,
+            "juuichi": 3,
+            "kakkou": 1,
+            "kawarahiwa": 1,
+            "kibitaki": 1,
+            "kijibato": 2,
+            "kikuitadaki": 1,
+            "kisekirei": 1,
+            "kogera": 9,
+            "komukudori": 1,
+            "koruri": 1,
+            "kosamebitaki": 1,
+            "kurotsugumi": 1,
+            "mejiro": 1,
+            "misosazai": 1,
+            "ooruri": 1,
+            "samebitakiorkosamebitaki": 1,
+            "sendaimushikui": 1,
+            "shijyukara": 1,
+            "soshicho": 2,
+            "soushichou": 1,
+            "toratsugumi": 10,
+            "tsutsudori": 1,
+            "uguisu": 1,
+            "yabusame": 2,
+            "yamagara": 1
+          },
+          "median_first_hit_rank": 1.0
+        },
+        "clusters": {
+          "count_including_noise_pseudo_cluster": 25,
+          "count_excluding_noise": 25,
+          "size_min": 27,
+          "size_median": 71.0,
+          "size_max": 295,
+          "noise_count": 0,
+          "noise_fraction": 0.0,
+          "ordering": "size_descending",
+          "largest_cluster_composition": [
+            {
+              "rank": 1,
+              "cluster": 1,
+              "size": 295,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.6305084745762712
+            },
+            {
+              "rank": 2,
+              "cluster": 7,
+              "size": 180,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.75
+            },
+            {
+              "rank": 3,
+              "cluster": 17,
+              "size": 148,
+              "dominant_annotation_class": "__background__",
+              "dominant_fraction": 0.25
+            },
+            {
+              "rank": 4,
+              "cluster": 20,
+              "size": 143,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.9300699300699301
+            },
+            {
+              "rank": 5,
+              "cluster": 15,
+              "size": 132,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.5757575757575758
+            },
+            {
+              "rank": 6,
+              "cluster": 4,
+              "size": 114,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.7719298245614035
+            },
+            {
+              "rank": 7,
+              "cluster": 21,
+              "size": 110,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.43636363636363634
+            },
+            {
+              "rank": 8,
+              "cluster": 16,
+              "size": 106,
+              "dominant_annotation_class": "__background__",
+              "dominant_fraction": 0.9339622641509434
+            },
+            {
+              "rank": 9,
+              "cluster": 11,
+              "size": 104,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.6538461538461539
+            },
+            {
+              "rank": 10,
+              "cluster": 12,
+              "size": 89,
+              "dominant_annotation_class": "toratsugumi",
+              "dominant_fraction": 0.5842696629213483
+            }
+          ]
+        }
+      }
+    },
+    "B": {
+      "status": "completed",
+      "stages": {
+        "pca": {
+          "wall_seconds": 0.5561243749689311,
+          "peak_rss_mib": 15.078125,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "dimensions": 50,
+            "explained_variance": [
+              0.7376103728507835,
+              0.678954170951485,
+              0.5354262047885346,
+              0.35962693113296057,
+              0.29969853466738344,
+              0.2509732497502513,
+              0.20885824940390227,
+              0.19054265555850405,
+              0.17859540195729226,
+              0.16000003020170928,
+              0.1572735111525845,
+              0.1324509171368662,
+              0.12973726899640275,
+              0.1255691770557337,
+              0.11283320585555254,
+              0.10911272399141349,
+              0.1013147367108289,
+              0.0947876211629087,
+              0.09241123169906736,
+              0.08734073998604629,
+              0.0824904481487253,
+              0.07931169917126395,
+              0.07841735833948354,
+              0.0729318551756111,
+              0.07122483511463593,
+              0.07011620303612223,
+              0.06661470077078485,
+              0.06533444600947164,
+              0.061220766353869124,
+              0.05937433134409753,
+              0.057185005350000026,
+              0.055600138993813115,
+              0.05444871029250411,
+              0.0536504835898272,
+              0.05216300985126483,
+              0.049400600290439224,
+              0.048932974189301426,
+              0.04800713445556816,
+              0.0466013003067294,
+              0.04499914552583971,
+              0.043925077019540876,
+              0.04337958103126964,
+              0.04210847531189597,
+              0.040649824952877986,
+              0.03917943573507277,
+              0.037919214037299344,
+              0.03723188486560362,
+              0.036497345109232894,
+              0.03535626625679592,
+              0.03396013493661393
+            ],
+            "input_shape": [
+              2160,
+              1536
+            ]
+          }
+        },
+        "openTSNE": {
+          "wall_seconds": 4.681041999952868,
+          "peak_rss_mib": 192.546875,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "shape": [
+              2160,
+              2
+            ]
+          }
+        },
+        "HDBSCAN": {
+          "wall_seconds": 1.0991408328991383,
+          "peak_rss_mib": 177.328125,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "min_cluster_size": 5
+          }
+        }
+      },
+      "runtime_seconds": 6.336307207820937,
+      "peak_rss_mib": 192.546875,
+      "labels_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/fuji-runs/B/hdbscan/labels.npy",
+      "coordinates_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/fuji-runs/B/tsne/coordinates.npy",
+      "metrics": {
+        "populations": {
+          "single_species_not_unknown": 357,
+          "background_not_unknown": 201,
+          "multi_label_not_unknown": 1205,
+          "multi_label_including_unknown": 1462,
+          "unknown": 397,
+          "excluded_from_labeled_only": 1803,
+          "excluded_from_with_background": 1602
+        },
+        "labeled_only": {
+          "n": 357,
+          "homogeneity": 0.8379327692895722,
+          "nmi": 0.648120737457344
+        },
+        "with_background": {
+          "n": 558,
+          "homogeneity": 0.7429630520093085,
+          "nmi": 0.5427428247128765
+        },
+        "exploration_efficiency": {
+          "species_minimum_positive_windows": 5,
+          "positive_population": "all clustered positive windows including multi-label and unknown",
+          "positive_window_counts": {
+            "akagera": 24,
+            "akagerad": 4,
+            "akahara": 215,
+            "aobato": 50,
+            "aogera": 14,
+            "binzui": 7,
+            "enaga": 10,
+            "fukurou": 14,
+            "gojyukara": 2,
+            "hagara": 4,
+            "hashibutogarasu": 92,
+            "higara": 528,
+            "higaraoryamagara": 9,
+            "hiyodori": 83,
+            "hoojiro": 17,
+            "hototgisu": 5,
+            "hototogisu": 136,
+            "ikaru": 21,
+            "juuichi": 26,
+            "kakkou": 13,
+            "kawarahiwa": 63,
+            "kibashiri": 2,
+            "kibitaki": 790,
+            "kibutaki": 1,
+            "kiji": 3,
+            "kijibato": 10,
+            "kikuitadaki": 13,
+            "kisekirei": 5,
+            "kobitaki": 3,
+            "kogera": 6,
+            "komukudori": 33,
+            "koruri": 492,
+            "kosamebitaki": 40,
+            "kosamebitakiorsamebitaki": 4,
+            "kouri": 4,
+            "kurotsugumi": 83,
+            "kurotugumi": 1,
+            "mebosomushikui": 1,
+            "mebosomushikuis.l": 2,
+            "mebosumushikuis.l": 2,
+            "mejiro": 201,
+            "mijiro": 1,
+            "misosazai": 36,
+            "ooruri": 17,
+            "samebitakiorkosamebitaki": 12,
+            "sanshokui": 4,
+            "sendaimushikui": 55,
+            "sendaimushimui": 1,
+            "shijyukara": 182,
+            "soshicho": 12,
+            "soushichou": 27,
+            "taratsugumi": 4,
+            "toratsugumi": 79,
+            "tsutsudori": 11,
+            "uguisu": 522,
+            "uso": 4,
+            "yabusame": 17,
+            "yamagara": 79
+          },
+          "first_hit_ranks": {
+            "akagera": 9,
+            "akahara": 1,
+            "aobato": 1,
+            "aogera": 1,
+            "binzui": 2,
+            "enaga": 20,
+            "fukurou": 3,
+            "hashibutogarasu": 1,
+            "higara": 1,
+            "higaraoryamagara": 1,
+            "hiyodori": 1,
+            "hoojiro": 1,
+            "hototgisu": 53,
+            "hototogisu": 1,
+            "ikaru": 1,
+            "juuichi": 1,
+            "kakkou": 1,
+            "kawarahiwa": 2,
+            "kibitaki": 1,
+            "kijibato": 1,
+            "kikuitadaki": 1,
+            "kisekirei": 20,
+            "kogera": 4,
+            "komukudori": 2,
+            "koruri": 1,
+            "kosamebitaki": 15,
+            "kurotsugumi": 1,
+            "mejiro": 1,
+            "misosazai": 1,
+            "ooruri": 1,
+            "samebitakiorkosamebitaki": 46,
+            "sendaimushikui": 1,
+            "shijyukara": 1,
+            "soshicho": 26,
+            "soushichou": 1,
+            "toratsugumi": 6,
+            "tsutsudori": 1,
+            "uguisu": 1,
+            "yabusame": 1,
+            "yamagara": 1
+          },
+          "median_first_hit_rank": 1.0
+        },
+        "clusters": {
+          "count_including_noise_pseudo_cluster": 103,
+          "count_excluding_noise": 102,
+          "size_min": 5,
+          "size_median": 13.0,
+          "size_max": 257,
+          "noise_count": 257,
+          "noise_fraction": 0.11898148148148148,
+          "ordering": "size_descending_noise_last",
+          "largest_cluster_composition": [
+            {
+              "rank": 1,
+              "cluster": 38,
+              "size": 210,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.7
+            },
+            {
+              "rank": 2,
+              "cluster": 87,
+              "size": 72,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.5833333333333334
+            },
+            {
+              "rank": 3,
+              "cluster": 6,
+              "size": 71,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.6056338028169014
+            },
+            {
+              "rank": 4,
+              "cluster": 61,
+              "size": 55,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.5454545454545454
+            },
+            {
+              "rank": 5,
+              "cluster": 3,
+              "size": 53,
+              "dominant_annotation_class": "kibitaki",
+              "dominant_fraction": 0.6037735849056604
+            },
+            {
+              "rank": 6,
+              "cluster": 24,
+              "size": 43,
+              "dominant_annotation_class": "__background__",
+              "dominant_fraction": 0.7441860465116279
+            },
+            {
+              "rank": 7,
+              "cluster": 1,
+              "size": 41,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.8536585365853658
+            },
+            {
+              "rank": 8,
+              "cluster": 0,
+              "size": 36,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.6111111111111112
+            },
+            {
+              "rank": 9,
+              "cluster": 5,
+              "size": 36,
+              "dominant_annotation_class": "__multi_label__",
+              "dominant_fraction": 0.9722222222222222
+            },
+            {
+              "rank": 10,
+              "cluster": 25,
+              "size": 35,
+              "dominant_annotation_class": "kibitaki",
+              "dominant_fraction": 0.5714285714285714
+            }
+          ]
+        }
+      }
+    }
+  },
+  "scale_test": {
+    "n": 210000,
+    "generation": {
+      "status": "generated",
+      "wall_seconds": 2.944592625135556,
+      "peak_rss_mib": 1935.046875
+    },
+    "input_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/scale-210000.npy",
+    "A": {
+      "status": "completed",
+      "stages": {
+        "pca": {
+          "wall_seconds": 1.932984875049442,
+          "peak_rss_mib": 1458.96875,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "dimensions": 50,
+            "explained_variance": [
+              0.7381261965230093,
+              0.6788757199313,
+              0.5354194930572107,
+              0.35905726497401036,
+              0.29975156585679014,
+              0.2512798153261613,
+              0.20891410085537657,
+              0.19068491387385092,
+              0.17870361471355642,
+              0.1599688124116941,
+              0.15720812322207564,
+              0.13237468195943938,
+              0.12989284939641144,
+              0.1255592194457694,
+              0.11292794435075139,
+              0.10914814644932447,
+              0.10130818834077074,
+              0.09483651687388837,
+              0.09257229674979103,
+              0.0873308201404086,
+              0.08251734115742222,
+              0.0792998253854982,
+              0.07843889733814033,
+              0.07292410182354418,
+              0.07132792935820591,
+              0.0700997417214239,
+              0.06663537421898348,
+              0.0653523543255314,
+              0.06127048524748953,
+              0.05942583904282062,
+              0.05719350008176287,
+              0.05565241804062826,
+              0.054482407626806895,
+              0.053697107418438195,
+              0.05217099993003058,
+              0.0494458491078731,
+              0.04897690551953117,
+              0.04807080689309577,
+              0.046640134923811444,
+              0.045038081631017746,
+              0.043972992153024824,
+              0.04342199300037182,
+              0.04214502319330078,
+              0.0406943842468433,
+              0.039241583100041354,
+              0.03796020518980442,
+              0.03727072171161628,
+              0.036543334524649904,
+              0.035422021929429955,
+              0.03400378029770711
+            ],
+            "input_shape": [
+              210000,
+              1536
+            ]
+          }
+        },
+        "kmeans_and_silhouette": {
+          "wall_seconds": 25.147321082884446,
+          "peak_rss_mib": 1319.71875,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "selected_k": 50,
+            "grid": [
+              {
+                "k": 10,
+                "silhouette": 0.1400815821412397,
+                "inertia": 865120.6875,
+                "silhouette_sample_n": 4000
+              },
+              {
+                "k": 15,
+                "silhouette": 0.1367143680477395,
+                "inertia": 818277.9375,
+                "silhouette_sample_n": 4000
+              },
+              {
+                "k": 20,
+                "silhouette": 0.1427330959641632,
+                "inertia": 714641.4375,
+                "silhouette_sample_n": 4000
+              },
+              {
+                "k": 25,
+                "silhouette": 0.1421790025319189,
+                "inertia": 674522.75,
+                "silhouette_sample_n": 4000
+              },
+              {
+                "k": 30,
+                "silhouette": 0.15553059145204004,
+                "inertia": 630617.5,
+                "silhouette_sample_n": 4000
+              },
+              {
+                "k": 40,
+                "silhouette": 0.14785191116394603,
+                "inertia": 588160.375,
+                "silhouette_sample_n": 4000
+              },
+              {
+                "k": 50,
+                "silhouette": 0.1650106496033875,
+                "inertia": 541313.5,
+                "silhouette_sample_n": 4000
+              },
+              {
+                "k": 60,
+                "silhouette": 0.1491796070416442,
+                "inertia": 532893.25,
+                "silhouette_sample_n": 4000
+              }
+            ]
+          }
+        }
+      },
+      "runtime_seconds": 27.080305957933888,
+      "peak_rss_mib": 1458.96875,
+      "labels_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/scale-runs/A/kmeans/labels.npy",
+      "coordinates_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/scale-runs/A/pca/pca50.npy"
+    },
+    "B": {
+      "status": "completed",
+      "stages": {
+        "pca": {
+          "wall_seconds": 3.0018974582199007,
+          "peak_rss_mib": 1441.140625,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "dimensions": 50,
+            "explained_variance": [
+              0.7381261965230093,
+              0.6788757199313,
+              0.5354194930572107,
+              0.35905726497401036,
+              0.29975156585679014,
+              0.2512798153261613,
+              0.20891410085537657,
+              0.19068491387385092,
+              0.17870361471355642,
+              0.1599688124116941,
+              0.15720812322207564,
+              0.13237468195943938,
+              0.12989284939641144,
+              0.1255592194457694,
+              0.11292794435075139,
+              0.10914814644932447,
+              0.10130818834077074,
+              0.09483651687388837,
+              0.09257229674979103,
+              0.0873308201404086,
+              0.08251734115742222,
+              0.0792998253854982,
+              0.07843889733814033,
+              0.07292410182354418,
+              0.07132792935820591,
+              0.0700997417214239,
+              0.06663537421898348,
+              0.0653523543255314,
+              0.06127048524748953,
+              0.05942583904282062,
+              0.05719350008176287,
+              0.05565241804062826,
+              0.054482407626806895,
+              0.053697107418438195,
+              0.05217099993003058,
+              0.0494458491078731,
+              0.04897690551953117,
+              0.04807080689309577,
+              0.046640134923811444,
+              0.045038081631017746,
+              0.043972992153024824,
+              0.04342199300037182,
+              0.04214502319330078,
+              0.0406943842468433,
+              0.039241583100041354,
+              0.03796020518980442,
+              0.03727072171161628,
+              0.036543334524649904,
+              0.035422021929429955,
+              0.03400378029770711
+            ],
+            "input_shape": [
+              210000,
+              1536
+            ]
+          }
+        },
+        "openTSNE": {
+          "wall_seconds": 97.4813292499166,
+          "peak_rss_mib": 2045.4375,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "shape": [
+              210000,
+              2
+            ]
+          }
+        },
+        "HDBSCAN": {
+          "wall_seconds": 57.80073291598819,
+          "peak_rss_mib": 2966.8125,
+          "exit_code": 0,
+          "status": "completed",
+          "metadata": {
+            "min_cluster_size": 525
+          }
+        }
+      },
+      "runtime_seconds": 158.2839596241247,
+      "peak_rss_mib": 2966.8125,
+      "labels_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/scale-runs/B/hdbscan/labels.npy",
+      "coordinates_path": "/Users/okamoto/NIES/Ecoacoustics/echoroo-lite/.local-data/cluster-bench-20261101/scale-runs/B/tsne/coordinates.npy"
+    }
+  },
+  "sanity_checks": {
+    "status": "passed",
+    "errors": []
+  }
+}
