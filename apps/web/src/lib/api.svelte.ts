@@ -20,7 +20,8 @@ export async function connect(): Promise<Health> {
   }
   return api<Health>('/health');
 }
-export async function api<T>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
+/** JSON by default; `binary` returns the response body as an ArrayBuffer. */
+export async function api<T>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST', binary = false): Promise<T> {
   untrack(() => activity.count++);
   try {
     let response: Response;
@@ -32,7 +33,7 @@ export async function api<T>(path: string, body?: unknown, method = body === und
       });
     } catch { throw Error('disconnected'); }
     if (!response.ok) throw Error((await response.json()).detail || 'unknown_error');
-    return response.json();
+    return binary ? response.arrayBuffer() as Promise<T> : response.json();
   } finally { untrack(() => activity.count--); }
 }
 export function audioURL(id: number) {

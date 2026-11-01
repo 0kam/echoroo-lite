@@ -6,7 +6,7 @@
   import { isTauri } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { api } from '$lib/api.svelte';
-  import { t,activeJob,dayRange,fileName } from '$lib/app.svelte';
+  import { t,activeJob,dayRange,fileName,loadRecordings } from '$lib/app.svelte';
   import { type Species } from '$lib/species';
   import { rangeQuery } from '$lib/workflow';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
@@ -21,9 +21,10 @@
   let species=$state<Species|null>(null),source=$state<Reference|null>(null),clips=$state<Clip[]>([]),clipsFor=$state('');
   let first=$state(query.get('start_date')||''),last=$state(query.get('end_date')||''),start=$state(0),end=$state(5),referencePath=$state(''),error=$state('');
   let ready=$state(false);
-  // Two ways here: a species the AI list lacks (from site results) or a species page.
-  const fromSpecies=query.get('species'),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','model_id'].includes(key)));
-  const back=fromSpecies?{href:`${resolve(`/datasets/${id}/species/${fromSpecies}`)}?${speciesState}`,label:'wBackSpecies'}
+  // Three ways here: a species the AI list lacks (from site results), a species page, or a sound on the sound map (`recording`, `start_s`, `end_s`).
+  const fromSpecies=query.get('species'),fromMap=Number(query.get('recording')),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','model_id'].includes(key)));
+  const back=fromMap?{href:resolve(`/datasets/${id}/explore`),label:'eBack'}
+    :fromSpecies?{href:`${resolve(`/datasets/${id}/species/${fromSpecies}`)}?${speciesState}`,label:'wBackSpecies'}
     :{href:`${resolve(`/datasets/${id}`)}${first&&last?`?${rangeQuery(first,last)}`:''}`,label:'uBackResults'};
   let alive=true;
   let xc=$state(true);
@@ -56,6 +57,9 @@
     catch{clips=[];}
     ready=true;
     if(query.get('species')){const chosen=await api<Species>(`/species/${encodeURIComponent(query.get('species')!)}`);if(chosen.id!==species?.id)species=chosen;}
+    // A sound from the sound map becomes the example call, exactly as if that recording interval had been chosen by hand.
+    if(fromMap){const row=(await loadRecordings(id)).find(r=>r.id===fromMap);
+      if(row){source={id:row.id,kind:'recording',path:row.path,seconds:row.seconds};start=Number(query.get('start_s'));end=Number(query.get('end_s'));xc=false;}}
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
 </script>
 <div class="page search-page"><div class="crumbs"><a href={back.href}>{t(back.label)}</a></div>
@@ -63,7 +67,7 @@
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   <!-- Same numbered steps as adding recordings: species, example calls, search. -->
   <div class="steps">
-  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/></section>
+  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/>{#if source&&!species}<p class="info">{t('sPrefillHint')}</p>{/if}</section>
   {#if species}
     <section class="panel step-card"><h2>{t('wSource')}</h2><div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
       <Button pending={addReference.pending} disabled={search.pending||(!isTauri()&&!referencePath.trim())} onclick={()=>addReference.run()}>{t('referenceFromFile')}</Button></div>
