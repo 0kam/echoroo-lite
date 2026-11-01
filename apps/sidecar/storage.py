@@ -11,7 +11,8 @@ import sqlite_vec
 
 
 # Increment whenever the SQLite schema changes.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+MIGRATABLE_VERSIONS = (2,)
 
 
 class CatalogError(Exception):
@@ -38,7 +39,9 @@ def initialize(root):
     with connect(root) as db:
         version = db.execute("PRAGMA user_version").fetchone()[0]
         has_schema = db.execute("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') LIMIT 1").fetchone()
-        if version != SCHEMA_VERSION and (version != 0 or has_schema):
+        supported = (version == SCHEMA_VERSION or version in MIGRATABLE_VERSIONS and has_schema
+                     or version == 0 and not has_schema)
+        if not supported:
             return False
         db.execute("PRAGMA journal_mode=WAL")
         db.executescript("""
@@ -91,6 +94,23 @@ def initialize(root):
                 query_window INTEGER NOT NULL,
                 PRIMARY KEY(run_id, segment_id));
             CREATE INDEX IF NOT EXISTS search_ranking ON search_hits(run_id, similarity DESC);
+            CREATE TABLE IF NOT EXISTS explore_runs (
+                id INTEGER PRIMARY KEY, site_id INTEGER NOT NULL REFERENCES sites ON DELETE CASCADE,
+                engine TEXT NOT NULL, model_sha TEXT NOT NULL, params TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(site_id,engine,model_sha));
+            CREATE TABLE IF NOT EXISTS explore_points (
+                run_id INTEGER NOT NULL REFERENCES explore_runs ON DELETE CASCADE,
+                segment_id INTEGER NOT NULL REFERENCES segments ON DELETE CASCADE,
+                x REAL NOT NULL, y REAL NOT NULL, cluster INTEGER NOT NULL, dist REAL NOT NULL,
+                PRIMARY KEY(run_id,segment_id));
+            CREATE INDEX IF NOT EXISTS explore_cluster_distance ON explore_points(run_id,cluster,dist);
+            CREATE TABLE IF NOT EXISTS explore_clusters (
+                run_id INTEGER NOT NULL REFERENCES explore_runs ON DELETE CASCADE,
+                cluster INTEGER NOT NULL, size INTEGER NOT NULL,
+                rep_segment_id INTEGER NOT NULL REFERENCES segments ON DELETE CASCADE,
+                score_mean REAL NOT NULL, top_species TEXT,
+                PRIMARY KEY(run_id,cluster));
             CREATE TABLE IF NOT EXISTS reports (
                 id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
                 kind TEXT NOT NULL CHECK(kind='detection'),
@@ -184,7 +204,7 @@ def initialize(root):
 def monotonic_ids(root):
     """Upgrade ordinary row IDs once so deleted links can never target a later import."""
     tables = ('sites', 'datasets', 'recordings', 'jobs', 'analyses', 'candidates', 'segments',
-              'search_runs', 'reports', 'workflow_exports')
+              'search_runs', 'explore_runs', 'reports', 'workflow_exports')
     with connect(root) as db:
         pending = [(table, db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]) for table in tables]
         pending = [(table, sql) for table, sql in pending if 'AUTOINCREMENT' not in sql]

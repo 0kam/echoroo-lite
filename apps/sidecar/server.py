@@ -65,6 +65,10 @@ class JobRequest(BaseModel):
     recording_id: int | None = None
 
 
+class ExploreRequest(BaseModel):
+    dataset_id: int
+
+
 class ModelSelection(BaseModel):
     main: str
     extra: list[str]
@@ -345,6 +349,45 @@ def create_app(root, models, token):
     def dataset_overview(dataset_id: int, start_date: date | None = None, end_date: date | None = None):
         from results_workflow import overview
         return overview(root,dataset_id,start_date.isoformat() if start_date else None,end_date.isoformat() if end_date else None)
+
+    @app.post('/explore')
+    def explore_start(body: ExploreRequest):
+        nonlocal worker
+        with lock:
+            if worker and worker.is_alive():
+                raise HTTPException(409, 'job_busy')
+            from explore import _context, build
+            _context(root, body.dataset_id)
+            with connect(root) as db:
+                job = db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(?,'queued',5,'explore_queued')",
+                                 (body.dataset_id,)).lastrowid
+            operation_cancel.clear()
+            def work():
+                try:
+                    build(root, body.dataset_id, job, operation_cancel)
+                except CatalogError:
+                    pass  # build records the translated failure or cancellation on the job.
+                except Exception:
+                    traceback.print_exc()
+            worker = threading.Thread(target=work)
+            worker.start()
+        return {'id': job}
+
+    @app.get('/explore')
+    def explore_status(dataset: int = Query(ge=1)):
+        from explore import status
+        return status(root, dataset)
+
+    @app.get('/explore/points')
+    def explore_points(dataset: int = Query(ge=1)):
+        from explore import points_file
+        return FileResponse(points_file(root, dataset), media_type='application/octet-stream')
+
+    @app.get('/explore/clusters/{cluster}/segments')
+    def explore_cluster_segments(cluster: int, dataset: int = Query(ge=1),
+                                 offset: int = Query(default=0, ge=0)):
+        from explore import cluster_segments
+        return cluster_segments(root, dataset, cluster, offset)
 
     @app.get('/datasets/{dataset_id}/species/{species_id}')
     def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
