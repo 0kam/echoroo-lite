@@ -40,8 +40,11 @@
     finally{if(version===scanVersion)scanning=false;}
   }
   $effect(()=>{if(!restored)return;void folder;void scanZone;untrack(()=>void scan());});
-  const browse=createTask(async()=>{const picked=await chooseDirectory();if(picked)folder=picked;});
-  const commitFolder=()=>{folder=folderDraft.trim();};
+  // Choosing the same folder again re-reads it (e.g. after renaming files); the effect only runs when the value changes.
+  const setFolder=(value:string)=>{if(value!==folder)folder=value;else if(!scanning)void scan();};
+  const browse=createTask(async()=>{const picked=await chooseDirectory();if(picked)setFolder(picked);});
+  const commitFolder=()=>setFolder(folderDraft.trim());
+  const filenameExamples=['2MA04037_20240808_060000.wav','20240808T060000.wav','REC_2024-08-08_06-00-00_001.wav'];
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const register=createTask(async()=>{
     const added=await api<{dataset_id:number}>('/imports',body());await refreshCatalog();
@@ -74,6 +77,7 @@
       <p class="muted">{t('uTimeZoneHint')}</p>
     </section>{/if}
     <section class="panel step-card stack"><h2>{t('uChooseFolder')}</h2><p class="muted">{t('uFolderHint')}</p>
+      <div><p>{t('uFilenameFormat')}</p><ul>{#each filenameExamples as name}<li><code>{name}</code></li>{/each}</ul><p>{fill('uFilenameZone',{zone:scanZone})}</p></div>
       {#if isTauri()}
         {#if folder}<p>{fill('uChosenFolder',{name:fileName(folder)})} <Button class="link" disabled={register.pending} onclick={()=>browse.run()}>{t('uChooseAnotherFolder')}</Button></p>
         {:else}<Button pending={browse.pending} onclick={()=>browse.run()}>{t('browse')}</Button>{/if}

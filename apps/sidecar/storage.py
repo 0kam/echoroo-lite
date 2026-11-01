@@ -207,12 +207,16 @@ def monotonic_ids(root):
             raise CatalogError('catalog_migration_failed')
 
 
+# YYYYMMDD or YYYY-MM-DD, optional _ - T or space, then HHMMSS or HH-MM-SS.
+FILENAME_TIME = re.compile(r"(?<!\d)\d{4}(-?)\d{2}\1\d{2}[_\-T ]?\d{2}(-?)\d{2}\2\d{2}(?!\d)")
+
+
 def recording_time(path, zone_name):
-    match = re.search(r"(\d{8}_\d{6})$", Path(path).stem)
-    if not match:
+    matches = list(FILENAME_TIME.finditer(Path(path).stem))
+    if not matches:
         raise CatalogError("filename_time")
     try:
-        naive = datetime.strptime(match[1], "%Y%m%d_%H%M%S")
+        naive = datetime.strptime(re.sub(r"\D", "", matches[-1][0]), "%Y%m%d%H%M%S")
         zone = ZoneInfo(zone_name)
     except (ValueError, ZoneInfoNotFoundError):
         raise CatalogError("filename_time") from None
@@ -254,7 +258,7 @@ def preview_folder(root, folder, zone, cancel=None):
     for path in sorted(folder.rglob("*")):
         if cancel and cancel.is_set():
             raise CatalogError('cancelled')
-        if path.suffix.lower() not in {".wav", ".flac"} or not path.is_file():
+        if path.suffix.lower() not in {".wav", ".flac", ".mp3"} or not path.is_file():
             continue
         path = path.resolve()
         try:

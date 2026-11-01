@@ -46,11 +46,10 @@
   {#if validation}
     {#if done||!started}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
       <p class="model">{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p>
-    {:else if validation.question}{@const question=validation.question}
-      <!-- One heading: the question. The model is the subheading. -->
-      <div class="phase-progress"><div><h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>
-        <h2 class="model">{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</h2></div>
-        <p>{#if answered}{fill('vReviewProgress',{n:question.review_position,total:question.review_total})}{:else}{fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}{/if}{#if corrected}<span role="status"> · ✓ {t('vCorrectionSaved')}</span>{/if}</p></div>
+    {:else if validation.question}
+      <!-- One heading: the question. The model is the subheading. Progress lives in the answer bar. -->
+      <h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>
+      <h2 class="model">{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</h2>
     {/if}
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
     {#if done}<section class="panel"><h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>
@@ -67,7 +66,11 @@
           {@const question=validation.question}
           <p class="muted">{t('vMixedNote')}</p>
           {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`}/>{/key}
-          <div class="actions answers" bind:offsetHeight={barHeight}><Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('vPreviousSound')}</Button>
+          <div class="actions answers" bind:offsetHeight={barHeight}>
+            <div class="progress-row"><progress id="validation-progress" value={answered?question.review_position:validation.counts.answered} max={answered?question.review_total:validation.counts.total}></progress>
+              <label for="validation-progress">{answered?fill('vReviewProgress',{n:question.review_position,total:question.review_total}):fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</label>
+              {#if corrected}<span role="status">✓ {t('vCorrectionSaved')}</span>{/if}</div>
+            <Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('vPreviousSound')}</Button>
             <div class="verdicts" role="group" aria-label={t('wQuestion')}>{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
             <Button size="lg" active={question.verdict===verdict} aria-pressed={question.verdict===verdict} disabled={busy||!validation.applicable} onclick={()=>answer.run(verdict)}>{question.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
             <Button disabled={busy||!answered} title={answered?undefined:t('vAnswerToContinue')} onclick={goNext}>{t(nextLabel)} ›</Button>
@@ -85,8 +88,8 @@
   @media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}
   .validation-page .crumbs{margin-bottom:0}.validation-page .panel{padding:16px}.validation-page h1{margin:0;line-height:1.25}h2.model,p.model{font-size:16px;font-weight:600;margin:0}
   .validation-page .sci{display:inline;font-size:16px;margin-left:12px;white-space:nowrap}
-  .phase-progress{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}.phase-progress p{white-space:nowrap}
+  .progress-row{flex-basis:100%;order:-2;display:flex;align-items:center;gap:12px;white-space:nowrap}.progress-row progress{flex:1;min-width:0;height:12px;accent-color:rgb(var(--color-success))}
   .validation-page section h2{font-size:21px;margin:0 0 8px}p{margin:4px 0}
   .answers{position:fixed;bottom:0;left:0;right:0;z-index:3;justify-content:space-between;align-items:center;row-gap:4px;padding:12px max(24px,calc((100vw - 1280px)/2));background:rgb(var(--color-page-bg));border-top:1px solid rgb(var(--stone-300));margin:0}
   .answers .verdicts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.unknown-note{flex-basis:100%;text-align:center;margin:0;font-size:14px}.review-navigation{margin-top:24px}
-  @media(max-width:700px){.answers{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;padding:8px 12px}.answers .verdicts{grid-column:1/-1;order:-1;flex-wrap:nowrap;gap:4px}.answers .verdicts :global(.button){flex:1;padding:8px;font-size:16px;min-height:48px}.unknown-note{grid-column:1/-1}}</style>
+  @media(max-width:700px){.answers{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;padding:8px 12px}.progress-row{grid-column:1/-1}.answers .verdicts{grid-column:1/-1;order:-1;flex-wrap:nowrap;gap:4px}.answers .verdicts :global(.button){flex:1;padding:8px;font-size:16px;min-height:48px}.unknown-note{grid-column:1/-1}}</style>

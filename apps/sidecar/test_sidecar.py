@@ -194,6 +194,14 @@ class SidecarCheck(unittest.TestCase):
 
     def test_import_time_auth_duplicate_and_source_integrity(self):
         self.assertEqual(recording_time("rec_20240808_060000.wav", "Asia/Tokyo")[1], "2024-08-07T21:00:00+00:00")
+        for name in ["20240808-060000.wav", "20240808T060000.wav", "20240808060000.wav",
+                     "2024-08-08_06-00-00.wav", "2024-08-08T060000.wav", "2024-08-08 06-00-00.wav",
+                     "REC_2024-08-08_06-00-00_001.wav", "2MA04037_20240808_060000_001.wav",
+                     "site12_20240808_060000_A.flac", "20230101_000000_copy_20240808_060000.wav"]:
+            self.assertEqual(recording_time(name, "Asia/Tokyo"), ("2024-08-08T06:00:00", "2024-08-07T21:00:00+00:00"), name)
+        for name in ["rec_20241308_060000.wav", "rec_120240808_060000.wav", "rec_2024080_060000.wav", "notime.wav"]:
+            with self.assertRaisesRegex(CatalogError, "filename_time"):
+                recording_time(name, "Asia/Tokyo")
         for stamp, code in [("20241103_013000", "ambiguous_time"), ("20240310_023000", "nonexistent_time")]:
             with self.assertRaisesRegex(CatalogError, code):
                 recording_time(f"rec_{stamp}.wav", "America/New_York")
@@ -227,6 +235,10 @@ class SidecarCheck(unittest.TestCase):
                 other_records=client.get(f"/datasets/{other.json()['dataset_id']}/recordings").json()
                 self.assertEqual(other_records[0]['path'],str(copy.resolve()))
                 self.assertEqual(len(client.get('/catalog').json()['sites']),2)
+                mp3_folder=root/'mp3';mp3_folder.mkdir()
+                sf.write(mp3_folder/'REC_2024-08-09_06-00-00_001.mp3',np.zeros(24000),24000,format='MP3')
+                mp3_preview=client.post('/imports/preview',json={**body,'folder':str(mp3_folder)}).json()
+                self.assertEqual((mp3_preview['count'],mp3_preview['first']),(1,'2024-08-08T21:00:00+00:00'))
                 self.assertEqual(client.get(f"/recordings/{recordings[0]['id']}/audio", headers={"Range": "bytes=0-43"}).status_code, 206)
                 sf.write(path, np.zeros(48000), 24000)
                 self.assertEqual(client.get(f"/recordings/{recordings[0]['id']}/audio").json()["detail"], "source_changed")
