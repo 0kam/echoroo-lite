@@ -44,7 +44,7 @@
 <div class="top">地点と録音 › 春日山 › 確認した音を提供する</div>
 <main>
   <h1>確認した音を提供する</h1>
-  <p class="lead">聞いて確かめた音を、Xeno-Canto や研究機関に送れる形（音声と一覧表）でまとめて書き出します。</p>
+  <p class="lead">聞いて確かめた音を、研究のためにまとめて渡せる形（音声と一覧表）で書き出します。</p>
 
   <section class="panel">
     <h2>① 送る音を選ぶ</h2>
@@ -66,16 +66,12 @@
   </section>
 
   <section class="panel">
-    <h2>② 送り先と情報</h2>
-    <fieldset>
-      <div class="radio"><input type="radio" name="dest" checked><div>Xeno-Canto に送る
-        <p class="sub">書き出した一覧表（CSV）と音声の ZIP を、Xeno-Canto の案内どおりメールで送れます。録音者の名前が必要です。</p></div></div>
-      <div class="radio"><input type="radio" name="dest"><div>研究機関に送る
-        <p class="sub">希少種のために、録音者の名前を出さない選び方ができます。</p></div></div>
-    </fieldset>
+    <h2>② 録音の情報</h2>
 
     <label for="rec">録音者の名前</label>
     <input id="rec" type="text" value="岡本 遼太郎">
+    <div class="check"><input type="checkbox" id="anon"><div><label for="anon" style="display:inline;font-size:16px;font-weight:400;color:var(--ink)">名前を出さない</label>
+      <p class="sub" style="margin-left:0">一覧表に名前を載せません。希少種の記録を渡すときにおすすめです。</p></div></div>
 
     <label for="lic">利用のきまり（ライセンス）</label>
     <select id="lic">
@@ -102,7 +98,7 @@
 
   <section class="panel">
     <h2>③ 書き出す</h2>
-    <p class="summary">音声 34 ファイル・一覧表（CSV）・送り方の説明（README）を 1 つのフォルダにまとめます。</p>
+    <p class="summary">音声 34 ファイル・一覧表（CSV）・使い方の説明（README）を 1 つのフォルダにまとめます。研究機関への提供にも、自分での Xeno-Canto への投稿にも使えます。</p>
     <div class="actions">
       <button class="primary">保存先を選んで書き出す</button>
       <button class="ghost">ZIP にまとめる</button>
