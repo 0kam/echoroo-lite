@@ -72,9 +72,9 @@
 
 <style>
   .examples { display: flex; flex-direction: column; gap: 8px; }
-  .examples h2 { font-size: 18px; margin: 0; }
+  .examples h2 { margin: 0; }
   .examples > :global(.button) { align-self: flex-start; }
-  .credit { overflow-wrap: anywhere; font-size: 14px; }
+  .credit { overflow-wrap: anywhere; }
   .actions :global(.button) { text-align: left; }
   .between { justify-content: space-between; align-items: center; flex-wrap: nowrap; }
   p { margin: 4px 0; }

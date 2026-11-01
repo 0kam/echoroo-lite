@@ -19,7 +19,7 @@
 </script>
 <div class="page">
   <div class="crumbs"><a href={`${resolve(`/datasets/${datasetId}/reports`)}?${new URL(page.url.hash.slice(1),page.url).searchParams}`}>{t('uBackExport')}</a></div>
-  <h1>{report?.species?commonName(report.species,app.locale):t('wExportHistory')}<i class="sci">{report?.species?.scientific_name}</i></h1><p>{t('reportSnapshotHint')}</p>
+  <div class="page-header"><div><h1>{report?.species?commonName(report.species,app.locale):t('wExportHistory')}<i class="sci">{report?.species?.scientific_name}</i></h1><p>{t('reportSnapshotHint')}</p></div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>
   {:else if report}
     <section class="panel">{#if !report.species}<table><thead><tr><th>{t('species')}</th><th>{t('candidateRate')}</th></tr></thead><tbody>{#each report.summaries as row}<tr><td>{commonName(row.species,app.locale)} <i>{row.species.scientific_name}</i></td><td>{percent(row.candidate_rate)}</td></tr>{/each}</tbody></table>{/if}{#key report.id}<ReportView {report}/>{/key}</section>

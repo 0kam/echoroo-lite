@@ -59,7 +59,7 @@
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
 </script>
 <div class="page search-page"><div class="crumbs"><a href={back.href}>{t(back.label)}</a></div>
-  <h1>{t(fromSpecies?'sSearchTitle':'sFindMissing')}</h1><p class="lead">{t('wFindHint')}</p>
+  <div class="page-header"><div><h1>{t(fromSpecies?'sSearchTitle':'sFindMissing')}</h1><p>{t('wFindHint')}</p></div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   <!-- Same numbered steps as adding recordings: species, example calls, search. -->
   <div class="steps">

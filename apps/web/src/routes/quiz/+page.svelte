@@ -37,7 +37,7 @@
 </script>
 <div class="page narrow quiz-home">
   {#if returnUrl}<div class="crumbs"><a href={returnUrl}>{t('wReturn')}</a></div>{/if}
-  <h1>{t('quiz')}</h1><p>{t('uQuizHint')}</p>
+  <div class="page-header"><div><h1>{t('quiz')}</h1><p>{t('uQuizHint')}</p></div></div>
   {#if loadError}<p class="error" role="alert">{t(loadError)}</p>
   {:else if !library}<p role="status">{t('loading')}</p>
   {:else}

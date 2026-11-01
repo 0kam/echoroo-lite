@@ -44,13 +44,11 @@
 <div class="page wide validation-page" style:padding-bottom={started&&!done&&validation?.question?`${barHeight+24}px`:undefined}><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if validation}
-    {#if done||!started}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
-      <p class="model">{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p>
-    {:else if validation.question}
-      <!-- One heading: the question. The model is the subheading. Progress lives in the answer bar. -->
-      <h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>
-      <h2 class="model">{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</h2>
-    {/if}
+    {#if done||!started||validation.question}<div class="page-header"><div>
+      <!-- While answering, the one heading is the question and the model is its subtitle. Progress lives in the answer bar. -->
+      {#if done||!started}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
+      {:else}<h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>{/if}
+      <p>{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p></div></div>{/if}
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
     {#if done}<section class="panel"><h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>
       {#if validation.can_extend}<p><strong>{t('vExtendWhy')}</strong></p>{/if}
@@ -86,10 +84,10 @@
   :global(.main:has(.validation-page)){padding-top:16px}.page.validation-page{gap:8px}
   .with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}.examples-column{display:flex;flex-direction:column;gap:8px;position:sticky;top:16px}
   @media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}
-  .validation-page .crumbs{margin-bottom:0}.validation-page .panel{padding:16px}.validation-page h1{margin:0;line-height:1.25}h2.model,p.model{font-size:16px;font-weight:600;margin:0}
-  .validation-page .sci{display:inline;font-size:16px;margin-left:12px;white-space:nowrap}
+  .validation-page .crumbs{margin-bottom:0}.validation-page .panel{padding:16px}.validation-page h1{margin:0;line-height:1.25}
+  .validation-page .sci{display:inline;margin-left:12px;white-space:nowrap}
   .progress-row{flex-basis:100%;order:-2;display:flex;align-items:center;gap:12px;white-space:nowrap}.progress-row progress{flex:1;min-width:0;height:12px;accent-color:rgb(var(--color-success))}
-  .validation-page section h2{font-size:21px;margin:0 0 8px}p{margin:4px 0}
+  .validation-page section h2{margin:0 0 8px}p{margin:4px 0}
   .answers{position:fixed;bottom:0;left:0;right:0;z-index:3;justify-content:space-between;align-items:center;row-gap:4px;padding:12px max(24px,calc((100vw - 1280px)/2));background:rgb(var(--color-page-bg));border-top:1px solid rgb(var(--stone-300));margin:0}
-  .answers .verdicts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.unknown-note{flex-basis:100%;text-align:center;margin:0;font-size:14px}.review-navigation{margin-top:24px}
+  .answers .verdicts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.unknown-note{flex-basis:100%;text-align:center;margin:0}.review-navigation{margin-top:24px}
   @media(max-width:700px){.answers{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;padding:8px 12px}.progress-row{grid-column:1/-1}.answers .verdicts{grid-column:1/-1;order:-1;flex-wrap:nowrap;gap:4px}.answers .verdicts :global(.button){flex:1;padding:8px;font-size:16px;min-height:48px}.unknown-note{grid-column:1/-1}}</style>

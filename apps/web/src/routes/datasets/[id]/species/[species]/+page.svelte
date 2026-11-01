@@ -101,7 +101,7 @@
         <p class="muted">{t(result.checks.length>1?'sActivityHint':'sActivityHintOne')}</p>
         {#if remaining&&result.checks.length}<p class="muted">{fill('sWorkload',{n:remaining,time:effort.time})}</p>{/if}
         {#each ordered as item (item.key)}<div class="check-row">
-          <div class="check-name"><strong>{checkName(item)} <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></strong><span>{checkText(item.validation)}</span></div>
+          <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{checkText(item.validation)}</span></div>
           <Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>
         </div>{:else}<p>{t('wNoModel')}</p>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
@@ -143,7 +143,7 @@
   {:else if loading}<p role="status"><Spinner/> {t('sPreparing')}</p>{/if}
 </div>
 <style>.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px;align-items:start}.card{display:flex;flex-direction:column;gap:12px}
-  .status{font-size:18px}.check-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid rgb(var(--stone-300))}
+  .check-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid rgb(var(--stone-300))}
   .check-name{display:flex;flex-direction:column}.confirm{padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}.confirm p,.confirm ul{margin:0 0 12px}
   .more{margin-top:8px}.more summary{min-height:44px;padding:10px 0}.more .stack{margin-top:8px}
   .model-tabs{margin:12px 0 4px}section p{margin:8px 0}</style>

@@ -50,7 +50,7 @@
   export async function images() {
     const copy = element.cloneNode(true) as SVGSVGElement;
     copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); copy.setAttribute('width', '2400'); copy.setAttribute('height', String(height * 2.5));
-    copy.removeAttribute('style'); copy.setAttribute('viewBox', `0 0 960 ${height}`); copy.setAttribute('font-family', 'system-ui, Yu Gothic, Hiragino Kaku Gothic ProN, sans-serif');
+    copy.removeAttribute('style'); copy.setAttribute('viewBox', `0 0 960 ${height}`); copy.setAttribute('font-family', getComputedStyle(document.documentElement).fontFamily);
     copy.querySelectorAll('[tabindex]').forEach(node => { node.removeAttribute('tabindex'); node.removeAttribute('role'); });
     const svg = new XMLSerializer().serializeToString(copy);
     const image = new Image();
@@ -65,7 +65,7 @@
 {#if !compact}<div class="plot-controls"><label>{t('plotZoom')}<select bind:value={zoom}>{#each [100,150,200] as value}<option value={value}>{value}%</option>{/each}</select></label><span class="muted">{t('plotNavigation')}</span></div>
 {/if}<div class="plot-scroll" class:compact>
 <svg bind:this={element} xmlns="http://www.w3.org/2000/svg" viewBox={compact?`0 ${header-20} 960 755`:`0 0 960 ${height}`} style:width={`${zoom}%`} style:max-width={`${720*zoom/100}px`}
-  role="group" aria-label={t('spiralPlot')} font-family="system-ui, Yu Gothic, Hiragino Kaku Gothic ProN, sans-serif">
+  role="group" aria-label={t('spiralPlot')}>
   <title>{t('spiralPlot')} · {report.species ? commonName(report.species, app.locale) : ''} · {metric}</title>
   <desc>{t('spiralMeaning')} {report.site.timezone} · {report.start_date}–{report.end_date}</desc>
   <defs><pattern id={`${uid}-missing`} width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="#fafafa"/><path d="M-2,2 L2,-2 M0,7 L7,0 M5,9 L9,5" stroke="#aeacb8" stroke-width="1"/></pattern>
@@ -124,8 +124,8 @@
   .plot-scroll { overflow: auto; max-height: 780px; border: 1px solid rgb(var(--stone-300)); background: #fff; }
   svg { display: block; height: auto; min-width: 600px; margin: 0 auto; }
   .plot-scroll.compact{border:0;max-height:none}.compact svg{min-width:0;width:100%!important;max-width:none!important}
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 13px; color: rgb(var(--stone-700)); }
-  .caution { margin: 8px 0 0; font-size: 14px; color: rgb(var(--stone-700)); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 13px; color: rgb(var(--stone-600)); }
+  .caution { margin: 8px 0 0; font-size: 14px; color: rgb(var(--stone-600)); }
   .legend span { display: inline-flex; align-items: center; gap: 8px; }
   .legend i { display: inline-block; width: 20px; height: 16px; border: 1px solid #aeacb8; }
   .legend .ramp { width: 48px; background: linear-gradient(90deg, #e2bcba, #a0504c); }

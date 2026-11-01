@@ -103,5 +103,5 @@
   canvas{width:100%;height:100%;display:block}.marks{position:absolute;inset:0;pointer-events:none}
   .guide{position:absolute;left:0;right:0;height:1px;background:rgb(255 255 255 / .15);pointer-events:none}
   .state{position:sticky;bottom:0;left:0;background:#101010dd;color:white;padding:12px}
-  .time-axis{display:flex;justify-content:space-between;align-items:center;min-height:44px;cursor:ew-resize;font-size:13px;font-variant-numeric:tabular-nums}
+  .time-axis{display:flex;justify-content:space-between;align-items:center;min-height:44px;cursor:ew-resize;font-size:12px;font-variant-numeric:tabular-nums;color:rgb(var(--stone-600))}
 </style>

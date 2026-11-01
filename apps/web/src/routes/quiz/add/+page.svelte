@@ -8,7 +8,7 @@
   const context=quizContext(page.url),back=resolve('/quiz')+(context.query?`?${context.query}`:'');
 </script>
 <div class="page narrow"><div class="crumbs"><a href={back}>{t('uBackQuiz')}</a></div>
-  <h1>{t('uQuizAdd')}</h1><p>{t('uQuizAddHint')}</p>
+  <div class="page-header"><div><h1>{t('uQuizAdd')}</h1><p>{t('uQuizAddHint')}</p></div></div>
   <section class="panel"><QuizEditor onadded={clip=>goto(`${resolve('/quiz/choose')}?${context.query?context.query+'&':''}added=${clip.id}`)}/></section>
 </div>
 

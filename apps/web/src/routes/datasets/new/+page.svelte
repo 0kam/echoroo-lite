@@ -107,4 +107,4 @@
     </section>
   </div>
 </div>
-<style>.busy{display:flex;align-items:center;gap:8px}ul{margin:8px 0;padding-left:24px}.files{color:rgb(var(--stone-600));font-size:14px}.reason{min-height:24px;margin-top:-4px}</style>
+<style>.busy{display:flex;align-items:center;gap:8px}ul{margin:8px 0;padding-left:24px}.files{color:rgb(var(--stone-600))}.reason{min-height:24px;margin-top:-4px}</style>

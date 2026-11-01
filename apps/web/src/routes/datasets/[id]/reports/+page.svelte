@@ -45,7 +45,7 @@
 </script>
 <div class="page narrow report-page">
   <div class="crumbs"><a href={back}>{t('uBackResults')}</a></div>
-  <h1>{t('wExport')}</h1><p class="lead">{t('rExportIntro')}</p>
+  <div class="page-header"><div><h1>{t('wExport')}</h1><p>{t('rExportIntro')}</p></div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if overview}
     <section class="panel">
@@ -75,7 +75,7 @@
       <Button variant={output?'default':'primary'} pending={exportFiles.pending} disabled={!selected.length||(!isTauri()&&!folder)} aria-describedby="export-reason" onclick={()=>exportFiles.run()}>{t('rCreate')}</Button>
       <p class="muted" id="export-reason">{!selected.length?t('rSaveIdle'):!isTauri()&&!folder?t('rNeedFolder'):''}</p>
     </section>
-    {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="saved">
+    {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="history">
       <div><p>{when(item.created_at)}</p>
         <small class="path">{item.folder_path??item.path}</small></div>
       {#if item.folder_path}<Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{/if}
@@ -83,6 +83,6 @@
     {#if earlier.length}<details><summary>{t('wEarlierReports')} · {earlier.length}</summary>{#each earlier as item}<p><a href={`${resolve(`/datasets/${id}/reports/${item.id}`)}?${query}`}>{item.species?(item.species.common_names&&commonName(item.species,app.locale))||item.species.scientific_name:t('species')} · {item.start_date&&item.end_date?dayRange(item.start_date,item.end_date):''} · {when(item.created_at)}</a></p>{/each}</details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('rLoading')}</p>{/if}
 </div>
-<style>h2{margin-bottom:12px}section>p,section>label{margin:16px 0}.lead{font-size:18px}.busy{display:flex;align-items:center;gap:8px}
-  .export-species{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300))}details{margin:8px 0}summary{font-size:18px;padding:12px 0;cursor:pointer}h3{margin:24px 0 0}.export-species .muted{display:block}
-  .path{overflow-wrap:anywhere;color:rgb(var(--stone-700));font-size:14px}.saved{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.saved p{margin:0 0 8px}</style>
+<style>h2{margin-bottom:12px}section>p,section>label{margin:16px 0}.busy{display:flex;align-items:center;gap:8px}
+  .export-species{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300));font-size:16px;font-weight:400}details{margin:8px 0}summary{padding:12px 0}section summary{font-size:18px;font-weight:600}h3{margin:24px 0 0}.export-species .muted{display:block}
+  .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}.history{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.history p{margin:0 0 8px}</style>

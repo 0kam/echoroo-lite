@@ -48,4 +48,4 @@
   onkeydown={event=>{if(event.key==='Enter'&&editable&&map){event.preventDefault();const p=map.getCenter();choose(p.lat,p.lng);}}}></div>
 <p class="muted">{t(editable?'mMapHint':'mMapReadOnly')}</p>
 {#if failed}<p class="notice" role="status">{t('mMapOffline')}</p>{/if}
-<style>.site-map{height:300px;border-radius:8px;background:#ece9e3;z-index:0}.site-map :global(.leaflet-control-zoom a){width:44px;height:44px;line-height:44px;font-size:24px}p{margin:10px 0;font-size:14px}</style>
+<style>.site-map{height:300px;border-radius:8px;background:#ece9e3;z-index:0}.site-map :global(.leaflet-control-zoom a){width:44px;height:44px;line-height:44px;font-size:24px}p{margin:10px 0}</style>

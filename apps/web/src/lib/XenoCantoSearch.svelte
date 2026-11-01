@@ -73,7 +73,7 @@
   .query { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
   .query label { flex: 1; min-width: 120px; }
   .xc-results { max-height: 480px; overflow-y: auto; border: 1px solid rgb(var(--stone-300)); border-radius: 6px; }
-  article { padding: 18px; border-bottom: 1px solid rgb(var(--stone-200)); font-size: 15px; }
+  article { padding: 18px; border-bottom: 1px solid rgb(var(--stone-200)); font-size: 16px; }
   article:last-child { border-bottom: 0; }
   article p { margin-top: 2px; }
   a { overflow-wrap: anywhere; }

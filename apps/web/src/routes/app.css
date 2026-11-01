@@ -1,6 +1,7 @@
 @import '../lib/theme.css';
 
-/* Spacing uses only 4, 8, 12, 16, 24, 32 and 48 px. Text: body 16, notes 14, table heads 13 (minimum). */
+/* Spacing uses only 4, 8, 12, 16, 24, 32 and 48 px.
+   Text roles: h1 28, lead under h1 16 grey (.page-header p), h2 21, h3/group/status 18, body 16, notes 14 grey, fine detail 13 grey (axes 12). */
 :root {
   font-family: Inter, system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
   color: rgb(var(--stone-900));
@@ -40,7 +41,7 @@ a { color: rgb(var(--primary-700)); }
   min-height: 48px; padding: 8px 24px;
   border: 1px solid rgb(var(--stone-300)); border-radius: var(--button-radius);
   background: rgb(var(--color-card-bg)); color: rgb(var(--stone-800));
-  cursor: pointer; text-decoration: none; max-width: 100%; text-align: center; line-height: 1.3;
+  cursor: pointer; text-decoration: none; max-width: 100%; text-align: center; line-height: 1.3; font-size: 16px;
   transition: background .12s, border-color .12s, transform .05s;
 }
 .button:hover, button:hover { background: rgb(var(--stone-200)); }
@@ -65,7 +66,7 @@ button:disabled:not(.pending), .button[aria-disabled="true"], .button.primary:di
 .button.lg { min-height: 52px; padding: 12px 24px; font-size: 18px; }
 .button.active, button.chosen, .chosen > .button { background: rgb(var(--primary-100)); border-color: rgb(var(--primary-200)); color: rgb(var(--primary-700)); }
 .dark .button.active, .dark button.chosen { background: rgb(var(--stone-200)); color: rgb(var(--primary-500)); border-color: rgb(var(--stone-300)); }
-.button.link, button.link { border: 0; background: transparent; padding: 0; min-height: 0; color: rgb(var(--primary-700)); text-align: left; white-space: normal; text-decoration: underline; }
+.button.link, button.link { font-size: inherit; border: 0; background: transparent; padding: 0; min-height: 0; color: rgb(var(--primary-700)); text-align: left; white-space: normal; text-decoration: underline; }
 .button.link:hover, button.link:hover { color: rgb(var(--primary-600)); background: transparent; }
 a:focus-visible, button:focus-visible, .button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
   outline: 2px solid rgb(var(--primary-600)); outline-offset: 2px;
@@ -123,8 +124,7 @@ summary { cursor: pointer; font-weight: 500; }
 .main > .page.wide { max-width: 1280px; }
 .page.narrow > * { width: 100%; max-width: 720px; }
 .page-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; }
-.page-header p { color: rgb(var(--stone-600)); font-size: 14px; margin-top: 4px; max-width: 70ch; }
-.lead { max-width: 70ch; }
+.page-header p { color: rgb(var(--stone-600)); margin-top: 4px; max-width: 70ch; }
 /* The one back button at the top left. */
 .crumbs { display: flex; align-items: center; margin-bottom: 16px; font-size: 16px; }
 .crumbs a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border: 1px solid rgb(var(--stone-300)); border-radius: var(--button-radius);
@@ -157,19 +157,19 @@ summary { cursor: pointer; font-weight: 500; }
 .stat-row { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 14px; color: rgb(var(--stone-600)); }
 .stat-row strong { color: rgb(var(--stone-900)); font-size: 16px; font-weight: 600; margin-right: 4px; }
 .saved { color: rgb(var(--color-success)); font-size: 14px; }
+.status strong { font-size: 18px; font-weight: 600; }
 progress { width: 100%; height: 8px; accent-color: rgb(var(--color-success)); }
 
 /* ---- Tables ---- */
 .table-wrap { overflow: auto; border: 1px solid rgb(var(--stone-200)); border-radius: 6px; }
 table { border-collapse: collapse; width: 100%; font-size: 16px; }
-th { font-weight: 500; color: rgb(var(--stone-600)); font-size: 13px; text-align: left; position: sticky; top: 0; background: rgb(var(--color-card-bg)); z-index: 1; }
+th { font-weight: 400; color: rgb(var(--stone-600)); font-size: 13px; text-align: left; position: sticky; top: 0; background: rgb(var(--color-card-bg)); z-index: 1; }
 td, th { padding: 16px 12px; border-bottom: 1px solid rgb(var(--stone-200)); vertical-align: middle; }
 tbody tr:last-child td { border-bottom: 0; }
 tr.row-link { cursor: pointer; }
 tr.row-link:hover td { background: rgb(var(--stone-100)); }
 tr.chosen td { background: rgb(var(--primary-100)); }
 .dark tr.chosen td { background: rgb(var(--stone-200)); }
-.common-name { display: block; font-weight: 500; }
 .scientific-name { display: block; color: rgb(var(--stone-600)); font-size: 13px; font-style: italic; }
 /* Range-model caution next to a species name: text, not colour alone. */
 .rare { display: inline-block; padding: 0 8px; border: 1px solid rgb(var(--color-warning)); border-radius: 4px; background: rgb(var(--color-warning-light)); color: rgb(var(--stone-800)); font-size: 14px; font-weight: 400; font-style: normal; vertical-align: middle; }

@@ -14,7 +14,7 @@
 
 <style>
   .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
-  .toast { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 8px; font-size: 13px;
+  .toast { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 8px; font-size: 14px;
     background: rgb(var(--stone-900)); color: rgb(var(--stone-50)); box-shadow: 0 8px 24px rgb(0 0 0 / .2); animation: rise .2s ease-out; }
   .toast.success { border-left: 4px solid rgb(var(--color-success)); }
   .toast.error { border-left: 4px solid rgb(var(--color-danger)); }
