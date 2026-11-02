@@ -18,3 +18,11 @@ The Fuji evaluation set (60 WAV clips + per-clip annotation CSVs) is passed with
 
 Every stage has a 45-minute limit. Input hashes are checked before a Fuji
 embedding cache is reused.
+
+## Hierarchy prototype (2026-11-03)
+
+`hierarchy_proto.py` tries the drill-down revision (leaf k-means → Ward tree → flattened
+levels) against the same Fuji annotations, against sound maps already built in an Echoroo Lite
+data folder (`user --data DIR --datasets …`, read-only), and for timing on the synthetic
+210,000-segment matrix (`scale`). The recorded output is
+`docs/benchmarks/hierarchy-proto-2026-11-03.txt`.
