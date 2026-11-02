@@ -349,7 +349,7 @@ class ModelsTest(unittest.TestCase):
                 measured_paths.extend(paths)
                 seconds = sum(sf.info(path).duration for path in paths)
                 measurements.append((engine, len(paths), seconds))
-                if data.name.endswith('-warmup'):
+                if data.name.endswith('-0'):
                     return len(paths), seconds, 999.
                 if len(paths) == 4:
                     samples = np.concatenate([sf.read(path, dtype='float32')[0] for path in paths])
@@ -369,7 +369,7 @@ class ModelsTest(unittest.TestCase):
                 self.assertTrue(all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] == 18
                     and m['seconds_per_file'] == .3 for m in result['models']))
                 self.assertEqual(loads, ['perch','kinglet-b','kinglet-s','kinglet-xs','birdnet-v3'])
-                expected = [(1,20), *[(1,20)]*3, *[(1,320)]*3, *[(4,320)]*3]
+                expected = [*[(1,20)]*2, *[(1,320)]*2, *[(4,320)]*2]
                 self.assertEqual(measurements, [(engine,files,seconds) for engine in REGISTRY for files,seconds in expected])
                 self.assertTrue(all(not path.exists() for path in measured_paths))
                 with connect(data) as db:
@@ -413,14 +413,14 @@ class ModelsTest(unittest.TestCase):
                 client.put('/models', json={'main':'kinglet-s', 'extra':['perch']})
                 first = client.post('/models/benchmark', json={'engine':'kinglet-b'})
                 self.assertEqual(first.status_code, 200, first.text)
-                self.assertEqual(measured, ['kinglet-b']*10)
+                self.assertEqual(measured, ['kinglet-b']*6)
                 self.assertEqual(settings(data)['benchmark']['models'],
                                  {'kinglet-b':dict(seconds_per_hour=18,seconds_per_file=.3)})
                 self.assertEqual(first.json()['seconds_per_job'], .8)
                 costs.update(job=.2, file=.1, hour=12)
                 second = client.post('/models/benchmark', json={'engine':'kinglet-xs'})
                 self.assertEqual(second.status_code, 200, second.text)
-                self.assertEqual(measured, ['kinglet-b']*10 + ['kinglet-xs']*10)
+                self.assertEqual(measured, ['kinglet-b']*6 + ['kinglet-xs']*6)
                 self.assertEqual(settings(data)['benchmark']['models'],
                     {'kinglet-b':dict(seconds_per_hour=18,seconds_per_file=.3),
                      'kinglet-xs':dict(seconds_per_hour=12,seconds_per_file=.1)})
@@ -441,7 +441,7 @@ class ModelsTest(unittest.TestCase):
                     response = client.post('/models/benchmark', json={'engine':engine})
                     self.assertEqual((response.status_code,response.json()),(400,{'detail':'invalid_input'}))
                     self.assertEqual(client.get('/models').json(), last.json())
-                self.assertEqual(measured, ['kinglet-b']*10 + ['kinglet-xs']*10 + ['kinglet-b']*10)
+                self.assertEqual(measured, ['kinglet-b']*6 + ['kinglet-xs']*6 + ['kinglet-b']*6)
 
     def test_benchmark_then_birdnet_job_preserves_import_time_model_directory(self):
         with tempfile.TemporaryDirectory() as temp:

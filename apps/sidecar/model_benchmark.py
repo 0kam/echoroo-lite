@@ -81,10 +81,9 @@ def benchmark(root, models, engine=None):
                 continue
             site = dict(latitude=35, longitude=138)
             with prepare_models(models, [engine], site) as loaded:
-                benchmark_job(folder / f'{engine}-warmup', [paths[20]], models, engine, loaded)
-                # The fastest of three runs per job filters out background load.
+                # The faster of two runs per job filters out warm-up and background load.
                 samples = [min((benchmark_job(folder / f'{engine}-{index}-{run}', inputs, models, engine, loaded)
-                                for run in range(3)), key=lambda sample: sample[2])
+                                for run in range(2)), key=lambda sample: sample[2])
                            for index, inputs in enumerate(([paths[20]], [paths[320]], split_files))]
                 results[engine] = fit_costs(samples)
                 job_costs.append(results[engine].pop('seconds_per_job'))
