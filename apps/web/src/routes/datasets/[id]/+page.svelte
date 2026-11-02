@@ -13,17 +13,24 @@
   import { createTask } from '$lib/ui/task.svelte';
   const id=$derived(Number(page.params.id));
   const job=$derived(activeJob());
-  const jobSignature=$derived(app.jobs.filter(j=>app.datasets.find(d=>d.id===j.dataset_id)?.site_id===app.datasets.find(d=>d.id===id)?.site_id).map(j=>`${j.id}:${j.status}`).join(','));
+  const siteJobs=$derived(app.jobs.filter(j=>app.datasets.find(d=>d.id===j.dataset_id)?.site_id===app.datasets.find(d=>d.id===id)?.site_id));
+  const jobSignature=$derived(siteJobs.map(j=>`${j.id}:${j.status}`).join(','));
+  // Results are saved per recording, so the list can grow while a job runs.
+  const progress=$derived(siteJobs.filter(j=>j.status==='running').map(j=>`${j.id}:${j.done}`).join(','));
   let result=$state<Overview|null>(null),first=$state(''),last=$state(''),loading=$state(true),error=$state('');
-  let request=0;
-  async function load(from='',to='') {
-    const version=++request;loading=true;error='';
+  let request=0,inFlight=false,started=0,took=0;
+  // `quiet`: refresh behind the current result without the loading line.
+  async function load(quiet=false) {
+    const query=new URL(page.url.hash.slice(1)||page.url.pathname+page.url.search,page.url).searchParams,from=query.get('start_date')??'',to=query.get('end_date')??'';
+    const version=++request;if(!quiet)loading=true;error='';inFlight=true;started=performance.now();
     try {const data=await api<Overview>(`/datasets/${id}/overview${from&&to?`?${rangeQuery(from,to)}`:''}`);
       if(version===request){result=data;first=data.start_date;last=data.end_date;}}
     catch(e){if(version===request)error=e instanceof Error?e.message:'unknown_error';}
-    finally{if(version===request)loading=false;}
+    finally{if(version===request){loading=false;inFlight=false;took=performance.now()-started;}}
   }
-  $effect(()=>{const current=id, signature=jobSignature, hash=page.url.hash;void current;void signature;const query=new URL(hash.slice(1)||page.url.pathname+page.url.search,page.url).searchParams;untrack(()=>void load(query.get('start_date')??'',query.get('end_date')??''));});
+  $effect(()=>{void id;void jobSignature;void page.url.hash;void page.url.search;untrack(()=>void load());});
+  // Progress reloads are throttled so a large overview does not compete with analysis; a skipped one is retried on a later catalogue poll.
+  $effect(()=>{if(progress&&untrack(()=>!inFlight&&performance.now()-started>=Math.max(10000,5*took)))untrack(()=>void load(true));});
   const analyze=createTask(async()=>{await api('/jobs',{dataset_id:id,recording_id:null});await refreshCatalog();},{toast:true});
   const range=$derived(result?`?${rangeQuery(result.start_date,result.end_date)}`:'');
   type Row=Overview['species'][number];
