@@ -21,6 +21,8 @@
   // An answered sound always has a next sound: a later answered one, or the first unanswered one (or the result).
   const goNext=()=>navigate.run(next?.id);
   const answered=$derived(!!validation?.question?.verdict);
+  // Pressing Next before answering points to the answer buttons instead of moving on.
+  let triedNext=$state<number|null>(null);
   const remaining=$derived(validation?validation.counts.total-validation.counts.answered:0);
   const nextLabel=$derived(next||remaining>0?'vNextSound':'wValidationDone');
   onMount(()=>{api<Validation>(`/validations/${sid}`).then(value=>{validation=value;started=value.counts.answered>0;}).catch(e=>error=e.message);});
@@ -71,8 +73,8 @@
             <Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('vPreviousSound')}</Button>
             <div class="verdicts" role="group" aria-label={t('wQuestion')}>{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
             <Button size="lg" active={question.verdict===verdict} aria-pressed={question.verdict===verdict} disabled={busy||!validation.applicable} onclick={()=>answer.run(verdict)}>{question.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
-            <Button disabled={busy||!answered} title={answered?undefined:t('vAnswerToContinue')} onclick={goNext}>{t(nextLabel)} ›</Button>
-            <p class="muted unknown-note">{t('vUnknownNote')}</p></div>
+            <Button disabled={busy} title={answered?undefined:t('vAnswerToContinue')} onclick={()=>{if(answered)goNext();else{triedNext=question.id;document.querySelector<HTMLElement>('.verdicts button')?.focus();}}}>{t(nextLabel)} ›</Button>
+            {#if triedNext===question.id&&!answered}<p class="field-error unknown-note" role="alert">{t('vAnswerToContinue')}</p>{:else}<p class="muted unknown-note">{t('vUnknownNote')}</p>{/if}</div>
           {#if answered&&next}<div class="actions review-navigation"><Button disabled={busy} onclick={()=>navigate.run()}>{t(remaining>0?'vResume':'wValidationDone')}</Button></div>{/if}
         {/if}
         {#if answer.error||navigate.error}<p class="error" class:answer-feedback={!!validation.question} style:bottom={validation.question?`${barHeight+8}px`:undefined} role="alert">{t(answer.error||navigate.error)}</p>{/if}

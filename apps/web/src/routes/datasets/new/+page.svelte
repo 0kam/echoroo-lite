@@ -10,7 +10,7 @@
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import SiteMap from '$lib/SiteMap.svelte';
-  import { analysisSeconds,appHref,fill,returnPath,roughTime } from '$lib/workflow';
+  import { analysisSeconds,appHref,fill,focusMissing,missingText,returnPath,roughTime } from '$lib/workflow';
   import { createTask } from '$lib/ui/task.svelte';
   type Preview={count:number;seconds:number;first:string|null;last:string|null;skipped:{path:string;code:string}[]};
   const query=new URL(page.url.hash.slice(1),page.url).searchParams;
@@ -56,8 +56,11 @@
   // Skipped files are summarised by reason; the file names stay in a short list underneath.
   const reasons=$derived([...(preview?.skipped??[]).reduce((counts,item)=>counts.set(item.code,(counts.get(item.code)??0)+1),new Map<string,number>())]);
   const allRegistered=$derived(!!preview&&!preview.count&&preview.skipped.length>0&&preview.skipped.every(item=>item.code==='duplicate'));
-  const located=$derived(adding||(!!siteName.trim()&&latitude!==null&&longitude!==null&&Math.abs(latitude)<=90&&Math.abs(longitude)<=180));
-  const blocked=$derived(!located?'uNeedSite':!folder?'uAddDisabledReason':scanning?'uScanWait':scanError?'uScanRetry':!preview?.count?'uNothingToAdd':'');
+  // Missing input keeps the button enabled; a press marks each missing field. Waiting on the folder check disables it.
+  let tried=$state(false);
+  const noName=$derived(!adding&&!siteName.trim()),noLatitude=$derived(!adding&&!(latitude!==null&&Math.abs(latitude)<=90)),noLongitude=$derived(!adding&&!(longitude!==null&&Math.abs(longitude)<=180));
+  const missing=$derived(missingText([noName&&'siteName',(noLatitude||noLongitude)&&'uMapPlace',!folder&&'uChooseFolder']));
+  const blocked=$derived(scanning?'uScanWait':scanError?'uScanRetry':!preview?.count?'uNothingToAdd':'');
   // Every AI in use analyses every new recording; nothing is shown until each has a speed measurement.
   const estimate=$derived(preview?.count?analysisSeconds(app.ai.models.filter(m=>m.enabled&&m.available).map(m=>({engine:m.id,recordings:preview!.count,seconds:preview!.seconds}))):null);
   const localTime=(iso:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:scanZone}).format(new Date(iso));
@@ -69,9 +72,11 @@
     {#if adding}<section class="panel step-card"><h2>{fill('uSiteSame',{site:selected?.name??''})}</h2></section>
     {:else}<section class="panel step-card stack">
       <h2>{t('uSiteDetails')}</h2><p class="muted">{t('uSiteOnce')}</p>
-      <label>{t('siteName')}<input bind:value={siteName} required maxlength="200" placeholder={t('uSiteExample')} disabled={register.pending}/></label>
+      <label>{t('siteName')}<input bind:value={siteName} required maxlength="200" placeholder={t('uSiteExample')} disabled={register.pending} aria-invalid={tried&&noName||undefined} aria-describedby={tried&&noName?'name-error':undefined}/></label>
+      {#if tried&&noName}<p class="field-error" id="name-error">{t('uEnterSiteName')}</p>{/if}
       <SiteMap bind:latitude bind:longitude editable={!register.pending}/>
-      <div class="form-grid"><label>{t('latitude')}<input type="number" step="any" min="-90" max="90" bind:value={latitude} required disabled={register.pending}/></label><label>{t('longitude')}<input type="number" step="any" min="-180" max="180" bind:value={longitude} required disabled={register.pending}/></label></div>
+      <div class="form-grid"><label>{t('latitude')}<input type="number" step="any" min="-90" max="90" bind:value={latitude} required disabled={register.pending} aria-invalid={tried&&noLatitude||undefined} aria-describedby={tried&&noLatitude?'place-error':undefined}/></label><label>{t('longitude')}<input type="number" step="any" min="-180" max="180" bind:value={longitude} required disabled={register.pending} aria-invalid={tried&&noLongitude||undefined} aria-describedby={tried&&noLongitude?'place-error':undefined}/></label></div>
+      {#if tried&&(noLatitude||noLongitude)}<p class="field-error" id="place-error">{t('uEnterPlace')}</p>{/if}
       <label>{t('uTimeZone')}<input list="time-zones" value={zone} onchange={e=>zone=e.currentTarget.value.trim()} required autocomplete="off" disabled={register.pending}/></label>
       <datalist id="time-zones">{#each zones as name}<option value={name}></option>{/each}</datalist>
       <p class="muted">{t('uTimeZoneHint')}</p>
@@ -80,8 +85,9 @@
       <div class="muted"><p>{t('uFilenameFormat')}</p><ul>{#each filenameExamples as name}<li><code>{name}</code></li>{/each}</ul><p>{fill('uFilenameZone',{zone:scanZone})}</p></div>
       {#if isTauri()}
         {#if folder}<p>{fill('uChosenFolder',{name:fileName(folder)})} <Button class="link" disabled={register.pending} onclick={()=>browse.run()}>{t('uChooseAnotherFolder')}</Button></p>
-        {:else}<Button pending={browse.pending} onclick={()=>browse.run()}>{t('browse')}</Button>{/if}
-      {:else}<label>{t('folder')}<input bind:value={folderDraft} onchange={commitFolder} onkeydown={e=>{if(e.key==='Enter'){e.preventDefault();commitFolder();}}} disabled={register.pending}/></label>{/if}
+        {:else}<Button pending={browse.pending} aria-invalid={tried||undefined} aria-describedby={tried?'folder-error':undefined} onclick={()=>browse.run()}>{t('browse')}</Button>{/if}
+      {:else}<label>{t('folder')}<input bind:value={folderDraft} onchange={commitFolder} onkeydown={e=>{if(e.key==='Enter'){e.preventDefault();commitFolder();}}} disabled={register.pending} aria-invalid={tried&&!folder||undefined} aria-describedby={tried&&!folder?'folder-error':undefined}/></label>{/if}
+      {#if tried&&!folder}<p class="field-error" id="folder-error">{t('uPickFolder')}</p>{/if}
       {#if browse.error}<p class="error" role="alert">{t(browse.error)}</p>{/if}
     </section>
     <section class="panel step-card stack"><h2>{t('uCheckAndAdd')}</h2>
@@ -102,8 +108,8 @@
         {/if}
         {#if register.error}<p class="error" role="alert">{t(register.error)}</p>{/if}
       </div>
-      <Button variant="primary" pending={register.pending} disabled={!!blocked} aria-describedby="add-reason" onclick={()=>register.run()}>{preview?.count?fill('uAddTheseFiles',{n:preview.count.toLocaleString(app.locale)}):t('uAddRecordings')}</Button>
-      <p class="muted reason" id="add-reason">{blocked&&!register.pending?t(blocked):''}</p>
+      <Button variant="primary" pending={register.pending} disabled={!missing&&!!blocked} aria-describedby="add-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else register.run();}}>{preview?.count?fill('uAddTheseFiles',{n:preview.count.toLocaleString(app.locale)}):t('uAddRecordings')}</Button>
+      <p class="reason {tried&&missing?'field-error':'muted'}" id="add-reason">{register.pending?'':missing||(blocked&&t(blocked))}</p>
     </section>
   </div>
 </div>

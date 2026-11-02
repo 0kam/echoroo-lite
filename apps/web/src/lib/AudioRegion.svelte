@@ -17,10 +17,12 @@
   import ZoomSpectrogram from './ZoomSpectrogram.svelte';
   import { seekInterval } from './annotation-geometry.js';
   // `selectable` false: a long recording to browse and play, with no part to choose. `actions` sit beside the play button.
+  // `invalid`: a note shown under the From/To fields when the chosen part cannot be used.
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, selectable=true, storageKey, onplaying, actions }:
+    zoomable=false, selectable=true, storageKey, onplaying, actions, invalid='' }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;selectable?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet } = $props();
+      zoomable?:boolean;selectable?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;invalid?:string } = $props();
+  const invalidId=$props.id();
   const choosing = $derived(!fixedRange && selectable);
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
   let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
@@ -158,8 +160,9 @@
   </div>{/if}
   {#if !zoomable}<div class="region-controls">
     {@render playbackButton()}{@render actions?.()}
-    {#if choosing}<label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} /></label>
-    <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} /></label>
+    {#if choosing}<label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} aria-invalid={!!invalid||undefined} aria-describedby={invalid?invalidId:undefined} /></label>
+    <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} aria-invalid={!!invalid||undefined} aria-describedby={invalid?invalidId:undefined} /></label>
+    {#if invalid}<p class="field-error range-hint" id={invalidId}>{invalid}</p>{/if}
     <span class="muted range-hint">{t('rangeHint')}</span>{/if}
   </div>{/if}
   <!-- Field recordings have no speech transcript. -->
