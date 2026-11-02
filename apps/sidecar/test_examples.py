@@ -82,7 +82,7 @@ class ExamplesCheck(unittest.TestCase):
         validation = self.post('/validations', {**self.scope, 'species_id': warbler['id'], 'model': 'birdnet'})
         question = validation['question']
         clip = self.post('/quiz/clips', {'species_id': warbler['id'], 'source_kind': 'recording', 'source_id': question['source']['id'],
-                                         'start_s': question['start_s'], 'end_s': question['start_s'] + 5})
+                                         'start_s': question['start_s'], 'end_s': question['end_s']})
         guarded = self.examples(warbler, validation_id=validation['id'])
         self.assertNotIn(clip['id'], [e['label']['id'] for e in guarded['examples'] if e['label']['origin'] == 'quiz'])
         refs = [{'kind': 'named', 'origin': 'quiz', 'id': 1}, {'kind': 'confirmed', 'origin': 'presence', 'id': 1}]
