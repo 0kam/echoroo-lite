@@ -388,6 +388,16 @@ def create_app(root, models, token):
         from explore import points_file
         return FileResponse(points_file(root, dataset), media_type='application/octet-stream')
 
+    @app.get('/explore/points/{position}')
+    def explore_point(position: int, dataset: int = Query(ge=1)):
+        from explore import point_segment
+        try:
+            return point_segment(root, dataset, position)
+        except CatalogError as error:
+            if str(error) == 'not_found':
+                raise HTTPException(404, 'not_found') from None
+            raise
+
     @app.get('/explore/nodes/{node}/segments')
     def explore_node_segments(node: int, dataset: int = Query(ge=1),
                               offset: int = Query(default=0, ge=0)):

@@ -12,8 +12,8 @@ import sqlite_vec
 
 
 # Increment whenever the SQLite schema changes.
-SCHEMA_VERSION = 4
-MIGRATABLE_VERSIONS = (2, 3)
+SCHEMA_VERSION = 5
+MIGRATABLE_VERSIONS = (2, 3, 4)
 
 
 class CatalogError(Exception):
@@ -122,14 +122,14 @@ def initialize(root):
                 run_id INTEGER NOT NULL REFERENCES explore_runs ON DELETE CASCADE,
                 position INTEGER NOT NULL,
                 segment_id INTEGER NOT NULL REFERENCES segments ON DELETE CASCADE,
-                x REAL NOT NULL, y REAL NOT NULL,
+                x REAL NOT NULL, y REAL NOT NULL, candidates TEXT NOT NULL,
                 PRIMARY KEY(run_id,position));
             CREATE TABLE IF NOT EXISTS explore_nodes (
                 run_id INTEGER NOT NULL REFERENCES explore_runs ON DELETE CASCADE,
                 node INTEGER NOT NULL, parent INTEGER, name TEXT NOT NULL, depth INTEGER NOT NULL,
                 lo INTEGER NOT NULL, hi INTEGER NOT NULL,
                 rep_segment_id INTEGER NOT NULL REFERENCES segments ON DELETE CASCADE,
-                hint_rate REAL NOT NULL, top_species TEXT, top_share REAL,
+                hint_rate REAL NOT NULL, top_species TEXT NOT NULL,
                 PRIMARY KEY(run_id,node));
             CREATE INDEX IF NOT EXISTS explore_node_parent ON explore_nodes(run_id,parent);
             CREATE TABLE IF NOT EXISTS reports (

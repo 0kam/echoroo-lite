@@ -38,6 +38,7 @@ PACMAP_LR = 1.0
 SEED = 20261101
 CACHE_VERSION = 1
 SCORE_THRESHOLD = 0.1
+CANDIDATE_MIN = 0.05
 
 
 def _check_cancel(cancel):
@@ -325,7 +326,7 @@ def lloyd(matrix, initial, cancel=None, max_iter=20):
     return centers, labels, squared, iterations
 
 
-def _score_rows(path, engine, count):
+def _score_rows(path, engine, count, allowed_labels=None):
     try:
         with np.load(path, allow_pickle=False) as saved:
             labels = np.asarray(saved['labels']).astype(str)
@@ -335,17 +336,38 @@ def _score_rows(path, engine, count):
         raise CatalogError('invalid_scores') from None
     if values.ndim != 2 or values.shape != (count, len(labels)) or not len(labels) or not np.isfinite(values).all():
         raise CatalogError('invalid_scores')
-    winners = values.argmax(axis=1)
-    if key == 'logits':
-        maximum = np.empty(count, dtype=np.float32)
-        for start in range(0, count, 256):
-            block = values[start:start + 256].astype(np.float64)
+    indices = np.arange(len(labels))
+    if allowed_labels is not None:
+        indices = indices[np.isin(labels, list(map(str, allowed_labels)))]
+    maximum = np.zeros(count, dtype=np.float32)
+    winners = [None] * count
+    candidates = [[] for _ in range(count)]
+    if not len(indices):
+        return maximum, winners, candidates
+    names = [canonical_scientific_name(engine, labels[index]) for index in indices]
+    for start in range(0, count, 256):
+        block = values[start:start + 256]
+        if key == 'logits':
+            block = block.astype(np.float64)
             peak = block.max(axis=1)
-            maximum[start:start + len(block)] = 1 / np.exp(block - peak[:, None]).sum(axis=1)
-    else:
-        maximum = values[np.arange(count), winners].astype(np.float32)
-    names = [canonical_scientific_name(engine, labels[index]) for index in winners]
-    return maximum, names
+            denominator = np.exp(block - peak[:, None]).sum(axis=1)
+            selected = np.exp(block[:, indices] - peak[:, None]) / denominator[:, None]
+        else:
+            selected = block[:, indices]
+        top = selected.argmax(axis=1)
+        maximum[start:start + len(block)] = selected[np.arange(len(block)), top]
+        for offset, index in enumerate(top, start):
+            winners[offset] = names[index]
+        limit = min(3, len(indices))
+        chosen = np.argpartition(-selected, limit - 1, axis=1)[:, :limit]
+        scores = np.take_along_axis(selected, chosen, axis=1)
+        ordering = np.argsort(-scores, axis=1, kind='stable')
+        chosen = np.take_along_axis(chosen, ordering, axis=1)
+        scores = np.take_along_axis(scores, ordering, axis=1)
+        for row in range(len(block)):
+            candidates[start + row] = [[names[index], round(float(score), 4)]
+                for index, score in zip(chosen[row], scores[row]) if score >= CANDIDATE_MIN]
+    return maximum, winners, candidates
 
 
 def _append_linkage(tree, matrix, leaf_nodes, scale=1.0):
@@ -472,7 +494,9 @@ def flatten_tree(tree, root, projected, cancel=None):
 
 def _score_data(root, analyses, index, segment_ids, cancel=None):
     maximum = np.empty(len(segment_ids), dtype=np.float32)
-    species_codes = np.empty(len(segment_ids), dtype=np.int32)
+    species_codes = np.full(len(segment_ids), -1, dtype=np.int32)
+    candidates = [[] for _ in range(len(segment_ids))]
+    filters = {}
     codes, names = {}, []
     with connect(root) as db:
         for analysis in analyses:
@@ -486,20 +510,31 @@ def _score_data(root, analyses, index, segment_ids, cancel=None):
             if (len(rows) != end - start or any(row['id'] != int(segment_ids[start + offset])
                     or abs(row['start_s'] - offset * width) > 1e-6 for offset, row in enumerate(rows))):
                 raise CatalogError('invalid_scores')
-            scores, winners = _score_rows(analysis['scores_path'], analysis['engine'], len(rows))
+            candidate_filter = metadata.get('candidate_filter')
+            allowed = (candidate_filter.get('species') if isinstance(candidate_filter, dict)
+                       and 'species' in candidate_filter else None)
+            filters.setdefault(analysis['engine'], 'none')
+            if allowed is not None:
+                filters[analysis['engine']] = 'applied'
+            scores, winners, row_candidates = _score_rows(
+                analysis['scores_path'], analysis['engine'], len(rows), allowed)
             maximum[start:end] = scores
+            candidates[start:end] = row_candidates
             for offset, name in enumerate(winners, start):
+                if name is None:
+                    continue
                 if name not in codes:
                     codes[name] = len(names); names.append(name)
                 species_codes[offset] = codes[name]
         records = {row['scientific_name']: {'id': row['id'], 'scientific_name': row['scientific_name']}
                    for row in db.execute('SELECT id,scientific_name FROM species WHERE scientific_name IN '
                     '(SELECT value FROM json_each(?))', (json.dumps(names),))}
-    return maximum, species_codes, names, records
+    return maximum, species_codes, names, records, candidates, filters
 
 
 def node_summaries(root, analyses, index, segment_ids, projected, nodes, order, cancel=None):
-    maximum, species_codes, names, records = _score_data(root, analyses, index, segment_ids, cancel)
+    maximum, species_codes, names, records, candidates, filters = _score_data(
+        root, analyses, index, segment_ids, cancel)
     ordered_maximum = maximum[order]
     ordered_species = species_codes[order]
     sums = np.zeros((len(nodes), projected.shape[1]), dtype=np.float64)
@@ -521,16 +556,19 @@ def node_summaries(root, analyses, index, segment_ids, projected, nodes, order, 
         representative = int(members[int(distance.argmin())])
         qualified = ordered_maximum[lo:hi] >= SCORE_THRESHOLD
         qualified_count = int(qualified.sum())
-        top, top_share = None, None
+        top = []
         if qualified_count:
             counts = np.bincount(ordered_species[lo:hi][qualified], minlength=len(names))
-            code = int(counts.argmax()); name = names[code]
-            top = records.get(name, {'id': None, 'scientific_name': name})
-            top_share = float(counts[code] / qualified_count)
+            for code in np.argsort(-counts, kind='stable')[:3]:
+                if not counts[code]:
+                    break
+                name = names[code]
+                top.append({**records.get(name, {'id': None, 'scientific_name': name}),
+                            'share': float(counts[code] / qualified_count)})
         summaries.append({**record, 'rep_segment_id': int(segment_ids[representative]),
                           'hint_rate': float(qualified_count / (hi - lo)),
-                          'top_species': top, 'top_share': top_share})
-    return summaries
+                          'top_species': top})
+    return summaries, candidates, filters
 
 
 def knn(matrix, k, cancel=None, block=1024):
@@ -736,7 +774,8 @@ def build(root, dataset_id, job_id=None, cancel=None):
             _check_cancel(cancel)
             _progress(root, job_id, 'explore_summarizing', 4)
             started = time.perf_counter()
-            summaries = node_summaries(root, analyses, index, segment_ids, projected, nodes, order, cancel)
+            summaries, candidates, filters = node_summaries(
+                root, analyses, index, segment_ids, projected, nodes, order, cancel)
             params = {'staging': True}
             with connect(root) as db:
                 staged_sha = f'{model_sha}.staging.{uuid4().hex}'
@@ -759,15 +798,15 @@ def build(root, dataset_id, job_id=None, cancel=None):
                 for start in range(0, len(order), VECTOR_BATCH):
                     _check_cancel(cancel)
                     end = min(start + VECTOR_BATCH, len(order))
-                    db.executemany('INSERT INTO explore_points VALUES(?,?,?,?,?)',
+                    db.executemany('INSERT INTO explore_points VALUES(?,?,?,?,?,?)',
                         ((staged_id, position, int(segment_ids[order[position]]),
-                          float(layout[order[position], 0]), float(layout[order[position], 1]))
+                          float(layout[order[position], 0]), float(layout[order[position], 1]),
+                          json.dumps(candidates[order[position]], ensure_ascii=False))
                          for position in range(start, end)))
-                db.executemany('INSERT INTO explore_nodes VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                db.executemany('INSERT INTO explore_nodes VALUES(?,?,?,?,?,?,?,?,?,?)',
                     ((staged_id, item['node'], item['parent'], item['name'], item['depth'], item['lo'], item['hi'],
                       item['rep_segment_id'], item['hint_rate'],
-                      json.dumps(item['top_species'], ensure_ascii=False) if item['top_species'] else None,
-                      item['top_share'])
+                      json.dumps(item['top_species'], ensure_ascii=False))
                      for item in summaries))
                 stage_seconds['summarizing'] = time.perf_counter() - started
                 params = {'analysis_ids': [row['analysis_id'] for row in analyses],
@@ -776,7 +815,8 @@ def build(root, dataset_id, job_id=None, cancel=None):
                           'method': tree_details['method'], 'tree': tree_details,
                           'node_count': len(nodes), 'depth': max(item['depth'] for item in nodes),
                           'layout': layout_mode, 'stage_seconds': stage_seconds,
-                          'score_threshold': SCORE_THRESHOLD}
+                          'candidate_filter': filters,
+                          'score_threshold': SCORE_THRESHOLD, 'candidate_min': CANDIDATE_MIN}
                 db.execute('UPDATE explore_runs SET params=? WHERE id=?', (json.dumps(params, ensure_ascii=False), staged_id))
             _check_cancel(cancel)
             with connect(root) as db:
@@ -829,14 +869,22 @@ def _node_row(db, run_id, node):
         WHERE n.run_id=? AND n.node=?''', (run_id, node)).fetchone()
 
 
-def _node_shape(row, child_count=0):
+def _species_ids(db, names):
+    return {row['scientific_name']: row['id'] for row in db.execute(
+        'SELECT id,scientific_name FROM species WHERE scientific_name IN '
+        '(SELECT value FROM json_each(?))', (json.dumps(sorted(set(names))),))}
+
+
+def _node_shape(row, species_ids, child_count=0):
+    top_species = json.loads(row['top_species'])
     return {'node': row['node'], 'name': row['name'], 'parent': row['parent'], 'depth': row['depth'],
             'size': row['hi'] - row['lo'], 'lo': row['lo'], 'hi': row['hi'], 'child_count': child_count,
             'rep': {key: row[key] for key in ('segment_id', 'recording_id', 'path', 'start_s', 'end_s',
                                                'recorded_at', 'timezone')},
             'hint_rate': row['hint_rate'],
-            'top_species': json.loads(row['top_species']) if row['top_species'] else None,
-            'top_share': row['top_share']}
+            'top_species': [{'id': species_ids.get(item['scientific_name']),
+                             'scientific_name': item['scientific_name'], 'share': item['share']}
+                            for item in top_species]}
 
 
 def status(root, dataset_id, node=0):
@@ -863,14 +911,18 @@ def status(root, dataset_id, node=0):
             WHERE n.run_id=? AND n.parent=? ORDER BY n.hi-n.lo DESC,n.node''', (run['id'], node)).fetchall()
         counts = dict(db.execute('''SELECT parent,COUNT(*) FROM explore_nodes WHERE run_id=? AND parent IN
             (SELECT value FROM json_each(?)) GROUP BY parent''', (run['id'], json.dumps([node] + [row['node'] for row in children]))))
+        node_rows = [selected, *children]
+        species_ids = _species_ids(db, [item['scientific_name'] for row in node_rows
+            for item in json.loads(row['top_species'])])
         path = []
         current = selected
         while current is not None:
             path.append({'node': current['node'], 'name': current['name'],
                          'size': current['hi'] - current['lo']})
             current = _node_row(db, run['id'], current['parent']) if current['parent'] is not None else None
-    result.update({'node': _node_shape(selected, counts.get(node, 0)), 'path': list(reversed(path)),
-                   'children': [_node_shape(row, counts.get(row['node'], 0)) for row in children]})
+    result.update({'node': _node_shape(selected, species_ids, counts.get(node, 0)),
+                   'path': list(reversed(path)),
+                   'children': [_node_shape(row, species_ids, counts.get(row['node'], 0)) for row in children]})
     return result
 
 
@@ -886,6 +938,29 @@ def points_file(root, dataset_id):
     if not path.is_file():
         raise CatalogError('not_found')
     return path
+
+
+def _segment_shape(row, species_ids):
+    return {**{key: row[key] for key in ('segment_id', 'recording_id', 'path', 'start_s', 'end_s',
+                                          'recorded_at', 'timezone')},
+            'candidates': [{'id': species_ids.get(name), 'scientific_name': name, 'score': score}
+                           for name, score in row['candidates']]}
+
+
+def point_segment(root, dataset_id, position):
+    _, _, _, run = _current_run(root, dataset_id)
+    if run is None:
+        raise CatalogError('not_found')
+    with connect(root) as db:
+        row = db.execute('''SELECT p.segment_id,p.candidates,a.recording_id,r.path,s.start_s,s.end_s,
+            r.recorded_at,r.timezone FROM explore_points p JOIN segments s ON s.id=p.segment_id
+            JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
+            WHERE p.run_id=? AND p.position=?''', (run['id'], position)).fetchone()
+        if row is None:
+            raise CatalogError('not_found')
+        row = dict(row); row['candidates'] = json.loads(row['candidates'])
+        species_ids = _species_ids(db, [name for name, _ in row['candidates']])
+    return _segment_shape(row, species_ids)
 
 
 def node_segments(root, dataset_id, node, offset=0):
@@ -914,14 +989,19 @@ def node_segments(root, dataset_id, node, offset=0):
     page = ordering[offset:offset + 20]
     positions = (page + lo).tolist()
     with connect(root) as db:
-        rows = db.execute('''SELECT p.position,p.segment_id,a.recording_id,r.path,s.start_s,s.end_s,
+        rows = db.execute('''SELECT p.position,p.segment_id,p.candidates,a.recording_id,r.path,s.start_s,s.end_s,
             r.recorded_at,r.timezone FROM explore_points p JOIN segments s ON s.id=p.segment_id
             JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
             WHERE p.run_id=? AND p.position IN (SELECT value FROM json_each(?))''',
             (run['id'], json.dumps(positions))).fetchall()
-    by_position = {row['position']: dict(row) for row in rows}
+        rows = [dict(row) for row in rows]
+        for row in rows:
+            row['candidates'] = json.loads(row['candidates'])
+        species_ids = _species_ids(db, [name for row in rows for name, _ in row['candidates']])
+    by_position = {row['position']: row for row in rows}
     segments = []
     for position, index in zip(positions, page):
         row = by_position[position]
-        row.pop('position'); row['dist'] = float(distance[index]); segments.append(row)
+        shaped = _segment_shape(row, species_ids)
+        shaped['dist'] = float(distance[index]); segments.append(shaped)
     return {'total': hi - lo, 'segments': segments}

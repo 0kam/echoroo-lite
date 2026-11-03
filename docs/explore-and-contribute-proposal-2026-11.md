@@ -393,7 +393,7 @@ API：
 「AI の候補: 種名（top_share%）」、未満なら「AI の候補なし（無音や虫の声の可能性）」。
 どちらも「候補あり hint_rate%」を添える。文言は日英の locale キー、文字は 7 役割。
 
-### 改訂 v2.1：まとまりから音を直接引き出す（2026-11-03、提案・**未合意**）
+### 改訂 v2.1：まとまりから音を直接引き出す（2026-11-03。同日ユーザーが了承、実装へ）
 
 **経緯**：v2 を Tauri で試したユーザーの指摘（2026-11-03）。(1) AI の候補は 1 種だけでなく主要な
 ものを複数出す、(2) 音ごとにも AI の候補を出す、(3) 地図の点を押したらその音を表示する、
@@ -431,12 +431,36 @@ API：
   （地図の点から 1 音の情報を引く）で `candidates` を `[{id, scientific_name, score}, …]` として返す。
 - スキーマは v5（v4 の explore_* は作り直し）。
 
-**決めてほしいこと**
+#### 決定（2026-11-03、ユーザーが v2.1 を了承）
 
-1. この形で進めてよいか（モックで行の開閉とカードを確認してほしい）。
-2. 地図の点を押したらすぐ再生、でよいか（表示だけにして再生は押し直す案もある）。
-3. 行を開いたときの一覧の件数（20 件ずつ）と、末端のまとまりの大きさ（20 件以下）は
-   v2 のままでよいか。
+v2.1 で実装する。点を押したらすぐ再生、一覧は 20 件ずつ、末端は 20 件以下のまま。
+「音ごと」は 5 秒の区間ごと。分担は v2 と同じ（sidecar を Codex、画面を Opus、コミットは確認後）。
+
+#### 実装仕様 v2.1（追加・変更分）
+
+- 候補の計算（作成時）：解析メタデータに `candidate_filter.species` があれば（Perch）その学名に
+  絞る。Perch は全クラスで softmax してから絞る（録音ページの `predictions.perch_candidates` と同じ）。
+  Kinglet は保存済みの `scores` をそのまま使う（フィルタなし）。各区間の候補は絞った中の
+  上位 3 でスコア 0.05 以上。`hint_rate` と節の候補は、絞った中の最大スコア ≥ 0.1 を「候補あり」
+  として数える。
+- テーブル（スキーマ v5。v2〜v4 からの移行は explore_* を捨てて作り直し）：
+  `explore_points(run_id, position, segment_id, x, y, candidates)`（`candidates` は JSON
+  `[[scientific_name, score], …]`、なければ `[]`）、
+  `explore_nodes(run_id, node, parent, name, depth, lo, hi, rep_segment_id, hint_rate, top_species)`
+  （`top_species` は JSON `[{id, scientific_name, share}, …]` 上位 3。`top_share` 列は廃止）。
+- API：節の形は `top_species` が配列になり `top_share` が消える。音の形
+  `{segment_id, recording_id, path, start_s, end_s, recorded_at, timezone, candidates: [{id, scientific_name, score}, …]}`
+  を `GET /explore/nodes/{n}/segments` の各行（`dist` 付き）と、新しい
+  `GET /explore/points/{position}?dataset=`（地図の点 1 つ。範囲外は 404 `not_found`）で返す。
+  `id` は `species` 表に学名があればその id、なければ null。
+- 画面：右は中のまとまりの行だけ。行を押すと開き、先頭に「中を見る（中に K 個のまとまり）」
+  （末端にはない）、続けてその行の音を中心に近い順に 20 件ずつ（`/explore/nodes/{子}/segments`）。
+  各音は時刻・再生・AI の候補（上位 3、%）・「この音に似た声を探す」。地図の点を押すと
+  `/explore/points/{position}` を引いて地図の下に「選んだ音」のカードを出し、すぐ再生する。
+  カードには「このまとまりを開く」（その行を開いて移動）と「この音に似た声を探す」。
+  点には輪、属する行を強調。二度押しはその中へ。いまの節が末端なら音の一覧をそのまま出す。
+  まとまりの候補は「AI の候補: A 24%・B 12%・C 8%（候補のある音 52%）」、2 割未満は
+  「AI の候補なし（無音や虫の声の可能性）・候補のある音 7%」。
 
 ## (b) 提供用の書き出し
 

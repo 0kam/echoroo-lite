@@ -45,9 +45,13 @@ class ExploreCheck(unittest.TestCase):
         stat = source.stat()
         scores_path = self.root / f'scores-{seed}.npz'
         rng = np.random.default_rng(seed)
-        logits = rng.normal(size=(count, 3)).astype(np.float32)
+        labels = np.array(['Horornis diphone', 'Zosterops japonicus',
+                           'Corvus macrorhynchos', 'Water'])
+        patterns = np.array([[0, -1, -2, 8], [3, 2, 1, 0],
+                             [0, 0, 0, 0], [1, 2, 3, 4]], dtype=np.float32)
+        logits = np.resize(patterns, (count, len(labels)))
         np.savez_compressed(scores_path, logits=logits,
-            labels=np.array(['Horornis diphone', 'Zosterops japonicus', 'Corvus macrorhynchos']))
+                            labels=labels)
         vectors = rng.normal(size=(count, 1536)).astype('<f4')
         with connect(self.root) as db:
             recording = db.execute('''INSERT INTO recordings(dataset_id,path,original_time,timezone,recorded_at,
@@ -56,7 +60,9 @@ class ExploreCheck(unittest.TestCase):
             job = db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(1,'complete',1,'finished')").lastrowid
             analysis = db.execute('''INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path)
                 VALUES(?,?,?,?,?)''', (job, recording, engine,
-                    json.dumps({'model_sha256': model_sha, 'window_s': 5}), str(scores_path))).lastrowid
+                    json.dumps({'model_sha256': model_sha, 'window_s': 5,
+                                'candidate_filter': {'species': labels[:3].tolist()}}),
+                    str(scores_path))).lastrowid
             for index, vector in enumerate(vectors):
                 segment = db.execute('INSERT INTO segments(analysis_id,start_s,end_s) VALUES(?,?,?)',
                                      (analysis, index * 5, (index + 1) * 5)).lastrowid
@@ -110,31 +116,43 @@ class ExploreCheck(unittest.TestCase):
             self.assertLess(position, node['hi'])
             self.assertGreaterEqual(node['hint_rate'], 0)
             self.assertLessEqual(node['hint_rate'], 1)
-            if node['top_species'] is None:
-                self.assertIsNone(node['top_share'])
-            else:
-                self.assertGreater(node['top_share'], 0)
-                self.assertLessEqual(node['top_share'], 1)
+            top = json.loads(node['top_species'])
+            self.assertLessEqual(len(top), 3)
+            shares = [item['share'] for item in top]
+            self.assertEqual(shares, sorted(shares, reverse=True))
+            self.assertLessEqual(sum(shares), 1 + 1e-12)
+            self.assertNotIn('Water', {item['scientific_name'] for item in top})
         return run, nodes, points
 
-    def test_schema_two_and_three_are_upgraded_without_losing_catalog_data(self):
-        for version in (2, 3):
+    def test_schema_two_through_four_are_upgraded_without_losing_catalog_data(self):
+        for version in (2, 3, 4):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 self.assertTrue(initialize(root))
                 with connect(root) as db:
                     db.execute("INSERT INTO sites VALUES(1,'Kept','Asia/Tokyo',35,138)")
                     db.executescript('''DROP TABLE explore_nodes; DROP TABLE explore_points; DROP TABLE explore_runs;''')
-                    if version == 3:
+                    if version in (3, 4):
                         db.executescript('''
                             CREATE TABLE explore_runs (id INTEGER PRIMARY KEY,site_id INTEGER NOT NULL REFERENCES sites,
                                 engine TEXT NOT NULL,model_sha TEXT NOT NULL,params TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                                 UNIQUE(site_id,engine,model_sha));
-                            CREATE TABLE explore_points (run_id INTEGER,segment_id INTEGER,x REAL,y REAL,cluster INTEGER,dist REAL,
-                                PRIMARY KEY(run_id,segment_id));
-                            CREATE TABLE explore_clusters (run_id INTEGER,cluster INTEGER,size INTEGER,rep_segment_id INTEGER,
-                                score_mean REAL,top_species TEXT,PRIMARY KEY(run_id,cluster));
                         ''')
+                        if version == 3:
+                            db.executescript('''
+                                CREATE TABLE explore_points (run_id INTEGER,segment_id INTEGER,x REAL,y REAL,cluster INTEGER,dist REAL,
+                                    PRIMARY KEY(run_id,segment_id));
+                                CREATE TABLE explore_clusters (run_id INTEGER,cluster INTEGER,size INTEGER,rep_segment_id INTEGER,
+                                    score_mean REAL,top_species TEXT,PRIMARY KEY(run_id,cluster));
+                            ''')
+                        else:
+                            db.executescript('''
+                                CREATE TABLE explore_points (run_id INTEGER,position INTEGER,segment_id INTEGER,x REAL,y REAL,
+                                    PRIMARY KEY(run_id,position));
+                                CREATE TABLE explore_nodes (run_id INTEGER,node INTEGER,parent INTEGER,name TEXT,depth INTEGER,
+                                    lo INTEGER,hi INTEGER,rep_segment_id INTEGER,hint_rate REAL,top_species TEXT,top_share REAL,
+                                    PRIMARY KEY(run_id,node));
+                            ''')
                         folder = root / 'explore'; folder.mkdir()
                         (folder / 'points-old.bin').write_bytes(b'old')
                         (folder / 'pca50-old.f32').write_bytes(b'old')
@@ -149,8 +167,10 @@ class ExploreCheck(unittest.TestCase):
                         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'explore_%'")}
                     self.assertEqual(tables, {'explore_runs', 'explore_points', 'explore_nodes'})
                     columns = [row['name'] for row in db.execute('PRAGMA table_info(explore_points)')]
-                    self.assertEqual(columns, ['run_id', 'position', 'segment_id', 'x', 'y'])
-                if version == 3:
+                    self.assertEqual(columns, ['run_id', 'position', 'segment_id', 'x', 'y', 'candidates'])
+                    node_columns = [row['name'] for row in db.execute('PRAGMA table_info(explore_nodes)')]
+                    self.assertNotIn('top_share', node_columns)
+                if version in (3, 4):
                     self.assertFalse((root / 'explore' / 'points-old.bin').exists())
                     self.assertFalse((root / 'explore' / 'pca50-old.f32').exists())
 
@@ -163,6 +183,9 @@ class ExploreCheck(unittest.TestCase):
         run, nodes, points = self.assert_tree(32)
         params = json.loads(run['params'])
         self.assertEqual((params['method'], params['layout']), ('exact', 'full'))
+        self.assertEqual(params['candidate_filter'], {'perch': 'applied'})
+        self.assertEqual((params['candidate_min'], params['score_threshold']),
+                         (explore.CANDIDATE_MIN, explore.SCORE_THRESHOLD))
         self.assertEqual(set(params['stage_seconds']), {'cache', 'pca', 'tree', 'layout', 'summarizing'})
         self.assertEqual((params['node_count'], params['depth']),
                          (len(nodes), max(row['depth'] for row in nodes)))
@@ -170,6 +193,9 @@ class ExploreCheck(unittest.TestCase):
         summary = self.client.get('/explore', params={'dataset': 1}).json()
         self.assertEqual((summary['status'], summary['engine'], summary['segment_count']), ('ready', 'perch', 32))
         self.assertEqual(summary['node']['node'], 0)
+        self.assertNotIn('top_share', summary['node'])
+        self.assertTrue(all(set(item) == {'id', 'scientific_name', 'share'}
+                            for item in summary['node']['top_species']))
         self.assertEqual(summary['path'], [{'node': 0, 'name': '', 'size': 32}])
         self.assertEqual([row['size'] for row in summary['children']],
                          sorted((row['size'] for row in summary['children']), reverse=True))
@@ -197,6 +223,28 @@ class ExploreCheck(unittest.TestCase):
         np.testing.assert_allclose(x, [row['x'] for row in points])
         np.testing.assert_allclose(y, [row['y'] for row in points])
         self.assertEqual((self.root / 'explore' / params['pca_file']).stat().st_size, 32 * 50 * 4)
+        point = self.client.get('/explore/points/3', params={'dataset': 1})
+        self.assertEqual(point.status_code, 200, point.text)
+        self.assertEqual(point.json()['segment_id'], int(segment_ids[3]))
+        stored_candidates = json.loads(points[3]['candidates'])
+        self.assertEqual([[item['scientific_name'], item['score']] for item in point.json()['candidates']],
+                         stored_candidates)
+        past_end = self.client.get(f'/explore/points/{count}', params={'dataset': 1})
+        self.assertEqual((past_end.status_code, past_end.json()), (404, {'detail': 'not_found'}))
+
+        with np.load(self.root / 'scores-1.npz') as saved:
+            logits = saved['logits'].astype(np.float64)
+        probabilities = np.exp(logits - logits.max(axis=1, keepdims=True))
+        probabilities /= probabilities.sum(axis=1, keepdims=True)
+        expected_hint_rate = float((probabilities[:, :3].max(axis=1) >= explore.SCORE_THRESHOLD).mean())
+        self.assertAlmostEqual(nodes[0]['hint_rate'], expected_hint_rate)
+        for row in points:
+            candidates = json.loads(row['candidates'])
+            self.assertLessEqual(len(candidates), 3)
+            self.assertEqual([item[1] for item in candidates],
+                             sorted((item[1] for item in candidates), reverse=True))
+            self.assertTrue(all(item[1] >= explore.CANDIDATE_MIN for item in candidates))
+            self.assertNotIn('Water', {item[0] for item in candidates})
 
         terminal = next(row for row in nodes if row['hi'] - row['lo'] <= explore.TERMINAL_MAX)
         for node in (nodes[0], terminal):
@@ -205,7 +253,10 @@ class ExploreCheck(unittest.TestCase):
             self.assertEqual([row['dist'] for row in page['segments']],
                              sorted(row['dist'] for row in page['segments']))
             self.assertTrue(all(set(row) == {'segment_id', 'recording_id', 'path', 'start_s', 'end_s',
-                                              'recorded_at', 'timezone', 'dist'} for row in page['segments']))
+                                              'recorded_at', 'timezone', 'candidates', 'dist'}
+                                for row in page['segments']))
+            self.assertTrue(all(set(candidate) == {'id', 'scientific_name', 'score'}
+                                for row in page['segments'] for candidate in row['candidates']))
         second_page = self.client.get('/explore/nodes/0/segments', params={'dataset': 1, 'offset': 20}).json()
         self.assertEqual((second_page['total'], len(second_page['segments'])), (32, 12))
 
@@ -251,6 +302,15 @@ class ExploreCheck(unittest.TestCase):
             self.assertEqual((busy.status_code, busy.json()), (409, {'detail': 'job_busy'}))
             self.assertEqual(self.client.post('/operations/cancel').json(), {'status': 'cancelling'})
             self.assertEqual(self.wait_job(started.json()['id'])['status'], 'cancelled')
+
+    def test_stored_scores_are_not_softmaxed_or_filtered(self):
+        path = self.root / 'kinglet-scores.npz'
+        np.savez(path, labels=['A', 'B', 'C', 'D'],
+                 scores=np.array([[.8, .1, .04, .03], [.01, .02, .03, .04]], dtype=np.float32))
+        maximum, winners, candidates = explore._score_rows(path, 'kinglet-s', 2)
+        np.testing.assert_allclose(maximum, [.8, .04])
+        self.assertEqual(winners, ['A', 'D'])
+        self.assertEqual(candidates, [[['A', .8], ['B', .1]], []])
 
     def test_leaf_tree_and_landmark_layout_with_patched_thresholds(self):
         self.add_analysis(200, 4)

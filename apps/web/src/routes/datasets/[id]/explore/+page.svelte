@@ -12,11 +12,14 @@
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  type Segment={segment_id:number;recording_id:number;path:string;start_s:number;end_s:number;recorded_at:string;timezone:string};
+  // `id` is null when the species list has no row for the scientific name.
+  type Named={id:string|null;scientific_name:string};
+  type Segment={segment_id:number;recording_id:number;path:string;start_s:number;end_s:number;recorded_at:string;timezone:string;candidates:(Named&{score:number})[]};
   // Points come in tree order, so the sounds of every group are the positions lo..hi-1 of the point arrays.
-  type Group={node:number;name:string;size:number;lo:number;hi:number;child_count:number;rep:Segment;hint_rate:number;top_species:{id:string;scientific_name:string}|null;top_share:number};
+  type Group={node:number;name:string;size:number;lo:number;hi:number;child_count:number;rep:{start_s:number;end_s:number};hint_rate:number;top_species:(Named&{share:number})[]};
   type Status={status:'none'|'building'|'ready'|'stale';created_at:string|null;engine:string;segment_count:number;node?:Group;path?:{node:number;name:string}[];children?:Group[]};
   type Page={total:number;segments:Segment[]};
+  type List=Page&{pending:boolean;error:string};
   type Points={n:number;x:Float32Array;y:Float32Array;box:[number,number,number,number]};
   const id=Number(page.params.id),PAGE=20,MAX_ZOOM=1000,draftKey=`echoroo-explore:${id}`;
   // Categorical hues stepped for the light and the dark surface; a group has at most eight smaller groups, one colour each.
@@ -26,12 +29,16 @@
   // The group being viewed lives in the URL (`?node=`), so the browser's back button goes up one level.
   const nodeId=$derived(Number(new URL(page.url.hash.slice(1),page.url).searchParams.get('node'))||0);
   const here=(node:number)=>`${resolve(`/datasets/${id}/explore`)}?node=${node}`;
-  // Coming back without `?node=` (the search page's back link) reopens the same group with as many sounds as before.
-  const draft=(()=>{try{return JSON.parse(localStorage.getItem(draftKey)||'null');}catch{return null;}})() as {created_at?:string;node?:number;loaded?:number}|null;
-  let restoring=!new URL(page.url.hash.slice(1),page.url).searchParams.has('node')&&!!draft?.node;
+  // Coming back without `?node=` (the search page's back link) reopens the same group, the same rows and as many sounds as before.
+  let draft=(()=>{try{return JSON.parse(localStorage.getItem(draftKey)||'null');}catch{return null;}})() as {created_at?:string;node?:number;loaded?:Record<string,number>}|null;
+  let restoring=!new URL(page.url.hash.slice(1),page.url).searchParams.has('node')&&!!draft;
   let data=$state<Status|null>(null),error=$state(''),pointsError=$state(''),names=$state<Record<string,Species>>({});
-  // The child picked on the map (its index): its row is highlighted and the other children are dimmed.
-  let selected=$state<number|null>(null),members=$state<Page&{node:number}|null>(null),membersError=$state('');
+  // The child picked on the map or opened in the list (its index): its row is highlighted and the other children are dimmed.
+  let selected=$state<number|null>(null);
+  // Open rows and the loaded sounds of each group, by group number; the sounds stay cached while the same map is shown.
+  let open=$state<Record<number,boolean>>({}),lists=$state<Record<number,List>>({});
+  // The sound picked on the map: its position in the point arrays, then its details.
+  let pickAt=$state(-1),pick=$state<Segment|null>(null),pickError=$state('');
   let watched=$state<number|null>(null),transformed=$state(false);
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   const job=$derived(activeJob());
@@ -47,14 +54,20 @@
     const version=++request,wanted=nodeId;
     try{const next=await api<Status>(`/explore?dataset=${id}&node=${wanted}`);
       if(version!==request)return;
-      if(restoring){restoring=false;if(next.created_at===draft?.created_at&&draft?.node){void go(draft.node,true);return;}}
+      if(restoring){restoring=false;if(next.created_at===draft?.created_at&&draft?.node&&draft.node!==wanted){void go(draft.node,true);return;}}
       const before=data?.node,fresh=next.created_at!==data?.created_at,moved=next.node?.node!==before?.node;
       data=next;error='';
-      if(fresh){points=null;if(next.node)void loadPoints(next);}
+      if(fresh){points=null;lists={};if(next.node)void loadPoints(next);}
       if(!next.node)return;
-      if(fresh||moved){selected=null;quietUntil=performance.now()+400;void openMembers(next);fly(!!before);}
-      for(const sid of new Set([next.node,...children].flatMap(c=>c.top_species?[c.top_species.id]:[])))
-        if(!(sid in names))api<Species>(`/species/${encodeURIComponent(sid)}`).then(row=>{names[sid]=row;},()=>{/* The scientific name stays as the fallback. */});
+      if(fresh||moved){
+        selected=null;open={};pickAt=-1;pick=null;quietUntil=performance.now()+400;
+        const saved=draft?.created_at===next.created_at&&draft?.node===next.node.node?draft.loaded??{}:{};draft=null;
+        // A group that is not divided further shows its own sounds instead of rows.
+        if(!next.children?.length)void loadList(next.node.node,saved[next.node.node]);
+        for(const c of next.children??[])if(saved[c.node]){open[c.node]=true;void loadList(c.node,saved[c.node]);}
+        fly(!!before);
+      }
+      askNames([next.node,...next.children??[]].flatMap(g=>g.top_species));
     }catch(e){if(version!==request)return;const code=e instanceof Error?e.message:'unknown_error';
       // A group of an older map no longer exists: start again from the whole map.
       if(code==='not_found'&&wanted){void go(0,true);return;}
@@ -63,27 +76,33 @@
   function go(target:number,replaceState=false){clearTimeout(scrollTimer);quietUntil=performance.now()+400;return goto(here(target),{replaceState,noScroll:true});}
   // Group numbers change when the map is made again, so a new map starts from the whole map.
   const build=createTask(async()=>{watched=(await api<{id:number}>('/explore',{dataset_id:id})).id;await refreshCatalog();if(nodeId)void go(0,true);});
-  const segmentPage=(at:number,offset:number)=>api<Page>(`/explore/nodes/${at}/segments?dataset=${id}&offset=${offset}`);
-  async function openMembers(status:Status){
-    const at=status.node!.node,count=draft?.created_at===status.created_at&&draft?.node===at?Math.max(PAGE,draft.loaded??0):PAGE;
-    members=null;membersError='';
-    try{const segments:Segment[]=[];let total=0;
-      do{const next=await segmentPage(at,segments.length);
-        if(node?.node!==at)return;
-        total=next.total;segments.push(...next.segments);if(!next.segments.length)break;
-      }while(segments.length<Math.min(count,total));
-      members={node:at,total,segments};
-    }catch(e){if(node?.node===at)membersError=e instanceof Error?e.message:'unknown_error';}
+  // Loads a group's sounds, nearest to its centre first, until `count` are loaded or none are left.
+  async function loadList(at:number,count=PAGE){
+    lists[at]??={total:0,segments:[],pending:false,error:''};
+    const list=lists[at];
+    if(list.pending||list.segments.length>=Math.max(1,Math.min(count,list.total)))return;
+    list.pending=true;list.error='';
+    try{do{const next=await api<Page>(`/explore/nodes/${at}/segments?dataset=${id}&offset=${list.segments.length}`);
+        list.total=next.total;list.segments.push(...next.segments);askNames(next.segments.flatMap(s=>s.candidates));
+        if(!next.segments.length)break;
+      }while(list.segments.length<Math.min(count,list.total));
+    }catch(e){list.error=e instanceof Error?e.message:'unknown_error';}
+    finally{list.pending=false;}
   }
-  $effect(()=>{if(!members||!data?.created_at)return;const value=JSON.stringify({created_at:data.created_at,node:members.node,loaded:members.segments.length});
+  $effect(()=>{if(!node||!data?.created_at)return;
+    const shown=children.length?children.filter(c=>open[c.node]).map(c=>c.node):[node.node];
+    const value=JSON.stringify({created_at:data.created_at,node:node.node,loaded:Object.fromEntries(shown.map(at=>[at,lists[at]?.segments.length||PAGE]))});
     try{localStorage.setItem(draftKey,value);}catch{/* Private windows may refuse storage. */}});
-  const more=createTask(async()=>{if(!members)return;const at=members.node;
-    const next=await segmentPage(at,members.segments.length);
-    if(members?.node===at)members.segments.push(...next.segments);});
+  async function choose(at:number){
+    pickAt=at;pick=null;pickError='';
+    try{const next=await api<Segment>(`/explore/points/${at}?dataset=${id}`);
+      if(pickAt===at){pick=next;askNames(next.candidates);}
+    }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
+  }
   // The row scrolls into view only after the double-click window: an instant scroll would move the sticky map under a fast second click.
   let scrollTimer:ReturnType<typeof setTimeout>|undefined;
-  function reveal(child:number){selected=child;clearTimeout(scrollTimer);
-    scrollTimer=setTimeout(()=>document.getElementById(`group-${children[child]?.node}`)?.scrollIntoView({block:'nearest',behavior:'smooth'}),360);}
+  function reveal(child:number,block:ScrollLogicalPosition='nearest'){selected=child;clearTimeout(scrollTimer);
+    scrollTimer=setTimeout(()=>document.getElementById(`group-${children[child]?.node}`)?.scrollIntoView({block,behavior:'smooth'}),360);}
   function escape(event:KeyboardEvent){if(event.key==='Escape'&&!event.defaultPrevented&&parent!==undefined)void go(parent);}
   // One sound at a time: starting a player pauses every other one on the page.
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
@@ -93,9 +112,16 @@
   const similar=(s:Segment)=>`${resolve(`/datasets/${id}/search`)}?recording=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
   const pct=(share:number,digits=0)=>new Intl.NumberFormat(app.locale,{style:'percent',maximumFractionDigits:digits}).format(share);
   const groupName=(g:{node:number;name:string})=>g.name?fill('eGroup',{n:g.name}):t('eWhole');
+  // Common names in the UI language are fetched once per species; the scientific name is shown until then or when there is none.
+  const asked=new Set<string>();
+  function askNames(items:Named[]){for(const {id:sid} of items)if(sid&&!asked.has(sid)){asked.add(sid);
+    api<Species>(`/species/${encodeURIComponent(sid)}`).then(row=>{names[sid]=row;},()=>{/* The scientific name stays as the fallback. */});}}
+  const speciesName=(s:Named)=>{const row=s.id?names[s.id]:undefined;return (row&&commonName(row,app.locale))||s.scientific_name;};
+  const listOf=<T extends Named>(items:T[],share:(item:T)=>number)=>items.map(item=>`${speciesName(item)} ${pct(share(item))}`).join(t('eSep'));
   // Below one interval in five with any AI suggestion, the group is more likely silence or insects than a species.
-  const aiHint=(g:Group)=>{const s=g.top_species,rate=pct(g.hint_rate);if(!s||g.hint_rate<.2)return fill('eNoAiHint',{rate});
-    const row=names[s.id];return fill('eAiHint',{name:(row&&commonName(row,app.locale))||s.scientific_name,share:pct(g.top_share),rate});};
+  const aiHint=(g:Group)=>g.hint_rate<.2||!g.top_species.length?fill('eNoAiHint',{rate:pct(g.hint_rate)})
+    :fill('eAiHint',{list:listOf(g.top_species,s=>s.share),rate:pct(g.hint_rate)});
+  const candidates=(s:Segment)=>s.candidates.length?fill('eCandidates',{list:listOf(s.candidates,c=>c.score)}):t('eNoCandidates');
   const made=(at:string|null)=>at?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium'}).format(new Date(`${at.replace(' ','T')}Z`)):'';
 
   // Scatter: every point is drawn once into an offscreen canvas; pan and zoom move that image and redraw sharply when the gesture pauses.
@@ -167,9 +193,13 @@
     marks.forEach((mark,index)=>{const cx=ox+(mark.x-x0)*sx,cy=oy-(mark.y-y0)*sy;
       context.beginPath();context.arc(cx,cy,11*ratio,0,2*Math.PI);context.fillStyle=palette[index%palette.length];context.fill();
       context.strokeStyle='#fff';context.stroke();context.fillStyle='#fff';context.fillText(String(index+1),cx,cy);});
+    // A ring marks the sound shown under the map.
+    if(pickAt>=0&&pickAt<points.n){context.beginPath();context.arc(ox+(points.x[pickAt]-x0)*sx,oy-(points.y[pickAt]-y0)*sy,7*ratio,0,2*Math.PI);
+      context.lineWidth=2.5*ratio;context.strokeStyle=getComputedStyle(canvas).color;context.stroke();}
   }
   function moved(){transformed=true;blit();clearTimeout(timer);timer=setTimeout(render,150);}
   $effect(()=>{void selected;void palette;untrack(render);});
+  $effect(()=>{void pickAt;untrack(blit);});
   function scatter(element:HTMLCanvasElement){
     canvas=element;offscreen=document.createElement('canvas');
     const resize=new ResizeObserver(()=>{const r=devicePixelRatio||1;element.width=Math.round(element.clientWidth*r);element.height=Math.round(element.clientHeight*r);fly(false);});
@@ -188,7 +218,7 @@
     // Only a real drag stops a running zoom; a click right after going inside must not freeze it halfway.
     const r=canvas.width/Math.max(1,canvas.clientWidth);drag.moved=true;cancelAnimationFrame(animation);view={...view,tx:drag.tx+dx*r,ty:drag.ty+dy*r};moved();
   }
-  // A click picks the nearest point of the group being viewed (within 8 px) and chooses its smaller group; a second click within 350 ms goes into it.
+  // A click picks the nearest point of the group being viewed (within 8 px), shows and plays its sound and chooses its smaller group; a second click within 350 ms goes into it.
   function up(event:PointerEvent){
     const click=drag&&!drag.moved;drag=null;
     // Clicks right after going into a group are ignored, so a fast double click cannot go down two levels.
@@ -199,9 +229,24 @@
     let best=-1,limit=(8*ratio)**2;
     for(let i=node.lo;i<node.hi;i++){const dx=ox+(points.x[i]-x0)*sx-px,dy=oy-(points.y[i]-y0)*sy-py,d=dx*dx+dy*dy;if(d<limit){limit=d;best=i;}}
     const child=children.findIndex(c=>c.lo<=best&&best<c.hi);
-    if(child<0)selected=null;else if(double)void go(children[child].node);else void reveal(child);
+    if(double&&child>=0){void go(children[child].node);return;}
+    // An empty spot clears the pick.
+    if(best<0){selected=null;pickAt=-1;pick=null;return;}
+    if(child>=0)reveal(child);
+    if(best!==pickAt||pickError)void choose(best);
   }
 </script>
+{#snippet sounds(at:number)}
+  {@const list=lists[at]}
+  {#each list?.segments??[] as s (s.segment_id)}<div class="member">
+    <p>{when(s)}<br><span class="muted">{candidates(s)}</span></p>
+    <AudioRegion source={sourceOf(s)} fixedRange compact start={s.start_s} end={s.end_s}>
+      {#snippet actions()}<Button size="sm" href={similar(s)}>{t('eFindSimilar')}</Button>{/snippet}
+    </AudioRegion></div>{/each}
+  {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
+  {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
+  {:else if !list||list.pending}<p role="status"><Spinner/> {t('loading')}</p>{/if}
+{/snippet}
 <svelte:window onkeydown={escape}/>
 <div class="page wide" onplaycapture={solo}>
   <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
@@ -230,63 +275,84 @@
           <!-- The list is the keyboard path to the same groups; the map adds pointer zoom, pan, picking and double-click to go inside. -->
           <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
-        </section>
-        <div class="stack">
-          <section class="panel stack">
-            <nav class="trail" aria-label={t('eTrail')}>
-              {#each trail as step,index (step.node)}
-                {#if index}<span class="muted" aria-hidden="true">›</span>{/if}
-                {#if index<trail.length-1}<a href={here(step.node)}>{groupName(step)}</a>{:else}<strong aria-current="page">{groupName(step)}</strong>{/if}
-              {/each}
-            </nav>
-            <div class="actions">
-              <Button size="sm" href={parent===undefined?undefined:here(parent)} disabled={parent===undefined}>{t('eUp')}</Button>
-              <Button size="sm" href={here(0)} disabled={!node.node}>{t('eTop')}</Button>
-            </div>
-            <p>{fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/Math.max(1,data.segment_count),1)})}<br><span class="muted">{aiHint(node)}</span></p>
-            <h2>{t(children.length?'eListHeading':'eTerminal')}</h2>
-            {#if children.length}<p class="muted">{t('eListHint')}</p>{/if}
-            {#each children as c,index (c.node)}
-              <article class="group" class:selected={selected===index} class:dim={selected!==null&&selected!==index} id={`group-${c.node}`}>
-                <div class="section-heading">
-                  <h3><span class="badge" style:background={palette[index%palette.length]} aria-hidden="true">{index+1}</span>
-                    <span>{groupName(c)} — <span class="muted">{fill('eSize',{n:c.size.toLocaleString(app.locale),share:pct(c.size/node.size)})}</span></span></h3>
-                  <Button size="sm" href={here(c.node)}>{t('eOpen')}</Button>
-                </div>
-                <p class="muted">{aiHint(c)}</p>
-                {#if c.child_count}<p class="muted">{fill('eInner',{n:c.child_count})}</p>{/if}
-                <AudioRegion source={sourceOf(c.rep)} fixedRange compact start={c.rep.start_s} end={c.rep.end_s}/>
-              </article>
-            {/each}
-          </section>
-          <section class="panel stack">
-            <h2>{t('eMembersHeading')}</h2>
-            <p class="muted">{t('localTime')}</p>
-            {#if membersError}<p class="error" role="alert">{t(membersError)}</p>
-            {:else if !members||members.node!==node.node}<p role="status"><Spinner/> {t('loading')}</p>
+          <div class="pick">
+            {#if pickAt<0}<p class="muted">{t('ePickHint')}</p>
+            {:else if pickError}<p class="error" role="alert">{t(pickError)}</p>
+            {:else if !pick}<p role="status"><Spinner/> {t('loading')}</p>
             {:else}
-              {#each members.segments as s (s.segment_id)}<div class="member"><span>{when(s)}</span>
-                <AudioRegion source={sourceOf(s)} fixedRange compact start={s.start_s} end={s.end_s}>
-                  {#snippet actions()}<Button size="sm" href={similar(s)}>{t('eFindSimilar')}</Button>{/snippet}
-                </AudioRegion></div>{/each}
-              {#if more.error}<p class="error" role="alert">{t(more.error)}</p>{/if}
-              {#if members.segments.length<members.total}<Button pending={more.pending} onclick={()=>more.run()}>{t('eMore')}</Button>{/if}
+              {@const s=pick}
+              {@const child=children.findIndex(c=>c.lo<=pickAt&&pickAt<c.hi)}
+              <h3>{t('ePicked')} <span class="when">{when(s)}</span></h3>
+              <p class="muted">{#if child>=0}{fill('ePickedGroup',{n:children[child].name})} · {/if}{candidates(s)}</p>
+              <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
+              <AudioRegion source={sourceOf(s)} fixedRange compact autoplay start={s.start_s} end={s.end_s}>
+                {#snippet actions()}
+                  {#if child>=0}<Button size="sm" onclick={()=>{open[children[child].node]=true;reveal(child,'start');}}>{t('eOpenGroup')}</Button>{/if}
+                  <Button size="sm" href={similar(s)}>{t('eFindSimilar')}</Button>
+                {/snippet}
+              </AudioRegion>
             {/if}
-          </section>
-        </div>
+          </div>
+        </section>
+        <section class="panel stack">
+          <nav class="trail" aria-label={t('eTrail')}>
+            {#each trail as step,index (step.node)}
+              {#if index}<span class="muted" aria-hidden="true">›</span>{/if}
+              {#if index<trail.length-1}<a href={here(step.node)}>{groupName(step)}</a>{:else}<strong aria-current="page">{groupName(step)}</strong>{/if}
+            {/each}
+          </nav>
+          <div class="actions">
+            <Button size="sm" href={parent===undefined?undefined:here(parent)} disabled={parent===undefined}>{t('eUp')}</Button>
+            <Button size="sm" href={here(0)} disabled={!node.node}>{t('eTop')}</Button>
+          </div>
+          <p>{fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/Math.max(1,data.segment_count),1)})}<br><span class="muted">{aiHint(node)}</span></p>
+          {#if children.length}
+            <h2>{t('eListHeading')}</h2>
+            <p class="muted">{t('eListHint')}</p>
+            <p class="muted">{t('localTime')}</p>
+            {#each children as c,index (c.node)}
+              <details class="group" class:selected={selected===index} class:dim={selected!==null&&selected!==index} id={`group-${c.node}`}
+                bind:open={open[c.node]} ontoggle={event=>{if(event.currentTarget.open)void loadList(c.node);}}>
+                <!-- Opening a row chooses its group on the map; closing the chosen row clears the choice. -->
+                <summary onclick={()=>selected=open[c.node]?(selected===index?null:selected):index}>
+                  <span class="badge" style:background={palette[index%palette.length]} aria-hidden="true">{index+1}</span>
+                  <span class="head"><h3>{groupName(c)} — <span class="muted">{fill('eSize',{n:c.size.toLocaleString(app.locale),share:pct(c.size/node.size)})}</span></h3>
+                    <span class="muted">{aiHint(c)}</span></span>
+                  <span class="chevron" aria-hidden="true">›</span>
+                </summary>
+                {#if open[c.node]}<div class="body stack">
+                  {#if c.child_count}<div class="actions"><Button size="sm" href={here(c.node)}>{t('eOpen')}</Button><span class="muted">{fill('eInner',{n:c.child_count})}</span></div>{/if}
+                  {@render sounds(c.node)}
+                </div>{/if}
+              </details>
+            {/each}
+          {:else}
+            <h2>{fill('eMembersHeading',{n:node.size.toLocaleString(app.locale)})}</h2>
+            <p class="muted">{t('localTime')}</p>
+            {@render sounds(node.node)}
+          {/if}
+        </section>
       </div>
     {/if}
   {:else if !error}<p role="status"><Spinner/> {t('eLoading')}</p>{/if}
 </div>
 <style>.explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   .map-panel{position:sticky;top:16px}
-  canvas{display:block;width:100%;height:420px;border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  /* The map shrinks in short windows so the chosen sound under it stays in view. */
+  canvas{display:block;width:100%;height:clamp(240px,calc(100vh - 560px),420px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  .pick{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
+  .pick .when{font-size:16px;font-weight:400}
   .trail{display:flex;flex-wrap:wrap;align-items:center;gap:0 4px}
   .trail a,.trail strong{display:inline-flex;align-items:center;min-height:44px;padding:0 4px}.trail strong{font-weight:600}
-  .group{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid rgb(var(--color-card-border));border-radius:8px;transition:opacity .15s}
+  .group{font-size:16px;border:1px solid rgb(var(--color-card-border));border-radius:8px;transition:opacity .15s}
   .group.selected{border-left:4px solid rgb(var(--primary-700))}.group.dim{opacity:.55}
-  .group h3{display:flex;align-items:center;gap:8px}.group h3 .muted{font-weight:400}
-  .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700;flex:none}
+  .group>summary{display:grid;grid-template-columns:28px minmax(0,1fr) 16px;gap:8px;align-items:start;padding:12px;list-style:none;font-weight:400}
+  .group>summary::-webkit-details-marker{display:none}
+  .head{display:flex;flex-direction:column;gap:4px}.head .muted{font-weight:400}
+  .chevron{color:rgb(var(--stone-600));font-size:18px;line-height:28px;text-align:center;transition:transform .15s}
+  .group[open] .chevron{transform:rotate(90deg)}
+  .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
+  .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
   .member{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
   .empty :global(.button){align-self:center}
   @media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static}canvas{height:320px}}</style>

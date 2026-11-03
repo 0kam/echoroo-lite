@@ -17,10 +17,11 @@
   import ZoomSpectrogram from './ZoomSpectrogram.svelte';
   import { seekInterval } from './annotation-geometry.js';
   // `selectable` false: a long recording to browse and play, with no part to choose. `actions` sit beside the play button.
+  // `autoplay` plays the interval once on mount; mount it from a click so the browser allows sound.
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, selectable=true, storageKey, onplaying, actions }:
+    zoomable=false, selectable=true, autoplay=false, storageKey, onplaying, actions }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;selectable?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet } = $props();
+      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet } = $props();
   const choosing = $derived(!fixedRange && selectable);
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
   let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
@@ -93,7 +94,11 @@
       if (version !== playbackVersion) return;
       audio.currentTime = from; stopAt = to;
       await audio.play(); if (version === playbackVersion) scheduleStop();
-    } catch { if (version === playbackVersion) { error = 'unreadable_audio'; status = 'idle'; } }
+    } catch (e) { if (version === playbackVersion) {
+      // A refused autoplay is not a broken file: the play button still works.
+      if ((e as Error).name !== 'NotAllowedError') error = 'unreadable_audio';
+      status = 'idle';
+    } }
   }
   /** Zoomable view: plays from the playhead (set by double-click) to the end of the clip. */
   function playFromHead() {
@@ -119,6 +124,7 @@
     if(fixedRange)span=Math.min(60,end-start);
     navigate(fixedRange?start:Math.floor(start / span) * span);
     initialized=true;
+    if (autoplay) void play();
     return () => { request++; stop(); };
   });
 </script>
