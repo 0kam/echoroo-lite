@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音の地図（階層モック）</title>
+<style>
+  :root { --bg:#fff; --fg:#1d2430; --muted:#5f6b7a; --line:#dde3ea; --panel:#f6f8fa; --accent:#2a78d6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14181d; --fg:#e8ecf1; --muted:#9aa6b4; --line:#2a323c; --panel:#1b2128; --accent:#6aa8ff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 15px/1.5 system-ui, -apple-system, "Hiragino Sans", sans-serif; }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header .note { color:var(--muted); font-size:13px; }
+  .wrap { display:grid; grid-template-columns: minmax(0,1fr) 400px; gap:0; height: calc(100vh - 54px); }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; height:auto; } }
+  .map { position:relative; min-height:420px; }
+  canvas { width:100%; height:100%; display:block; cursor:crosshair; }
+  .map .hint { position:absolute; left:12px; bottom:10px; font-size:12px; color:var(--muted); background:color-mix(in srgb, var(--bg) 80%, transparent); padding:2px 6px; border-radius:4px; }
+  aside { border-left:1px solid var(--line); background:var(--panel); overflow:auto; padding:12px 14px; }
+  .crumbs { display:flex; flex-wrap:wrap; gap:4px 2px; align-items:center; font-size:14px; margin-bottom:6px; }
+  .crumbs button { background:none; border:0; padding:2px 4px; color:var(--accent); cursor:pointer; font:inherit; text-decoration:underline; }
+  .crumbs b { font-weight:600; padding:2px 4px; }
+  .crumbs .sep { color:var(--muted); }
+  .toolbar { display:flex; gap:8px; margin:6px 0 12px; align-items:center; flex-wrap:wrap; }
+  button.primary, button.ghost { font:inherit; font-size:14px; border-radius:8px; padding:6px 12px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border:0; }
+  button.ghost { background:none; border:1px solid var(--line); color:var(--fg); }
+  button:disabled { opacity:.45; cursor:default; }
+  h2 { font-size:14px; color:var(--muted); font-weight:600; margin:14px 0 6px; }
+  .rows { display:flex; flex-direction:column; gap:6px; }
+  .row { display:grid; grid-template-columns: 30px 1fr auto; gap:8px; align-items:center; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--bg); cursor:pointer; }
+  .row.selected { outline:2px solid var(--accent); }
+  .row.dim { opacity:.5; }
+  .badge { width:26px; height:26px; border-radius:50%; color:#fff; font-size:12px; font-weight:700; display:grid; place-items:center; }
+  .row .title { font-weight:600; }
+  .row .sub { font-size:12.5px; color:var(--muted); }
+  .members { font-size:13px; color:var(--muted); }
+  .members li { margin:2px 0; }
+  select { font:inherit; }
+  footer { font-size:12px; color:var(--muted); padding:10px 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>音の地図（階層の行き来のモック）</h1>
+  <label class="note">データ：<select id="dataset"></select></label>
+  <span class="note">地図は numpy 版 PaCMAP、まとまりは全点の Ward 法。音は鳴りません（操作の確認用）。</span>
+</header>
+<div class="wrap">
+  <div class="map">
+    <canvas id="c"></canvas>
+    <div class="hint">点を押す＝そのまとまりを選ぶ／二度押し＝中を見る／ホイール＝拡大／ドラッグ＝移動</div>
+  </div>
+  <aside>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="toolbar">
+      <button class="ghost" id="up">↑ 一つ上へ</button>
+      <button class="ghost" id="top">全体に戻る</button>
+      <button class="primary" id="open" disabled>選んだまとまりの中を見る</button>
+    </div>
+    <div id="summary" class="note"></div>
+    <h2 id="rowsHeading">中のまとまり（多い順）</h2>
+    <div class="rows" id="rows"></div>
+    <h2 id="membersHeading"></h2>
+    <ul class="members" id="members"></ul>
+  </aside>
+</div>
+<footer>最良の分かれ目から 0.6 倍以上の高さの枝を同じ段に並べ、1 段 2〜8 個。葉より下も単音まで続きます。</footer>
+<script id="data" type="application/json">/*DATA*/</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById('data').textContent);
+  const PAL = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948','#00a3c4','#8a6d3b'];
+  const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+  const sel = document.getElementById('dataset');
+  Object.keys(DATA).forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = DATA[k].title; sel.appendChild(o); });
+  let D, nodes, current = 0, selected = null, view = {x:0, y:0, k:1}, target = null, drag = null, anim = 0;
+
+  function load(key) {
+    D = DATA[key]; nodes = D.nodes;
+    nodes.forEach(n => { n.members = new Int32Array(n.members); });
+    // child index of every point for the current node is computed on demand
+    go(0, true);
+  }
+  function childOf(node) {  // point index -> child position (or -1)
+    const map = new Int8Array(D.x.length).fill(-1);
+    node.children.forEach((cid, pos) => { for (const p of nodes[cid].members) map[p] = pos; });
+    return map;
+  }
+  function bounds(node) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of node.members) { const x = D.x[p], y = D.y[p]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    return {x0, y0, x1, y1};
+  }
+  function fit(node, animate) {
+    const b = bounds(node), W = canvas.clientWidth, H = canvas.clientHeight;
+    const w = Math.max(b.x1 - b.x0, 1e-6), h = Math.max(b.y1 - b.y0, 1e-6);
+    const k = 0.85 * Math.min(W / w, H / h);
+    const t = {k, x: W / 2 - k * (b.x0 + b.x1) / 2, y: H / 2 - k * (b.y0 + b.y1) / 2};
+    if (!animate) { view = t; draw(); return; }
+    const from = {...view}, start = performance.now(); cancelAnimationFrame(anim);
+    const step = now => { const u = Math.min(1, (now - start) / 350), e = 1 - Math.pow(1 - u, 3);
+      view = {k: from.k + (t.k - from.k) * e, x: from.x + (t.x - from.x) * e, y: from.y + (t.y - from.y) * e}; draw();
+      if (u < 1) anim = requestAnimationFrame(step); };
+    anim = requestAnimationFrame(step);
+  }
+  const sx = x => view.x + view.k * x, sy = y => view.y + view.k * y;
+  let childMap;
+  function draw() {
+    const dpr = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+    if (canvas.width !== W * dpr || canvas.height !== H * dpr) { canvas.width = W * dpr; canvas.height = H * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const node = nodes[current], n = D.x.length;
+    const inNode = new Uint8Array(n); for (const p of node.members) inNode[p] = 1;
+    // others: faint
+    ctx.fillStyle = getComputedStyle(document.body).color; ctx.globalAlpha = 0.08;
+    for (let p = 0; p < n; p++) if (!inNode[p]) { ctx.fillRect(sx(D.x[p]) - 1, sy(D.y[p]) - 1, 2, 2); }
+    // current node members coloured by child
+    const r = node.children.length ? 2.2 : 3;
+    for (let p = 0; p < n; p++) if (inNode[p]) {
+      const c = childMap[p]; const dim = selected !== null && c !== selected;
+      ctx.globalAlpha = dim ? 0.18 : 0.8; ctx.fillStyle = c >= 0 ? PAL[c % PAL.length] : '#888';
+      ctx.beginPath(); ctx.arc(sx(D.x[p]), sy(D.y[p]), r, 0, 6.283); ctx.fill();
+    }
+    // badges at child medians
+    ctx.globalAlpha = 1; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    node.children.forEach((cid, pos) => {
+      const m = nodes[cid].members, xs = Array.from(m, p => D.x[p]).sort((a, b) => a - b), ys = Array.from(m, p => D.y[p]).sort((a, b) => a - b);
+      const cx = sx(xs[xs.length >> 1]), cy = sy(ys[ys.length >> 1]);
+      ctx.fillStyle = PAL[pos % PAL.length]; ctx.beginPath(); ctx.arc(cx, cy, 11, 0, 6.283); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillText(String(pos + 1), cx, cy);
+    });
+  }
+  function labelSummary(node) {
+    const counts = {}; let labelled = 0;
+    for (const p of node.members) { const l = D.labels[p]; if (l) { labelled++; counts[l] = (counts[l] || 0) + 1; } }
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([l, c]) => `${l} ${Math.round(100 * c / labelled)}%`);
+    return {labelled, text: labelled ? `${D.labelKind}: ${top.join('・')}（${Math.round(100 * labelled / node.members.length)}% に印）` : `${D.labelKind}なし`};
+  }
+  function render() {
+    const node = nodes[current]; childMap = childOf(node);
+    const crumbs = document.getElementById('crumbs'); crumbs.innerHTML = '';
+    const path = []; for (let id = current; id !== null; id = nodes[id].parent) path.unshift(id);
+    path.forEach((id, i) => {
+      if (i) { const s = document.createElement('span'); s.className = 'sep'; s.textContent = '›'; crumbs.appendChild(s); }
+      const el = document.createElement(i === path.length - 1 ? 'b' : 'button');
+      el.textContent = id === 0 ? '全体' : `まとまり ${nodes[id].name}`;
+      if (i < path.length - 1) el.onclick = () => go(id, true);
+      crumbs.appendChild(el);
+    });
+    document.getElementById('up').disabled = node.parent === null;
+    document.getElementById('top').disabled = current === 0;
+    document.getElementById('open').disabled = selected === null || !nodes[node.children[selected]].children.length && nodes[node.children[selected]].members.length < 2;
+    const s = labelSummary(node);
+    document.getElementById('summary').textContent = `${node.members.length} 区間（全体の ${Math.round(1000 * node.members.length / D.x.length) / 10}%）。${s.text}`;
+    const rows = document.getElementById('rows'); rows.innerHTML = '';
+    document.getElementById('rowsHeading').textContent = node.children.length ? '中のまとまり（多い順）' : 'これ以上は分かれません';
+    node.children.forEach((cid, pos) => {
+      const c = nodes[cid], ls = labelSummary(c);
+      const row = document.createElement('div'); row.className = 'row' + (selected === pos ? ' selected' : selected !== null ? ' dim' : '');
+      row.innerHTML = `<span class="badge" style="background:${PAL[pos % PAL.length]}">${pos + 1}</span>
+        <span><div class="title">まとまり ${c.name} — ${c.members.length} 区間（${Math.round(100 * c.members.length / node.members.length)}%）</div>
+        <div class="sub">${ls.text}${c.children.length ? `・中に ${c.children.length} 個` : '・単音まで分かれています'}</div></span>
+        <button class="ghost">中を見る</button>`;
+      row.onclick = () => { selected = pos; render(); draw(); };
+      row.querySelector('button').onclick = e => { e.stopPropagation(); go(cid, true); };
+      rows.appendChild(row);
+    });
+    const members = document.getElementById('members'); members.innerHTML = '';
+    const show = node.children.length ? 0 : Math.min(20, node.members.length);
+    document.getElementById('membersHeading').textContent = show ? `このまとまりの音（${node.members.length} 件）` : '';
+    for (let i = 0; i < show; i++) { const p = node.members[i]; const li = document.createElement('li'); li.textContent = `${D.names[p]}${D.labels[p] ? '　' + D.labelKind + ': ' + D.labels[p] : ''}`; members.appendChild(li); }
+  }
+  function go(id, animate) { current = id; selected = null; quietUntil = performance.now() + 400; render(); fit(nodes[id], animate); location.hash = 'node=' + id; }
+  document.getElementById('up').onclick = () => go(nodes[current].parent, true);
+  document.getElementById('top').onclick = () => go(0, true);
+  document.getElementById('open').onclick = () => go(nodes[current].children[selected], true);
+  window.addEventListener('hashchange', () => { const m = /node=(\d+)/.exec(location.hash); const id = m ? +m[1] : 0; if (id !== current && nodes[id]) { current = id; selected = null; render(); fit(nodes[id], true); } });
+  sel.onchange = () => load(sel.value);
+  // pointer interactions
+  function pick(ev) {
+    const rect = canvas.getBoundingClientRect(), mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    let best = -1, bd = 100; const node = nodes[current];
+    for (const p of node.members) { const dx = sx(D.x[p]) - mx, dy = sy(D.y[p]) - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = p; } }
+    return best;
+  }
+  let moved = false, lastClick = 0, quietUntil = 0;
+  canvas.addEventListener('pointerdown', ev => { drag = {x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y}; moved = false; canvas.setPointerCapture(ev.pointerId); });
+  canvas.addEventListener('pointermove', ev => { if (!drag) return; const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; view.x = drag.vx + dx; view.y = drag.vy + dy; draw(); });
+  canvas.addEventListener('pointerup', ev => {
+    drag = null; if (moved || performance.now() < quietUntil) return;  // ignore clicks right after a drill
+    const p = pick(ev); const now = performance.now(), dbl = now - lastClick < 350; lastClick = now;
+    if (p < 0) { selected = null; render(); draw(); return; }
+    const pos = childMap[p];
+    if (dbl && pos >= 0) { go(nodes[current].children[pos], true); return; }
+    selected = pos >= 0 ? pos : null; render(); draw();
+    const row = document.querySelectorAll('.row')[pos]; if (row) row.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  });
+  canvas.addEventListener('wheel', ev => { ev.preventDefault(); const rect = canvas.getBoundingClientRect(), mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const f = Math.exp(-ev.deltaY * 0.0015); view = {k: view.k * f, x: mx - (mx - view.x) * f, y: my - (my - view.y) * f}; draw(); }, {passive: false});
+  new ResizeObserver(() => fit(nodes[current], false)).observe(canvas);
+  load(sel.value);
+})();
+</script>
+</body>
+</html>

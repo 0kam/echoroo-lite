@@ -26,3 +26,9 @@ levels) against the same Fuji annotations, against sound maps already built in a
 data folder (`user --data DIR --datasets …`, read-only), and for timing on the synthetic
 210,000-segment matrix (`scale`). The recorded output is
 `docs/benchmarks/hierarchy-proto-2026-11-03.txt`.
+Follow-ups the same day, after the user asked for a complete hierarchy and a nonlinear map:
+`hierarchy_exact.py` (exact Ward on all points vs leaves, trees down to single sounds),
+`embedding_proto.py` (numpy-only PaCMAP vs PCA 2D vs openTSNE), `embedding_landmarks.py`
+(landmark layout for 210,000 segments) and `hierarchy_mock.py` (bakes
+`docs/prototypes/explore-hierarchy-mock.html` from `hierarchy_mock_template.html`). The user-data
+runs read an Echoroo Lite data folder named by `ECHOROO_PROTO_DATA` (read-only).

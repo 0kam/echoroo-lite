@@ -123,3 +123,63 @@ tree tau=0.6 vs AI proxy           best-F1 median 0.447 mean 0.478 >=0.5: 2/7  d
   "nodes": 1432
  }
 }
+
+# ---- hierarchy_exact.py (exact Ward vs leaves; complete trees) ----
+
+=== Fuji n=2160 ===
+exact Ward, all points             best-F1 median 0.469 mean 0.461 >=0.5: 16/40  depth median 3 max 7
+   nodes 3084, children/node median 3 max 8, depth max 8, build 0.1s
+leaves 54 + Ward                   best-F1 median 0.263 mean 0.347 >=0.5: 12/40  depth median 2 max 4
+   nodes 77, children/node median 3 max 8, depth max 4, build 0.0s
+leaves 500 + Ward                  best-F1 median 0.477 mean 0.450 >=0.5: 17/40  depth median 3 max 5
+   nodes 731, children/node median 3 max 8, depth max 6, build 0.1s
+
+=== dataset 3 n=8700 (22 AI-proxy spp) ===
+exact Ward, all points             best-F1 median 0.343 mean 0.378 >=0.5: 7/22  depth median 4 max 6
+   nodes 12238, children/node median 3 max 8, depth max 10, build 0.9s
+leaves 217 + Ward                  best-F1 median 0.249 mean 0.342 >=0.5: 7/22  depth median 4 max 6
+   nodes 323, children/node median 3 max 7, depth max 6, build 0.1s
+leaves 2000 + Ward                 best-F1 median 0.318 mean 0.370 >=0.5: 7/22  depth median 5 max 7
+   nodes 2881, children/node median 3 max 8, depth max 9, build 0.6s
+   + exact Ward inside each of 1116 leaves: 0.0s
+
+=== dataset 2 n=21840 (7 AI-proxy spp) ===
+exact Ward, all points             best-F1 median 0.447 mean 0.446 >=0.5: 3/7  depth median 4 max 5
+   nodes 30709, children/node median 3 max 8, depth max 11, build 6.8s
+leaves 546 + Ward                  best-F1 median 0.447 mean 0.478 >=0.5: 2/7  depth median 3 max 6
+   nodes 822, children/node median 3 max 7, depth max 8, build 0.4s
+leaves 2000 + Ward                 best-F1 median 0.508 mean 0.491 >=0.5: 4/7  depth median 3 max 6
+   nodes 2961, children/node median 3 max 8, depth max 8, build 1.6s
+   + exact Ward inside each of 1716 leaves: 0.1s
+
+=== scale n=210000 (pca 2.9s) ===
+   leaves 1000: fit+assign 0.9s (5 it), Ward on centers 0.01s, within-leaf trees 0.7s (largest leaf 1552), nodes above leaves 1432
+   leaves 2000: fit+assign 1.7s (4 it), Ward on centers 0.04s, within-leaf trees 0.4s (largest leaf 490), nodes above leaves 2864
+   leaves 4000: fit+assign 3.2s (3 it), Ward on centers 0.17s, within-leaf trees 0.5s (largest leaf 98), nodes above leaves 6536
+
+# ---- embedding_proto.py (numpy PaCMAP vs PCA vs openTSNE; 10-NN same-label share in 2D) ----
+
+=== Fuji (single-species windows): n=2160, labelled 357, classes 20 ===
+   50d (reference)    10-NN same-label 0.798     0.0s
+   PCA 2D             10-NN same-label 0.584     0.0s
+   PaCMAP (numpy)     10-NN same-label 0.807     1.0s
+   openTSNE           10-NN same-label 0.791     3.6s
+
+=== dataset 3 (AI proxy, score>=0.1): n=8700, labelled 2145, classes 22 ===
+   50d (reference)    10-NN same-label 0.753     0.0s
+   PCA 2D             10-NN same-label 0.328     0.0s
+   PaCMAP (numpy)     10-NN same-label 0.675     4.0s
+   openTSNE           10-NN same-label 0.725    13.4s
+
+=== dataset 2 (AI proxy, score>=0.1): n=21840, labelled 2123, classes 7 ===
+   50d (reference)    10-NN same-label 0.932     0.0s
+   PCA 2D             10-NN same-label 0.381     0.0s
+   PaCMAP (numpy)     10-NN same-label 0.845    11.2s
+   openTSNE           10-NN same-label 0.898    24.0s
+
+# ---- embedding_landmarks.py ----
+=== dataset 2 n=21840: full PaCMAP purity was 0.845 ===
+   landmarks 2000: purity 0.803  layout 0.9s + placement 0.2s
+   landmarks 5000: purity 0.841  layout 2.2s + placement 0.5s
+=== scale n=210000: landmarks 10000: layout 4.8s + placement 12.5s ===
+=== scale n=210000: landmarks 20000: layout 11.0s + placement 24.4s ===
