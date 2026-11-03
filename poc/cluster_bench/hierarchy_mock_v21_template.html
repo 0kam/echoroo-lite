@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音の地図（階層モック v2.1）</title>
+<style>
+  :root { --bg:#fff; --fg:#1d2430; --muted:#5f6b7a; --line:#dde3ea; --panel:#f6f8fa; --accent:#2a78d6; --soft:#eef4fb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14181d; --fg:#e8ecf1; --muted:#9aa6b4; --line:#2a323c; --panel:#1b2128; --accent:#6aa8ff; --soft:#1e2a3a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 15px/1.5 system-ui, -apple-system, "Hiragino Sans", sans-serif; }
+  header { padding:10px 16px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  .note { color:var(--muted); font-size:13px; }
+  .wrap { display:grid; grid-template-columns: minmax(0,1fr) 440px; height: calc(100vh - 50px); }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; height:auto; } }
+  .left { display:flex; flex-direction:column; min-height:0; }
+  .map { position:relative; flex:1; min-height:360px; }
+  canvas { width:100%; height:100%; display:block; cursor:crosshair; }
+  .map .hint { position:absolute; left:12px; bottom:10px; font-size:12px; color:var(--muted); background:color-mix(in srgb, var(--bg) 80%, transparent); padding:2px 6px; border-radius:4px; }
+  .card { border-top:1px solid var(--line); padding:10px 16px; background:var(--soft); min-height:96px; }
+  .card h3 { margin:0 0 4px; font-size:14px; color:var(--muted); font-weight:600; }
+  .card .name { font-weight:600; }
+  .card .cands { color:var(--muted); font-size:13.5px; }
+  .card .actions { margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; }
+  .card.empty { color:var(--muted); display:grid; place-items:center; }
+  aside { border-left:1px solid var(--line); background:var(--panel); overflow:auto; padding:12px 14px; }
+  .crumbs { display:flex; flex-wrap:wrap; gap:4px 2px; align-items:center; font-size:14px; margin-bottom:6px; }
+  .crumbs button { background:none; border:0; padding:2px 4px; color:var(--accent); cursor:pointer; font:inherit; text-decoration:underline; }
+  .crumbs b { font-weight:600; padding:2px 4px; }
+  .crumbs .sep { color:var(--muted); }
+  .toolbar { display:flex; gap:8px; margin:4px 0 10px; align-items:center; flex-wrap:wrap; }
+  button.primary, button.ghost, button.play { font:inherit; font-size:13.5px; border-radius:8px; padding:5px 10px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border:0; }
+  button.ghost { background:none; border:1px solid var(--line); color:var(--fg); }
+  button.play { background:var(--bg); border:1px solid var(--line); color:var(--fg); padding:2px 8px; }
+  button:disabled { opacity:.45; cursor:default; }
+  h2 { font-size:14px; color:var(--muted); font-weight:600; margin:12px 0 6px; }
+  details.row { border:1px solid var(--line); border-radius:10px; background:var(--bg); margin-bottom:6px; }
+  details.row.selected { outline:2px solid var(--accent); }
+  details.row.dim { opacity:.5; }
+  summary { list-style:none; display:grid; grid-template-columns: 30px 1fr 18px; gap:8px; align-items:start; padding:8px 10px; cursor:pointer; }
+  summary::-webkit-details-marker { display:none; }
+  summary .chev { color:var(--muted); transition: transform .15s; justify-self:end; margin-top:3px; }
+  details[open] summary .chev { transform: rotate(90deg); }
+  .badge { width:26px; height:26px; border-radius:50%; color:#fff; font-size:12px; font-weight:700; display:grid; place-items:center; }
+  .title { font-weight:600; }
+  .sub { font-size:12.5px; color:var(--muted); }
+  .body { border-top:1px solid var(--line); padding:8px 10px 10px 10px; }
+  .body .actions { display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap; }
+  ol.sounds { list-style:none; margin:0; padding:0; }
+  ol.sounds li { display:grid; grid-template-columns: auto 1fr auto; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--line); font-size:13.5px; }
+  ol.sounds li.picked { background:var(--soft); }
+  ol.sounds .when { font-weight:500; }
+  ol.sounds .cands { color:var(--muted); font-size:12.5px; }
+  .more { margin-top:6px; }
+  select { font:inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>音の地図（モック v2.1：まとまりから音を直接引き出す）</h1>
+  <label class="note">データ：<select id="dataset"></select></label>
+  <span class="note">音は鳴りません（操作の確認用）。</span>
+</header>
+<div class="wrap">
+  <div class="left">
+    <div class="map">
+      <canvas id="c"></canvas>
+      <div class="hint">点を押す＝その音を下に表示／二度押し＝そのまとまりの中へ／ホイール＝拡大／ドラッグ＝移動</div>
+    </div>
+    <section class="card empty" id="card">地図の点を押すと、その音がここに出ます</section>
+  </div>
+  <aside>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="toolbar">
+      <button class="ghost" id="up">↑ 一つ上へ</button>
+      <button class="ghost" id="top">全体に戻る</button>
+    </div>
+    <div id="summary" class="note"></div>
+    <h2 id="rowsHeading">中のまとまり（多い順）— 押すと中の音が開きます</h2>
+    <div id="rows"></div>
+  </aside>
+</div>
+<script id="data" type="application/json">/*DATA*/</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById('data').textContent);
+  const PAL = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948','#00a3c4','#8a6d3b'];
+  const PAGE = 20;
+  const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+  const sel = document.getElementById('dataset');
+  Object.keys(DATA).forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = DATA[k].title; sel.appendChild(o); });
+  let D, nodes, current = 0, selected = null, picked = null, shown = {}, view = {x:0, y:0, k:1}, drag = null, anim = 0, quietUntil = 0, lastClick = 0, childMap;
+
+  function load(key) { D = DATA[key]; nodes = D.nodes; nodes.forEach(n => { n.members = new Int32Array(n.members); }); go(0, false); }
+  function childOf(node) { const map = new Int32Array(D.x.length).fill(-1); node.children.forEach((cid, pos) => { for (const p of nodes[cid].members) map[p] = pos; }); return map; }
+  function bounds(node) { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of node.members) { const x = D.x[p], y = D.y[p]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } return {x0, y0, x1, y1}; }
+  function fit(node, animate) {
+    const b = bounds(node), W = canvas.clientWidth, H = canvas.clientHeight;
+    const w = Math.max(b.x1 - b.x0, 1e-6), h = Math.max(b.y1 - b.y0, 1e-6), k = 0.85 * Math.min(W / w, H / h);
+    const t = {k, x: W / 2 - k * (b.x0 + b.x1) / 2, y: H / 2 - k * (b.y0 + b.y1) / 2};
+    if (!animate) { view = t; draw(); return; }
+    const from = {...view}, start = performance.now(); cancelAnimationFrame(anim);
+    const step = now => { const u = Math.min(1, (now - start) / 350), e = 1 - Math.pow(1 - u, 3);
+      view = {k: from.k + (t.k - from.k) * e, x: from.x + (t.x - from.x) * e, y: from.y + (t.y - from.y) * e}; draw(); if (u < 1) anim = requestAnimationFrame(step); };
+    anim = requestAnimationFrame(step);
+  }
+  const sx = x => view.x + view.k * x, sy = y => view.y + view.k * y;
+  function draw() {
+    const dpr = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+    if (canvas.width !== W * dpr || canvas.height !== H * dpr) { canvas.width = W * dpr; canvas.height = H * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const node = nodes[current], n = D.x.length, inNode = new Uint8Array(n); for (const p of node.members) inNode[p] = 1;
+    ctx.fillStyle = getComputedStyle(document.body).color; ctx.globalAlpha = 0.08;
+    for (let p = 0; p < n; p++) if (!inNode[p]) ctx.fillRect(sx(D.x[p]) - 1, sy(D.y[p]) - 1, 2, 2);
+    const r = node.children.length ? 2.2 : 3;
+    for (let p = 0; p < n; p++) if (inNode[p]) { const c = childMap[p], dim = selected !== null && c !== selected;
+      ctx.globalAlpha = dim ? 0.18 : 0.8; ctx.fillStyle = c >= 0 ? PAL[c % PAL.length] : PAL[0]; ctx.beginPath(); ctx.arc(sx(D.x[p]), sy(D.y[p]), r, 0, 6.283); ctx.fill(); }
+    ctx.globalAlpha = 1; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    node.children.forEach((cid, pos) => { const m = nodes[cid].members, xs = Array.from(m, p => D.x[p]).sort((a, b) => a - b), ys = Array.from(m, p => D.y[p]).sort((a, b) => a - b);
+      const cx = sx(xs[xs.length >> 1]), cy = sy(ys[ys.length >> 1]);
+      ctx.fillStyle = PAL[pos % PAL.length]; ctx.beginPath(); ctx.arc(cx, cy, 11, 0, 6.283); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillText(String(pos + 1), cx, cy); });
+    if (picked !== null) { ctx.beginPath(); ctx.arc(sx(D.x[picked]), sy(D.y[picked]), 7, 0, 6.283); ctx.lineWidth = 2.5; ctx.strokeStyle = getComputedStyle(document.body).color; ctx.stroke(); }
+  }
+  // Group-level hint: the three most frequent first candidates among the sounds that have one.
+  function hint(node) {
+    const counts = {}; let hinted = 0;
+    for (const p of node.members) { const c = D.cands[p]; if (c && c.length) { hinted++; const name = c[0].replace(/ \d+%$/, ''); counts[name] = (counts[name] || 0) + 1; } }
+    const rate = Math.round(100 * hinted / node.members.length);
+    if (!hinted || hinted * 5 < node.members.length) return `${D.labelKind}なし（無音や虫の声の可能性）・候補のある音 ${rate}%`;
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([l, c]) => `${l} ${Math.round(100 * c / hinted)}%`);
+    return `${D.labelKind}: ${top.join('・')}（候補のある音 ${rate}%）`;
+  }
+  const candText = p => (D.cands[p] && D.cands[p].length) ? `${D.labelKind}: ${D.cands[p].slice(0, 3).join('・')}` : `${D.labelKind}なし`;
+  function soundRow(p, pos) {
+    const li = document.createElement('li'); if (p === picked) li.classList.add('picked');
+    li.innerHTML = `<button class="play" title="モックでは鳴りません">▶</button><span><span class="when">${D.names[p]}</span><br><span class="cands">${candText(p)}</span></span><button class="ghost" disabled>似た声を探す</button>`;
+    li.querySelector('.play').onclick = () => pick(p, pos, false);
+    return li;
+  }
+  function soundList(node, pos) {
+    const wrap = document.createElement('div'); const ol = document.createElement('ol'); ol.className = 'sounds';
+    const count = Math.min(node.members.length, shown[node.id] || PAGE);
+    for (let i = 0; i < count; i++) ol.appendChild(soundRow(node.members[i], pos));
+    wrap.appendChild(ol);
+    if (count < node.members.length) { const b = document.createElement('button'); b.className = 'ghost more'; b.textContent = `さらに${PAGE}件を表示（全 ${node.members.length} 件、中心に近い順）`; b.onclick = () => { shown[node.id] = count + PAGE; render(); }; wrap.appendChild(b); }
+    return wrap;
+  }
+  function render() {
+    const node = nodes[current]; childMap = childOf(node);
+    const crumbs = document.getElementById('crumbs'); crumbs.innerHTML = '';
+    const path = []; for (let id = current; id !== null; id = nodes[id].parent) path.unshift(id);
+    path.forEach((id, i) => { if (i) { const s = document.createElement('span'); s.className = 'sep'; s.textContent = '›'; crumbs.appendChild(s); }
+      const el = document.createElement(i === path.length - 1 ? 'b' : 'button'); el.textContent = id === 0 ? '全体' : `まとまり ${nodes[id].name}`; if (i < path.length - 1) el.onclick = () => go(id, true); crumbs.appendChild(el); });
+    document.getElementById('up').disabled = node.parent === null; document.getElementById('top').disabled = current === 0;
+    document.getElementById('summary').textContent = `${node.members.length} 区間（全体の ${Math.round(1000 * node.members.length / D.x.length) / 10}%）。${hint(node)}`;
+    const rows = document.getElementById('rows'); rows.innerHTML = '';
+    if (!node.children.length) { document.getElementById('rowsHeading').textContent = `このまとまりの音（${node.members.length} 件、中心に近い順）`; rows.appendChild(soundList(node, -1)); return; }
+    document.getElementById('rowsHeading').textContent = '中のまとまり（多い順）— 押すと中の音が開きます';
+    node.children.forEach((cid, pos) => {
+      const c = nodes[cid]; const d = document.createElement('details'); d.className = 'row' + (selected === pos ? ' selected' : selected !== null ? ' dim' : ''); d.open = !!shown[cid];
+      d.innerHTML = `<summary><span class="badge" style="background:${PAL[pos % PAL.length]}">${pos + 1}</span>
+        <span><div class="title">まとまり ${c.name} — ${c.members.length} 区間（${Math.round(100 * c.members.length / node.members.length)}%）</div><div class="sub">${hint(c)}</div></span><span class="chev">›</span></summary>`;
+      const body = document.createElement('div'); body.className = 'body';
+      if (c.children.length) { const act = document.createElement('div'); act.className = 'actions';
+        act.innerHTML = `<button class="primary">中を見る</button><span class="note">中に ${c.children.length} 個のまとまり。下は中心に近い音から ${Math.min(PAGE, c.members.length)} 件。</span>`;
+        act.querySelector('button').onclick = () => go(cid, true); body.appendChild(act); }
+      body.appendChild(soundList(c, pos)); d.appendChild(body);
+      d.querySelector('summary').addEventListener('click', e => { e.preventDefault(); shown[cid] = d.open ? 0 : (shown[cid] || PAGE); selected = d.open ? (selected === pos ? null : pos) : pos; render(); draw(); });
+      rows.appendChild(d);
+    });
+  }
+  function showCard(p) {
+    const card = document.getElementById('card'); if (p === null) { card.className = 'card empty'; card.textContent = '地図の点を押すと、その音がここに出ます'; return; }
+    const pos = childMap[p]; const group = pos >= 0 ? nodes[nodes[current].children[pos]] : nodes[current];
+    card.className = 'card';
+    card.innerHTML = `<h3>選んだ音</h3><div><span class="name">${D.names[p]}</span>　<span class="note">まとまり ${group.name || '全体'} の音</span></div>
+      <div class="cands">${candText(p)}</div>
+      <div class="actions"><button class="play">▶ 再生（モックでは鳴りません）</button><button class="ghost" id="openGroup">このまとまりを開く</button><button class="ghost" disabled>この音に似た声を探す</button></div>`;
+    card.querySelector('#openGroup').onclick = () => { if (pos >= 0) { shown[nodes[current].children[pos]] = shown[nodes[current].children[pos]] || PAGE; selected = pos; render(); draw(); document.querySelectorAll('details.row')[pos]?.scrollIntoView({block: 'start', behavior: 'smooth'}); } };
+  }
+  function pick(p, pos, fromMap) { picked = p; if (pos >= 0) selected = pos; showCard(p); if (fromMap) render(); draw(); }
+  function go(id, animate) { current = id; selected = null; picked = null; shown = {}; quietUntil = performance.now() + 400; showCard(null); render(); fit(nodes[id], animate); location.hash = 'node=' + id; }
+  document.getElementById('up').onclick = () => go(nodes[current].parent, true);
+  document.getElementById('top').onclick = () => go(0, true);
+  window.addEventListener('hashchange', () => { const m = /node=(\d+)/.exec(location.hash); const id = m ? +m[1] : 0; if (id !== current && nodes[id]) { current = id; selected = null; picked = null; shown = {}; showCard(null); render(); fit(nodes[id], true); } });
+  sel.onchange = () => load(sel.value);
+  function nearest(ev) { const rect = canvas.getBoundingClientRect(), mx = ev.clientX - rect.left, my = ev.clientY - rect.top; let best = -1, bd = 100;
+    for (const p of nodes[current].members) { const dx = sx(D.x[p]) - mx, dy = sy(D.y[p]) - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = p; } } return best; }
+  let moved = false;
+  canvas.addEventListener('pointerdown', ev => { drag = {x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y}; moved = false; try { canvas.setPointerCapture(ev.pointerId); } catch {} });
+  canvas.addEventListener('pointermove', ev => { if (!drag) return; const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; view.x = drag.vx + dx; view.y = drag.vy + dy; draw(); });
+  canvas.addEventListener('pointerup', ev => {
+    drag = null; if (moved || performance.now() < quietUntil) return;
+    const p = nearest(ev); const now = performance.now(), dbl = now - lastClick < 350; lastClick = now;
+    if (p < 0) { picked = null; selected = null; showCard(null); render(); draw(); return; }
+    const pos = childMap[p];
+    if (dbl && pos >= 0) { go(nodes[current].children[pos], true); return; }
+    pick(p, pos, true);
+  });
+  canvas.addEventListener('wheel', ev => { ev.preventDefault(); const rect = canvas.getBoundingClientRect(), mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const f = Math.exp(-ev.deltaY * 0.0015); view = {k: view.k * f, x: mx - (mx - view.x) * f, y: my - (my - view.y) * f}; draw(); }, {passive: false});
+  new ResizeObserver(() => fit(nodes[current], false)).observe(canvas);
+  load(sel.value);
+})();
+</script>
+</body>
+</html>

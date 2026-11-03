@@ -32,3 +32,5 @@ Follow-ups the same day, after the user asked for a complete hierarchy and a non
 (landmark layout for 210,000 segments) and `hierarchy_mock.py` (bakes
 `docs/prototypes/explore-hierarchy-mock.html` from `hierarchy_mock_template.html`). The user-data
 runs read an Echoroo Lite data folder named by `ECHOROO_PROTO_DATA` (read-only).
+`hierarchy_mock_v21.py` bakes the v2.1 redesign of the same mock (rows that open to their sounds,
+a sound card under the map, top-3 AI candidates per sound from the Japan candidate list).
