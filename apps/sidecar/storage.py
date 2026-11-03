@@ -1,4 +1,5 @@
 """Local catalog. Source audio is referenced, never modified."""
+import json
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -11,8 +12,8 @@ import sqlite_vec
 
 
 # Increment whenever the SQLite schema changes.
-SCHEMA_VERSION = 3
-MIGRATABLE_VERSIONS = (2,)
+SCHEMA_VERSION = 4
+MIGRATABLE_VERSIONS = (2, 3)
 
 
 class CatalogError(Exception):
@@ -36,6 +37,7 @@ def connect(root):
 
 def initialize(root):
     Path(root).mkdir(parents=True, exist_ok=True)
+    stale_explore_files = []
     with connect(root) as db:
         version = db.execute("PRAGMA user_version").fetchone()[0]
         has_schema = db.execute("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') LIMIT 1").fetchone()
@@ -44,6 +46,23 @@ def initialize(root):
         if not supported:
             return False
         db.execute("PRAGMA journal_mode=WAL")
+        if version in MIGRATABLE_VERSIONS:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='explore_runs'").fetchone():
+                for row in db.execute('SELECT params FROM explore_runs'):
+                    try:
+                        params = json.loads(row['params'])
+                    except (TypeError, ValueError):
+                        continue
+                    for key in ('points_file', 'pca_file'):
+                        name = params.get(key)
+                        if isinstance(name, str) and Path(name).name == name:
+                            stale_explore_files.append(name)
+            db.executescript('''
+                DROP TABLE IF EXISTS explore_clusters;
+                DROP TABLE IF EXISTS explore_nodes;
+                DROP TABLE IF EXISTS explore_points;
+                DROP TABLE IF EXISTS explore_runs;
+            ''')
         db.executescript("""
             CREATE TABLE IF NOT EXISTS sites (
                 id INTEGER PRIMARY KEY, name TEXT NOT NULL, timezone TEXT NOT NULL,
@@ -101,16 +120,18 @@ def initialize(root):
                 UNIQUE(site_id,engine,model_sha));
             CREATE TABLE IF NOT EXISTS explore_points (
                 run_id INTEGER NOT NULL REFERENCES explore_runs ON DELETE CASCADE,
+                position INTEGER NOT NULL,
                 segment_id INTEGER NOT NULL REFERENCES segments ON DELETE CASCADE,
-                x REAL NOT NULL, y REAL NOT NULL, cluster INTEGER NOT NULL, dist REAL NOT NULL,
-                PRIMARY KEY(run_id,segment_id));
-            CREATE INDEX IF NOT EXISTS explore_cluster_distance ON explore_points(run_id,cluster,dist);
-            CREATE TABLE IF NOT EXISTS explore_clusters (
+                x REAL NOT NULL, y REAL NOT NULL,
+                PRIMARY KEY(run_id,position));
+            CREATE TABLE IF NOT EXISTS explore_nodes (
                 run_id INTEGER NOT NULL REFERENCES explore_runs ON DELETE CASCADE,
-                cluster INTEGER NOT NULL, size INTEGER NOT NULL,
+                node INTEGER NOT NULL, parent INTEGER, name TEXT NOT NULL, depth INTEGER NOT NULL,
+                lo INTEGER NOT NULL, hi INTEGER NOT NULL,
                 rep_segment_id INTEGER NOT NULL REFERENCES segments ON DELETE CASCADE,
-                score_mean REAL NOT NULL, top_species TEXT,
-                PRIMARY KEY(run_id,cluster));
+                hint_rate REAL NOT NULL, top_species TEXT, top_share REAL,
+                PRIMARY KEY(run_id,node));
+            CREATE INDEX IF NOT EXISTS explore_node_parent ON explore_nodes(run_id,parent);
             CREATE TABLE IF NOT EXISTS reports (
                 id INTEGER PRIMARY KEY, dataset_id INTEGER NOT NULL REFERENCES datasets,
                 kind TEXT NOT NULL CHECK(kind='detection'),
@@ -198,6 +219,11 @@ def initialize(root):
         db.execute("UPDATE jobs SET status='interrupted' WHERE status IN ('queued', 'running')")
         db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     monotonic_ids(root)
+    for name in stale_explore_files:
+        try:
+            (Path(root) / 'explore' / name).unlink(missing_ok=True)
+        except OSError:
+            pass
     return True
 
 

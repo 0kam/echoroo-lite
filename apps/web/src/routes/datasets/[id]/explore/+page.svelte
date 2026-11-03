@@ -1,7 +1,8 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { tick, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,refreshCatalog } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
@@ -12,147 +13,196 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   type Segment={segment_id:number;recording_id:number;path:string;start_s:number;end_s:number;recorded_at:string;timezone:string};
-  type Cluster={cluster:number;size:number;rep:Segment;score_mean:number|null;top_species:{id:string;scientific_name:string}|null};
-  type Status={status:'none'|'building'|'ready'|'stale';created_at:string|null;engine:string;segment_count:number;clusters:Cluster[]};
-  type Points={n:number;x:Float32Array;y:Float32Array;cluster:Int32Array;shade:Uint8Array;box:[number,number,number,number]};
-  const id=Number(page.params.id),PAGE=20,draftKey=`echoroo-explore:${id}`;
-  // Categorical hues stepped for the light and the dark surface. Past eight groups the colours repeat; the list number names each group.
+  // Points come in tree order, so the sounds of every group are the positions lo..hi-1 of the point arrays.
+  type Group={node:number;name:string;size:number;lo:number;hi:number;child_count:number;rep:Segment;hint_rate:number;top_species:{id:string;scientific_name:string}|null;top_share:number};
+  type Status={status:'none'|'building'|'ready'|'stale';created_at:string|null;engine:string;segment_count:number;node?:Group;path?:{node:number;name:string}[];children?:Group[]};
+  type Page={total:number;segments:Segment[]};
+  type Points={n:number;x:Float32Array;y:Float32Array;box:[number,number,number,number]};
+  const id=Number(page.params.id),PAGE=20,MAX_ZOOM=1000,draftKey=`echoroo-explore:${id}`;
+  // Categorical hues stepped for the light and the dark surface; a group has at most eight smaller groups, one colour each.
   const LIGHT=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
   const DARK=['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
   const palette=$derived(app.dark?DARK:LIGHT);
+  // The group being viewed lives in the URL (`?node=`), so the browser's back button goes up one level.
+  const nodeId=$derived(Number(new URL(page.url.hash.slice(1),page.url).searchParams.get('node'))||0);
+  const here=(node:number)=>`${resolve(`/datasets/${id}/explore`)}?node=${node}`;
+  // Coming back without `?node=` (the search page's back link) reopens the same group with as many sounds as before.
+  const draft=(()=>{try{return JSON.parse(localStorage.getItem(draftKey)||'null');}catch{return null;}})() as {created_at?:string;node?:number;loaded?:number}|null;
+  let restoring=!new URL(page.url.hash.slice(1),page.url).searchParams.has('node')&&!!draft?.node;
   let data=$state<Status|null>(null),error=$state(''),pointsError=$state(''),names=$state<Record<string,Species>>({});
-  // One group is open at a time; it is also the one highlighted on the map.
-  let selected=$state<number|null>(null),shown=$state(PAGE),members=$state<{total:number;segments:Segment[]}|null>(null),membersError=$state('');
-  let watched=$state<number|null>(null),restored=$state<string|null>(null),transformed=$state(false);
+  // The child picked on the map (its index): its row is highlighted and the other children are dimmed.
+  let selected=$state<number|null>(null),members=$state<Page&{node:number}|null>(null),membersError=$state('');
+  let watched=$state<number|null>(null),transformed=$state(false);
+  const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   const job=$derived(activeJob());
   const building=$derived(job?.stage.startsWith('explore_')&&datasetOf(job.dataset_id)?.site_id===datasetOf(id)?.site_id?job:null);
   const ended=$derived(app.jobs.find(j=>j.id===watched&&(j.status==='failed'||j.status==='cancelled')));
   const signature=$derived(app.jobs.map(j=>`${j.id}:${j.status}`).join(','));
-  const rank=$derived(new Map(data?.clusters.map((c,i)=>[c.cluster,i] as [number,number])));
   $effect(()=>{if(building)watched=building.id;});
-  // The catalogue poll refreshes jobs every 2 s; any job change reloads the map state.
-  $effect(()=>{void signature;untrack(()=>void load());});
+  // The catalogue poll refreshes jobs every 2 s; any job change or a move to another group reloads the map state.
+  $effect(()=>{void signature;void nodeId;untrack(()=>void load());});
 
-  let request=0;
+  let request=0,quietUntil=0,lastClick=0;
   async function load(){
-    const version=++request;
-    try{const next=await api<Status>(`/explore?dataset=${id}`);
+    const version=++request,wanted=nodeId;
+    try{const next=await api<Status>(`/explore?dataset=${id}&node=${wanted}`);
       if(version!==request)return;
-      const changed=next.created_at!==data?.created_at;data=next;error='';
-      if(changed&&next.clusters.length){restore(next);void loadPoints(next);}
-      for(const sid of new Set(next.clusters.flatMap(c=>c.top_species?[c.top_species.id]:[])))
+      if(restoring){restoring=false;if(next.created_at===draft?.created_at&&draft?.node){void go(draft.node,true);return;}}
+      const before=data?.node,fresh=next.created_at!==data?.created_at,moved=next.node?.node!==before?.node;
+      data=next;error='';
+      if(fresh){points=null;if(next.node)void loadPoints(next);}
+      if(!next.node)return;
+      if(fresh||moved){selected=null;quietUntil=performance.now()+400;void openMembers(next);fly(!!before);}
+      for(const sid of new Set([next.node,...children].flatMap(c=>c.top_species?[c.top_species.id]:[])))
         if(!(sid in names))api<Species>(`/species/${encodeURIComponent(sid)}`).then(row=>{names[sid]=row;},()=>{/* The scientific name stays as the fallback. */});
-    }catch(e){error=e instanceof Error?e.message:'unknown_error';}
+    }catch(e){if(version!==request)return;const code=e instanceof Error?e.message:'unknown_error';
+      // A group of an older map no longer exists: start again from the whole map.
+      if(code==='not_found'&&wanted){void go(0,true);return;}
+      error=code;}
   }
-  const build=createTask(async()=>{watched=(await api<{id:number}>('/explore',{dataset_id:id})).id;await refreshCatalog();});
-  // Coming back from the search page reopens the same group with as many sounds as before.
-  function restore(next:Status){
-    const draft=(()=>{try{return JSON.parse(localStorage.getItem(draftKey)||'null');}catch{return null;}})() as {created_at?:string;selected?:number|null;shown?:number;loaded?:number}|null;
-    const same=!!draft&&draft.created_at===next.created_at,chosen=same?draft?.selected??null:null;
-    shown=same&&draft?.shown?draft.shown:PAGE;selected=null;members=null;
-    if(chosen!==null&&next.clusters.some(c=>c.cluster===chosen))void open(chosen,draft?.loaded);
-    restored=next.created_at;
-  }
-  $effect(()=>{const value=JSON.stringify({created_at:data?.created_at,selected,shown,loaded:members?.segments.length??0});
-    if(restored&&restored===data?.created_at)try{localStorage.setItem(draftKey,value);}catch{/* Private windows may refuse storage. */}});
-  async function open(cluster:number,count=PAGE){
-    selected=cluster;members=null;membersError='';
+  function go(target:number,replaceState=false){clearTimeout(scrollTimer);quietUntil=performance.now()+400;return goto(here(target),{replaceState,noScroll:true});}
+  // Group numbers change when the map is made again, so a new map starts from the whole map.
+  const build=createTask(async()=>{watched=(await api<{id:number}>('/explore',{dataset_id:id})).id;await refreshCatalog();if(nodeId)void go(0,true);});
+  const segmentPage=(at:number,offset:number)=>api<Page>(`/explore/nodes/${at}/segments?dataset=${id}&offset=${offset}`);
+  async function openMembers(status:Status){
+    const at=status.node!.node,count=draft?.created_at===status.created_at&&draft?.node===at?Math.max(PAGE,draft.loaded??0):PAGE;
+    members=null;membersError='';
     try{const segments:Segment[]=[];let total=0;
-      do{const next=await api<{total:number;segments:Segment[]}>(`/explore/clusters/${cluster}/segments?dataset=${id}&offset=${segments.length}`);
-        if(selected!==cluster)return;
+      do{const next=await segmentPage(at,segments.length);
+        if(node?.node!==at)return;
         total=next.total;segments.push(...next.segments);if(!next.segments.length)break;
       }while(segments.length<Math.min(count,total));
-      members={total,segments};
-    }catch(e){if(selected===cluster)membersError=e instanceof Error?e.message:'unknown_error';}
+      members={node:at,total,segments};
+    }catch(e){if(node?.node===at)membersError=e instanceof Error?e.message:'unknown_error';}
   }
-  const more=createTask(async()=>{if(!members||selected===null)return;const cluster=selected;
-    const next=await api<{total:number;segments:Segment[]}>(`/explore/clusters/${cluster}/segments?dataset=${id}&offset=${members.segments.length}`);
-    if(selected===cluster&&members)members.segments.push(...next.segments);});
-  function toggle(cluster:number){if(selected===cluster){selected=null;members=null;}else void open(cluster);}
-  async function reveal(cluster:number){
-    shown=Math.max(shown,Math.ceil(((rank.get(cluster)??0)+1)/PAGE)*PAGE);
-    if(selected!==cluster)void open(cluster);
-    await tick();document.getElementById(`group-${cluster}`)?.scrollIntoView({block:'nearest'});
-  }
+  $effect(()=>{if(!members||!data?.created_at)return;const value=JSON.stringify({created_at:data.created_at,node:members.node,loaded:members.segments.length});
+    try{localStorage.setItem(draftKey,value);}catch{/* Private windows may refuse storage. */}});
+  const more=createTask(async()=>{if(!members)return;const at=members.node;
+    const next=await segmentPage(at,members.segments.length);
+    if(members?.node===at)members.segments.push(...next.segments);});
+  // The row scrolls into view only after the double-click window: an instant scroll would move the sticky map under a fast second click.
+  let scrollTimer:ReturnType<typeof setTimeout>|undefined;
+  function reveal(child:number){selected=child;clearTimeout(scrollTimer);
+    scrollTimer=setTimeout(()=>document.getElementById(`group-${children[child]?.node}`)?.scrollIntoView({block:'nearest',behavior:'smooth'}),360);}
+  function escape(event:KeyboardEvent){if(event.key==='Escape'&&!event.defaultPrevented&&parent!==undefined)void go(parent);}
   // One sound at a time: starting a player pauses every other one on the page.
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
   // A fixed range only plays start–end, so the clip end stands in for the recording length.
   const sourceOf=(s:Segment)=>({id:s.recording_id,kind:'recording' as const,path:s.path,seconds:s.end_s});
   const when=(s:Segment)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
   const similar=(s:Segment)=>`${resolve(`/datasets/${id}/search`)}?recording=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
-  const aiHint=(c:Cluster)=>{const s=c.top_species;if(!s)return t('eNoAiHint');const row=names[s.id];return fill('eAiHint',{name:(row&&commonName(row,app.locale))||s.scientific_name});};
+  const pct=(share:number,digits=0)=>new Intl.NumberFormat(app.locale,{style:'percent',maximumFractionDigits:digits}).format(share);
+  const groupName=(g:{node:number;name:string})=>g.name?fill('eGroup',{n:g.name}):t('eWhole');
+  // Below one interval in five with any AI suggestion, the group is more likely silence or insects than a species.
+  const aiHint=(g:Group)=>{const s=g.top_species,rate=pct(g.hint_rate);if(!s||g.hint_rate<.2)return fill('eNoAiHint',{rate});
+    const row=names[s.id];return fill('eAiHint',{name:(row&&commonName(row,app.locale))||s.scientific_name,share:pct(g.top_share),rate});};
   const made=(at:string|null)=>at?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium'}).format(new Date(`${at.replace(' ','T')}Z`)):'';
 
   // Scatter: every point is drawn once into an offscreen canvas; pan and zoom move that image and redraw sharply when the gesture pauses.
-  let points:Points|null=null,canvas:HTMLCanvasElement|null=null,offscreen:HTMLCanvasElement|null=null,timer:ReturnType<typeof setTimeout>|undefined;
+  let points:Points|null=null,canvas:HTMLCanvasElement|null=null,offscreen:HTMLCanvasElement|null=null,timer:ReturnType<typeof setTimeout>|undefined,animation=0;
   // Device pixels: screen = base * k + t, where base fits all points into the canvas.
   let view={k:1,tx:0,ty:0},drawn={k:1,tx:0,ty:0},drag:{x:number;y:number;tx:number;ty:number;moved:boolean}|null=null;
+  // Where each child's numbered badge goes: the median of its points, in map coordinates.
+  let marks:{x:number;y:number}[]=[];
   async function loadPoints(status:Status){
     pointsError='';
     try{const buffer=await api<ArrayBuffer>(`/explore/points?dataset=${id}`,undefined,'GET',true);
       if(status.created_at!==data?.created_at)return;
-      // uint32 n, float32 x[n], float32 y[n], int32 cluster[n], int64 segment_id[n]; little-endian, the native order of every supported PC.
+      // uint32 n, float32 x[n], float32 y[n], int64 segment_id[n]; little-endian, the native order of every supported PC. Positions are enough here.
       const n=new DataView(buffer).getUint32(0,true);
-      if(buffer.byteLength!==4+20*n)throw Error('unknown_error');
-      const x=new Float32Array(buffer,4,n),y=new Float32Array(buffer,4+4*n,n),cluster=new Int32Array(buffer,4+8*n,n);
-      const order=new Map(status.clusters.map((c,i)=>[c.cluster,i] as [number,number]));
-      const shade=new Uint8Array(n),box:Points['box']=[Infinity,-Infinity,Infinity,-Infinity];
-      for(let i=0;i<n;i++){shade[i]=(order.get(cluster[i])??0)%LIGHT.length;
-        box[0]=Math.min(box[0],x[i]);box[1]=Math.max(box[1],x[i]);box[2]=Math.min(box[2],y[i]);box[3]=Math.max(box[3],y[i]);}
-      points={n,x,y,cluster,shade,box};reset();
+      if(buffer.byteLength!==4+16*n)throw Error('unknown_error');
+      const x=new Float32Array(buffer,4,n),y=new Float32Array(buffer,4+4*n,n),box:Points['box']=[Infinity,-Infinity,Infinity,-Infinity];
+      for(let i=0;i<n;i++){box[0]=Math.min(box[0],x[i]);box[1]=Math.max(box[1],x[i]);box[2]=Math.min(box[2],y[i]);box[3]=Math.max(box[3],y[i]);}
+      points={n,x,y,box};fly(false);
     }catch(e){pointsError=e instanceof Error?e.message:'unknown_error';}
   }
-  function frame(target:HTMLCanvasElement,{box:[x0,x1,y0,y1]}:Points){
+  function frame(target:HTMLCanvasElement,{box:[x0,x1,y0,y1]}:Points,{k,tx,ty}=view){
     const ratio=target.width/Math.max(1,target.clientWidth),pad=8*ratio,{width,height}=target;
-    return {ratio,x0,y0,sx:(width-2*pad)/(x1-x0||1)*view.k,sy:(height-2*pad)/(y1-y0||1)*view.k,ox:pad*view.k+view.tx,oy:(height-pad)*view.k+view.ty};
+    return {ratio,x0,y0,sx:(width-2*pad)/(x1-x0||1)*k,sy:(height-2*pad)/(y1-y0||1)*k,ox:pad*k+tx,oy:(height-pad)*k+ty};
   }
+  const median=(values:Float32Array)=>values.slice().sort()[values.length>>1];
+  // Fit the view to the group being viewed; going into a group zooms there in 350 ms.
+  function fly(animate:boolean){
+    if(!points||!canvas||!node)return;
+    const {x,y}=points,{width,height}=canvas,base=frame(canvas,points,{k:1,tx:0,ty:0});
+    marks=children.map(c=>({x:median(x.subarray(c.lo,c.hi)),y:median(y.subarray(c.lo,c.hi))}));
+    let left=Infinity,right=-Infinity,bottom=Infinity,top=-Infinity;
+    for(let i=node.lo;i<node.hi;i++){left=Math.min(left,x[i]);right=Math.max(right,x[i]);bottom=Math.min(bottom,y[i]);top=Math.max(top,y[i]);}
+    // The group's box in base pixels (k = 1, t = 0); canvas y grows downwards.
+    [left,right]=[base.ox+(left-base.x0)*base.sx,base.ox+(right-base.x0)*base.sx];
+    [top,bottom]=[base.oy-(top-base.y0)*base.sy,base.oy-(bottom-base.y0)*base.sy];
+    const k=Math.min(MAX_ZOOM,Math.max(1,.85*Math.min(width/(right-left),height/(bottom-top))));
+    const target={k,tx:width/2-k*(left+right)/2,ty:height/2-k*(top+bottom)/2};
+    cancelAnimationFrame(animation);transformed=false;
+    if(!animate||matchMedia('(prefers-reduced-motion: reduce)').matches){view=target;render();return;}
+    // Zoom geometrically and move the centre linearly, as map apps do.
+    const from=view,start=performance.now(),centre=(v:typeof view)=>[(width/2-v.tx)/v.k,(height/2-v.ty)/v.k];
+    const [fx,fy]=centre(from),[gx,gy]=centre(target);
+    const step=(now:number)=>{const u=Math.min(1,(now-start)/350),e=1-(1-u)**3,k=from.k*(target.k/from.k)**e;
+      view={k,tx:width/2-k*(fx+(gx-fx)*e),ty:height/2-k*(fy+(gy-fy)*e)};render();
+      if(u<1)animation=requestAnimationFrame(step);};
+    animation=requestAnimationFrame(step);
+  }
+  // The group being viewed is coloured by its smaller groups; every other point stays faint for context.
   function render(){
-    if(!points||!canvas||!offscreen)return;
-    const {n,x,y,cluster,shade}=points,{ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),context=offscreen.getContext('2d')!;
+    if(!points||!canvas||!offscreen||!node)return;
+    const {n,x,y}=points,{ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),context=offscreen.getContext('2d')!;
     offscreen.width=canvas.width;offscreen.height=canvas.height;
-    const dot=(i:number,size:number)=>context.fillRect(ox+(x[i]-x0)*sx-size/2,oy-(y[i]-y0)*sy-size/2,size,size);
-    context.globalAlpha=selected===null?.7:.15;
-    for(let c=0;c<palette.length;c++){context.fillStyle=palette[c];for(let i=0;i<n;i++)if(shade[i]===c&&cluster[i]!==selected)dot(i,2*ratio);}
-    if(selected!==null){context.globalAlpha=1;context.fillStyle=palette[(rank.get(selected)??0)%palette.length];for(let i=0;i<n;i++)if(cluster[i]===selected)dot(i,3*ratio);}
+    const dots=(lo:number,hi:number,size:number)=>{for(let i=lo;i<hi;i++)context.fillRect(ox+(x[i]-x0)*sx-size/2,oy-(y[i]-y0)*sy-size/2,size,size);};
+    const paint=(index:number,alpha:number)=>{context.globalAlpha=alpha;context.fillStyle=palette[index%palette.length];dots(children[index].lo,children[index].hi,3*ratio);};
+    context.globalAlpha=.1;context.fillStyle=getComputedStyle(canvas).color;dots(0,node.lo,2*ratio);dots(node.hi,n,2*ratio);
+    if(!children.length){context.globalAlpha=.8;context.fillStyle=palette[0];dots(node.lo,node.hi,4*ratio);}
+    children.forEach((_,index)=>{if(index!==selected)paint(index,selected===null?.8:.15);});
+    if(selected!==null&&children[selected])paint(selected,.9);
     drawn={...view};blit();
   }
   function blit(){
-    if(!canvas||!offscreen)return;
+    if(!canvas||!offscreen||!points)return;
     const context=canvas.getContext('2d')!,r=view.k/drawn.k;
     context.setTransform(1,0,0,1,0,0);context.clearRect(0,0,canvas.width,canvas.height);
     context.setTransform(r,0,0,r,view.tx-drawn.tx*r,view.ty-drawn.ty*r);context.drawImage(offscreen,0,0);
+    // Numbered badges stay sharp and the same size at any zoom; the numbers match the list.
+    const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points);
+    context.setTransform(1,0,0,1,0,0);context.font=`700 ${12*ratio}px ${getComputedStyle(canvas).fontFamily}`;context.textAlign='center';context.textBaseline='middle';context.lineWidth=2*ratio;
+    marks.forEach((mark,index)=>{const cx=ox+(mark.x-x0)*sx,cy=oy-(mark.y-y0)*sy;
+      context.beginPath();context.arc(cx,cy,11*ratio,0,2*Math.PI);context.fillStyle=palette[index%palette.length];context.fill();
+      context.strokeStyle='#fff';context.stroke();context.fillStyle='#fff';context.fillText(String(index+1),cx,cy);});
   }
   function moved(){transformed=true;blit();clearTimeout(timer);timer=setTimeout(render,150);}
-  function reset(){view={k:1,tx:0,ty:0};transformed=false;render();}
   $effect(()=>{void selected;void palette;untrack(render);});
-  function scatter(node:HTMLCanvasElement){
-    canvas=node;offscreen=document.createElement('canvas');
-    const resize=new ResizeObserver(()=>{const r=devicePixelRatio||1;node.width=Math.round(node.clientWidth*r);node.height=Math.round(node.clientHeight*r);render();});
+  function scatter(element:HTMLCanvasElement){
+    canvas=element;offscreen=document.createElement('canvas');
+    const resize=new ResizeObserver(()=>{const r=devicePixelRatio||1;element.width=Math.round(element.clientWidth*r);element.height=Math.round(element.clientHeight*r);fly(false);});
     // Zoom around the cursor; a non-passive listener keeps the page from scrolling instead.
     const wheel=(event:WheelEvent)=>{event.preventDefault();
-      const bounds=node.getBoundingClientRect(),r=node.width/bounds.width,cx=(event.clientX-bounds.left)*r,cy=(event.clientY-bounds.top)*r;
-      const k=Math.min(64,Math.max(1,view.k*Math.exp(-event.deltaY*.002))),g=k/view.k;
-      view={k,tx:cx-(cx-view.tx)*g,ty:cy-(cy-view.ty)*g};moved();};
-    resize.observe(node);node.addEventListener('wheel',wheel,{passive:false});
-    return {destroy(){resize.disconnect();node.removeEventListener('wheel',wheel);clearTimeout(timer);canvas=null;}};
+      const bounds=element.getBoundingClientRect(),r=element.width/bounds.width,cx=(event.clientX-bounds.left)*r,cy=(event.clientY-bounds.top)*r;
+      const k=Math.min(MAX_ZOOM,Math.max(1,view.k*Math.exp(-event.deltaY*.002))),g=k/view.k;
+      cancelAnimationFrame(animation);view={k,tx:cx-(cx-view.tx)*g,ty:cy-(cy-view.ty)*g};moved();};
+    resize.observe(element);element.addEventListener('wheel',wheel,{passive:false});
+    return {destroy(){resize.disconnect();element.removeEventListener('wheel',wheel);clearTimeout(timer);cancelAnimationFrame(animation);canvas=null;}};
   }
   function down(event:PointerEvent){if(event.button!==0)return;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);drag={x:event.clientX,y:event.clientY,tx:view.tx,ty:view.ty,moved:false};}
   function move(event:PointerEvent){
     if(!drag||!canvas)return;const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
     if(!drag.moved&&Math.hypot(dx,dy)<4)return;
-    const r=canvas.width/Math.max(1,canvas.clientWidth);drag.moved=true;view={...view,tx:drag.tx+dx*r,ty:drag.ty+dy*r};moved();
+    // Only a real drag stops a running zoom; a click right after going inside must not freeze it halfway.
+    const r=canvas.width/Math.max(1,canvas.clientWidth);drag.moved=true;cancelAnimationFrame(animation);view={...view,tx:drag.tx+dx*r,ty:drag.ty+dy*r};moved();
   }
-  // A click without dragging picks the nearest point within 8 px and opens its group.
+  // A click picks the nearest point of the group being viewed (within 8 px) and chooses its smaller group; a second click within 350 ms goes into it.
   function up(event:PointerEvent){
     const click=drag&&!drag.moved;drag=null;
-    if(!click||!points||!canvas)return;
+    // Clicks right after going into a group are ignored, so a fast double click cannot go down two levels.
+    if(!click||!points||!canvas||!node||performance.now()<quietUntil)return;
+    const now=performance.now(),double=now-lastClick<350;lastClick=now;
     const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),bounds=canvas.getBoundingClientRect();
     const px=(event.clientX-bounds.left)*ratio,py=(event.clientY-bounds.top)*ratio;
     let best=-1,limit=(8*ratio)**2;
-    for(let i=0;i<points.n;i++){const dx=ox+(points.x[i]-x0)*sx-px,dy=oy-(points.y[i]-y0)*sy-py,d=dx*dx+dy*dy;if(d<limit){limit=d;best=i;}}
-    if(best>=0)void reveal(points.cluster[best]);
+    for(let i=node.lo;i<node.hi;i++){const dx=ox+(points.x[i]-x0)*sx-px,dy=oy-(points.y[i]-y0)*sy-py,d=dx*dx+dy*dy;if(d<limit){limit=d;best=i;}}
+    const child=children.findIndex(c=>c.lo<=best&&best<c.hi);
+    if(child<0)selected=null;else if(double)void go(children[child].node);else void reveal(child);
   }
 </script>
+<svelte:window onkeydown={escape}/>
 <div class="page wide" onplaycapture={solo}>
   <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
   <div class="page-header"><div><h1>{t('eTitle')}</h1><p>{t('eLead')}</p></div></div>
@@ -162,64 +212,81 @@
     {#if data.status==='building'||building}<section class="status-box" role="status">
       {#if building}<JobStatus job={building}/>{:else}<p><Spinner/> {t('eBuilding')}</p>{/if}
       <p class="muted">{t('eTakesMinutes')}</p></section>
-    {:else if !data.clusters.length}<section class="panel empty">
-      <p>{t('eEmpty')}</p><p>{t('eTakesMinutes')}</p>
-      <Button variant="primary" pending={build.pending} disabled={!!job} onclick={()=>build.run()}>{t('eBuild')}</Button>
-      {#if job&&!build.pending}<p>{t('job_busy')}</p>{/if}
-      {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}</section>
     {:else if data.status==='stale'}<section class="notice stack" role="status">
       <p>{t('eStale')}</p>
       <div class="actions"><Button pending={build.pending} disabled={!!job} onclick={()=>build.run()}>{t('eRebuild')}</Button><span>{t(job&&!build.pending?'job_busy':'eTakesMinutes')}</span></div>
+      {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}</section>
+    {:else if !node}<section class="panel empty">
+      <p>{t('eEmpty')}</p><p>{t('eTakesMinutes')}</p>
+      <Button variant="primary" pending={build.pending} disabled={!!job} onclick={()=>build.run()}>{t('eBuild')}</Button>
+      {#if job&&!build.pending}<p>{t('job_busy')}</p>{/if}
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}</section>{/if}
-    {#if data.clusters.length}
+    {#if node}
       <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelName(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
       <div class="explore">
         <section class="panel stack map-panel">
-          <div class="section-heading"><h2>{t('eMapHeading')}</h2><Button size="sm" disabled={!transformed} onclick={reset}>{t('eReset')}</Button></div>
+          <div class="section-heading"><h2>{t('eMapHeading')}</h2><Button size="sm" disabled={!transformed} onclick={()=>fly(false)}>{t('eReset')}</Button></div>
           {#if pointsError}<p class="error" role="alert">{t(pointsError)}</p>{/if}
-          <!-- The group list is the keyboard path to the same groups; the map adds pointer zoom, pan and picking. -->
+          <!-- The list is the keyboard path to the same groups; the map adds pointer zoom, pan, picking and double-click to go inside. -->
           <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
-          <p class="muted">{fill('eMapHint',{s:+(data.clusters[0].rep.end_s-data.clusters[0].rep.start_s).toFixed(1)})}</p>
+          <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
         </section>
-        <section class="panel stack">
-          <h2>{t('eListHeading')}</h2>
-          <p class="muted">{t('eListHint')} {t('localTime')}</p>
-          {#each data.clusters.slice(0,shown) as c,index (c.cluster)}{@const expanded=selected===c.cluster}
-            <article class="group" class:open={expanded} id={`group-${c.cluster}`}>
-              <h3><button class="group-toggle" aria-expanded={expanded} onclick={()=>toggle(c.cluster)}>
-                <span class="swatch" style:background={palette[index%palette.length]} aria-hidden="true"></span>
-                <span>{fill('eGroup',{n:index+1})}</span><span class="muted">{fill('eSize',{n:c.size.toLocaleString(app.locale)})}</span>
-                <span class="chevron" aria-hidden="true">{expanded?'▲':'▼'}</span></button></h3>
-              <p class="muted">{aiHint(c)}</p>
-              <AudioRegion source={sourceOf(c.rep)} fixedRange compact start={c.rep.start_s} end={c.rep.end_s}/>
-              {#if expanded}<div class="members">
-                <p class="muted">{t('eMembersHint')}</p>
-                {#if membersError}<p class="error" role="alert">{t(membersError)}</p>
-                {:else if !members}<p role="status"><Spinner/> {t('loading')}</p>
-                {:else}
-                  {#each members.segments as s (s.segment_id)}<div class="member"><span>{when(s)}</span>
-                    <AudioRegion source={sourceOf(s)} fixedRange compact start={s.start_s} end={s.end_s}>
-                      {#snippet actions()}<Button size="sm" href={similar(s)}>{t('eFindSimilar')}</Button>{/snippet}
-                    </AudioRegion></div>{/each}
-                  {#if more.error}<p class="error" role="alert">{t(more.error)}</p>{/if}
-                  {#if members.segments.length<members.total}<Button pending={more.pending} onclick={()=>more.run()}>{t('eMore')}</Button>{/if}
-                {/if}</div>{/if}
-            </article>{/each}
-          {#if shown<data.clusters.length}<Button onclick={()=>shown+=PAGE}>{t('eMoreGroups')}</Button>{/if}
-        </section>
+        <div class="stack">
+          <section class="panel stack">
+            <nav class="trail" aria-label={t('eTrail')}>
+              {#each trail as step,index (step.node)}
+                {#if index}<span class="muted" aria-hidden="true">›</span>{/if}
+                {#if index<trail.length-1}<a href={here(step.node)}>{groupName(step)}</a>{:else}<strong aria-current="page">{groupName(step)}</strong>{/if}
+              {/each}
+            </nav>
+            <div class="actions">
+              <Button size="sm" href={parent===undefined?undefined:here(parent)} disabled={parent===undefined}>{t('eUp')}</Button>
+              <Button size="sm" href={here(0)} disabled={!node.node}>{t('eTop')}</Button>
+            </div>
+            <p>{fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/Math.max(1,data.segment_count),1)})}<br><span class="muted">{aiHint(node)}</span></p>
+            <h2>{t(children.length?'eListHeading':'eTerminal')}</h2>
+            {#if children.length}<p class="muted">{t('eListHint')}</p>{/if}
+            {#each children as c,index (c.node)}
+              <article class="group" class:selected={selected===index} class:dim={selected!==null&&selected!==index} id={`group-${c.node}`}>
+                <div class="section-heading">
+                  <h3><span class="badge" style:background={palette[index%palette.length]} aria-hidden="true">{index+1}</span>
+                    <span>{groupName(c)} — <span class="muted">{fill('eSize',{n:c.size.toLocaleString(app.locale),share:pct(c.size/node.size)})}</span></span></h3>
+                  <Button size="sm" href={here(c.node)}>{t('eOpen')}</Button>
+                </div>
+                <p class="muted">{aiHint(c)}</p>
+                {#if c.child_count}<p class="muted">{fill('eInner',{n:c.child_count})}</p>{/if}
+                <AudioRegion source={sourceOf(c.rep)} fixedRange compact start={c.rep.start_s} end={c.rep.end_s}/>
+              </article>
+            {/each}
+          </section>
+          <section class="panel stack">
+            <h2>{t('eMembersHeading')}</h2>
+            <p class="muted">{t('localTime')}</p>
+            {#if membersError}<p class="error" role="alert">{t(membersError)}</p>
+            {:else if !members||members.node!==node.node}<p role="status"><Spinner/> {t('loading')}</p>
+            {:else}
+              {#each members.segments as s (s.segment_id)}<div class="member"><span>{when(s)}</span>
+                <AudioRegion source={sourceOf(s)} fixedRange compact start={s.start_s} end={s.end_s}>
+                  {#snippet actions()}<Button size="sm" href={similar(s)}>{t('eFindSimilar')}</Button>{/snippet}
+                </AudioRegion></div>{/each}
+              {#if more.error}<p class="error" role="alert">{t(more.error)}</p>{/if}
+              {#if members.segments.length<members.total}<Button pending={more.pending} onclick={()=>more.run()}>{t('eMore')}</Button>{/if}
+            {/if}
+          </section>
+        </div>
       </div>
     {/if}
   {:else if !error}<p role="status"><Spinner/> {t('eLoading')}</p>{/if}
 </div>
 <style>.explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   .map-panel{position:sticky;top:16px}
-  canvas{display:block;width:100%;height:420px;border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:grab}
-  .group{display:flex;flex-direction:column;gap:8px;padding:8px 12px 12px;border:1px solid rgb(var(--color-card-border));border-radius:8px}
-  .group.open{border-left:4px solid rgb(var(--primary-700))}
-  .group-toggle{width:100%;justify-content:flex-start;flex-wrap:wrap;gap:4px 12px;padding:8px 4px;border:0;background:transparent;font-size:18px;font-weight:600;text-align:left}
-  .group-toggle:hover{background:rgb(var(--stone-200))}.group-toggle .muted{font-weight:400}.chevron{margin-left:auto;font-size:14px}
-  .swatch{width:14px;height:14px;border-radius:4px;flex:none}
-  .members{display:flex;flex-direction:column;gap:8px}
+  canvas{display:block;width:100%;height:420px;border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  .trail{display:flex;flex-wrap:wrap;align-items:center;gap:0 4px}
+  .trail a,.trail strong{display:inline-flex;align-items:center;min-height:44px;padding:0 4px}.trail strong{font-weight:600}
+  .group{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid rgb(var(--color-card-border));border-radius:8px;transition:opacity .15s}
+  .group.selected{border-left:4px solid rgb(var(--primary-700))}.group.dim{opacity:.55}
+  .group h3{display:flex;align-items:center;gap:8px}.group h3 .muted{font-weight:400}
+  .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700;flex:none}
   .member{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
-  .empty :global(.button){align-self:center}.members>:global(.button){align-self:flex-start}
+  .empty :global(.button){align-self:center}
   @media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static}canvas{height:320px}}</style>

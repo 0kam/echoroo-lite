@@ -1,15 +1,15 @@
 """Precomputed PCA sound maps over the current main-engine embeddings."""
 import hashlib
+import heapq
 import json
-import multiprocessing
-import os
 import struct
 import tempfile
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, as_completed, wait
+import time
 from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
+from scipy.cluster.hierarchy import linkage
 from scipy.cluster.vq import ClusterError, kmeans2, vq
 
 from models import main_identity, window_s
@@ -23,15 +23,21 @@ PCA_DIMS = 50
 VECTOR_BATCH = 4096
 PCA_BATCH = 4096
 KMEANS_BATCH = 8192
-SUBSAMPLE_MAX = 20_000
-SILHOUETTE_MAX = 4_000
-K_GRID = (10, 15, 20, 25, 30, 40, 50, 60)
-LARGE_K_GRID = (80, 100, 150, 200)
+EXACT_MAX = 10_000
+LEAF_COUNT = 2_000
+FIT_MAX = 20_000
+TERMINAL_MAX = 20
+TAU = 0.6
+MAX_CHILDREN = 8
+LANDMARK_MAX = 10_000
+PACMAP_NEIGHBORS = 10
+PACMAP_MID_NEAR = 5
+PACMAP_FURTHER = 20
+PACMAP_ITERATIONS = 450
+PACMAP_LR = 1.0
 SEED = 20261101
 CACHE_VERSION = 1
 SCORE_THRESHOLD = 0.1
-_PROCESS_SAMPLE = None
-_PROCESS_CANCEL = None
 
 
 def _check_cancel(cancel):
@@ -319,101 +325,6 @@ def lloyd(matrix, initial, cancel=None, max_iter=20):
     return centers, labels, squared, iterations
 
 
-def mean_silhouette(matrix, labels, max_points=SILHOUETTE_MAX, seed=SEED):
-    """Port of the benchmark's deterministic mean-Euclidean silhouette."""
-    rng = np.random.default_rng(seed)
-    indices = (np.arange(len(matrix)) if len(matrix) <= max_points
-               else np.sort(rng.choice(len(matrix), max_points, replace=False)))
-    sample = np.asarray(matrix[indices], dtype=np.float64)
-    sample_labels = np.asarray(labels[indices])
-    unique, counts = np.unique(sample_labels, return_counts=True)
-    if len(unique) < 2:
-        return -1.0, len(sample)
-    norms = np.einsum('ij,ij->i', sample, sample)
-    total = 0.0
-    for start in range(0, len(sample), 256):
-        block = sample[start:start + 256]
-        distances = np.sqrt(np.maximum(
-            np.einsum('ij,ij->i', block, block)[:, None] + norms[None, :] - 2 * block @ sample.T, 0))
-        for offset, row_distances in enumerate(distances):
-            own = sample_labels[start + offset]
-            own_count = int(counts[np.flatnonzero(unique == own)[0]])
-            if own_count == 1:
-                continue
-            own_mask = sample_labels == own
-            a = float(row_distances[own_mask].sum() / (own_count - 1))
-            b = min(float(row_distances[sample_labels == label].mean()) for label in unique if label != own)
-            total += (b - a) / max(a, b) if max(a, b) else 0.0
-    return total / len(sample), len(sample)
-
-
-def _candidate(sample, k, cancel=None):
-    centers, labels, squared, iterations = lloyd(sample, k, cancel)
-    silhouette, count = mean_silhouette(sample, labels)
-    return {'k': k, 'silhouette': silhouette, 'inertia': float(squared.sum(dtype=np.float64)),
-            'silhouette_sample_n': count, 'iterations': iterations, 'centers': centers}
-
-
-class _SharedCancel:
-    def is_set(self):
-        return bool(_PROCESS_CANCEL.value)
-
-
-def _process_init(sample, cancel_flag):
-    global _PROCESS_SAMPLE, _PROCESS_CANCEL
-    _PROCESS_SAMPLE = sample
-    _PROCESS_CANCEL = cancel_flag
-
-
-def _process_candidate(k):
-    return _candidate(_PROCESS_SAMPLE, k, _SharedCancel())
-
-
-def k_grid(n):
-    values = K_GRID
-    if n > SUBSAMPLE_MAX:
-        values += tuple(k for k in LARGE_K_GRID if k < n / 50)
-    return tuple(k for k in values if k < min(n, SUBSAMPLE_MAX))
-
-
-def select_k(matrix, cancel=None, executor_kind='processes'):
-    rng = np.random.default_rng(SEED)
-    indices = (np.arange(len(matrix)) if len(matrix) <= SUBSAMPLE_MAX
-               else np.sort(rng.choice(len(matrix), SUBSAMPLE_MAX, replace=False)))
-    sample = np.asarray(matrix[indices], dtype=np.float32)
-    grid = k_grid(len(matrix))
-    if not grid:
-        raise CatalogError('insufficient_explore_embeddings')
-    # ponytail: four candidates at once keeps BLAS fast without multiplying its working memory twelvefold.
-    workers = min(4, len(grid), os.cpu_count() or 1)
-    results = []
-    if executor_kind == 'threads':
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(_candidate, sample, k, cancel) for k in grid]
-            for future in as_completed(futures):
-                _check_cancel(cancel)
-                results.append(future.result())
-    else:
-        context = multiprocessing.get_context('spawn')
-        cancel_flag = context.Value('b', 0)
-        with ProcessPoolExecutor(max_workers=workers, mp_context=context, initializer=_process_init,
-                                 initargs=(sample, cancel_flag)) as pool:
-            pending = {pool.submit(_process_candidate, k) for k in grid}
-            while pending:
-                completed, pending = wait(pending, timeout=.05, return_when=FIRST_COMPLETED)
-                if cancel is not None and cancel.is_set():
-                    cancel_flag.value = 1
-                    for future in pending:
-                        future.cancel()
-                    raise CatalogError('cancelled')
-                results.extend(future.result() for future in completed)
-    results.sort(key=lambda item: item['k'])
-    selected = max(results, key=lambda item: (item['silhouette'], -item['k']))
-    public = [{key: value for key, value in item.items() if key != 'centers'} for item in results]
-    return selected['centers'], {'selected_k': selected['k'], 'grid': public,
-                                 'subsample_n': len(sample), 'parallel': executor_kind}
-
-
 def _score_rows(path, engine, count):
     try:
         with np.load(path, allow_pickle=False) as saved:
@@ -437,12 +348,132 @@ def _score_rows(path, engine, count):
     return maximum, names
 
 
-def cluster_summaries(root, analyses, index, segment_ids, labels, distances, cancel=None):
-    n = len(labels)
-    maximum = np.empty(n, dtype=np.float32)
-    species_codes = np.empty(n, dtype=np.int32)
-    codes = {}
-    names = []
+def _append_linkage(tree, matrix, leaf_nodes, scale=1.0):
+    left, right, height, size = tree
+    mapped = list(map(int, leaf_nodes))
+    for row in matrix:
+        a, b = mapped[int(row[0])], mapped[int(row[1])]
+        node = len(left)
+        left.append(a); right.append(b); height.append(float(row[2]) * scale)
+        size.append(size[a] + size[b]); mapped.append(node)
+    return mapped[-1]
+
+
+def binary_tree(projected, cancel=None):
+    """Build one binary Ward tree whose leaves are projected row indices."""
+    n = len(projected)
+    tree = ([-1] * n, [-1] * n, [0.0] * n, [1] * n)
+    if n <= EXACT_MAX:
+        root = _append_linkage(tree, linkage(np.asarray(projected), 'ward'), range(n))
+        return tuple(np.asarray(values) for values in tree), root, {'method': 'exact'}
+
+    rng = np.random.default_rng(SEED)
+    fit_indices = (np.arange(n) if n <= FIT_MAX else np.sort(rng.choice(n, FIT_MAX, replace=False)))
+    fit = np.asarray(projected[fit_indices], dtype=np.float32)
+    requested = min(LEAF_COUNT, len(fit))
+    centers, _, _, iterations = lloyd(fit, requested, cancel)
+    labels, _ = _nearest(projected, centers, cancel)
+    used, labels = np.unique(labels, return_inverse=True)
+    labels = labels.astype(np.int32, copy=False)
+    counts = np.bincount(labels)
+    centers = np.empty((len(used), projected.shape[1]), dtype=np.float32)
+    for column in range(projected.shape[1]):
+        centers[:, column] = np.bincount(labels, weights=np.asarray(projected[:, column]),
+                                          minlength=len(used)) / counts
+    top = linkage(centers, 'ward')
+    joining = np.empty(len(centers), dtype=np.float64)
+    for row in top:
+        for child in (int(row[0]), int(row[1])):
+            if child < len(centers):
+                joining[child] = row[2]
+    sorted_rows = np.argsort(labels, kind='stable')
+    offsets = np.concatenate(([0], np.cumsum(counts)))
+    leaf_roots = []
+    for leaf in range(len(centers)):
+        _check_cancel(cancel)
+        members = sorted_rows[offsets[leaf]:offsets[leaf + 1]]
+        if len(members) == 1:
+            leaf_roots.append(int(members[0]))
+            continue
+        within = linkage(np.asarray(projected[members]), 'ward')
+        scale = min(1.0, 0.9 * joining[leaf] / within[-1, 2]) if within[-1, 2] else 1.0
+        leaf_roots.append(_append_linkage(tree, within, members, scale))
+    root = _append_linkage(tree, top, leaf_roots)
+    details = {'method': 'leaves', 'requested_leaves': requested, 'leaf_count': len(centers),
+               'fit_count': len(fit), 'iterations': iterations}
+    return tuple(np.asarray(values) for values in tree), root, details
+
+
+def _flat_children(tree, node):
+    left, right, height, _ = tree
+    heap = [(-height[left[node]], 0, int(left[node])), (-height[right[node]], 1, int(right[node]))]
+    heapq.heapify(heap)
+    counter = 2
+    while len(heap) < MAX_CHILDREN:
+        _, _, top = heap[0]
+        if left[top] < 0 or height[top] < TAU * height[node]:
+            break
+        heapq.heappop(heap)
+        for child in (left[top], right[top]):
+            heapq.heappush(heap, (-height[child], counter, int(child)))
+            counter += 1
+    return [item[2] for item in heap]
+
+
+def flatten_tree(tree, root, projected, cancel=None):
+    """Flatten the binary tree and assign one contiguous position range to every node."""
+    size = tree[3]
+    nodes = [{'node': 0, 'binary': int(root), 'parent': None, 'name': '', 'depth': 0,
+              'children': [], 'lo': None, 'hi': None}]
+    pending = [0]
+    while pending:
+        current = pending.pop()
+        record = nodes[current]
+        if size[record['binary']] <= TERMINAL_MAX:
+            continue
+        children = sorted(_flat_children(tree, record['binary']), key=lambda child: (-size[child], child))
+        for index, child in enumerate(children, 1):
+            name = f"{record['name']}-{index}" if record['name'] else str(index)
+            child_id = len(nodes)
+            nodes.append({'node': child_id, 'binary': child, 'parent': current, 'name': name,
+                          'depth': record['depth'] + 1, 'children': [], 'lo': None, 'hi': None})
+            record['children'].append(child_id)
+        pending.extend(reversed(record['children']))
+
+    order = []
+    pending = [0]
+    while pending:
+        current = pending.pop()
+        record = nodes[current]
+        if record['children']:
+            pending.extend(reversed(record['children']))
+            continue
+        members = []
+        binary = [record['binary']]
+        while binary:
+            item = binary.pop()
+            if tree[0][item] < 0:
+                members.append(item)
+            else:
+                binary.extend((int(tree[1][item]), int(tree[0][item])))
+        members = np.asarray(members, dtype=np.int64)
+        values = np.asarray(projected[members], dtype=np.float64)
+        mean = values.mean(axis=0)
+        distance = np.einsum('ij,ij->i', values - mean, values - mean)
+        members = members[np.argsort(distance, kind='stable')]
+        record['lo'] = len(order); order.extend(map(int, members)); record['hi'] = len(order)
+    for record in reversed(nodes):
+        if record['children']:
+            record['lo'] = nodes[record['children'][0]]['lo']
+            record['hi'] = nodes[record['children'][-1]]['hi']
+    _check_cancel(cancel)
+    return nodes, np.asarray(order, dtype=np.int64)
+
+
+def _score_data(root, analyses, index, segment_ids, cancel=None):
+    maximum = np.empty(len(segment_ids), dtype=np.float32)
+    species_codes = np.empty(len(segment_ids), dtype=np.int32)
+    codes, names = {}, []
     with connect(root) as db:
         for analysis in analyses:
             _check_cancel(cancel)
@@ -459,52 +490,180 @@ def cluster_summaries(root, analyses, index, segment_ids, labels, distances, can
             maximum[start:end] = scores
             for offset, name in enumerate(winners, start):
                 if name not in codes:
-                    codes[name] = len(names)
-                    names.append(name)
+                    codes[name] = len(names); names.append(name)
                 species_codes[offset] = codes[name]
         records = {row['scientific_name']: {'id': row['id'], 'scientific_name': row['scientific_name']}
                    for row in db.execute('SELECT id,scientific_name FROM species WHERE scientific_name IN '
                     '(SELECT value FROM json_each(?))', (json.dumps(names),))}
-    return aggregate_summaries(segment_ids, labels, distances, maximum, species_codes, names, records, cancel)
+    return maximum, species_codes, names, records
 
 
-def aggregate_summaries(segment_ids, labels, distances, maximum, species_codes, names, records, cancel=None):
+def node_summaries(root, analyses, index, segment_ids, projected, nodes, order, cancel=None):
+    maximum, species_codes, names, records = _score_data(root, analyses, index, segment_ids, cancel)
+    ordered_maximum = maximum[order]
+    ordered_species = species_codes[order]
+    sums = np.zeros((len(nodes), projected.shape[1]), dtype=np.float64)
+    for record in reversed(nodes):
+        if record['children']:
+            sums[record['node']] = sums[record['children']].sum(axis=0)
+        else:
+            sums[record['node']] = np.asarray(projected[order[record['lo']:record['hi']]],
+                                               dtype=np.float64).sum(axis=0)
     summaries = []
-    for cluster in np.unique(labels):
-        _check_cancel(cancel)
-        members = np.flatnonzero(labels == cluster)
-        qualified = members[maximum[members] >= SCORE_THRESHOLD]
-        top = None
-        if len(qualified) * 5 >= len(members):
-            counts = np.bincount(species_codes[qualified], minlength=len(names))
-            name = names[int(counts.argmax())]
+    for record in nodes:
+        if record['node'] % 256 == 0:
+            _check_cancel(cancel)
+        lo, hi = record['lo'], record['hi']
+        members = order[lo:hi]
+        mean = sums[record['node']] / (hi - lo)
+        values = np.asarray(projected[members], dtype=np.float64)
+        distance = np.einsum('ij,ij->i', values - mean, values - mean)
+        representative = int(members[int(distance.argmin())])
+        qualified = ordered_maximum[lo:hi] >= SCORE_THRESHOLD
+        qualified_count = int(qualified.sum())
+        top, top_share = None, None
+        if qualified_count:
+            counts = np.bincount(ordered_species[lo:hi][qualified], minlength=len(names))
+            code = int(counts.argmax()); name = names[code]
             top = records.get(name, {'id': None, 'scientific_name': name})
-        representative = members[int(np.argmin(distances[members]))]
-        summaries.append({'cluster': int(cluster), 'size': len(members),
-            'rep_segment_id': int(segment_ids[representative]),
-            'score_mean': float(maximum[members].mean(dtype=np.float64)), 'top_species': top})
+            top_share = float(counts[code] / qualified_count)
+        summaries.append({**record, 'rep_segment_id': int(segment_ids[representative]),
+                          'hint_rate': float(qualified_count / (hi - lo)),
+                          'top_species': top, 'top_share': top_share})
     return summaries
 
 
-def write_scatter(path, projected, labels, segment_ids):
-    n = len(labels)
+def knn(matrix, k, cancel=None, block=1024):
+    matrix = np.asarray(matrix, dtype=np.float32)
+    norms = np.einsum('ij,ij->i', matrix, matrix)
+    indices = np.empty((len(matrix), k), dtype=np.int32)
+    distances = np.empty((len(matrix), k), dtype=np.float32)
+    for start in range(0, len(matrix), block):
+        _check_cancel(cancel)
+        end = min(start + block, len(matrix))
+        squared = norms[start:end, None] + norms[None, :] - 2 * (matrix[start:end] @ matrix.T)
+        squared[np.arange(end - start), np.arange(start, end)] = np.inf
+        part = np.argpartition(squared, k, axis=1)[:, :k]
+        values = np.take_along_axis(squared, part, axis=1)
+        ordering = np.argsort(values, axis=1)
+        indices[start:end] = np.take_along_axis(part, ordering, axis=1)
+        distances[start:end] = np.sqrt(np.maximum(np.take_along_axis(values, ordering, axis=1), 0))
+    return indices, distances
+
+
+def pacmap(matrix, cancel=None):
+    matrix = np.asarray(matrix, dtype=np.float32)
+    n = len(matrix)
+    rng = np.random.default_rng(SEED)
+    neighbors = min(PACMAP_NEIGHBORS, n - 1)
+    candidates = min(neighbors + 50, n - 1)
+    indices, distances = knn(matrix, candidates, cancel)
+    sigma_start = min(3, candidates - 1)
+    sigma_end = min(6, candidates)
+    sigma = distances[:, sigma_start:sigma_end].mean(axis=1) + 1e-10
+    scaled = distances ** 2 / (sigma[:, None] * sigma[indices])
+    nearest = np.take_along_axis(indices, np.argsort(scaled, axis=1)[:, :neighbors], axis=1)
+    choices = rng.integers(0, n, size=(n, PACMAP_MID_NEAR, 6))
+    mid = np.empty((n, PACMAP_MID_NEAR), dtype=np.int64)
+    for start in range(0, n, 4096):
+        _check_cancel(cancel)
+        end = min(start + 4096, n)
+        squared = ((matrix[start:end, None, None, :] - matrix[choices[start:end]]) ** 2).sum(axis=-1)
+        second = np.argsort(squared, axis=2)[:, :, 1]
+        mid[start:end] = np.take_along_axis(choices[start:end], second[..., None], axis=2)[..., 0]
+    further = rng.integers(0, n, size=(n, PACMAP_FURTHER))
+    pairs = ((np.repeat(np.arange(n), neighbors), nearest.ravel()),
+             (np.repeat(np.arange(n), PACMAP_MID_NEAR), mid.ravel()),
+             (np.repeat(np.arange(n), PACMAP_FURTHER), further.ravel()))
+    layout = np.asarray(matrix[:, :2], dtype=np.float64) * 0.01
+    moment = np.zeros_like(layout); variance = np.zeros_like(layout)
+    beta1, beta2, epsilon = 0.9, 0.999, 1e-7
+    for iteration in range(PACMAP_ITERATIONS):
+        if iteration % 10 == 0:
+            _check_cancel(cancel)
+        if iteration < 100:
+            weights = (2.0, 1000 * (1 - iteration / 100) + 3 * iteration / 100, 1.0)
+        elif iteration < 200:
+            weights = (3.0, 3.0, 1.0)
+        else:
+            weights = (1.0, 0.0, 1.0)
+        gradient = np.zeros_like(layout)
+        for (source, target), weight, kind in zip(pairs, weights, ('near', 'mid', 'far')):
+            if not weight:
+                continue
+            difference = layout[source] - layout[target]
+            distance = 1 + np.einsum('ij,ij->i', difference, difference)
+            if kind == 'near':
+                coefficient = weight * 20 / (10 + distance) ** 2
+            elif kind == 'mid':
+                coefficient = weight * 20000 / (10000 + distance) ** 2
+            else:
+                coefficient = -weight * 2 / (1 + distance) ** 2
+            contribution = coefficient[:, None] * difference
+            for column in (0, 1):
+                gradient[:, column] += (np.bincount(source, contribution[:, column], n)
+                                        - np.bincount(target, contribution[:, column], n))
+        moment = beta1 * moment + (1 - beta1) * gradient
+        variance = beta2 * variance + (1 - beta2) * gradient ** 2
+        layout -= PACMAP_LR * (moment / (1 - beta1 ** (iteration + 1))) / (
+            np.sqrt(variance / (1 - beta2 ** (iteration + 1))) + epsilon)
+    _check_cancel(cancel)
+    return layout.astype(np.float32)
+
+
+def nearest_landmarks(matrix, landmarks, cancel=None, k=5, block=2048):
+    matrix = np.asarray(matrix, dtype=np.float32); landmarks = np.asarray(landmarks, dtype=np.float32)
+    norms = np.einsum('ij,ij->i', landmarks, landmarks)
+    indices = np.empty((len(matrix), k), dtype=np.int32)
+    distances = np.empty((len(matrix), k), dtype=np.float32)
+    for start in range(0, len(matrix), block):
+        _check_cancel(cancel)
+        end = min(start + block, len(matrix))
+        squared = (np.einsum('ij,ij->i', matrix[start:end], matrix[start:end])[:, None]
+                   + norms[None, :] - 2 * matrix[start:end] @ landmarks.T)
+        part = np.argpartition(squared, k, axis=1)[:, :k]
+        values = np.take_along_axis(squared, part, axis=1)
+        ordering = np.argsort(values, axis=1)
+        indices[start:end] = np.take_along_axis(part, ordering, axis=1)
+        distances[start:end] = np.sqrt(np.maximum(np.take_along_axis(values, ordering, axis=1), 0))
+    return indices, distances
+
+
+def layout_points(projected, cancel=None):
+    if len(projected) <= LANDMARK_MAX:
+        return pacmap(projected, cancel), 'full'
+    rng = np.random.default_rng(SEED)
+    landmarks = np.sort(rng.choice(len(projected), LANDMARK_MAX, replace=False))
+    landmark_layout = pacmap(projected[landmarks], cancel)
+    indices, distances = nearest_landmarks(projected, projected[landmarks], cancel)
+    weights = 1 / (distances + 1e-3)
+    weights /= weights.sum(axis=1, keepdims=True)
+    layout = np.einsum('nk,nkd->nd', weights, landmark_layout[indices]).astype(np.float32)
+    layout[landmarks] = landmark_layout
+    return layout, 'landmarks'
+
+
+def write_scatter(path, layout, segment_ids):
+    n = len(layout)
     if n > np.iinfo(np.uint32).max:
         raise CatalogError('invalid_vectors')
     with path.open('wb') as output:
         output.write(struct.pack('<I', n))
-        output.write(np.asarray(projected[:, 0], dtype='<f4').tobytes())
-        output.write(np.asarray(projected[:, 1], dtype='<f4').tobytes())
-        output.write(np.asarray(labels, dtype='<i4').tobytes())
+        output.write(np.asarray(layout[:, 0], dtype='<f4').tobytes())
+        output.write(np.asarray(layout[:, 1], dtype='<f4').tobytes())
         output.write(np.asarray(segment_ids, dtype='<i8').tobytes())
 
 
-def _remove_points_file(root, params):
-    name = params.get('points_file') if isinstance(params, dict) else None
-    if isinstance(name, str) and Path(name).name == name:
-        try:
-            (Path(root) / 'explore' / name).unlink(missing_ok=True)
-        except OSError:
-            pass
+def _remove_run_files(root, params):
+    if not isinstance(params, dict):
+        return
+    for key in ('points_file', 'pca_file'):
+        name = params.get(key)
+        if isinstance(name, str) and Path(name).name == name:
+            try:
+                (Path(root) / 'explore' / name).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _cleanup_staging(root, site_id, engine):
@@ -513,7 +672,10 @@ def _cleanup_staging(root, site_id, engine):
                           (site_id, engine)).fetchall()
         db.executemany('DELETE FROM explore_runs WHERE id=?', ((row['id'],) for row in rows))
     for row in rows:
-        _remove_points_file(root, json.loads(row['params']))
+        try:
+            _remove_run_files(root, json.loads(row['params']))
+        except (TypeError, ValueError):
+            pass
 
 
 def _context(root, dataset_id):
@@ -538,7 +700,7 @@ def _context(root, dataset_id):
 
 def build(root, dataset_id, job_id=None, cancel=None):
     """Build a staged map, then replace the current map in one short transaction."""
-    final_file = None
+    final_files = []
     staged_id = None
     published = False
     try:
@@ -546,50 +708,75 @@ def build(root, dataset_id, job_id=None, cancel=None):
         for analysis in analyses:
             checked_source(analysis)
         _cleanup_staging(root, dataset['site_id'], engine)
+        stage_seconds = {}
         _progress(root, job_id, 'explore_cache', 0)
+        started = time.perf_counter()
         matrix, segment_ids, index, index_path = embedding_cache(
             root, dataset['site_id'], engine, model_sha, analyses, cancel)
+        stage_seconds['cache'] = time.perf_counter() - started
         _check_cancel(cancel)
         folder = Path(root) / 'explore'
         with tempfile.TemporaryDirectory(prefix='.stage-', dir=folder) as temporary:
             temporary = Path(temporary)
             _progress(root, job_id, 'explore_pca', 1)
-            projected, pca = exact_pca(matrix, temporary / 'pca50.f32', cancel)
-            _progress(root, job_id, 'explore_selecting_clusters', 2)
-            initial, selection = select_k(projected, cancel)
-            _progress(root, job_id, 'explore_clustering', 3)
-            _, labels, squared, iterations = lloyd(projected, initial, cancel)
-            distances = np.sqrt(squared, dtype=np.float32)
-            unique, labels = np.unique(labels, return_inverse=True)
-            labels = labels.astype(np.int32)
+            started = time.perf_counter()
+            projected, pca = exact_pca(matrix, temporary / 'pca50-source.f32', cancel)
+            stage_seconds['pca'] = time.perf_counter() - started
+            _check_cancel(cancel)
+            _progress(root, job_id, 'explore_tree', 2)
+            started = time.perf_counter()
+            tree, root_node, tree_details = binary_tree(projected, cancel)
+            nodes, order = flatten_tree(tree, root_node, projected, cancel)
+            stage_seconds['tree'] = time.perf_counter() - started
+            _check_cancel(cancel)
+            _progress(root, job_id, 'explore_layout', 3)
+            started = time.perf_counter()
+            layout, layout_mode = layout_points(projected, cancel)
+            stage_seconds['layout'] = time.perf_counter() - started
+            _check_cancel(cancel)
             _progress(root, job_id, 'explore_summarizing', 4)
-            summaries = cluster_summaries(root, analyses, index, segment_ids, labels, distances, cancel)
+            started = time.perf_counter()
+            summaries = node_summaries(root, analyses, index, segment_ids, projected, nodes, order, cancel)
             params = {'staging': True}
             with connect(root) as db:
                 staged_sha = f'{model_sha}.staging.{uuid4().hex}'
                 staged_id = db.execute('INSERT INTO explore_runs(site_id,engine,model_sha,params) VALUES(?,?,?,?)',
                     (dataset['site_id'], engine, staged_sha, json.dumps(params))).lastrowid
-            filename = f'points-{staged_id}.bin'
-            params = {'analysis_ids': [row['analysis_id'] for row in analyses], 'segment_count': len(labels),
-                      'points_file': filename, 'cache_index': index_path.name, 'cache_version': CACHE_VERSION,
-                      'pca': pca, 'k_selection': selection, 'final_iterations': iterations,
-                      'cluster_count': len(unique), 'score_threshold': SCORE_THRESHOLD}
-            staged_file = temporary / filename
-            write_scatter(staged_file, projected, labels, segment_ids)
+            points_name = f'points-{staged_id}.bin'
+            pca_name = f'pca50-{staged_id}.f32'
+            staged_points = temporary / points_name
+            staged_pca = temporary / pca_name
+            write_scatter(staged_points, layout[order], segment_ids[order])
+            ordered_pca = np.memmap(staged_pca, mode='w+', dtype='<f4', shape=(len(order), PCA_DIMS))
+            for start in range(0, len(order), PCA_BATCH):
+                end = min(start + PCA_BATCH, len(order))
+                ordered_pca[start:end] = projected[order[start:end]]
+            ordered_pca.flush(); del ordered_pca
             _check_cancel(cancel)
-            final_file = folder / filename
-            staged_file.replace(final_file)
+            final_files = [folder / points_name, folder / pca_name]
+            staged_points.replace(final_files[0]); staged_pca.replace(final_files[1])
             with connect(root) as db:
-                for start in range(0, len(labels), VECTOR_BATCH):
+                for start in range(0, len(order), VECTOR_BATCH):
                     _check_cancel(cancel)
-                    end = min(start + VECTOR_BATCH, len(labels))
-                    db.executemany('INSERT INTO explore_points VALUES(?,?,?,?,?,?)',
-                        ((staged_id, int(segment_ids[i]), float(projected[i, 0]), float(projected[i, 1]),
-                          int(labels[i]), float(distances[i])) for i in range(start, end)))
-                db.executemany('INSERT INTO explore_clusters VALUES(?,?,?,?,?,?)',
-                    ((staged_id, item['cluster'], item['size'], item['rep_segment_id'], item['score_mean'],
-                      json.dumps(item['top_species'], ensure_ascii=False) if item['top_species'] else None)
+                    end = min(start + VECTOR_BATCH, len(order))
+                    db.executemany('INSERT INTO explore_points VALUES(?,?,?,?,?)',
+                        ((staged_id, position, int(segment_ids[order[position]]),
+                          float(layout[order[position], 0]), float(layout[order[position], 1]))
+                         for position in range(start, end)))
+                db.executemany('INSERT INTO explore_nodes VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                    ((staged_id, item['node'], item['parent'], item['name'], item['depth'], item['lo'], item['hi'],
+                      item['rep_segment_id'], item['hint_rate'],
+                      json.dumps(item['top_species'], ensure_ascii=False) if item['top_species'] else None,
+                      item['top_share'])
                      for item in summaries))
+                stage_seconds['summarizing'] = time.perf_counter() - started
+                params = {'analysis_ids': [row['analysis_id'] for row in analyses],
+                          'segment_count': len(order), 'points_file': points_name, 'pca_file': pca_name,
+                          'cache_index': index_path.name, 'cache_version': CACHE_VERSION, 'pca': pca,
+                          'method': tree_details['method'], 'tree': tree_details,
+                          'node_count': len(nodes), 'depth': max(item['depth'] for item in nodes),
+                          'layout': layout_mode, 'stage_seconds': stage_seconds,
+                          'score_threshold': SCORE_THRESHOLD}
                 db.execute('UPDATE explore_runs SET params=? WHERE id=?', (json.dumps(params, ensure_ascii=False), staged_id))
             _check_cancel(cancel)
             with connect(root) as db:
@@ -601,15 +788,16 @@ def build(root, dataset_id, job_id=None, cancel=None):
                 db.execute('UPDATE explore_runs SET model_sha=? WHERE id=?', (model_sha, staged_id))
             published = True
             if old:
-                _remove_points_file(root, json.loads(old['params']))
+                _remove_run_files(root, json.loads(old['params']))
         _progress(root, job_id, 'finished', 5, status='complete')
         return {'id': staged_id}
     except Exception as error:
         if staged_id is not None and not published:
             with connect(root) as db:
                 db.execute('DELETE FROM explore_runs WHERE id=?', (staged_id,))
-        if final_file is not None and not published:
-            final_file.unlink(missing_ok=True)
+        if not published:
+            for path in final_files:
+                path.unlink(missing_ok=True)
         if isinstance(error, CatalogError) and str(error) == 'cancelled':
             _progress(root, job_id, 'finished', 0, status='cancelled')
         else:
@@ -634,7 +822,24 @@ def _current_run(root, dataset_id):
     return site_id, engine, model_sha, run
 
 
-def status(root, dataset_id):
+def _node_row(db, run_id, node):
+    return db.execute('''SELECT n.*,s.id AS segment_id,a.recording_id,r.path,s.start_s,s.end_s,
+        r.recorded_at,r.timezone FROM explore_nodes n JOIN segments s ON s.id=n.rep_segment_id
+        JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
+        WHERE n.run_id=? AND n.node=?''', (run_id, node)).fetchone()
+
+
+def _node_shape(row, child_count=0):
+    return {'node': row['node'], 'name': row['name'], 'parent': row['parent'], 'depth': row['depth'],
+            'size': row['hi'] - row['lo'], 'lo': row['lo'], 'hi': row['hi'], 'child_count': child_count,
+            'rep': {key: row[key] for key in ('segment_id', 'recording_id', 'path', 'start_s', 'end_s',
+                                               'recorded_at', 'timezone')},
+            'hint_rate': row['hint_rate'],
+            'top_species': json.loads(row['top_species']) if row['top_species'] else None,
+            'top_share': row['top_share']}
+
+
+def status(root, dataset_id, node=0):
     site_id, engine, model_sha, run = _current_run(root, dataset_id)
     with connect(root) as db:
         building = db.execute("""SELECT 1 FROM jobs j JOIN datasets d ON d.id=j.dataset_id
@@ -642,22 +847,31 @@ def status(root, dataset_id):
                               (site_id,)).fetchone() is not None
         if run is None:
             return {'status': 'building' if building else 'none', 'created_at': None, 'engine': engine,
-                    'segment_count': 0, 'clusters': []}
+                    'segment_count': 0}
         params = json.loads(run['params'])
         current = sorted(row['analysis_id'] for row in compatible_analyses(db, dataset_id, model_sha, engine))
         state = 'building' if building else 'stale' if current != params.get('analysis_ids') else 'ready'
-        rows = db.execute('''SELECT c.*,s.id AS segment_id,a.recording_id,r.path,s.start_s,s.end_s,
-            r.recorded_at,r.timezone FROM explore_clusters c JOIN segments s ON s.id=c.rep_segment_id
+        result = {'status': state, 'created_at': run['created_at'], 'engine': run['engine'],
+                  'segment_count': params['segment_count']}
+        # A stale map, or the one being replaced, stays browsable until the new one is published.
+        selected = _node_row(db, run['id'], node)
+        if selected is None:
+            raise CatalogError('not_found')
+        children = db.execute('''SELECT n.*,s.id AS segment_id,a.recording_id,r.path,s.start_s,s.end_s,
+            r.recorded_at,r.timezone FROM explore_nodes n JOIN segments s ON s.id=n.rep_segment_id
             JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
-            WHERE c.run_id=? ORDER BY c.size DESC,c.cluster''', (run['id'],)).fetchall()
-    clusters = []
-    for row in rows:
-        clusters.append({'cluster': row['cluster'], 'size': row['size'],
-            'rep': {key: row[key] for key in ('segment_id', 'recording_id', 'path', 'start_s', 'end_s', 'recorded_at', 'timezone')},
-            'score_mean': row['score_mean'],
-            'top_species': json.loads(row['top_species']) if row['top_species'] else None})
-    return {'status': state, 'created_at': run['created_at'], 'engine': run['engine'],
-            'segment_count': params['segment_count'], 'clusters': clusters}
+            WHERE n.run_id=? AND n.parent=? ORDER BY n.hi-n.lo DESC,n.node''', (run['id'], node)).fetchall()
+        counts = dict(db.execute('''SELECT parent,COUNT(*) FROM explore_nodes WHERE run_id=? AND parent IN
+            (SELECT value FROM json_each(?)) GROUP BY parent''', (run['id'], json.dumps([node] + [row['node'] for row in children]))))
+        path = []
+        current = selected
+        while current is not None:
+            path.append({'node': current['node'], 'name': current['name'],
+                         'size': current['hi'] - current['lo']})
+            current = _node_row(db, run['id'], current['parent']) if current['parent'] is not None else None
+    result.update({'node': _node_shape(selected, counts.get(node, 0)), 'path': list(reversed(path)),
+                   'children': [_node_shape(row, counts.get(row['node'], 0)) for row in children]})
+    return result
 
 
 def points_file(root, dataset_id):
@@ -674,18 +888,40 @@ def points_file(root, dataset_id):
     return path
 
 
-def cluster_segments(root, dataset_id, cluster, offset=0):
+def node_segments(root, dataset_id, node, offset=0):
     _, _, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
+    params = json.loads(run['params'])
     with connect(root) as db:
-        total = db.execute('SELECT COUNT(*) FROM explore_points WHERE run_id=? AND cluster=?',
-                           (run['id'], cluster)).fetchone()[0]
-        if not total:
+        selected = db.execute('SELECT * FROM explore_nodes WHERE run_id=? AND node=?',
+                              (run['id'], node)).fetchone()
+        if selected is None:
             raise CatalogError('not_found')
-        rows = db.execute('''SELECT p.segment_id,a.recording_id,r.path,s.start_s,s.end_s,
-            r.recorded_at,r.timezone,p.dist FROM explore_points p JOIN segments s ON s.id=p.segment_id
+        terminal = db.execute('SELECT 1 FROM explore_nodes WHERE run_id=? AND parent=? LIMIT 1',
+                              (run['id'], node)).fetchone() is None
+    lo, hi = selected['lo'], selected['hi']
+    name = params.get('pca_file')
+    path = Path(root) / 'explore' / name if isinstance(name, str) and Path(name).name == name else None
+    expected = params['segment_count'] * PCA_DIMS * np.dtype('<f4').itemsize
+    if path is None or not path.is_file() or path.stat().st_size != expected:
+        raise CatalogError('not_found')
+    pca = np.memmap(path, mode='r', dtype='<f4', shape=(params['segment_count'], PCA_DIMS))
+    values = np.asarray(pca[lo:hi], dtype=np.float64)
+    centered = values - values.mean(axis=0)
+    distance = np.sqrt(np.einsum('ij,ij->i', centered, centered))
+    ordering = np.arange(hi - lo) if terminal else np.argsort(distance, kind='stable')
+    page = ordering[offset:offset + 20]
+    positions = (page + lo).tolist()
+    with connect(root) as db:
+        rows = db.execute('''SELECT p.position,p.segment_id,a.recording_id,r.path,s.start_s,s.end_s,
+            r.recorded_at,r.timezone FROM explore_points p JOIN segments s ON s.id=p.segment_id
             JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
-            WHERE p.run_id=? AND p.cluster=? ORDER BY p.dist,p.segment_id LIMIT 20 OFFSET ?''',
-            (run['id'], cluster, offset)).fetchall()
-    return {'total': total, 'segments': [dict(row) for row in rows]}
+            WHERE p.run_id=? AND p.position IN (SELECT value FROM json_each(?))''',
+            (run['id'], json.dumps(positions))).fetchall()
+    by_position = {row['position']: dict(row) for row in rows}
+    segments = []
+    for position, index in zip(positions, page):
+        row = by_position[position]
+        row.pop('position'); row['dist'] = float(distance[index]); segments.append(row)
+    return {'total': hi - lo, 'segments': segments}

@@ -374,20 +374,30 @@ def create_app(root, models, token):
         return {'id': job}
 
     @app.get('/explore')
-    def explore_status(dataset: int = Query(ge=1)):
+    def explore_status(dataset: int = Query(ge=1), node: int = Query(default=0, ge=0)):
         from explore import status
-        return status(root, dataset)
+        try:
+            return status(root, dataset, node)
+        except CatalogError as error:
+            if str(error) == 'not_found':
+                raise HTTPException(404, 'not_found') from None
+            raise
 
     @app.get('/explore/points')
     def explore_points(dataset: int = Query(ge=1)):
         from explore import points_file
         return FileResponse(points_file(root, dataset), media_type='application/octet-stream')
 
-    @app.get('/explore/clusters/{cluster}/segments')
-    def explore_cluster_segments(cluster: int, dataset: int = Query(ge=1),
-                                 offset: int = Query(default=0, ge=0)):
-        from explore import cluster_segments
-        return cluster_segments(root, dataset, cluster, offset)
+    @app.get('/explore/nodes/{node}/segments')
+    def explore_node_segments(node: int, dataset: int = Query(ge=1),
+                              offset: int = Query(default=0, ge=0)):
+        from explore import node_segments
+        try:
+            return node_segments(root, dataset, node, offset)
+        except CatalogError as error:
+            if str(error) == 'not_found':
+                raise HTTPException(404, 'not_found') from None
+            raise
 
     @app.get('/datasets/{dataset_id}/species/{species_id}')
     def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,

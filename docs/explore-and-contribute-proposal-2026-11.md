@@ -233,7 +233,7 @@ explore_clusters(run_id, cluster, size, rep_segment_id, score_mean, top_species)
 - `GET /explore/points`（バイナリの点データ）
 - `GET /explore/clusters/{n}/segments?offset=`（クラスタ内の音、ページング）
 
-### 改訂案 v2：全点の階層と非線形の地図（2026-11-03、提案・**未合意**）
+### 改訂案 v2：全点の階層と非線形の地図（2026-11-03。同日ユーザーが了承、実装へ）
 
 **経緯**：2026-11-02 のユーザーの試用（自分の録音約 8,700 区間、AI は 12 種を検出）で、
 まとまりは 11 個、うち 4 個は無音とセミ、残りに 12 種以上が混ざり「探索には使い物に
@@ -318,13 +318,80 @@ explore_nodes(run_id, node, parent, depth, lo, hi, rep_segment_id,
 - `POST /explore` は現行どおり。スキーマは v4（v3 の explore_* は作り直し。地図は作り直せばよい）。
 - 作成の所要時間の見込み（21 万区間）：PCA 3 秒＋木 2 秒＋地図 17 秒＋要約 1 秒 ≈ 25 秒。
 
-#### この改訂で決めてほしいこと
+#### 決定（2026-11-03、ユーザーが v2 を了承）
 
-1. v2（全点の Ward 法＋numpy の PaCMAP＋地図で行き来）で進めてよいか。
-   進める場合は sidecar を Codex、画面を Opus に分担（順序は現行どおり）。
-2. 1 万区間を超える地図はランドマーク 1 万点でよいか（全点なら 21,840 区間で 11 秒、
-   21 万区間で約 3 分）。
-3. まとまりの呼び方は「まとまり 2-3」のような番号でよいか。
+v2 で実装する。確認事項 2・3 は提案どおり（1 万区間を超える地図はランドマーク 1 万点、
+まとまりは「まとまり 2-3」のような番号で呼ぶ）。実装上の判断：**20 件以下のまとまりは
+その場で全部聞けるので、そこで木を止める**（単音の節は作らない。一覧 1 ページ＝20 件）。
+分担は sidecar を Codex、画面を Opus のサブエージェント。実装役はコミットしない。
+
+#### 実装仕様 v2（sidecar と画面の共通の契約）
+
+定数（`apps/sidecar/explore.py`）：`EXACT_MAX=10_000`（全点 Ward の上限）、`LEAF_COUNT=2_000`、
+`FIT_MAX=20_000`（葉の k-means の学習標本）、`TERMINAL_MAX=20`、`TAU=0.6`、`MAX_CHILDREN=8`、
+`LANDMARK_MAX=10_000`（PaCMAP を全点で配置する上限。超えたら 1 万点を配置し残りは
+50 次元で近い 5 点の逆距離加重平均）、PaCMAP は近傍 10・中距離 5・遠方 20、450 反復、Adam lr 1.0、
+初期値 PCA 2 次元×0.01、乱数は `SEED`。`SCORE_THRESHOLD=0.1` は現行どおり。
+
+木の作り方：
+
+1. PCA 50 次元（現行）。`n <= EXACT_MAX` なら `scipy.cluster.hierarchy.linkage(X, 'ward')`。
+2. それ以上：`lloyd` で 2,000 葉（学習は 2 万件の部分標本、全件は `_nearest` で割り当て、空の葉は除く）。
+   葉の中心で Ward、各葉（2 件以上）の中でも Ward。葉の中の木の高さは、親の結合の高さの
+   0.9 倍を超えないように葉ごとに一律に縮めてつなぐ（継ぎ目で高さの単調性を保つ）。
+   木は配列（left, right, height, size）で持ち、再帰は使わない（21 万点で深さが Python の
+   再帰上限を超えうる）。
+3. 平らにする：節の高さ H に対し、高さが `TAU*H` 以上の枝を高い順に展開して同じ段に並べる
+   （最大 `MAX_CHILDREN`）。件数が `TERMINAL_MAX` 以下の節は子を作らない。
+4. 並び：深さ優先で点に `position` を振る。子は件数の多い順、末端の節の中は節の平均
+   （50 次元）に近い順。これでどの節の中身も `[lo, hi)` の連続範囲になる。
+5. 名前：根は空文字、子は親の名前＋「-」＋多い順の番号（根の子は「1」「2」…）。
+6. 要約（節ごと）：`size`、`rep_segment_id`（平均に最も近い区間）、`hint_rate`
+   （最大スコア ≥ 0.1 の割合）、`top_species`（候補ありの区間での最頻の argmax、候補が 1 件もなければ null）、
+   `top_share`（候補ありの中での割合）。
+
+スキーマ v4（v2・v3 から移行。v3 の `explore_*` は捨てて作り直し、`points-*.bin` も削除。
+地図は作り直せばよい）：
+
+```
+explore_runs(id, site_id, engine, model_sha, params, created_at)                 -- 現行のまま
+explore_points(run_id, position, segment_id, x, y)            PRIMARY KEY(run_id, position)
+explore_nodes(run_id, node, parent, name, depth, lo, hi, rep_segment_id,
+              hint_rate, top_species, top_share)              PRIMARY KEY(run_id, node)
+```
+
+ファイル：`<data>/explore/points-<run>.bin`（`<I n`、f32 x[n]、f32 y[n]、i64 segment_id[n]、
+position 順）、`<data>/explore/pca50-<run>.f32`（n×50 の f32、position 順。中心に近い順の
+並べ替えに使う）。埋め込みキャッシュは現行のまま。
+
+ジョブの段階：`explore_queued` → `explore_cache` → `explore_pca` → `explore_tree` →
+`explore_layout` → `explore_summarizing` → `finished`（total 5）。取消は段階の間と
+PaCMAP の 10 反復ごとに確認。
+
+API：
+
+- `POST /explore {dataset_id}`：現行どおり（実行中は 409 `job_busy`）。
+- `GET /explore?dataset=&node=`（`node` 省略時は根）：
+  `{status, created_at, engine, segment_count, node, path, children}`。
+  作成済みの地図があれば `status` が `stale`・`building` でも `node`・`path`・`children` を返す
+  （作り直し待ちの地図もそのまま見られる。実装時に変更）。地図がなければ 3 つとも返さない。
+  節の形は `{node, name, parent, depth, size, lo, hi, child_count, rep: {segment_id, recording_id, path,
+  start_s, end_s, recorded_at, timezone}, hint_rate, top_species: {id, scientific_name}|null,
+  top_share}`（`child_count` は実装時に追加。画面が「中に K 個」を出すため）。`path` は根からその節まで（`{node, name, size}` の列）、`children` は多い順。
+  知らない `node` は 404 `not_found`。
+- `GET /explore/points?dataset=`：上のバイナリ。
+- `GET /explore/nodes/{node}/segments?dataset=&offset=`：`{total, segments: [{segment_id,
+  recording_id, path, start_s, end_s, recorded_at, timezone, dist}]}`。20 件ずつ、節の平均に
+  近い順（末端は position 順がそのままその順。それ以外は `pca50` から要求時に計算）。
+
+画面（`/datasets/[id]/explore`）：モック [prototypes/explore-hierarchy-mock.html](prototypes/explore-hierarchy-mock.html) の
+操作をそのまま。全点を 1 回だけ取り、節の `[lo, hi)` で切って描く。いま見ている節の子ごとに
+色と番号の札、他の点は薄く。点を押す＝子を選ぶ（一覧と同期）、二度押し／「中を見る」＝その子へ
+（350 ms でズーム、直後 0.4 秒はクリックを無視）。「↑ 一つ上へ」「全体に戻る」とパンくず。
+場所は URL のクエリ `node=` に持ち、戻ると 1 段上へ。一覧の下に「このまとまりの音（中心に近い順）」
+20 件ずつと「この音に似た声を探す」（現行の引き継ぎ）。AI の候補は `hint_rate >= 0.2` のとき
+「AI の候補: 種名（top_share%）」、未満なら「AI の候補なし（無音や虫の声の可能性）」。
+どちらも「候補あり hint_rate%」を添える。文言は日英の locale キー、文字は 7 役割。
 
 ## (b) 提供用の書き出し
 

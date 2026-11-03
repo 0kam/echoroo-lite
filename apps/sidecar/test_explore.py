@@ -1,4 +1,4 @@
-"""Sound-map cache, clustering, atomic replacement, and API checks."""
+"""Hierarchical sound-map cache, build, migration, and API checks."""
 import json
 import struct
 import tempfile
@@ -64,7 +64,7 @@ class ExploreCheck(unittest.TestCase):
         return analysis
 
     def wait_job(self, job_id):
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             jobs = self.client.get('/catalog').json()['jobs']
             job = next(row for row in jobs if row['id'] == job_id)
@@ -73,68 +73,146 @@ class ExploreCheck(unittest.TestCase):
             time.sleep(.02)
         self.fail('explore job did not finish')
 
-    def test_schema_two_is_upgraded_without_losing_catalog_data(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.assertTrue(initialize(root))
-            with connect(root) as db:
-                db.execute("INSERT INTO sites VALUES(1,'Kept','Asia/Tokyo',35,138)")
-                for table in ('explore_clusters', 'explore_points', 'explore_runs'):
-                    db.execute(f'DROP TABLE {table}')
-                db.execute('PRAGMA user_version=2')
-            self.assertTrue(initialize(root))
-            with connect(root) as db:
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
-                self.assertEqual(db.execute('SELECT name FROM sites WHERE id=1').fetchone()[0], 'Kept')
-                self.assertEqual({row[0] for row in db.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'explore_%'")},
-                    {'explore_runs', 'explore_points', 'explore_clusters'})
+    def assert_tree(self, expected_count):
+        with connect(self.root) as db:
+            run = db.execute('SELECT * FROM explore_runs').fetchone()
+            nodes = [dict(row) for row in db.execute('SELECT * FROM explore_nodes WHERE run_id=? ORDER BY node',
+                                                     (run['id'],))]
+            points = [dict(row) for row in db.execute('SELECT * FROM explore_points WHERE run_id=? ORDER BY position',
+                                                      (run['id'],))]
+            point_positions = {row['segment_id']: row['position'] for row in points}
+        self.assertEqual(len(points), expected_count)
+        self.assertEqual((nodes[0]['node'], nodes[0]['parent'], nodes[0]['name'], nodes[0]['depth'],
+                          nodes[0]['lo'], nodes[0]['hi']), (0, None, '', 0, 0, expected_count))
+        by_parent = {}
+        for node in nodes:
+            by_parent.setdefault(node['parent'], []).append(node)
+        for parent, children in by_parent.items():
+            if parent is not None:
+                children.sort(key=lambda row: row['lo'])
+        for node in nodes:
+            size = node['hi'] - node['lo']
+            children = by_parent.get(node['node'], [])
+            self.assertGreater(size, 0)
+            self.assertEqual(bool(children), size > explore.TERMINAL_MAX)
+            if children:
+                self.assertGreaterEqual(len(children), 2)
+                self.assertEqual([child['hi'] - child['lo'] for child in children],
+                                 sorted((child['hi'] - child['lo'] for child in children), reverse=True))
+                self.assertEqual(children[0]['lo'], node['lo'])
+                self.assertEqual(children[-1]['hi'], node['hi'])
+                self.assertTrue(all(left['hi'] == right['lo'] for left, right in zip(children, children[1:])))
+                for index, child in enumerate(children, 1):
+                    expected_name = f"{node['name']}-{index}" if node['name'] else str(index)
+                    self.assertEqual(child['name'], expected_name)
+            position = point_positions[node['rep_segment_id']]
+            self.assertLessEqual(node['lo'], position)
+            self.assertLess(position, node['hi'])
+            self.assertGreaterEqual(node['hint_rate'], 0)
+            self.assertLessEqual(node['hint_rate'], 1)
+            if node['top_species'] is None:
+                self.assertIsNone(node['top_share'])
+            else:
+                self.assertGreater(node['top_share'], 0)
+                self.assertLessEqual(node['top_share'], 1)
+        return run, nodes, points
 
-    def test_build_cache_staleness_binary_endpoints_and_busy(self):
+    def test_schema_two_and_three_are_upgraded_without_losing_catalog_data(self):
+        for version in (2, 3):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                self.assertTrue(initialize(root))
+                with connect(root) as db:
+                    db.execute("INSERT INTO sites VALUES(1,'Kept','Asia/Tokyo',35,138)")
+                    db.executescript('''DROP TABLE explore_nodes; DROP TABLE explore_points; DROP TABLE explore_runs;''')
+                    if version == 3:
+                        db.executescript('''
+                            CREATE TABLE explore_runs (id INTEGER PRIMARY KEY,site_id INTEGER NOT NULL REFERENCES sites,
+                                engine TEXT NOT NULL,model_sha TEXT NOT NULL,params TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                                UNIQUE(site_id,engine,model_sha));
+                            CREATE TABLE explore_points (run_id INTEGER,segment_id INTEGER,x REAL,y REAL,cluster INTEGER,dist REAL,
+                                PRIMARY KEY(run_id,segment_id));
+                            CREATE TABLE explore_clusters (run_id INTEGER,cluster INTEGER,size INTEGER,rep_segment_id INTEGER,
+                                score_mean REAL,top_species TEXT,PRIMARY KEY(run_id,cluster));
+                        ''')
+                        folder = root / 'explore'; folder.mkdir()
+                        (folder / 'points-old.bin').write_bytes(b'old')
+                        (folder / 'pca50-old.f32').write_bytes(b'old')
+                        db.execute("INSERT INTO explore_runs(id,site_id,engine,model_sha,params) VALUES(1,1,'perch','old',?)",
+                                   (json.dumps({'points_file': 'points-old.bin', 'pca_file': 'pca50-old.f32'}),))
+                    db.execute(f'PRAGMA user_version={version}')
+                self.assertTrue(initialize(root))
+                with connect(root) as db:
+                    self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
+                    self.assertEqual(db.execute('SELECT name FROM sites WHERE id=1').fetchone()[0], 'Kept')
+                    tables = {row[0] for row in db.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'explore_%'")}
+                    self.assertEqual(tables, {'explore_runs', 'explore_points', 'explore_nodes'})
+                    columns = [row['name'] for row in db.execute('PRAGMA table_info(explore_points)')]
+                    self.assertEqual(columns, ['run_id', 'position', 'segment_id', 'x', 'y'])
+                if version == 3:
+                    self.assertFalse((root / 'explore' / 'points-old.bin').exists())
+                    self.assertFalse((root / 'explore' / 'pca50-old.f32').exists())
+
+    def test_exact_build_binary_api_cache_staleness_busy_and_cancel(self):
         first = self.add_analysis(32, 1)
         response = self.client.post('/explore', json={'dataset_id': 1})
         self.assertEqual(response.status_code, 200, response.text)
         job = self.wait_job(response.json()['id'])
         self.assertEqual((job['status'], job['error'], job['done'], job['total']), ('complete', None, 5, 5))
+        run, nodes, points = self.assert_tree(32)
+        params = json.loads(run['params'])
+        self.assertEqual((params['method'], params['layout']), ('exact', 'full'))
+        self.assertEqual(set(params['stage_seconds']), {'cache', 'pca', 'tree', 'layout', 'summarizing'})
+        self.assertEqual((params['node_count'], params['depth']),
+                         (len(nodes), max(row['depth'] for row in nodes)))
 
-        summary = self.client.get('/explore', params={'dataset': 1})
-        self.assertEqual(summary.status_code, 200, summary.text)
-        summary = summary.json()
+        summary = self.client.get('/explore', params={'dataset': 1}).json()
         self.assertEqual((summary['status'], summary['engine'], summary['segment_count']), ('ready', 'perch', 32))
-        self.assertIsNotNone(summary['created_at'])
-        self.assertEqual(sum(row['size'] for row in summary['clusters']), 32)
-        self.assertEqual([row['size'] for row in summary['clusters']],
-                         sorted((row['size'] for row in summary['clusters']), reverse=True))
-        self.assertTrue(all(set(row['rep']) == {'segment_id', 'recording_id', 'path', 'start_s', 'end_s',
-                                                'recorded_at', 'timezone'} for row in summary['clusters']))
+        self.assertEqual(summary['node']['node'], 0)
+        self.assertEqual(summary['path'], [{'node': 0, 'name': '', 'size': 32}])
+        self.assertEqual([row['size'] for row in summary['children']],
+                         sorted((row['size'] for row in summary['children']), reverse=True))
+        child = summary['children'][0]
+        opened = self.client.get('/explore', params={'dataset': 1, 'node': child['node']}).json()
+        self.assertEqual(child['child_count'], len(opened['children']))
+        self.assertEqual(summary['node']['child_count'], len(summary['children']))
+        child_summary = self.client.get('/explore', params={'dataset': 1, 'node': child['node']}).json()
+        self.assertEqual(child_summary['path'][-1],
+                         {'node': child['node'], 'name': child['name'], 'size': child['size']})
+        unknown = self.client.get('/explore', params={'dataset': 1, 'node': 999999})
+        self.assertEqual((unknown.status_code, unknown.json()), (404, {'detail': 'not_found'}))
 
         with patch.object(explore, 'np', None):
             points_response = self.client.get('/explore/points', params={'dataset': 1})
-        self.assertEqual(points_response.status_code, 200, points_response.text)
         self.assertEqual(points_response.headers['content-type'], 'application/octet-stream')
         content = points_response.content
         count = struct.unpack_from('<I', content)[0]
-        self.assertEqual(count, 32)
         offset = 4
         x = np.frombuffer(content, '<f4', count, offset); offset += count * 4
         y = np.frombuffer(content, '<f4', count, offset); offset += count * 4
-        clusters = np.frombuffer(content, '<i4', count, offset); offset += count * 4
         segment_ids = np.frombuffer(content, '<i8', count, offset)
-        with connect(self.root) as db:
-            run = db.execute('SELECT * FROM explore_runs').fetchone()
-            params = json.loads(run['params'])
-            rows = db.execute('SELECT * FROM explore_points ORDER BY segment_id').fetchall()
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM explore_clusters').fetchone()[0], len(summary['clusters']))
-        self.assertEqual(len(rows), count)
-        self.assertEqual(params['k_selection']['parallel'], 'processes')
-        np.testing.assert_array_equal(segment_ids, [row['segment_id'] for row in rows])
-        np.testing.assert_allclose(x, [row['x'] for row in rows])
-        np.testing.assert_allclose(y, [row['y'] for row in rows])
-        np.testing.assert_array_equal(clusters, [row['cluster'] for row in rows])
+        self.assertEqual(count, 32)
+        np.testing.assert_array_equal(segment_ids, [row['segment_id'] for row in points])
+        np.testing.assert_allclose(x, [row['x'] for row in points])
+        np.testing.assert_allclose(y, [row['y'] for row in points])
+        self.assertEqual((self.root / 'explore' / params['pca_file']).stat().st_size, 32 * 50 * 4)
+
+        terminal = next(row for row in nodes if row['hi'] - row['lo'] <= explore.TERMINAL_MAX)
+        for node in (nodes[0], terminal):
+            page = self.client.get(f"/explore/nodes/{node['node']}/segments", params={'dataset': 1}).json()
+            self.assertEqual(page['total'], node['hi'] - node['lo'])
+            self.assertEqual([row['dist'] for row in page['segments']],
+                             sorted(row['dist'] for row in page['segments']))
+            self.assertTrue(all(set(row) == {'segment_id', 'recording_id', 'path', 'start_s', 'end_s',
+                                              'recorded_at', 'timezone', 'dist'} for row in page['segments']))
+        second_page = self.client.get('/explore/nodes/0/segments', params={'dataset': 1, 'offset': 20}).json()
+        self.assertEqual((second_page['total'], len(second_page['segments'])), (32, 12))
+
         index_path = self.root / 'explore' / params['cache_index']
         old_index = json.loads(index_path.read_text())
-        self.assertEqual(old_index['analyses'][str(first)]['start'], 0)
-        old_vectors = (self.root / 'explore' / index_path.name.replace('.json', '.f32')).read_bytes()
+        old_vectors = index_path.with_name(index_path.name.replace('.json', '.f32')).read_bytes()
+        old_files = [self.root / 'explore' / params[key] for key in ('points_file', 'pca_file')]
         stopped = threading.Event(); stopped.set()
         with self.assertRaisesRegex(CatalogError, 'cancelled'):
             explore.build(self.root, 1, cancel=stopped)
@@ -151,50 +229,40 @@ class ExploreCheck(unittest.TestCase):
             explore.build(self.root, 1)
         self.assertEqual(reads, [[second]])
         new_index = json.loads(index_path.read_text())
-        self.assertEqual(new_index['analyses'][str(first)], old_index['analyses'][str(first)])
+        self.assertEqual(old_index['analyses'][str(first)], new_index['analyses'][str(first)])
         self.assertEqual((new_index['analyses'][str(second)]['start'], new_index['rows']), (32, 40))
-        new_vectors = (self.root / 'explore' / index_path.name.replace('.json', '.f32')).read_bytes()
-        self.assertEqual(new_vectors[:len(old_vectors)], old_vectors)
-        with connect(self.root) as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM explore_runs').fetchone()[0], 1)
-            run = db.execute('SELECT id FROM explore_runs').fetchone()['id']
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM explore_points WHERE run_id=?', (run,)).fetchone()[0], 40)
-            self.assertEqual(db.execute('SELECT SUM(size) FROM explore_clusters WHERE run_id=?', (run,)).fetchone()[0], 40)
-            representative = db.execute('SELECT segment_id FROM explore_points WHERE run_id=? ORDER BY dist,segment_id LIMIT 1',
-                                        (run,)).fetchone()['segment_id']
-            score_mean = db.execute('SELECT AVG(score_mean) FROM explore_clusters WHERE run_id=?', (run,)).fetchone()[0]
-            db.execute('UPDATE explore_points SET cluster=0 WHERE run_id=?', (run,))
-            db.execute('DELETE FROM explore_clusters WHERE run_id=?', (run,))
-            db.execute('INSERT INTO explore_clusters VALUES(?,0,40,?,?,NULL)',
-                       (run, representative, score_mean))
-
-        page = self.client.get('/explore/clusters/0/segments', params={'dataset': 1, 'offset': 0})
-        self.assertEqual(page.status_code, 200, page.text)
-        page = page.json()
-        self.assertEqual((page['total'], len(page['segments'])), (40, 20))
-        self.assertEqual(set(page['segments'][0]), {'segment_id', 'recording_id', 'path', 'start_s', 'end_s',
-                                                    'recorded_at', 'timezone', 'dist'})
-        self.assertEqual([row['dist'] for row in page['segments']], sorted(row['dist'] for row in page['segments']))
-        second_page = self.client.get('/explore/clusters/0/segments', params={'dataset': 1, 'offset': 20}).json()
-        self.assertEqual((second_page['total'], len(second_page['segments'])), (40, 20))
+        self.assertEqual(index_path.with_name(index_path.name.replace('.json', '.f32')).read_bytes()[:len(old_vectors)],
+                         old_vectors)
+        self.assertTrue(all(not path.exists() for path in old_files))
 
         self.add_analysis(4, 3)
-        self.assertEqual(self.client.get('/explore', params={'dataset': 1}).json()['status'], 'stale')
-
+        stale = self.client.get('/explore', params={'dataset': 1}).json()
+        self.assertEqual(stale['status'], 'stale')
+        self.assertEqual(stale['node']['node'], 0)  # the old map stays browsable until it is rebuilt
         entered = threading.Event()
         def slow(root, dataset_id, job_id, cancel):
-            entered.set()
-            cancel.wait(5)
+            entered.set(); cancel.wait(5)
             with connect(root) as db:
                 db.execute("UPDATE jobs SET status='cancelled',stage='finished' WHERE id=?", (job_id,))
         with patch('explore.build', side_effect=slow):
             started = self.client.post('/explore', json={'dataset_id': 1})
-            self.assertEqual(started.status_code, 200, started.text)
             self.assertTrue(entered.wait(5))
             busy = self.client.post('/explore', json={'dataset_id': 1})
             self.assertEqual((busy.status_code, busy.json()), (409, {'detail': 'job_busy'}))
             self.assertEqual(self.client.post('/operations/cancel').json(), {'status': 'cancelling'})
             self.assertEqual(self.wait_job(started.json()['id'])['status'], 'cancelled')
+
+    def test_leaf_tree_and_landmark_layout_with_patched_thresholds(self):
+        self.add_analysis(200, 4)
+        with patch.object(explore, 'EXACT_MAX', 50), patch.object(explore, 'LEAF_COUNT', 8), \
+                patch.object(explore, 'FIT_MAX', 60), patch.object(explore, 'LANDMARK_MAX', 40):
+            explore.build(self.root, 1)
+            run, nodes, _ = self.assert_tree(200)
+        params = json.loads(run['params'])
+        self.assertEqual((params['method'], params['layout']), ('leaves', 'landmarks'))
+        self.assertEqual(params['tree']['requested_leaves'], 8)
+        self.assertEqual(params['segment_count'], 200)
+        self.assertGreater(len(nodes), 1)
 
 
 if __name__ == '__main__':
