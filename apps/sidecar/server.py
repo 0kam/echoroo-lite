@@ -400,10 +400,11 @@ def create_app(root, models, token):
 
     @app.get('/explore/nodes/{node}/segments')
     def explore_node_segments(node: int, dataset: int = Query(ge=1),
-                              offset: int = Query(default=0, ge=0)):
+                              offset: int = Query(default=0, ge=0),
+                              near: int | None = Query(default=None, ge=0)):
         from explore import node_segments
         try:
-            return node_segments(root, dataset, node, offset)
+            return node_segments(root, dataset, node, offset, near)
         except CatalogError as error:
             if str(error) == 'not_found':
                 raise HTTPException(404, 'not_found') from None

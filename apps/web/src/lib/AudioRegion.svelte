@@ -18,10 +18,11 @@
   import { seekInterval } from './annotation-geometry.js';
   // `selectable` false: a long recording to browse and play, with no part to choose. `actions` sit beside the play button.
   // `autoplay` plays the interval once on mount; mount it from a click so the browser allows sound.
+  // `dense` (with `compact` and `fixedRange`): the play button sits left of the figure and `meta` and `actions` share one line above it, with no time axis, for long lists.
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, selectable=true, autoplay=false, storageKey, onplaying, actions }:
+    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet } = $props();
+      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet } = $props();
   const choosing = $derived(!fixedRange && selectable);
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
   let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
@@ -131,11 +132,13 @@
 
 {#snippet playbackButton()}
   <!-- In a list of sounds (compact) every row has one, so none is the main button (A7). -->
-  <Button variant={compact?'default':'primary'} aria-busy={status === 'loading'} onclick={() => zoomable ? toggle() : status !== 'idle' ? stop() : fixedRange || choosing ? play() : playFromHead()}>
-    {status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(choosing?'playRange':'uListen')}
+  <Button variant={compact?'default':'primary'} aria-busy={status === 'loading'} aria-label={dense ? t(status === 'idle' ? 'uListen' : 'pause') : undefined}
+    onclick={() => zoomable ? toggle() : status !== 'idle' ? stop() : fixedRange || choosing ? play() : playFromHead()}>
+    {#if dense}{status === 'idle' ? '▶' : '❚❚'}
+    {:else}{status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(choosing?'playRange':'uListen')}{/if}
   </Button>
 {/snippet}
-<div class="region" class:compact class:zoomable style:--spec-height={compact?'var(--spec-sm)':fixedRange?'var(--spec-md)':'var(--spec-view)'}>
+<div class="region" class:compact class:zoomable class:dense style:--spec-height={compact?'var(--spec-sm)':fixedRange?'var(--spec-md)':'var(--spec-view)'}>
   {#if !fixedRange && source.seconds>span}<div class="region-controls">
     <Button disabled={viewStart<=0} onclick={()=>{playhead=null;navigate(viewStart-span);}}>‹ {t('previousView')}</Button>
     <label class="position">{t('viewStart')}<input type="range" min="0" max={Math.max(0,source.seconds-span)} step="1" value={viewStart} oninput={e=>{playhead=null;navigate(e.currentTarget.valueAsNumber);}}/></label>
@@ -145,7 +148,7 @@
     {#key app.frequencyScale}<ZoomSpectrogram {mediaPath} start={viewStart} end={viewEnd} cursor={status === 'idle' ? playhead : cursor} {storageKey}
       onseek={seek} onplay={toggle} controls={playbackButton}/>{/key}
   {:else}<div class="spectrogram-grid">
-    <span class="unit">kHz</span><div class="head">{#if !compact}<ScaleSwitch/>{/if}</div>
+    <span class="unit">kHz</span><div class="head">{#if dense}<div class="meta">{@render meta?.()}</div>{@render actions?.()}{:else if !compact}<ScaleSwitch/>{/if}</div>
     <div class="frequencies" aria-hidden="true">{#each ticks as tick}<span style:bottom={`${tick.row_fraction * 100}%`} class:edge-low={tick.row_fraction === 0} class:edge-high={tick.row_fraction === 1}>{kHz(tick)}</span>{/each}</div>
     <!-- Double-clicking plays from that point, like the zoomable view. -->
     <div class="spectrogram" class:fixed={!choosing} role="group" aria-label={t('spectrogram')}
@@ -160,10 +163,10 @@
       {/if}
       {#if loading || error}<div class="spectrogram-state" role="status">{t(error || 'loadingSpectrogram')}</div>{/if}
     </div>
-    <div></div><div class="time-axis"><span>{clipTime(viewStart)}</span><span>{clipTime((viewStart + viewEnd) / 2)}</span><span>{clipTime(viewEnd)}</span></div>
+    <div class="axis-gap"></div><div class="time-axis"><span>{clipTime(viewStart)}</span><span>{clipTime((viewStart + viewEnd) / 2)}</span><span>{clipTime(viewEnd)}</span></div>
   </div>{/if}
   {#if !zoomable}<div class="region-controls">
-    {@render playbackButton()}{@render actions?.()}
+    {@render playbackButton()}{#if !dense}{@render actions?.()}{/if}
     {#if choosing}<label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} /></label>
     <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} /></label>
     <span class="muted range-hint">{t('rangeHint')}</span>{/if}
@@ -200,5 +203,13 @@
   .selection { position: absolute; top: 0; bottom: 0; border-left: 2px solid #fff5bd; border-right: 2px solid #fff5bd; pointer-events: none; }
   .playhead { position: absolute; top: 0; bottom: 0; border-left: 2px solid #60dcff; pointer-events: none; }
   .spectrogram-state { position: absolute; inset: 0; display: grid; place-items: center; background: #010101e8; color: #fff5bd; padding: 24px; }
+  .dense { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 0 8px; align-items: center; }
+  .dense .spectrogram-grid { grid-column: 2; grid-row: 1; }
+  .dense .region-controls { grid-column: 1; grid-row: 1; }
+  .dense .region-controls :global(.button) { width: 44px; padding: 0; }
+  .dense .head { justify-content: flex-start; align-items: center; gap: 8px; min-width: 0; }
+  .dense .meta { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dense .axis-gap, .dense .time-axis { display: none; }
+  .dense > .error { grid-column: 1 / -1; }
   .time-axis { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 12px; color: rgb(var(--stone-600)); }
 </style>

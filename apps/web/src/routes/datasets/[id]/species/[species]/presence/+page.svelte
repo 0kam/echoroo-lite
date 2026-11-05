@@ -83,7 +83,9 @@
   {:else if !error}<p role="status"><Spinner/> {t('pPreparing')}</p>{/if}
 </div>
 <style>.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}
-  .examples-column{position:sticky;top:16px}@media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}
+  /* The examples stay in view and never run past the window: 140px is the 76px top bar, the 32px page padding and 16px above and below. */
+  .examples-column{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
+  @media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static;max-height:none;overflow:visible}}
   p{margin:8px 0}.page-header p{margin:4px 0 0}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
   .row.marked{border-left:4px solid rgb(var(--primary-700));padding-left:12px}
   .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.rank{font-weight:700}.caution p{margin:0 0 8px}.miss{margin:16px 0;padding:12px;border:1px solid rgb(var(--stone-300));border-radius:8px}</style>

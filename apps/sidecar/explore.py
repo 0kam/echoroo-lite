@@ -963,7 +963,7 @@ def point_segment(root, dataset_id, position):
     return _segment_shape(row, species_ids)
 
 
-def node_segments(root, dataset_id, node, offset=0):
+def node_segments(root, dataset_id, node, offset=0, near=None):
     _, _, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
@@ -976,6 +976,8 @@ def node_segments(root, dataset_id, node, offset=0):
         terminal = db.execute('SELECT 1 FROM explore_nodes WHERE run_id=? AND parent=? LIMIT 1',
                               (run['id'], node)).fetchone() is None
     lo, hi = selected['lo'], selected['hi']
+    if near is not None and near >= params['segment_count']:
+        raise CatalogError('not_found')
     name = params.get('pca_file')
     path = Path(root) / 'explore' / name if isinstance(name, str) and Path(name).name == name else None
     expected = params['segment_count'] * PCA_DIMS * np.dtype('<f4').itemsize
@@ -983,9 +985,9 @@ def node_segments(root, dataset_id, node, offset=0):
         raise CatalogError('not_found')
     pca = np.memmap(path, mode='r', dtype='<f4', shape=(params['segment_count'], PCA_DIMS))
     values = np.asarray(pca[lo:hi], dtype=np.float64)
-    centered = values - values.mean(axis=0)
+    centered = values - (values.mean(axis=0) if near is None else pca[near])
     distance = np.sqrt(np.einsum('ij,ij->i', centered, centered))
-    ordering = np.arange(hi - lo) if terminal else np.argsort(distance, kind='stable')
+    ordering = np.arange(hi - lo) if terminal and near is None else np.argsort(distance, kind='stable')
     page = ordering[offset:offset + 20]
     positions = (page + lo).tolist()
     with connect(root) as db:

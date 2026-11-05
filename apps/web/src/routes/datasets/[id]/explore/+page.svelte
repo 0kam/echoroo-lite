@@ -1,8 +1,12 @@
+<script lang="ts" module>
+  // Back and forward walk the groups viewed on each map. The page remounts on every group change, so the list lives here until the app closes.
+  const visits=new Map<number,{created_at:string;stack:number[];index:number}>();
+</script>
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { untrack } from 'svelte';
+  import { tick,untrack } from 'svelte';
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,refreshCatalog } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
@@ -19,27 +23,32 @@
   type Group={node:number;name:string;size:number;lo:number;hi:number;child_count:number;rep:{start_s:number;end_s:number};hint_rate:number;top_species:(Named&{share:number})[]};
   type Status={status:'none'|'building'|'ready'|'stale';created_at:string|null;engine:string;segment_count:number;node?:Group;path?:{node:number;name:string}[];children?:Group[]};
   type Page={total:number;segments:Segment[]};
-  type List=Page&{pending:boolean;error:string};
+  // `anchor`: the position the sounds are sorted around, or -1 for the group's centre.
+  type List=Page&{pending:boolean;error:string;anchor:number};
   type Points={n:number;x:Float32Array;y:Float32Array;box:[number,number,number,number]};
   const id=Number(page.params.id),PAGE=20,MAX_ZOOM=1000,draftKey=`echoroo-explore:${id}`;
   // Categorical hues stepped for the light and the dark surface; a group has at most eight smaller groups, one colour each.
   const LIGHT=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
   const DARK=['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
   const palette=$derived(app.dark?DARK:LIGHT);
-  // The group being viewed lives in the URL (`?node=`), so the browser's back button goes up one level.
+  // The group being viewed lives in the URL (`?node=`). Moving between groups replaces it, so the browser's back button leaves the map; back and forward on the map walk the groups.
   const nodeId=$derived(Number(new URL(page.url.hash.slice(1),page.url).searchParams.get('node'))||0);
   const here=(node:number)=>`${resolve(`/datasets/${id}/explore`)}?node=${node}`;
-  // Coming back without `?node=` (the search page's back link) reopens the same group, the same rows and as many sounds as before.
-  let draft=(()=>{try{return JSON.parse(localStorage.getItem(draftKey)||'null');}catch{return null;}})() as {created_at?:string;node?:number;loaded?:Record<string,number>}|null;
+  // Coming back without `?node=` reopens the same group, rows, order, chosen sound and as many sounds as before.
+  let draft=(()=>{try{return JSON.parse(localStorage.getItem(draftKey)||'null');}catch{return null;}})() as {created_at?:string;node?:number;loaded?:Record<string,number>;order?:string;pick?:number}|null;
   let restoring=!new URL(page.url.hash.slice(1),page.url).searchParams.has('node')&&!!draft;
   let data=$state<Status|null>(null),error=$state(''),pointsError=$state(''),names=$state<Record<string,Species>>({});
   // The child picked on the map or opened in the list (its index): its row is highlighted and the other children are dimmed.
   let selected=$state<number|null>(null);
   // Open rows and the loaded sounds of each group, by group number; the sounds stay cached while the same map is shown.
   let open=$state<Record<number,boolean>>({}),lists=$state<Record<number,List>>({});
-  // The sound picked on the map: its position in the point arrays, then its details.
-  let pickAt=$state(-1),pick=$state<Segment|null>(null),pickError=$state('');
-  let watched=$state<number|null>(null),transformed=$state(false);
+  // The sound picked on the map: its position in the point arrays, then its details and the position they belong to.
+  // The last sound stays shown until the next one arrives, so the card never shrinks and the page never jumps.
+  let pickAt=$state(-1),pick=$state<Segment|null>(null),shownAt=$state(-1),pickError=$state(''),autoplayPick=$state(true);
+  let watched=$state<number|null>(null),transformed=$state(false),canBack=$state(false),canForward=$state(false);
+  // Sounds in a group are listed nearest to its centre, or nearest to the sound chosen on the map.
+  let order=$state<'centre'|'near'>(draft?.order==='near'?'near':'centre');
+  const anchorOf=()=>order==='near'?pickAt:-1;
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   const job=$derived(activeJob());
   const building=$derived(job?.stage.startsWith('explore_')&&datasetOf(job.dataset_id)?.site_id===datasetOf(id)?.site_id?job:null);
@@ -54,14 +63,22 @@
     const version=++request,wanted=nodeId;
     try{const next=await api<Status>(`/explore?dataset=${id}&node=${wanted}`);
       if(version!==request)return;
-      if(restoring){restoring=false;if(next.created_at===draft?.created_at&&draft?.node&&draft.node!==wanted){void go(draft.node,true);return;}}
+      if(restoring){restoring=false;if(next.created_at===draft?.created_at&&draft?.node&&draft.node!==wanted){void go(draft.node);return;}}
       const before=data?.node,fresh=next.created_at!==data?.created_at,moved=next.node?.node!==before?.node;
       data=next;error='';
       if(fresh){points=null;lists={};if(next.node)void loadPoints(next);}
       if(!next.node)return;
+      // Every group shown joins the back/forward list, unless back or forward brought us here.
+      let visited=visits.get(id);
+      if(visited?.created_at!==next.created_at){visited={created_at:next.created_at!,stack:[],index:-1};visits.set(id,visited);}
+      if(visited.stack[visited.index]!==next.node.node){visited.stack=[...visited.stack.slice(0,visited.index+1),next.node.node];visited.index=visited.stack.length-1;}
+      canBack=visited.index>0;canForward=visited.index<visited.stack.length-1;
       if(fresh||moved){
         selected=null;open={};pickAt=-1;pick=null;quietUntil=performance.now()+400;
-        const saved=draft?.created_at===next.created_at&&draft?.node===next.node.node?draft.loaded??{}:{};draft=null;
+        const kept=draft?.created_at===next.created_at?draft:null,saved=kept?.node===next.node.node?kept.loaded??{}:{};draft=null;
+        // The sound chosen before going inside (or before leaving the page) stays chosen when it is in this group, without playing again.
+        const was=kept?.pick??-1;
+        if(was>=next.node.lo&&was<next.node.hi){const at=(next.children??[]).findIndex(c=>c.lo<=was&&was<c.hi);selected=at<0?null:at;void choose(was,false);}
         // A group that is not divided further shows its own sounds instead of rows.
         if(!next.children?.length)void loadList(next.node.node,saved[next.node.node]);
         for(const c of next.children??[])if(saved[c.node]){open[c.node]=true;void loadList(c.node,saved[c.node]);}
@@ -70,46 +87,56 @@
       askNames([next.node,...next.children??[]].flatMap(g=>g.top_species));
     }catch(e){if(version!==request)return;const code=e instanceof Error?e.message:'unknown_error';
       // A group of an older map no longer exists: start again from the whole map.
-      if(code==='not_found'&&wanted){void go(0,true);return;}
+      if(code==='not_found'&&wanted){void go(0);return;}
       error=code;}
   }
-  function go(target:number,replaceState=false){clearTimeout(scrollTimer);quietUntil=performance.now()+400;return goto(here(target),{replaceState,noScroll:true});}
+  function go(target:number){quietUntil=performance.now()+400;return goto(here(target),{replaceState:true,noScroll:true});}
+  function step(by:number){const visited=visits.get(id),target=visited?.stack[visited.index+by];if(visited&&target!==undefined){visited.index+=by;void go(target);}}
+  // At the top already, the button only brings the whole map back into view.
+  function whole(){if(node?.node)void go(0);else fly(true);}
   // Group numbers change when the map is made again, so a new map starts from the whole map.
-  const build=createTask(async()=>{watched=(await api<{id:number}>('/explore',{dataset_id:id})).id;await refreshCatalog();if(nodeId)void go(0,true);});
-  // Loads a group's sounds, nearest to its centre first, until `count` are loaded or none are left.
+  const build=createTask(async()=>{watched=(await api<{id:number}>('/explore',{dataset_id:id})).id;await refreshCatalog();if(nodeId)void go(0);});
+  // Loads a group's sounds in the chosen order until `count` are loaded or none are left.
   async function loadList(at:number,count=PAGE){
-    lists[at]??={total:0,segments:[],pending:false,error:''};
-    const list=lists[at];
-    if(list.pending||list.segments.length>=Math.max(1,Math.min(count,list.total)))return;
+    const anchor=anchorOf();
+    lists[at]??={total:0,segments:[],pending:false,error:'',anchor};
+    const list=lists[at],sorted=list.anchor!==anchor;
+    if(list.pending||!sorted&&list.segments.length>=Math.max(1,Math.min(count,list.total)))return;
     list.pending=true;list.error='';
-    try{do{const next=await api<Page>(`/explore/nodes/${at}/segments?dataset=${id}&offset=${list.segments.length}`);
-        list.total=next.total;list.segments.push(...next.segments);askNames(next.segments.flatMap(s=>s.candidates));
+    // A new order loads aside and replaces the shown sounds at once, so the rows never shrink while loading.
+    const segments=sorted?[]:[...list.segments];let total=list.total;
+    try{do{const next=await api<Page>(`/explore/nodes/${at}/segments?dataset=${id}&offset=${segments.length}${anchor>=0?`&near=${anchor}`:''}`);
+        total=next.total;segments.push(...next.segments);askNames(next.segments.flatMap(s=>s.candidates));
         if(!next.segments.length)break;
-      }while(list.segments.length<Math.min(count,list.total));
+      }while(segments.length<Math.min(Math.max(count,PAGE),total));
+      list.total=total;list.segments=segments;list.anchor=anchor;
     }catch(e){list.error=e instanceof Error?e.message:'unknown_error';}
     finally{list.pending=false;}
+    // Another sound or order may have been chosen while this was loading.
+    if(!list.error&&list.anchor!==anchorOf())void loadList(at,list.segments.length);
   }
+  // A new chosen sound or order re-sorts the shown lists; each keeps as many sounds as it shows.
+  $effect(()=>{const anchor=anchorOf();untrack(()=>{for(const [at,list] of Object.entries(lists))
+    if(list.anchor!==anchor&&(open[+at]||+at===node?.node))void loadList(+at,list.segments.length);});});
   $effect(()=>{if(!node||!data?.created_at)return;
     const shown=children.length?children.filter(c=>open[c.node]).map(c=>c.node):[node.node];
-    const value=JSON.stringify({created_at:data.created_at,node:node.node,loaded:Object.fromEntries(shown.map(at=>[at,lists[at]?.segments.length||PAGE]))});
+    const value=JSON.stringify({created_at:data.created_at,node:node.node,loaded:Object.fromEntries(shown.map(at=>[at,lists[at]?.segments.length||PAGE])),order,pick:pickAt});
     try{localStorage.setItem(draftKey,value);}catch{/* Private windows may refuse storage. */}});
-  async function choose(at:number){
-    pickAt=at;pick=null;pickError='';
+  async function choose(at:number,play=true){
+    pickAt=at;pickError='';autoplayPick=play;
     try{const next=await api<Segment>(`/explore/points/${at}?dataset=${id}`);
-      if(pickAt===at){pick=next;askNames(next.candidates);}
+      if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
-  // The row scrolls into view only after the double-click window: an instant scroll would move the sticky map under a fast second click.
-  let scrollTimer:ReturnType<typeof setTimeout>|undefined;
-  function reveal(child:number,block:ScrollLogicalPosition='nearest'){selected=child;clearTimeout(scrollTimer);
-    scrollTimer=setTimeout(()=>document.getElementById(`group-${children[child]?.node}`)?.scrollIntoView({block,behavior:'smooth'}),360);}
+  // Only this explicit request moves the page; picking on the map never scrolls, so the sound under the map stays where the user put it.
+  async function reveal(child:number){selected=child;open[children[child].node]=true;await tick();
+    document.getElementById(`group-${children[child].node}`)?.scrollIntoView({block:'start',behavior:'smooth'});}
   function escape(event:KeyboardEvent){if(event.key==='Escape'&&!event.defaultPrevented&&parent!==undefined)void go(parent);}
   // One sound at a time: starting a player pauses every other one on the page.
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
   // A fixed range only plays start–end, so the clip end stands in for the recording length.
   const sourceOf=(s:Segment)=>({id:s.recording_id,kind:'recording' as const,path:s.path,seconds:s.end_s});
   const when=(s:Segment)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
-  const similar=(s:Segment)=>`${resolve(`/datasets/${id}/search`)}?recording=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
   const pct=(share:number,digits=0)=>new Intl.NumberFormat(app.locale,{style:'percent',maximumFractionDigits:digits}).format(share);
   const groupName=(g:{node:number;name:string})=>g.name?fill('eGroup',{n:g.name}):t('eWhole');
   // Common names in the UI language are fetched once per species; the scientific name is shown until then or when there is none.
@@ -218,7 +245,7 @@
     // Only a real drag stops a running zoom; a click right after going inside must not freeze it halfway.
     const r=canvas.width/Math.max(1,canvas.clientWidth);drag.moved=true;cancelAnimationFrame(animation);view={...view,tx:drag.tx+dx*r,ty:drag.ty+dy*r};moved();
   }
-  // A click picks the nearest point of the group being viewed (within 8 px), shows and plays its sound and chooses its smaller group; a second click within 350 ms goes into it.
+  // A click picks the nearest point of the group being viewed (within 8 px), shows and plays its sound and highlights its smaller group without scrolling; a second click within 350 ms goes into it.
   function up(event:PointerEvent){
     const click=drag&&!drag.moved;drag=null;
     // Clicks right after going into a group are ignored, so a fast double click cannot go down two levels.
@@ -232,21 +259,23 @@
     if(double&&child>=0){void go(children[child].node);return;}
     // An empty spot clears the pick.
     if(best<0){selected=null;pickAt=-1;pick=null;return;}
-    if(child>=0)reveal(child);
+    if(child>=0)selected=child;
     if(best!==pickAt||pickError)void choose(best);
   }
 </script>
+{#snippet about(s:Segment)}<span title={`${when(s)} · ${candidates(s)}`}>{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
 {#snippet sounds(at:number)}
   {@const list=lists[at]}
   {#each list?.segments??[] as s (s.segment_id)}<div class="member">
-    <p>{when(s)}<br><span class="muted">{candidates(s)}</span></p>
-    <AudioRegion source={sourceOf(s)} fixedRange compact start={s.start_s} end={s.end_s}>
-      {#snippet actions()}<Button size="sm" href={similar(s)}>{t('eFindSimilar')}</Button>{/snippet}
-    </AudioRegion></div>{/each}
+    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>
+  </div>{/each}
   {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
   {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
   {:else if !list||list.pending}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 {/snippet}
+{#snippet sorting()}<div class="sorting"><label>{t('eOrder')}<select bind:value={order}>
+    <option value="centre">{t('eOrderCentre')}</option><option value="near">{t('eOrderNear')}</option></select></label>
+  <p class="muted">{order==='near'&&pickAt<0?t('eOrderNeedsPick'):t('localTime')}</p></div>{/snippet}
 <svelte:window onkeydown={escape}/>
 <div class="page wide" onplaycapture={solo}>
   <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
@@ -269,28 +298,29 @@
     {#if node}
       <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelName(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
       <div class="explore">
-        <section class="panel stack map-panel">
-          <div class="section-heading"><h2>{t('eMapHeading')}</h2><Button size="sm" disabled={!transformed} onclick={()=>fly(false)}>{t('eReset')}</Button></div>
+        <section class="panel stack map-panel" aria-label={t('eMapHeading')}>
           {#if pointsError}<p class="error" role="alert">{t(pointsError)}</p>{/if}
           <!-- The list is the keyboard path to the same groups; the map adds pointer zoom, pan, picking and double-click to go inside. -->
-          <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
+          <div class="map">
+            <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
+            <div class="map-nav" role="group" aria-label={t('eMapNav')}>
+              <Button size="sm" disabled={!canBack} onclick={()=>step(-1)}>{t('eBackView')}</Button>
+              <Button size="sm" disabled={!canForward} onclick={()=>step(1)}>{t('eForwardView')}</Button>
+              <Button size="sm" disabled={!node.node&&!transformed} onclick={whole}>{t('eTop')}</Button>
+            </div>
+          </div>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
-          <div class="pick">
-            {#if pickAt<0}<p class="muted">{t('ePickHint')}</p>
-            {:else if pickError}<p class="error" role="alert">{t(pickError)}</p>
-            {:else if !pick}<p role="status"><Spinner/> {t('loading')}</p>
+          <!-- Fixed text lines and a kept-up card: a new pick changes what the card shows, never how tall it is. -->
+          <div class="pick" aria-busy={pickAt>=0&&!pickError&&shownAt!==pickAt}>
+            {#if pickError}<p class="error" role="alert">{t(pickError)}</p>
+            {:else if !pick}{#if pickAt<0}<p class="muted">{t('ePickHint')}</p>{:else}<p role="status"><Spinner/> {t('loading')}</p>{/if}
             {:else}
               {@const s=pick}
-              {@const child=children.findIndex(c=>c.lo<=pickAt&&pickAt<c.hi)}
-              <h3>{t('ePicked')} <span class="when">{when(s)}</span></h3>
-              <p class="muted">{#if child>=0}{fill('ePickedGroup',{n:children[child].name})} · {/if}{candidates(s)}</p>
+              {@const child=children.findIndex(c=>c.lo<=shownAt&&shownAt<c.hi)}
+              <div class="pick-head"><h3 class="line">{t('ePicked')}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
+                {#if child>=0}<Button size="sm" onclick={()=>reveal(child)}>{t('eOpenGroup')}</Button>{/if}</div>
               <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
-              <AudioRegion source={sourceOf(s)} fixedRange compact autoplay start={s.start_s} end={s.end_s}>
-                {#snippet actions()}
-                  {#if child>=0}<Button size="sm" onclick={()=>{open[children[child].node]=true;reveal(child,'start');}}>{t('eOpenGroup')}</Button>{/if}
-                  <Button size="sm" href={similar(s)}>{t('eFindSimilar')}</Button>
-                {/snippet}
-              </AudioRegion>
+              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>{/key}
             {/if}
           </div>
         </section>
@@ -298,18 +328,14 @@
           <nav class="trail" aria-label={t('eTrail')}>
             {#each trail as step,index (step.node)}
               {#if index}<span class="muted" aria-hidden="true">›</span>{/if}
-              {#if index<trail.length-1}<a href={here(step.node)}>{groupName(step)}</a>{:else}<strong aria-current="page">{groupName(step)}</strong>{/if}
+              {#if index<trail.length-1}<a href={here(step.node)} data-sveltekit-replacestate data-sveltekit-noscroll>{groupName(step)}</a>{:else}<strong aria-current="page">{groupName(step)}</strong>{/if}
             {/each}
           </nav>
-          <div class="actions">
-            <Button size="sm" href={parent===undefined?undefined:here(parent)} disabled={parent===undefined}>{t('eUp')}</Button>
-            <Button size="sm" href={here(0)} disabled={!node.node}>{t('eTop')}</Button>
-          </div>
           <p>{fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/Math.max(1,data.segment_count),1)})}<br><span class="muted">{aiHint(node)}</span></p>
           {#if children.length}
             <h2>{t('eListHeading')}</h2>
             <p class="muted">{t('eListHint')}</p>
-            <p class="muted">{t('localTime')}</p>
+            {@render sorting()}
             {#each children as c,index (c.node)}
               <details class="group" class:selected={selected===index} class:dim={selected!==null&&selected!==index} id={`group-${c.node}`}
                 bind:open={open[c.node]} ontoggle={event=>{if(event.currentTarget.open)void loadList(c.node);}}>
@@ -321,14 +347,14 @@
                   <span class="chevron" aria-hidden="true">›</span>
                 </summary>
                 {#if open[c.node]}<div class="body stack">
-                  {#if c.child_count}<div class="actions"><Button size="sm" href={here(c.node)}>{t('eOpen')}</Button><span class="muted">{fill('eInner',{n:c.child_count})}</span></div>{/if}
+                  {#if c.child_count}<div class="actions"><Button size="sm" onclick={()=>go(c.node)}>{t('eOpen')}</Button><span class="muted">{fill('eInner',{n:c.child_count})}</span></div>{/if}
                   {@render sounds(c.node)}
                 </div>{/if}
               </details>
             {/each}
           {:else}
             <h2>{fill('eMembersHeading',{n:node.size.toLocaleString(app.locale)})}</h2>
-            <p class="muted">{t('localTime')}</p>
+            {@render sorting()}
             {@render sounds(node.node)}
           {/if}
         </section>
@@ -337,11 +363,16 @@
   {:else if !error}<p role="status"><Spinner/> {t('eLoading')}</p>{/if}
 </div>
 <style>.explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
-  .map-panel{position:sticky;top:16px}
+  /* The map column stays in view and never runs past the window: 140px is the 76px top bar, the 32px page padding and 16px above and below. */
+  .map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
   /* The map shrinks in short windows so the chosen sound under it stays in view. */
-  canvas{display:block;width:100%;height:clamp(240px,calc(100vh - 560px),420px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
-  .pick{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
-  .pick .when{font-size:16px;font-weight:400}
+  .map{position:relative}.map-nav{position:absolute;top:8px;left:8px;display:flex;gap:4px}
+  /* The map takes the height left over by the hint and the chosen-sound card, so the card always fits in the window. */
+  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 472px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
+  .pick{display:flex;flex-direction:column;gap:8px;min-height:212px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
+  .line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pick-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
   .trail{display:flex;flex-wrap:wrap;align-items:center;gap:0 4px}
   .trail a,.trail strong{display:inline-flex;align-items:center;min-height:44px;padding:0 4px}.trail strong{font-weight:600}
   .group{font-size:16px;border:1px solid rgb(var(--color-card-border));border-radius:8px;transition:opacity .15s}
@@ -353,6 +384,7 @@
   .group[open] .chevron{transform:rotate(90deg)}
   .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
-  .member{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
+  .member{padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
+  .sorting{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px}.sorting label{display:flex;align-items:center;gap:8px}.sorting select{width:auto;margin:0}.sorting p{margin:0}
   .empty :global(.button){align-self:center}
-  @media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static}canvas{height:320px}}</style>
+  @media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static;max-height:none;overflow:visible}canvas{height:320px}}</style>

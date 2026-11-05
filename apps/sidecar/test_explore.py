@@ -257,8 +257,21 @@ class ExploreCheck(unittest.TestCase):
                                 for row in page['segments']))
             self.assertTrue(all(set(candidate) == {'id', 'scientific_name', 'score'}
                                 for row in page['segments'] for candidate in row['candidates']))
-        second_page = self.client.get('/explore/nodes/0/segments', params={'dataset': 1, 'offset': 20}).json()
+            near = node['lo']
+            near_page = self.client.get(f"/explore/nodes/{node['node']}/segments",
+                                        params={'dataset': 1, 'near': near}).json()
+            self.assertEqual((near_page['segments'][0]['segment_id'], near_page['segments'][0]['dist']),
+                             (points[near]['segment_id'], 0))
+        near = terminal['lo']
+        first_page = self.client.get('/explore/nodes/0/segments',
+                                     params={'dataset': 1, 'near': near}).json()
+        second_page = self.client.get('/explore/nodes/0/segments',
+                                      params={'dataset': 1, 'near': near, 'offset': 20}).json()
         self.assertEqual((second_page['total'], len(second_page['segments'])), (32, 12))
+        distances = [row['dist'] for row in first_page['segments'] + second_page['segments']]
+        self.assertEqual(distances, sorted(distances))
+        past_end = self.client.get('/explore/nodes/0/segments', params={'dataset': 1, 'near': count})
+        self.assertEqual((past_end.status_code, past_end.json()), (404, {'detail': 'not_found'}))
 
         index_path = self.root / 'explore' / params['cache_index']
         old_index = json.loads(index_path.read_text())
