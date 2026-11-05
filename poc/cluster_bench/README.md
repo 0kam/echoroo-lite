@@ -34,3 +34,10 @@ Follow-ups the same day, after the user asked for a complete hierarchy and a non
 runs read an Echoroo Lite data folder named by `ECHOROO_PROTO_DATA` (read-only).
 `hierarchy_mock_v21.py` bakes the v2.1 redesign of the same mock (rows that open to their sounds,
 a sound card under the map, top-3 AI candidates per sound from the Japan candidate list).
+
+## Map agreement prototype (2026-11-05)
+
+`agreement_proto.py` measures how well the sound map's groups match what the map shows (island purity, badge
+accuracy, chance-corrected 10-NN agreement) and the species fidelity for eight ways to build the tree or the map.
+Run it with this folder's venv (scikit-learn for one method, Pillow for the figures). The recorded output and the
+figures are `docs/benchmarks/agreement-proto-2026-11-05.*` and `docs/benchmarks/agreement-{fuji,3}-2026-11-05.png`.
