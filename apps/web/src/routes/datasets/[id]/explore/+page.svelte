@@ -6,7 +6,7 @@
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { tick,untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,refreshCatalog } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
@@ -46,8 +46,8 @@
   // The last sound stays shown until the next one arrives, so the card never shrinks and the page never jumps.
   let pickAt=$state(-1),pick=$state<Segment|null>(null),shownAt=$state(-1),pickError=$state(''),autoplayPick=$state(true);
   let watched=$state<number|null>(null),transformed=$state(false),canBack=$state(false),canForward=$state(false);
-  // Sounds in a group are listed nearest to its centre, or nearest to the sound chosen on the map.
-  let order=$state<'centre'|'near'>(draft?.order==='near'?'near':'centre');
+  // Sounds in a group are listed nearest to the sound chosen on the map (until one is chosen, nearest to the group's centre), or always nearest to the centre.
+  let order=$state<'centre'|'near'>(draft?.order==='centre'?'centre':'near');
   const anchorOf=()=>order==='near'?pickAt:-1;
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   const job=$derived(activeJob());
@@ -78,7 +78,9 @@
         const kept=draft?.created_at===next.created_at?draft:null,saved=kept?.node===next.node.node?kept.loaded??{}:{};draft=null;
         // The sound chosen before going inside (or before leaving the page) stays chosen when it is in this group, without playing again.
         const was=kept?.pick??-1;
-        if(was>=next.node.lo&&was<next.node.hi){const at=(next.children??[]).findIndex(c=>c.lo<=was&&was<c.hi);selected=at<0?null:at;void choose(was,false);}
+        if(was>=next.node.lo&&was<next.node.hi){const at=(next.children??[]).findIndex(c=>c.lo<=was&&was<c.hi);selected=at<0?null:at;void choose(was,false);
+          // Going inside with a chosen sound opens the smaller group it belongs to, as a click would.
+          if(at>=0&&!Object.keys(saved).length){open[next.children![at].node]=true;bringUp(next.children![at].node);}}
         // A group that is not divided further shows its own sounds instead of rows.
         if(!next.children?.length)void loadList(next.node.node,saved[next.node.node]);
         for(const c of next.children??[])if(saved[c.node]){open[c.node]=true;void loadList(c.node,saved[c.node]);}
@@ -90,7 +92,7 @@
       if(code==='not_found'&&wanted){void go(0);return;}
       error=code;}
   }
-  function go(target:number){quietUntil=performance.now()+400;return goto(here(target),{replaceState:true,noScroll:true});}
+  function go(target:number){clearTimeout(scrollTimer);quietUntil=performance.now()+400;return goto(here(target),{replaceState:true,noScroll:true});}
   function step(by:number){const visited=visits.get(id),target=visited?.stack[visited.index+by];if(visited&&target!==undefined){visited.index+=by;void go(target);}}
   // At the top already, the button only brings the whole map back into view.
   function whole(){if(node?.node)void go(0);else fly(true);}
@@ -128,9 +130,14 @@
       if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
-  // Only this explicit request moves the page; picking on the map never scrolls, so the sound under the map stays where the user put it.
-  async function reveal(child:number){selected=child;open[children[child].node]=true;await tick();
-    document.getElementById(`group-${children[child].node}`)?.scrollIntoView({block:'start',behavior:'smooth'});}
+  // Picking a sound opens its group's row; rows share one `name`, so the browser closes the row that was open.
+  // A newly opened row out of view is brought up after the double-click window, so a fast second click still lands on the same dot.
+  let scrollTimer:ReturnType<typeof setTimeout>|undefined;
+  function bringUp(at:number){clearTimeout(scrollTimer);
+    scrollTimer=setTimeout(()=>{const row=document.getElementById(`group-${at}`),main=row?.closest('main');if(!row||!main)return;
+      const top=row.getBoundingClientRect().top-main.getBoundingClientRect().top;
+      if(top<0||top>main.clientHeight*.6)row.scrollIntoView({block:'start',behavior:'smooth'});},360);}
+  function show(child:number){selected=child;const at=children[child].node;if(!open[at]){open[at]=true;bringUp(at);}}
   function escape(event:KeyboardEvent){if(event.key==='Escape'&&!event.defaultPrevented&&parent!==undefined)void go(parent);}
   // One sound at a time: starting a player pauses every other one on the page.
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
@@ -259,8 +266,8 @@
     if(double&&child>=0){void go(children[child].node);return;}
     // An empty spot clears the pick.
     if(best<0){selected=null;pickAt=-1;pick=null;return;}
-    if(child>=0)selected=child;
     if(best!==pickAt||pickError)void choose(best);
+    if(child>=0)show(child);
   }
 </script>
 {#snippet about(s:Segment)}<span title={`${when(s)} · ${candidates(s)}`}>{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
@@ -274,7 +281,7 @@
   {:else if !list||list.pending}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 {/snippet}
 {#snippet sorting()}<div class="sorting"><label>{t('eOrder')}<select bind:value={order}>
-    <option value="centre">{t('eOrderCentre')}</option><option value="near">{t('eOrderNear')}</option></select></label>
+    <option value="near">{t('eOrderNear')}</option><option value="centre">{t('eOrderCentre')}</option></select></label>
   <p class="muted">{order==='near'&&pickAt<0?t('eOrderNeedsPick'):t('localTime')}</p></div>{/snippet}
 <svelte:window onkeydown={escape}/>
 <div class="page wide" onplaycapture={solo}>
@@ -317,8 +324,7 @@
             {:else}
               {@const s=pick}
               {@const child=children.findIndex(c=>c.lo<=shownAt&&shownAt<c.hi)}
-              <div class="pick-head"><h3 class="line">{t('ePicked')}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
-                {#if child>=0}<Button size="sm" onclick={()=>reveal(child)}>{t('eOpenGroup')}</Button>{/if}</div>
+              <h3 class="line">{t('ePicked')}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
               <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
               {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>{/key}
             {/if}
@@ -337,7 +343,7 @@
             <p class="muted">{t('eListHint')}</p>
             {@render sorting()}
             {#each children as c,index (c.node)}
-              <details class="group" class:selected={selected===index} class:dim={selected!==null&&selected!==index} id={`group-${c.node}`}
+              <details class="group" name="groups" class:selected={selected===index} class:dim={selected!==null&&selected!==index} id={`group-${c.node}`}
                 bind:open={open[c.node]} ontoggle={event=>{if(event.currentTarget.open)void loadList(c.node);}}>
                 <!-- Opening a row chooses its group on the map; closing the chosen row clears the choice. -->
                 <summary onclick={()=>selected=open[c.node]?(selected===index?null:selected):index}>
@@ -368,14 +374,13 @@
   /* The map shrinks in short windows so the chosen sound under it stays in view. */
   .map{position:relative}.map-nav{position:absolute;top:8px;left:8px;display:flex;gap:4px}
   /* The map takes the height left over by the hint and the chosen-sound card, so the card always fits in the window. */
-  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 472px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 458px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
   /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
-  .pick{display:flex;flex-direction:column;gap:8px;min-height:212px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
+  .pick{display:flex;flex-direction:column;gap:8px;min-height:198px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
   .line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pick-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
   .trail{display:flex;flex-wrap:wrap;align-items:center;gap:0 4px}
   .trail a,.trail strong{display:inline-flex;align-items:center;min-height:44px;padding:0 4px}.trail strong{font-weight:600}
-  .group{font-size:16px;border:1px solid rgb(var(--color-card-border));border-radius:8px;transition:opacity .15s}
+  .group{scroll-margin-top:16px;font-size:16px;border:1px solid rgb(var(--color-card-border));border-radius:8px;transition:opacity .15s}
   .group.selected{border-left:4px solid rgb(var(--primary-700))}.group.dim{opacity:.55}
   .group>summary{display:grid;grid-template-columns:28px minmax(0,1fr) 16px;gap:8px;align-items:start;padding:12px;list-style:none;font-weight:400}
   .group>summary::-webkit-details-marker{display:none}

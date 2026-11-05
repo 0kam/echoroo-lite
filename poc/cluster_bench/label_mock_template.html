@@ -83,7 +83,7 @@ pre{background:rgb(var(--stone-100));border-radius:8px;padding:12px;font-size:13
         <p id="summary"></p>
         <h2>中のまとまり（多い順）</h2>
         <p class="muted">行を押すと、そのまとまりの音が開きます。まとまりは聞いて探すための目安で、種の分け方ではありません。</p>
-        <div class="sorting"><label>並べ方 <select><option>まとまりの中心に近い順</option><option>選んだ音に近い順</option></select></label><span class="muted">日時は録音地点のタイムゾーンで表示します。</span></div>
+        <div class="sorting"><label>並べ方 <select><option>選んだ音に近い順</option><option>まとまりの中心に近い順</option></select></label><span class="muted">日時は録音地点のタイムゾーンで表示します。</span></div>
         <div id="rows" class="stack"></div>
       </section>
     </div>
@@ -167,14 +167,14 @@ function renderList(){
       <div><img class="spec" src="${s.image}" alt="スペクトログラム"><small class="muted">${esc(when(s))}<br>${esc(groupName({name:DATA.rows.find(r=>r.node===p.group).name}))} · ${esc(s.file)} ${s.start_s}–${s.end_s} 秒${p.exported?'<br><span class="done">書き出し済み</span>':''}</small></div>
       ${form(id)}<button class="btn remove" data-act="remove" data-id="${id}">外す</button></article>`;}).join(''):'<p class="muted">まだ選んだ音がありません。音の地図で音の左の「選ぶ」にチェックしてください。</p>');
   const sample=rows.slice(0,3).map(([id,p],i)=>{const s=byId.get(id);
-    return `<tr><td>${esc(`site_${when(s).replace(/[^0-9]/g,'').slice(0,12)}_${i+1}.wav`)}</td><td>${esc(p.species||'（空欄）')}</td><td>${esc({song:'song',call:'call'}[p.type]||'（空欄）')}</td><td>${esc(p.quality||'（空欄）')}</td><td>${esc(p.background.join('; ')||(p.others?'（空欄）':''))}</td><td>Echoroo Lite の音の地図で選んだ音。選んだ区間はクリップの 5–10 秒。${p.others&&!p.background.length?'ほかの種の声あり（種不明）。':''}</td></tr>`;}).join('');
+    return `<tr><td>${esc(`site_${when(s).replace(/[^0-9]/g,'').slice(0,12)}_${i+1}.wav`)}</td><td>${esc(p.species||'（空欄）')}</td><td>${esc({song:'song',call:'call'}[p.type]||'（空欄）')}</td><td>${esc(p.quality||'（空欄）')}</td><td>${esc(p.background.join('; ')||(p.others?'（空欄）':''))}</td><td>Echoroo Lite の音の地図で聞いて選んだ 5 秒。${p.others&&!p.background.length?'ほかの種の声あり（種不明）。':''}</td></tr>`;}).join('');
   document.getElementById('export').innerHTML=`<h2>書き出す</h2>
     <p>選んだ音 ${rows.length} 件を、音声と一覧表（CSV）を 1 つの ZIP にまとめて保存します。保存先は次の画面で選びます。</p>
     ${m.species||m.quality?`<p class="note">${m.species?`種が未入力の音が ${m.species} 件`:''}${m.species&&m.quality?'、':''}${m.quality?`質が未入力の音が ${m.quality} 件`:''}あります。空欄のまま書き出せますが、提供の前に埋めてください。</p>`:''}
     <p><button class="btn primary" data-act="export"${rows.length?'':' disabled'}>書き出す（ZIP）</button></p>
     <p class="muted">録音者名・ライセンス・座標のぼかしは、実際に提供するときに入れます（この書き出しには入りません）。座標はそのまま入るので、珍しい種の音を人に渡すときは注意してください。</p>
     <details><summary>ZIP の中身</summary><pre>echoroo-picked-実演用-2026-11-05.zip
-  audio/…wav       選んだ 5 秒の前後に 5 秒ずつ足した 15 秒（元の音質のまま）
+  audio/…wav       聞いて選んだ 5 秒そのまま（元の音質のまま）
   metadata.csv     Xeno-canto の一括登録の表と同じ 29 列（Excel で開ける UTF-8）
   README.txt       中身の説明（日本語と英語）
   manifest.json    ファイルが壊れていないかを確かめるための値</pre>
