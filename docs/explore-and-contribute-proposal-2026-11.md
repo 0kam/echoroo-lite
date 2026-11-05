@@ -495,7 +495,7 @@ v2.1 で実装する。点を押したらすぐ再生、一覧は 20 件ずつ�
 
 ## (b) 提供用の書き出し
 
-### 改訂案 v3：地図で選んだ音に情報を付けて書き出す（2026-11-05。提案、未合意）
+### 改訂案 v3：地図で選んだ音に情報を付けて書き出す（2026-11-05。同日ユーザーが了承、実装へ）
 
 **経緯**：v2.1 を試したユーザーの構想（2026-11-05）。最終的には、まとまりからいくつかの音を選び、
 種名など Xeno-canto（XC）に紐付ける情報を入れて提供してもらう。その一歩手前として、まとまりごとに
@@ -590,6 +590,90 @@ echoroo-picked-<地点>-<日付>.zip
 4. 録音者名・ライセンス・座標のぼかしは今回の書き出しに入れず、提供の段階で入れる、でよいか。
 5. 以前の (b)（「この種の声だ」を付けた音から書き出す経路）は、この形に置き換えてよいか。
 
+
+#### 決定（2026-11-05、ユーザーが v3 を了承）
+
+v3 で実装する。確認したいことは提案どおり：声の種類は 3 つ（さえずり／地鳴き／わからない）、録音の質は
+未選択のまま書き出せる、書き出す音は聞いて選んだ 5 秒そのまま、録音者名・ライセンス・座標のぼかしは
+提供の段階へ、以前の (b) の出どころ（「この種の声だ」を付けた音）はこの形に置き換える。分担は v2 と同じ
+（sidecar を Codex、画面を Opus のサブエージェント、コミットは差分の確認後）。
+
+#### 実装仕様 v3
+
+XC の一括登録テンプレート（v2、2026-11-05 にシートを取得して確認）の 29 列は次の順：
+`filename, latitude, longitude, country, location name, elevation, recording date, time of day, license,
+recordist name, recording device, microphone, type, automatic recording, genus, species, subspecies, sex(es),
+life stage(s), animal seen?, sound type(s), recording method, collection date, playback used?, temperature,
+background species, collection specimen reference, remarks, quality`。鳥の選択肢では recording method は
+`field recording`、sound type(s) は `song`／`call` など（複数はカンマ区切り）、background species は学名を
+カンマ区切り。以前の (b) の表のうち、この 3 点は上の確認に合わせる。
+
+**sidecar**
+
+- スキーマ v6（`MIGRATABLE_VERSIONS` に 5 を足す。v5 からは表を足すだけで、explore_* は消さない。
+  v2〜v4 からの移行は今までどおり explore_* を作り直す）。
+  ```
+  picked_sounds(recording_id INTEGER NOT NULL REFERENCES recordings ON DELETE CASCADE,
+    start_s REAL NOT NULL, end_s REAL NOT NULL,
+    species TEXT,                                  -- 学名。未入力は NULL
+    sound_type TEXT NOT NULL DEFAULT '' CHECK(sound_type IN ('','song','call')),
+    quality TEXT NOT NULL DEFAULT '' CHECK(quality IN ('','A','B','C','D','E')),
+    others INTEGER NOT NULL DEFAULT 0,              -- ほかの種の声あり
+    background TEXT NOT NULL DEFAULT '[]',          -- 学名の JSON 配列
+    exported_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(recording_id, start_s, end_s))
+  ```
+  地点の一覧は録音から引く（`site_recordings` の `scope_id` が dataset）。
+- 音の形（以下 item）：`{recording_id, start_s, end_s, path, recorded_at, timezone, species: {id, scientific_name} | null,
+  background: [{id, scientific_name}], sound_type, quality, others: bool, exported_at, updated_at}`。
+  `id` は `species` 表に学名があればその id、なければ null（`explore._species_ids` と同じ）。
+- `GET /explore/picked?dataset=` → `{items: [item…]}`（録音時刻の順）。
+- `PUT /explore/picked` body `{dataset_id, recording_id, start_s, end_s, species: str|null, background: [str] (≤20),
+  sound_type, quality, others}` → item（全項目を置き換える登録・更新。録音がその地点のものでなければ 404 `not_found`、
+  `end_s <= start_s` などは 422）。
+- `DELETE /explore/picked?dataset=&recording_id=&start_s=&end_s=` → `{deleted: bool}`。
+- `POST /explore/picked/species` body `{dataset_id, node, species: str|null, previous: str|null}` → `{updated: n}`。
+  いまの地図でその節の範囲 `[lo, hi)` に入る音のうち、選んだ音で `species` が NULL か `previous` と同じものを
+  `species` にする（まとまりの種の反映。個別に変えた音は残る）。節がなければ 404。
+- `POST /explore/picked/export` body `{dataset_id, folder}` → `{path, count}`。その地点の選んだ音すべてを、
+  `folder` に `echoroo-picked-<dataset_id>-<地点の現地時刻 YYYYMMDD-HHMMSS>.zip` として書く（フォルダの中の
+  一時ディレクトリで作ってから rename。途中で失敗したら何も残さない）。成功後に書き出した音の `exported_at` を
+  入れる。選んだ音がなければ 400 `nothing_picked`、フォルダがなければ `folder_missing`、書けなければ
+  `report_write_failed`（既存のキー）。
+- ZIP の中身：
+  - `audio/<filename>`：`[start_s, end_s]` をそのまま、元のサンプリング周波数の WAV（元が 24 bit なら PCM_24、
+    それ以外は PCM_16）。`filename` は `<現地の YYYYMMDD_HHMMSS>_<Genus_species または unknown>.wav`、重なれば `_2` などを足す。
+  - `metadata.csv`：上の 29 列、UTF-8 BOM 付き。filename、latitude / longitude（地点、小数 4 桁）、country `Japan`、
+    location name（地点名）、recording date `YYYY-MM-DD` と time of day `hh:mm`（区間の開始、地点のタイムゾーン）、
+    type `single species`、automatic recording `yes`、genus / species（学名の 1・2 語目。3 語目があれば subspecies）、
+    animal seen? `no`、sound type(s)（`song`／`call`／空欄）、recording method `field recording`、playback used? `no`、
+    background species（学名をカンマ区切り）、remarks（英語：`Selected by listening on the Echoroo Lite sound map
+    (5 s interval at <start>–<end> s of the source recording).` に、ほかの種の声ありで種名がなければ
+    ` Other species audible (not identified).`）、quality（A〜E／空欄）。elevation・license・recordist name ほかは空欄。
+  - `README.txt`：日本語と英語。中身の構成、空欄の列（録音者名・ライセンス・標高）は提供のときに埋めること、
+    座標はぼかしていないこと（珍しい種は渡す前に注意）、機関に渡すか XC のフォームへの転記元に使えること。
+  - `manifest.json`：`{schema: 'echoroo_picked_sounds_v1', created_at, site: {name, timezone, latitude, longitude},
+    items: [{filename, source_file (録音ファイルのベース名), start_s, end_s, recorded_at, timezone, species, background,
+    sound_type, quality, others}], files: {相対パス: {sha256, bytes}}}`。
+
+**web**
+
+- 地図のページ：開いた行の音と末端の音の一覧の各音に、再生ボタンの左にチェック「選ぶ」。選んだ音は下に入力
+  （共通部品 `PickForm`：種〔表示名と「まとまりの種」の印、「変える」で `SpeciesPicker`、まとまりの種がある
+  ときは「まとまりの種に戻す」〕、声〔さえずり／地鳴き／わからない〕、質〔A〜E と「質の目安」〕、ほかの種の声
+  〔なし／あり、ありなら種を足す・消す〕）。変えるたびに `PUT`。チェックを外すと `DELETE`。
+- 開いた行（末端なら音の一覧）の先頭に「このまとまりの種」：その行の AI の候補の上位 3 をボタンに、
+  「ほかの種を選ぶ…」で `SpeciesPicker`。決めたら `POST /explore/picked/species` で反映し、以後その行で
+  チェックした音の種に入れる。まとまりの種は localStorage（地図の作成日時ごと）に持つ。
+- 地図の点を押したときのカードにも「選ぶ」（入力は一覧の行で行う。点を押すとその行が開き、先頭がその音）。
+- 地図の欄のカードの下に 1 行：「選んだ音 N 件・種が未入力 a 件・質が未入力 b 件［一覧と書き出しへ］」
+  （`GET /explore/picked` で数える。0 件なら案内文）。地図の高さはこの行の分だけ縮め、欄は画面に収める。
+- 新しいページ `/datasets/[id]/explore/picked`：戻るリンク「音の地図に戻る」、選んだ音の一覧（小さい
+  スペクトログラムと再生、日時、ファイル名と秒、`PickForm`、「外す」、書き出し済みの印）、書き出し
+  （件数と未入力の数、保存先フォルダの選択〔Tauri はフォルダ選択、ブラウザでは入力欄〕、「書き出す（ZIP）」、
+  保存先の表示、録音者名・ライセンス・座標のぼかしは入らない旨）。
+- 文言は日英。チェックや入力でページがスクロールしないこと（v2.2 の方針）。
 
 ### 提供の経路（2026-11-01 改訂）
 
