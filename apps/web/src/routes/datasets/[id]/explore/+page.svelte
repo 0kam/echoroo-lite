@@ -439,11 +439,12 @@
   .group[open] .chevron{transform:rotate(90deg)}
   .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
-  /* A narrow first column holds the check left of the play button; a picked sound's labels sit under its spectrogram. */
+  /* A narrow first column holds the check left of the play button; a picked sound's labels sit under it. */
   .member,.sound{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px;align-items:center}
   .member{padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
   .member.picked{margin:0 -12px;padding:8px 12px 12px;background:rgb(var(--primary-500)/.12)}
-  .labels{grid-column:2}
+  /* The labels use the whole row width, from under the check, so their items stay on one line in a narrow column. */
+  .labels{grid-column:1/-1}
   .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;cursor:pointer}
   .check input{width:22px;height:22px;accent-color:rgb(var(--primary-700))}
   .group-species{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:8px;background:rgb(var(--stone-100))}

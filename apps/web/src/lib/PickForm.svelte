@@ -49,29 +49,30 @@
   const TYPES=[['song','pfSong'],['call','pfCall'],['','pfUnknown']] as const;
   const QUALITY=['A','B','C','D','E'] as const;
 </script>
+<!-- One row per item with the names in their own column; the blank mark sits under the name, so filling an item never moves the other rows. -->
 <div class="pick-form">
-  <div class="field"><span class="name">{t('pfSpecies')}</span>
-    {#if value.species}<strong>{name(value.species)}</strong>{#if same(value.species,group)}<span class="tag">{t('pfGroupMark')}</span>{/if}
-    {:else}<span class="missing">{t('pfMissing')}</span>{/if}
+  <span class="name">{t('pfSpecies')}{#if !value.species}<span class="missing">{t('pfMissing')}</span>{/if}</span>
+  <div class="controls">
+    {#if value.species}<strong>{name(value.species)}</strong>{#if same(value.species,group)}<span class="tag">{t('pfGroupMark')}</span>{/if}{/if}
     {#if editing!=='species'}<button type="button" class="link" onclick={()=>editing='species'}>{t(value.species?'pfChange':'pfEnter')}</button>{/if}
     {#if group&&!same(value.species,group)}<button type="button" class="link" onclick={()=>change({species:group})}>{t('pfFollowGroup')}</button>{/if}
   </div>
-  {#if editing==='species'}<div class="search" use:focusInput>
+  {#if editing==='species'}<div class="search wide" use:focusInput>
     <SpeciesPicker bind:value={()=>null,(row:Species|null)=>{if(row){editing=null;change({species:named(row)});}}} label={t('pfSpeciesName')}/>
     <Button size="sm" onclick={()=>editing=null}>{t('mCancel')}</Button></div>{/if}
-  <div class="field"><span class="name">{t('pfVoice')}</span>
-    <span class="segmented" role="group" aria-label={t('pfVoice')}>{#each TYPES as [type,key] (type)}
-      <button type="button" aria-pressed={value.sound_type===type} onclick={()=>change({sound_type:type})}>{t(key)}</button>{/each}</span>
-  </div>
-  <div class="field"><span class="name">{t('pfQuality')}</span>
+  <span class="name">{t('pfVoice')}</span>
+  <div class="controls"><span class="segmented" role="group" aria-label={t('pfVoice')}>{#each TYPES as [type,key] (type)}
+    <button type="button" aria-pressed={value.sound_type===type} onclick={()=>change({sound_type:type})}>{t(key)}</button>{/each}</span></div>
+  <span class="name">{t('pfQuality')}{#if !value.quality}<span class="missing">{t('pfMissing')}</span>{/if}</span>
+  <div class="controls">
     <!-- Pressing the chosen grade again clears it: a grade nobody chose is left blank rather than guessed. -->
     <span class="segmented" role="group" aria-label={t('pfQuality')}>{#each QUALITY as grade (grade)}
       <button type="button" aria-pressed={value.quality===grade} onclick={()=>change({quality:value.quality===grade?'':grade})}>{grade}</button>{/each}</span>
     <button type="button" class="link" aria-expanded={guide} onclick={()=>guide=!guide}>{t('pfGuide')}</button>
-    {#if !value.quality}<span class="missing">{t('pfMissing')}</span>{/if}
   </div>
-  {#if guide}<div class="guide"><dl>{#each QUALITY as grade (grade)}<dt>{grade}</dt><dd>{t(`pfQ${grade}`)}</dd>{/each}</dl><p class="muted">{t('pfGuideNote')}</p></div>{/if}
-  <div class="field"><span class="name">{t('pfOthers')}</span>
+  {#if guide}<div class="guide wide"><dl>{#each QUALITY as grade (grade)}<dt>{grade}</dt><dd>{t(`pfQ${grade}`)}</dd>{/each}</dl><p class="muted">{t('pfGuideNote')}</p></div>{/if}
+  <span class="name">{t('pfOthers')}</span>
+  <div class="controls">
     <span class="segmented" role="group" aria-label={t('pfOthers')}>
       <button type="button" aria-pressed={!value.others} onclick={()=>{editing=editing==='other'?null:editing;change({others:false,background:[]});}}>{t('pfNo')}</button>
       <button type="button" aria-pressed={value.others} onclick={()=>change({others:true})}>{t('pfYes')}</button></span>
@@ -81,22 +82,24 @@
       {#if editing!=='other'&&value.background.length<20}<button type="button" class="link" onclick={()=>editing='other'}>{t('pfAddOther')}</button>{/if}
     {/if}
   </div>
-  {#if editing==='other'&&value.others}<div class="search" use:focusInput>
+  {#if editing==='other'&&value.others}<div class="search wide" use:focusInput>
     <SpeciesPicker bind:value={()=>null,(row:Species|null)=>{if(row){editing=null;if(!value.background.some(b=>b.scientific_name===row.scientific_name))change({background:[...value.background,named(row)]});}}} label={t('pfOtherName')}/>
     <Button size="sm" onclick={()=>editing=null}>{t('mCancel')}</Button></div>{/if}
 </div>
 <style>
-  .pick-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
-  .field{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
-  .name{font-size:14px;font-weight:500;color:rgb(var(--stone-800))}
+  .pick-form{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:4px 12px}
+  .controls{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
+  .wide{grid-column:2}
+  /* Top-aligned with the first line of buttons, so the blank mark appears below the name without moving it. */
+  .name{align-self:start;padding-top:12px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-size:14px;font-weight:500;line-height:1.3;color:rgb(var(--stone-800))}
   .link{min-height:44px;padding:0 4px;font-size:14px}
   .tag{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;background:rgb(var(--stone-200));font-size:14px}
   .tag:has(.remove){padding-right:0}
   .remove{min-height:44px;min-width:44px;padding:0;border:0;background:transparent;font-size:18px}
   /* Text, not colour alone, marks what is still blank. */
-  .missing{padding:0 8px;border:1px solid rgb(var(--color-warning));border-radius:4px;background:rgb(var(--color-warning-light));color:rgb(var(--stone-800));font-size:14px}
-  .search{flex-basis:100%;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+  .missing{padding:0 4px;border:1px solid rgb(var(--color-warning));border-radius:4px;background:rgb(var(--color-warning-light));color:rgb(var(--stone-800));font-size:12px;font-weight:400}
+  .search{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
   .search :global(label){align-self:stretch}
-  .guide{flex-basis:100%;padding:8px 12px;border-radius:8px;background:rgb(var(--stone-100));font-size:14px}
+  .guide{padding:8px 12px;border-radius:8px;background:rgb(var(--stone-100));font-size:14px}
   .guide dl{display:grid;grid-template-columns:2em 1fr;gap:2px 8px;margin:0}.guide dt{font-weight:600}.guide dd{margin:0}
 </style>
