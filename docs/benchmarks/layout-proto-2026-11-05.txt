@@ -36,3 +36,16 @@ Perch + AI class scores x0.5     purity 0.807±0.005  F1 0.417±0.018 (>=0.5 14.
 Perch + AI class scores x1       purity 0.790±0.006  F1 0.388±0.024 (>=0.5 10.7/40)  global 0.57  0.9s   [input pca50+ai1: purity 0.785]
 Perch + AI class scores x2       purity 0.752±0.014  F1 0.284±0.008 (>=0.5 8.0/40)  global 0.68  0.9s   [input pca50+ai2: purity 0.764]
 Perch + Kinglet-B + scores x1    purity 0.804±0.010  F1 0.371±0.021 (>=0.5 11.3/40)  global 0.51  0.9s   [input pca50+pair+ai1: purity 0.794]
+
+## LocalMAP (... layout_proto.py local; nearby resampling with 200 draws per dot, later raised to 1000)
+shipped: PaCMAP                  purity 0.807±0.004  F1 0.449±0.021 (>=0.5 17.0/40)  global 0.52  silhouette -0.222±0.037  0.8s   [input pca50: purity 0.798]
+LocalMAP (threshold 10, official default) purity 0.809±0.008  F1 0.422±0.012 (>=0.5 16.0/40)  global 0.55  silhouette -0.182±0.014  1.2s   [input pca50: purity 0.798]
+LocalMAP threshold 5             purity 0.776±0.004  F1 0.435±0.027 (>=0.5 16.3/40)  global 0.46  silhouette -0.250±0.022  1.2s   [input pca50: purity 0.798]
+LocalMAP threshold 20            purity 0.780±0.005  F1 0.365±0.015 (>=0.5 14.7/40)  global 0.46  silhouette -0.411±0.034  1.2s   [input pca50: purity 0.798]
+LocalMAP threshold 10, half-whitened input purity 0.807±0.001  F1 0.452±0.028 (>=0.5 16.7/40)  global 0.35  silhouette -0.245±0.032  1.2s   [input pca50+whitehalf: purity 0.790]
+
+## PaCMAP vs LocalMAP over 3 seeds, 1000 draws per dot; trees built from the map (M1); demo = the user's demo dataset with AI-proxy labels
+Fuji                     PaCMAP       M1 F1 0.449±0.021 (>=0.5 17.0/40)  top-group silhouette 0.513±0.022  species purity 0.807  species silhouette -0.222  0.8s
+Fuji                     LocalMAP 10  M1 F1 0.465±0.023 (>=0.5 16.3/40)  top-group silhouette 0.363±0.011  species purity 0.806  species silhouette -0.175  2.5s
+demo (AI proxy, 7 spp)   PaCMAP       M1 F1 0.314±0.014 (>=0.5 1.0/7)  top-group silhouette 0.584±0.022  species purity nan  species silhouette nan  3.5s
+demo (AI proxy, 7 spp)   LocalMAP 10  M1 F1 0.405±0.019 (>=0.5 1.3/7)  top-group silhouette 0.383±0.027  species purity nan  species silhouette nan  10.4s

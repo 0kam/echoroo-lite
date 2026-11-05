@@ -4,6 +4,7 @@ Usage (repository root, this folder's venv):
   poc/cluster_bench/.venv/bin/python poc/cluster_bench/layout_proto.py fuji        # layout variants, 3 seeds each
   poc/cluster_bench/.venv/bin/python poc/cluster_bench/layout_proto.py inputs      # input preprocessing, shipped PaCMAP
   poc/cluster_bench/.venv/bin/python poc/cluster_bench/layout_proto.py models      # Kinglet-B / AI class scores added
+  poc/cluster_bench/.venv/bin/python poc/cluster_bench/layout_proto.py local       # LocalMAP (last phase of PaCMAP changed)
   ECHOROO_PROTO_DATA=<data folder> poc/cluster_bench/.venv/bin/python poc/cluster_bench/layout_proto.py demo 3   # figure + timing
 Scores, averaged over seeds:
   purity  share of each single-species window's 10 nearest dots on the map that carry the same species
@@ -90,8 +91,28 @@ def spectral_init(X, k=15):
     return agreement.spectral(X, dims=2, k=k)
 
 
-def pacmap(X, seed, neighbors=10, mid=5, far=20, iters=450, init='pca', lr=1.0):
-    """explore.pacmap with its knobs exposed (same schedule: three phases over 100/100/rest iterations)."""
+def nearby(layout, nearest, old, far, threshold, rng, tries=1000, block=2048):
+    """LocalMAP's further pairs: each dot's partners redrawn among dots within `threshold` on the map that are not its
+    neighbours (official code: up to 100 tries per slot; here `tries` draws per dot, which fills all 20 slots for
+    99% of Fuji's dots); slots left empty keep the old partner."""
+    n = len(layout)
+    partners = old.reshape(n, far).copy()
+    for start in range(0, n, block):
+        end = min(start + block, n); own = np.arange(start, end)
+        candidates = rng.integers(0, n, size=(end - start, tries))
+        close = np.linalg.norm(layout[candidates] - layout[own, None, :], axis=-1) <= threshold
+        accepted = close & (candidates != own[:, None]) & ~(candidates[:, :, None] == nearest[own, None, :]).any(-1)
+        rank = np.cumsum(accepted, axis=1)
+        rows, columns = np.nonzero(accepted & (rank <= far))
+        partners[start + rows, rank[rows, columns] - 1] = candidates[rows, columns]
+    return partners.ravel()
+
+
+def pacmap(X, seed, neighbors=10, mid=5, far=20, iters=450, init='pca', lr=1.0, local=None):
+    """explore.pacmap with its knobs exposed (same schedule: three phases over 100/100/rest iterations).
+    local: LocalMAP's low_dist_thres (Wang et al. 2024; official code defaults to 10). In the last phase, after
+    iteration 200, neighbour attraction is scaled by (local / 2) / sqrt(d) and the further pairs are redrawn near
+    each dot every 10 iterations, which sharpens the boundaries between nearby clusters."""
     X = np.asarray(X, dtype=np.float32); n = len(X)
     rng = np.random.default_rng(seed)
     neighbors = min(neighbors, n - 1); candidates = min(neighbors + 50, n - 1)
@@ -105,8 +126,8 @@ def pacmap(X, seed, neighbors=10, mid=5, far=20, iters=450, init='pca', lr=1.0):
         end = min(start + 4096, n)
         squared = ((X[start:end, None, None, :] - X[choices[start:end]]) ** 2).sum(axis=-1)
         mids[start:end] = np.take_along_axis(choices[start:end], np.argsort(squared, axis=2)[:, :, 1][..., None], axis=2)[..., 0]
-    pairs = ((np.repeat(np.arange(n), neighbors), nearest.ravel()), (np.repeat(np.arange(n), mid), mids.ravel()),
-             (np.repeat(np.arange(n), far), rng.integers(0, n, size=n * far)))
+    pairs = [(np.repeat(np.arange(n), neighbors), nearest.ravel()), (np.repeat(np.arange(n), mid), mids.ravel()),
+             (np.repeat(np.arange(n), far), rng.integers(0, n, size=n * far))]
     start_layout = spectral_init(X) if init == 'spectral' else X[:, :2]
     start_layout = np.asarray(start_layout, dtype=np.float64)
     # A spectral start is scaled to the spread of the PCA start, so only the arrangement differs.
@@ -128,12 +149,16 @@ def pacmap(X, seed, neighbors=10, mid=5, far=20, iters=450, init='pca', lr=1.0):
             distance = 1 + np.einsum('ij,ij->i', difference, difference)
             coefficient = (weight * 20 / (10 + distance) ** 2 if kind == 'near' else
                            weight * 20000 / (10000 + distance) ** 2 if kind == 'mid' else -weight * 2 / (1 + distance) ** 2)
+            if local and kind == 'near' and iteration > second:
+                coefficient = coefficient * (local / 2) / np.sqrt(distance)
             contribution = coefficient[:, None] * difference
             for column in (0, 1):
                 gradient[:, column] += np.bincount(source, contribution[:, column], n) - np.bincount(target, contribution[:, column], n)
         moment = 0.9 * moment + 0.1 * gradient
         variance = 0.999 * variance + 0.001 * gradient ** 2
         layout -= lr * (moment / (1 - 0.9 ** (iteration + 1))) / (np.sqrt(variance / (1 - 0.999 ** (iteration + 1))) + 1e-7)
+        if local and iteration > second and iteration % 10 == 0:
+            pairs[2] = (pairs[2][0], nearby(layout, nearest, pairs[2][1], far, local, rng))
     return layout.astype(np.float32)
 
 
@@ -212,6 +237,19 @@ def purity(Y, labels, mask, k=10):
     return float((kept[indices] == kept[:, None]).mean())
 
 
+def silhouette(Y, labels, mask):
+    """Mean silhouette of the single-species windows by their species (the LocalMAP paper's separation measure)."""
+    points = np.asarray(Y[mask], dtype=np.float64); kept = labels[mask]
+    names, codes = np.unique(kept, return_inverse=True)
+    distance = np.sqrt(((points[:, None] - points[None]) ** 2).sum(-1))
+    sums = np.stack([distance[:, codes == c].sum(1) for c in range(len(names))], axis=1)
+    sizes = np.bincount(codes)
+    own = sums[np.arange(len(kept)), codes] / np.maximum(sizes[codes] - 1, 1)
+    others = np.where(np.arange(len(names))[None] == codes[:, None], np.inf, sums / sizes[None]).min(1)
+    value = (others - own) / np.maximum(own, others)
+    return float(np.where(sizes[codes] > 1, value, 0).mean())
+
+
 def map_tree_f1(Y, positives):
     binary, root, _ = explore.binary_tree(np.asarray(Y, dtype=np.float32))
     nodes, order = explore.flatten_tree(binary, root, np.asarray(Y, dtype=np.float32))
@@ -270,6 +308,13 @@ INPUTS = {  # round 2: the shipped PaCMAP on preprocessed inputs
     'neighbouring windows averaged': ('context+pca50', 'pacmap', {}),
     'mean removed + half-whitened': ('center+pca50+whitehalf', 'pacmap', {}),
 }
+LOCAL = {  # round 4: LocalMAP (the user's suggestion), on the shipped input
+    'shipped: PaCMAP': ('pca50', 'pacmap', {}),
+    'LocalMAP (threshold 10, official default)': ('pca50', 'pacmap', {'local': 10}),
+    'LocalMAP threshold 5': ('pca50', 'pacmap', {'local': 5}),
+    'LocalMAP threshold 20': ('pca50', 'pacmap', {'local': 20}),
+    'LocalMAP threshold 10, half-whitened input': ('pca50+whitehalf', 'pacmap', {'local': 10}),
+}
 MODELS = {  # round 3: more information in the input (needs fuji_extra.py)
     'shipped: Perch PCA-50': ('pca50', 'pacmap', {}),
     'Kinglet-B embedding': ('kinglet+pca50', 'pacmap', {}),
@@ -294,21 +339,22 @@ def grid(variants):
         for seed in SEEDS:
             clock = time.perf_counter(); Y = FUNCTIONS[function](X, seed, **options); seconds = time.perf_counter() - clock
             median, good = map_tree_f1(Y, positives)
-            scores.append((purity(Y, labels, single), median, good, global_order(X, Y, labels, single), seconds))
+            scores.append((purity(Y, labels, single), median, good, global_order(X, Y, labels, single), seconds, silhouette(Y, labels, single)))
         scores = np.array(scores)
         mean, spread = scores.mean(0), scores.std(0)
         rows[name] = {'purity': round(mean[0], 3), 'purity_sd': round(spread[0], 3), 'f1_median': round(mean[1], 3), 'f1_sd': round(spread[1], 3),
-                      'f1_ge_half': round(mean[2], 1), 'global': round(mean[3], 3), 'seconds': round(mean[4], 1), 'input_purity': round(reference[kind], 3)}
+                      'f1_ge_half': round(mean[2], 1), 'global': round(mean[3], 3), 'seconds': round(mean[4], 1), 'input_purity': round(reference[kind], 3),
+                      'silhouette': round(mean[5], 3), 'silhouette_sd': round(spread[5], 3)}
         r = rows[name]
         print(f"{name:32s} purity {r['purity']:.3f}±{r['purity_sd']:.3f}  F1 {r['f1_median']:.3f}±{r['f1_sd']:.3f} (>=0.5 {r['f1_ge_half']:.1f}/{len(positives)})  "
-              f"global {r['global']:.2f}  {r['seconds']:.1f}s   [input {kind}: purity {r['input_purity']:.3f}]", flush=True)
+              f"global {r['global']:.2f}  silhouette {r['silhouette']:.3f}±{r['silhouette_sd']:.3f}  {r['seconds']:.1f}s   [input {kind}: purity {r['input_purity']:.3f}]", flush=True)
     return rows
 
 
 if __name__ == '__main__':
     target = sys.argv[1] if len(sys.argv) > 1 else 'fuji'
-    if target in ('fuji', 'inputs', 'models'):
-        result = grid({'fuji': VARIANTS, 'inputs': INPUTS, 'models': MODELS}[target])
+    if target in ('fuji', 'inputs', 'models', 'local'):
+        result = grid({'fuji': VARIANTS, 'inputs': INPUTS, 'models': MODELS, 'local': LOCAL}[target])
         (OUT / f'layout-proto-{target}-2026-11-05.json').write_text(json.dumps(result, ensure_ascii=False, indent=1))
 
 
