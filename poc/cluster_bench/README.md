@@ -41,3 +41,10 @@ a sound card under the map, top-3 AI candidates per sound from the Japan candida
 accuracy, chance-corrected 10-NN agreement) and the species fidelity for eight ways to build the tree or the map.
 Run it with this folder's venv (scikit-learn for one method, Pillow for the figures). The recorded output and the
 figures are `docs/benchmarks/agreement-proto-2026-11-05.*` and `docs/benchmarks/agreement-{fuji,3}-2026-11-05.png`.
+
+## Layout prototype (2026-11-05)
+
+`layout_proto.py` scores map layouts on the Fuji annotations (2-D 10-NN species purity and the best-node F1 of a tree
+built from the map), over three seeds: PaCMAP settings, a numpy UMAP-style layout, exact t-SNE as a reference, input
+preprocessing, and inputs with Kinglet-B embeddings or Perch class scores added (`fuji_extra.py` computes those from the
+Fuji WAV clips into `.local-data`). Results: `docs/benchmarks/layout-proto-2026-11-05.*` and `layout-fuji-2026-11-05.png`.
