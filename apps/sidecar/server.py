@@ -17,7 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from storage import CatalogError, checked_source, connect, initialize, preview_folder
 from species import decorate_candidates, initialize_species, list_species, save_species
@@ -67,6 +67,42 @@ class JobRequest(BaseModel):
 
 class ExploreRequest(BaseModel):
     dataset_id: int
+
+
+ScientificName = Annotated[str, Field(min_length=1, max_length=200)]
+
+
+class PickedEdit(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    dataset_id: int = Field(ge=1)
+    recording_id: int = Field(ge=1)
+    start_s: float = Field(ge=0, allow_inf_nan=False)
+    end_s: float = Field(gt=0, allow_inf_nan=False)
+    species: ScientificName | None
+    background: list[ScientificName] = Field(max_length=20)
+    sound_type: Literal['', 'song', 'call']
+    quality: Literal['', 'A', 'B', 'C', 'D', 'E']
+    others: bool
+
+    @model_validator(mode='after')
+    def valid_interval(self):
+        if self.end_s <= self.start_s:
+            raise ValueError('invalid interval')
+        return self
+
+
+class PickedSpeciesEdit(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    dataset_id: int = Field(ge=1)
+    node: int = Field(ge=0)
+    species: ScientificName | None
+    previous: ScientificName | None
+
+
+class PickedExportRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    dataset_id: int = Field(ge=1)
+    folder: str = Field(min_length=1)
 
 
 class ModelSelection(BaseModel):
@@ -409,6 +445,44 @@ def create_app(root, models, token):
             if str(error) == 'not_found':
                 raise HTTPException(404, 'not_found') from None
             raise
+
+    def picked_result(function, *args):
+        try:
+            return function(*args)
+        except CatalogError as error:
+            if str(error) == 'not_found':
+                raise HTTPException(404, 'not_found') from None
+            raise
+
+    @app.get('/explore/picked')
+    def picked_list(dataset: int = Query(ge=1)):
+        from picked import list_picked
+        return picked_result(list_picked, root, dataset)
+
+    @app.put('/explore/picked')
+    def picked_put(body: PickedEdit):
+        from picked import put
+        return picked_result(put, root, body)
+
+    @app.delete('/explore/picked')
+    def picked_delete(dataset: int = Query(ge=1), recording_id: int = Query(ge=1),
+                      start_s: float = Query(ge=0, allow_inf_nan=False),
+                      end_s: float = Query(gt=0, allow_inf_nan=False)):
+        from picked import delete
+        if end_s <= start_s:
+            raise HTTPException(422, 'invalid_input')
+        return picked_result(delete, root, dataset, recording_id, start_s, end_s)
+
+    @app.post('/explore/picked/species')
+    def picked_species(body: PickedSpeciesEdit):
+        from picked import set_node_species
+        return picked_result(set_node_species, root, body)
+
+    @app.post('/explore/picked/export')
+    def picked_export(body: PickedExportRequest):
+        from picked import export
+        with lock:
+            return picked_result(export, root, body)
 
     @app.get('/datasets/{dataset_id}/species/{species_id}')
     def species_overview(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
@@ -889,7 +963,7 @@ def create_app(root, models, token):
 
     return CORSMiddleware(app, allow_origins=["http://localhost:1420", "http://127.0.0.1:1420",
                                               "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"],
-                          allow_methods=["GET", "POST", "PUT"], allow_headers=["Authorization", "Content-Type"])
+                          allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 
 
 def main():

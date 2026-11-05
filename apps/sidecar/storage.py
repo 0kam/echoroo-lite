@@ -12,8 +12,8 @@ import sqlite_vec
 
 
 # Increment whenever the SQLite schema changes.
-SCHEMA_VERSION = 5
-MIGRATABLE_VERSIONS = (2, 3, 4)
+SCHEMA_VERSION = 6
+MIGRATABLE_VERSIONS = (2, 3, 4, 5)
 
 
 class CatalogError(Exception):
@@ -46,7 +46,7 @@ def initialize(root):
         if not supported:
             return False
         db.execute("PRAGMA journal_mode=WAL")
-        if version in MIGRATABLE_VERSIONS:
+        if version in MIGRATABLE_VERSIONS and version != 5:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='explore_runs'").fetchone():
                 for row in db.execute('SELECT params FROM explore_runs'):
                     try:
@@ -76,6 +76,16 @@ def initialize(root):
                 timezone TEXT NOT NULL, recorded_at TEXT NOT NULL,
                 seconds REAL NOT NULL, sample_rate INTEGER NOT NULL,
                 size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS picked_sounds (
+                recording_id INTEGER NOT NULL REFERENCES recordings ON DELETE CASCADE,
+                start_s REAL NOT NULL, end_s REAL NOT NULL, species TEXT,
+                sound_type TEXT NOT NULL DEFAULT '' CHECK(sound_type IN ('','song','call')),
+                quality TEXT NOT NULL DEFAULT '' CHECK(quality IN ('','A','B','C','D','E')),
+                others INTEGER NOT NULL DEFAULT 0,
+                background TEXT NOT NULL DEFAULT '[]', exported_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(recording_id,start_s,end_s));
             CREATE VIEW IF NOT EXISTS site_recordings AS
                 SELECT anchor.id AS scope_id, r.* FROM datasets anchor
                 JOIN datasets member ON member.site_id=anchor.site_id

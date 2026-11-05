@@ -13,11 +13,11 @@
   import { fill,modelName } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
+  import PickForm,{blanks,focusInput,pickedSounds,pickKey,type Named} from '$lib/PickForm.svelte';
+  import SpeciesPicker from '$lib/SpeciesPicker.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  // `id` is null when the species list has no row for the scientific name.
-  type Named={id:string|null;scientific_name:string};
   type Segment={segment_id:number;recording_id:number;path:string;start_s:number;end_s:number;recorded_at:string;timezone:string;candidates:(Named&{score:number})[]};
   // Points come in tree order, so the sounds of every group are the positions lo..hi-1 of the point arrays.
   type Group={node:number;name:string;size:number;lo:number;hi:number;child_count:number;rep:{start_s:number;end_s:number};hint_rate:number;top_species:(Named&{share:number})[]};
@@ -26,7 +26,7 @@
   // `anchor`: the position the sounds are sorted around, or -1 for the group's centre.
   type List=Page&{pending:boolean;error:string;anchor:number};
   type Points={n:number;x:Float32Array;y:Float32Array;box:[number,number,number,number]};
-  const id=Number(page.params.id),PAGE=20,MAX_ZOOM=1000,draftKey=`echoroo-explore:${id}`;
+  const id=Number(page.params.id),PAGE=20,MAX_ZOOM=1000,draftKey=`echoroo-explore:${id}`,speciesKey=`echoroo-explore-species:${id}`;
   // Categorical hues stepped for the light and the dark surface; a group has at most eight smaller groups, one colour each.
   const LIGHT=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
   const DARK=['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
@@ -50,6 +50,12 @@
   let order=$state<'centre'|'near'>(draft?.order==='centre'?'centre':'near');
   const anchorOf=()=>order==='near'?pickAt:-1;
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
+  // Sounds picked for export, saved in the sidecar; the line under the map counts them and what is still blank.
+  const picks=pickedSounds(id);void picks.reload();
+  const tally=$derived.by(()=>{const items=Object.values(picks.state.items);return {n:items.length,blanks:blanks(items)};});
+  // The species chosen for each group of this map: a typing aid kept in this browser, not a record (picked sounds keep their own species).
+  let groupSpecies=$state<Record<number,Named>>({}),choosing=$state<number|null>(null);
+  const savedSpecies=(created:string|null)=>{try{const saved=JSON.parse(localStorage.getItem(speciesKey)||'null');return saved?.created_at===created?saved.nodes??{}:{};}catch{return {};}};
   const job=$derived(activeJob());
   const building=$derived(job?.stage.startsWith('explore_')&&datasetOf(job.dataset_id)?.site_id===datasetOf(id)?.site_id?job:null);
   const ended=$derived(app.jobs.find(j=>j.id===watched&&(j.status==='failed'||j.status==='cancelled')));
@@ -66,7 +72,7 @@
       if(restoring){restoring=false;if(next.created_at===draft?.created_at&&draft?.node&&draft.node!==wanted){void go(draft.node);return;}}
       const before=data?.node,fresh=next.created_at!==data?.created_at,moved=next.node?.node!==before?.node;
       data=next;error='';
-      if(fresh){points=null;lists={};if(next.node)void loadPoints(next);}
+      if(fresh){points=null;lists={};groupSpecies=savedSpecies(next.created_at);if(next.node)void loadPoints(next);}
       if(!next.node)return;
       // Every group shown joins the back/forward list, unless back or forward brought us here.
       let visited=visits.get(id);
@@ -130,6 +136,20 @@
       if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
+  // Checking a sound picks it with its group's species and nothing else filled in; unchecking removes it and its labels.
+  function pickSound(s:Segment,at:number,checked:boolean){
+    if(!checked){void picks.remove(s);return;}
+    void picks.save({recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,path:s.path,recorded_at:s.recorded_at,timezone:s.timezone,
+      species:groupSpecies[at]??null,background:[],sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
+  }
+  // A group's species also goes to its picked sounds that have none or still have the group's previous species; sounds changed one by one keep theirs.
+  function chooseGroupSpecies(at:number,species:Named){
+    const previous=groupSpecies[at]??null;choosing=null;
+    if(previous?.scientific_name===species.scientific_name)return;
+    groupSpecies[at]=species;
+    try{localStorage.setItem(speciesKey,JSON.stringify({created_at:data?.created_at,nodes:groupSpecies}));}catch{/* Private windows may refuse storage. */}
+    void picks.send(()=>api('/explore/picked/species',{dataset_id:id,node:at,species:species.scientific_name,previous:previous?.scientific_name??null}));
+  }
   // Picking a sound opens its group's row; rows share one `name`, so the browser closes the row that was open.
   // A newly opened row out of view is brought up after the double-click window, so a fast second click still lands on the same dot.
   let scrollTimer:ReturnType<typeof setTimeout>|undefined;
@@ -151,9 +171,11 @@
   function askNames(items:Named[]){for(const {id:sid} of items)if(sid&&!asked.has(sid)){asked.add(sid);
     api<Species>(`/species/${encodeURIComponent(sid)}`).then(row=>{names[sid]=row;},()=>{/* The scientific name stays as the fallback. */});}}
   const speciesName=(s:Named)=>{const row=s.id?names[s.id]:undefined;return (row&&commonName(row,app.locale))||s.scientific_name;};
+  $effect(()=>{askNames(Object.values(picks.state.items).flatMap(i=>[...i.species?[i.species]:[],...i.background]));});
   const listOf=<T extends Named>(items:T[],share:(item:T)=>number)=>items.map(item=>`${speciesName(item)} ${pct(share(item))}`).join(t('eSep'));
   // Below one interval in five with any AI suggestion, the group is more likely silence or insects than a species.
-  const aiHint=(g:Group)=>g.hint_rate<.2||!g.top_species.length?fill('eNoAiHint',{rate:pct(g.hint_rate)})
+  const suggested=(g:Group)=>g.hint_rate<.2?[]:g.top_species;
+  const aiHint=(g:Group)=>!suggested(g).length?fill('eNoAiHint',{rate:pct(g.hint_rate)})
     :fill('eAiHint',{list:listOf(g.top_species,s=>s.share),rate:pct(g.hint_rate)});
   const candidates=(s:Segment)=>s.candidates.length?fill('eCandidates',{list:listOf(s.candidates,c=>c.score)}):t('eNoCandidates');
   const made=(at:string|null)=>at?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium'}).format(new Date(`${at.replace(' ','T')}Z`)):'';
@@ -271,10 +293,27 @@
   }
 </script>
 {#snippet about(s:Segment)}<span title={`${when(s)} · ${candidates(s)}`}>{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
+{#snippet check(s:Segment,at:number)}<label class="check"><input type="checkbox" checked={!!picks.state.items[pickKey(s)]} onchange={event=>pickSound(s,at,event.currentTarget.checked)}/>{t('ePick')}</label>{/snippet}
+{#snippet groupBox(g:Group)}
+  {@const chosen=groupSpecies[g.node]}
+  <div class="group-species">
+    <p><span class="field-name">{t('eGroupSpecies')}</span> {#if chosen}<strong>{speciesName(chosen)}</strong>{:else}<span class="muted">{t('eGroupUnset')}</span>{/if}</p>
+    {#if choosing===g.node}<div class="search" use:focusInput>
+      <SpeciesPicker bind:value={()=>null,(row:Species|null)=>{if(row){names[row.id]=row;asked.add(row.id);chooseGroupSpecies(g.node,{id:row.id,scientific_name:row.scientific_name});}}} label={t('pfSpeciesName')}/>
+      <Button size="sm" onclick={()=>choosing=null}>{t('mCancel')}</Button></div>
+    {:else}<div class="actions">{#if suggested(g).length}<span class="muted">{t('eFromAi')}</span>{/if}
+      {#each suggested(g) as s (s.scientific_name)}{@const on=chosen?.scientific_name===s.scientific_name}
+        <Button size="sm" active={on} aria-pressed={on} onclick={()=>chooseGroupSpecies(g.node,{id:s.id,scientific_name:s.scientific_name})}>{speciesName(s)} {pct(s.share)}</Button>{/each}
+      <Button size="sm" onclick={()=>choosing=g.node}>{t('eOtherSpecies')}</Button></div>{/if}
+    <p class="muted">{t('eGroupSpeciesHint')}</p>
+  </div>
+{/snippet}
 {#snippet sounds(at:number)}
   {@const list=lists[at]}
-  {#each list?.segments??[] as s (s.segment_id)}<div class="member">
+  {#each list?.segments??[] as s (s.segment_id)}{@const p=picks.state.items[pickKey(s)]}<div class="member" class:picked={!!p}>
+    {@render check(s,at)}
     <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>
+    {#if p}<div class="labels"><PickForm value={p} group={groupSpecies[at]??null} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
   </div>{/each}
   {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
   {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
@@ -326,9 +365,18 @@
               {@const child=children.findIndex(c=>c.lo<=shownAt&&shownAt<c.hi)}
               <h3 class="line">{t('ePicked')}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
               <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
-              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>{/key}
+              {#key s.segment_id}<div class="sound">{@render check(s,child>=0?children[child].node:node.node)}
+                <AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion></div>{/key}
             {/if}
           </div>
+          <!-- One row of fixed height: picking or labelling a sound changes the numbers, never the map's size. -->
+          <div class="tally">
+            {#if tally.n}<p><strong>{fill('eTally',{n:tally.n})}</strong>
+                {#if tally.blanks}<span title={tally.blanks}>{tally.blanks}</span>{/if}</p>
+              <Button variant="primary" size="sm" href={resolve(`/datasets/${id}/explore/picked`)}>{t('eToPicked')}</Button>
+            {:else}<p class="muted">{t('eTallyHint')}</p>{/if}
+          </div>
+          {#if picks.state.error}<p class="error" role="alert">{t(picks.state.error)}</p>{/if}
         </section>
         <section class="panel stack">
           <nav class="trail" aria-label={t('eTrail')}>
@@ -354,6 +402,7 @@
                 </summary>
                 {#if open[c.node]}<div class="body stack">
                   {#if c.child_count}<div class="actions"><Button size="sm" onclick={()=>go(c.node)}>{t('eOpen')}</Button><span class="muted">{fill('eInner',{n:c.child_count})}</span></div>{/if}
+                  {@render groupBox(c)}
                   {@render sounds(c.node)}
                 </div>{/if}
               </details>
@@ -361,6 +410,7 @@
           {:else}
             <h2>{fill('eMembersHeading',{n:node.size.toLocaleString(app.locale)})}</h2>
             {@render sorting()}
+            {@render groupBox(node)}
             {@render sounds(node.node)}
           {/if}
         </section>
@@ -373,8 +423,8 @@
   .map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
   /* The map shrinks in short windows so the chosen sound under it stays in view. */
   .map{position:relative}.map-nav{position:absolute;top:8px;left:8px;display:flex;gap:4px}
-  /* The map takes the height left over by the hint and the chosen-sound card, so the card always fits in the window. */
-  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 458px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  /* The map takes the height left over by the hint, the chosen-sound card and the 44px picked-sounds row (with its 12px gap), so all of them fit in the window. */
+  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 514px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
   /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
   .pick{display:flex;flex-direction:column;gap:8px;min-height:198px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
   .line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -389,7 +439,19 @@
   .group[open] .chevron{transform:rotate(90deg)}
   .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
+  /* A narrow first column holds the check left of the play button; a picked sound's labels sit under its spectrogram. */
+  .member,.sound{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px;align-items:center}
   .member{padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
+  .member.picked{margin:0 -12px;padding:8px 12px 12px;background:rgb(var(--primary-500)/.12)}
+  .labels{grid-column:2}
+  .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;cursor:pointer}
+  .check input{width:22px;height:22px;accent-color:rgb(var(--primary-700))}
+  .group-species{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:8px;background:rgb(var(--stone-100))}
+  .field-name{font-size:14px;font-weight:500;color:rgb(var(--stone-800))}
+  .search{display:flex;flex-direction:column;align-items:flex-start;gap:8px}.search :global(label){align-self:stretch}
+  .tally{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
+  .tally p{min-width:0;font-size:14px;line-height:1.3}
+  .tally p>*{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tally :global(.button){flex:none}
   .sorting{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px}.sorting label{display:flex;align-items:center;gap:8px}.sorting select{width:auto;margin:0}.sorting p{margin:0}
   .empty :global(.button){align-self:center}
   @media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static;max-height:none;overflow:visible}canvas{height:320px}}</style>
