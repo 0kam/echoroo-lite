@@ -183,7 +183,6 @@ class ExploreCheck(unittest.TestCase):
         run, nodes, points = self.assert_tree(32)
         params = json.loads(run['params'])
         self.assertEqual((params['method'], params['layout']), ('exact', 'full'))
-        self.assertEqual(params['map_version'], explore.MAP_VERSION)
         self.assertEqual(params['candidate_filter'], {'perch': 'applied'})
         self.assertEqual((params['candidate_min'], params['score_threshold']),
                          (explore.CANDIDATE_MIN, explore.SCORE_THRESHOLD))
@@ -193,7 +192,6 @@ class ExploreCheck(unittest.TestCase):
 
         summary = self.client.get('/explore', params={'dataset': 1}).json()
         self.assertEqual((summary['status'], summary['engine'], summary['segment_count']), ('ready', 'perch', 32))
-        self.assertNotIn('stale_reason', summary)
         self.assertEqual(summary['node']['node'], 0)
         self.assertNotIn('top_share', summary['node'])
         self.assertTrue(all(set(item) == {'id', 'scientific_name', 'share'}
@@ -303,7 +301,7 @@ class ExploreCheck(unittest.TestCase):
 
         self.add_analysis(4, 3)
         stale = self.client.get('/explore', params={'dataset': 1}).json()
-        self.assertEqual((stale['status'], stale['stale_reason']), ('stale', 'data'))
+        self.assertEqual(stale['status'], 'stale')
         self.assertEqual(stale['node']['node'], 0)  # the old map stays browsable until it is rebuilt
         entered = threading.Event()
         def slow(root, dataset_id, job_id, cancel):
@@ -327,59 +325,6 @@ class ExploreCheck(unittest.TestCase):
         self.assertEqual(winners, ['A', 'D'])
         self.assertEqual(candidates, [[['A', .8], ['B', .1]], []])
 
-    def test_localmap_is_deterministic_and_finite(self):
-        matrix = np.random.default_rng(7).normal(size=(30, 8)).astype(np.float32)
-        first = explore.pacmap(matrix)
-        second = explore.pacmap(matrix)
-        self.assertEqual(first.shape, (30, 2))
-        self.assertTrue(np.isfinite(first).all())
-        np.testing.assert_array_equal(first, second)
-
-    def test_tree_uses_layout_and_member_order_uses_pca(self):
-        self.add_analysis(24, 4)
-        seen = {}
-        original_layout = explore.layout_points
-        original_tree = explore.binary_tree
-        original_flatten = explore.flatten_tree
-
-        def traced_layout(projected, cancel=None):
-            seen['pca'] = np.asarray(projected).copy()
-            layout, mode = original_layout(projected, cancel)
-            seen['layout'] = layout.copy()
-            return layout, mode
-
-        def traced_tree(layout, cancel=None):
-            seen['tree'] = np.asarray(layout).copy()
-            return original_tree(layout, cancel)
-
-        def traced_flatten(tree, root, projected, cancel=None):
-            seen['flatten'] = np.asarray(projected).copy()
-            return original_flatten(tree, root, projected, cancel)
-
-        with patch.object(explore, 'layout_points', side_effect=traced_layout), \
-                patch.object(explore, 'binary_tree', side_effect=traced_tree), \
-                patch.object(explore, 'flatten_tree', side_effect=traced_flatten):
-            explore.build(self.root, 1)
-        self.assertEqual(seen['tree'].shape, (24, 2))
-        np.testing.assert_array_equal(seen['tree'], seen['layout'])
-        np.testing.assert_array_equal(seen['flatten'], seen['pca'])
-
-    def test_old_map_method_is_stale_but_browsable_and_data_takes_precedence(self):
-        self.add_analysis(24, 5)
-        explore.build(self.root, 1)
-        with connect(self.root) as db:
-            run = db.execute('SELECT id,params FROM explore_runs').fetchone()
-            params = json.loads(run['params'])
-            params.pop('map_version')
-            db.execute('UPDATE explore_runs SET params=? WHERE id=?', (json.dumps(params), run['id']))
-        stale = self.client.get('/explore', params={'dataset': 1}).json()
-        self.assertEqual((stale['status'], stale['stale_reason']), ('stale', 'method'))
-        self.assertEqual(stale['node']['node'], 0)
-        self.add_analysis(4, 6)
-        stale = self.client.get('/explore', params={'dataset': 1}).json()
-        self.assertEqual((stale['status'], stale['stale_reason']), ('stale', 'data'))
-        self.assertEqual(stale['node']['node'], 0)
-
     def test_leaf_tree_and_landmark_layout_with_patched_thresholds(self):
         self.add_analysis(200, 4)
         with patch.object(explore, 'EXACT_MAX', 50), patch.object(explore, 'LEAF_COUNT', 8), \
@@ -388,7 +333,6 @@ class ExploreCheck(unittest.TestCase):
             run, nodes, _ = self.assert_tree(200)
         params = json.loads(run['params'])
         self.assertEqual((params['method'], params['layout']), ('leaves', 'landmarks'))
-        self.assertEqual(params['map_version'], explore.MAP_VERSION)
         self.assertEqual(params['tree']['requested_leaves'], 8)
         self.assertEqual(params['segment_count'], 200)
         self.assertGreater(len(nodes), 1)

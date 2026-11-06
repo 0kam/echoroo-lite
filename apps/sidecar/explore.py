@@ -35,11 +35,8 @@ PACMAP_MID_NEAR = 5
 PACMAP_FURTHER = 20
 PACMAP_ITERATIONS = 450
 PACMAP_LR = 1.0
-LOCALMAP_THRESHOLD = 10
-LOCALMAP_TRIES = 1000
 SEED = 20261101
 CACHE_VERSION = 1
-MAP_VERSION = 2  # 2 = groups cut from the 2-D LocalMAP layout; runs without it are version 1
 SCORE_THRESHOLD = 0.1
 CANDIDATE_MIN = 0.05
 
@@ -592,25 +589,7 @@ def knn(matrix, k, cancel=None, block=1024):
     return indices, distances
 
 
-def _nearby(layout, nearest, old, rng, cancel=None, block=2048):
-    n = len(layout)
-    partners = old.reshape(n, PACMAP_FURTHER).copy()
-    for start in range(0, n, block):
-        _check_cancel(cancel)
-        end = min(start + block, n)
-        own = np.arange(start, end)
-        candidates = rng.integers(0, n, size=(end - start, LOCALMAP_TRIES))
-        close = np.linalg.norm(layout[candidates] - layout[own, None, :], axis=-1) <= LOCALMAP_THRESHOLD
-        accepted = (close & (candidates != own[:, None])
-                    & ~(candidates[:, :, None] == nearest[own, None, :]).any(-1))
-        rank = np.cumsum(accepted, axis=1)
-        rows, columns = np.nonzero(accepted & (rank <= PACMAP_FURTHER))
-        partners[start + rows, rank[rows, columns] - 1] = candidates[rows, columns]
-    return partners.ravel()
-
-
 def pacmap(matrix, cancel=None):
-    """Build PaCMAP coordinates with LocalMAP's last phase."""
     matrix = np.asarray(matrix, dtype=np.float32)
     n = len(matrix)
     rng = np.random.default_rng(SEED)
@@ -631,9 +610,9 @@ def pacmap(matrix, cancel=None):
         second = np.argsort(squared, axis=2)[:, :, 1]
         mid[start:end] = np.take_along_axis(choices[start:end], second[..., None], axis=2)[..., 0]
     further = rng.integers(0, n, size=(n, PACMAP_FURTHER))
-    pairs = [(np.repeat(np.arange(n), neighbors), nearest.ravel()),
+    pairs = ((np.repeat(np.arange(n), neighbors), nearest.ravel()),
              (np.repeat(np.arange(n), PACMAP_MID_NEAR), mid.ravel()),
-             (np.repeat(np.arange(n), PACMAP_FURTHER), further.ravel())]
+             (np.repeat(np.arange(n), PACMAP_FURTHER), further.ravel()))
     layout = np.asarray(matrix[:, :2], dtype=np.float64) * 0.01
     moment = np.zeros_like(layout); variance = np.zeros_like(layout)
     beta1, beta2, epsilon = 0.9, 0.999, 1e-7
@@ -654,8 +633,6 @@ def pacmap(matrix, cancel=None):
             distance = 1 + np.einsum('ij,ij->i', difference, difference)
             if kind == 'near':
                 coefficient = weight * 20 / (10 + distance) ** 2
-                if iteration > 200:
-                    coefficient *= (LOCALMAP_THRESHOLD / 2) / np.sqrt(distance)
             elif kind == 'mid':
                 coefficient = weight * 20000 / (10000 + distance) ** 2
             else:
@@ -668,8 +645,6 @@ def pacmap(matrix, cancel=None):
         variance = beta2 * variance + (1 - beta2) * gradient ** 2
         layout -= PACMAP_LR * (moment / (1 - beta1 ** (iteration + 1))) / (
             np.sqrt(variance / (1 - beta2 ** (iteration + 1))) + epsilon)
-        if iteration > 200 and iteration % 10 == 0:
-            pairs[2] = (pairs[2][0], _nearby(layout, nearest, pairs[2][1], rng, cancel))
     _check_cancel(cancel)
     return layout.astype(np.float32)
 
@@ -786,16 +761,16 @@ def build(root, dataset_id, job_id=None, cancel=None):
             projected, pca = exact_pca(matrix, temporary / 'pca50-source.f32', cancel)
             stage_seconds['pca'] = time.perf_counter() - started
             _check_cancel(cancel)
-            _progress(root, job_id, 'explore_layout', 2)
+            _progress(root, job_id, 'explore_tree', 2)
+            started = time.perf_counter()
+            tree, root_node, tree_details = binary_tree(projected, cancel)
+            nodes, order = flatten_tree(tree, root_node, projected, cancel)
+            stage_seconds['tree'] = time.perf_counter() - started
+            _check_cancel(cancel)
+            _progress(root, job_id, 'explore_layout', 3)
             started = time.perf_counter()
             layout, layout_mode = layout_points(projected, cancel)
             stage_seconds['layout'] = time.perf_counter() - started
-            _check_cancel(cancel)
-            _progress(root, job_id, 'explore_tree', 3)
-            started = time.perf_counter()
-            tree, root_node, tree_details = binary_tree(layout, cancel)
-            nodes, order = flatten_tree(tree, root_node, projected, cancel)
-            stage_seconds['tree'] = time.perf_counter() - started
             _check_cancel(cancel)
             _progress(root, job_id, 'explore_summarizing', 4)
             started = time.perf_counter()
@@ -839,7 +814,7 @@ def build(root, dataset_id, job_id=None, cancel=None):
                           'cache_index': index_path.name, 'cache_version': CACHE_VERSION, 'pca': pca,
                           'method': tree_details['method'], 'tree': tree_details,
                           'node_count': len(nodes), 'depth': max(item['depth'] for item in nodes),
-                          'layout': layout_mode, 'map_version': MAP_VERSION, 'stage_seconds': stage_seconds,
+                          'layout': layout_mode, 'stage_seconds': stage_seconds,
                           'candidate_filter': filters,
                           'score_threshold': SCORE_THRESHOLD, 'candidate_min': CANDIDATE_MIN}
                 db.execute('UPDATE explore_runs SET params=? WHERE id=?', (json.dumps(params, ensure_ascii=False), staged_id))
@@ -923,13 +898,9 @@ def status(root, dataset_id, node=0):
                     'segment_count': 0}
         params = json.loads(run['params'])
         current = sorted(row['analysis_id'] for row in compatible_analyses(db, dataset_id, model_sha, engine))
-        stale_reason = ('data' if current != params.get('analysis_ids') else
-                        'method' if params.get('map_version') != MAP_VERSION else None)
-        state = 'building' if building else 'stale' if stale_reason else 'ready'
+        state = 'building' if building else 'stale' if current != params.get('analysis_ids') else 'ready'
         result = {'status': state, 'created_at': run['created_at'], 'engine': run['engine'],
                   'segment_count': params['segment_count']}
-        if state == 'stale':
-            result['stale_reason'] = stale_reason
         # A stale map, or the one being replaced, stays browsable until the new one is published.
         selected = _node_row(db, run['id'], node)
         if selected is None:

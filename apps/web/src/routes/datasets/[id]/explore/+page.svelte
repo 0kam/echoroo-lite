@@ -21,7 +21,7 @@
   type Segment={segment_id:number;recording_id:number;path:string;start_s:number;end_s:number;recorded_at:string;timezone:string;candidates:(Named&{score:number})[]};
   // Points come in tree order, so the sounds of every group are the positions lo..hi-1 of the point arrays.
   type Group={node:number;name:string;size:number;lo:number;hi:number;child_count:number;rep:{start_s:number;end_s:number};hint_rate:number;top_species:(Named&{share:number})[]};
-  type Status={status:'none'|'building'|'ready'|'stale';stale_reason?:'data'|'method';created_at:string|null;engine:string;segment_count:number;node?:Group;path?:{node:number;name:string}[];children?:Group[]};
+  type Status={status:'none'|'building'|'ready'|'stale';created_at:string|null;engine:string;segment_count:number;node?:Group;path?:{node:number;name:string}[];children?:Group[]};
   type Page={total:number;segments:Segment[]};
   // `anchor`: the position the sounds are sorted around, or -1 for the group's centre.
   type List=Page&{pending:boolean;error:string;anchor:number};
@@ -333,7 +333,7 @@
       {#if building}<JobStatus job={building}/>{:else}<p><Spinner/> {t('eBuilding')}</p>{/if}
       <p class="muted">{t('eTakesMinutes')}</p></section>
     {:else if data.status==='stale'}<section class="notice stack" role="status">
-      <p>{t(data.stale_reason==='method'?'eStaleMethod':'eStale')}</p>
+      <p>{t('eStale')}</p>
       <div class="actions"><Button pending={build.pending} disabled={!!job} onclick={()=>build.run()}>{t('eRebuild')}</Button><span>{t(job&&!build.pending?'job_busy':'eTakesMinutes')}</span></div>
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}</section>
     {:else if !node}<section class="panel empty">
