@@ -12,6 +12,9 @@
   /** What is still blank, such as "2 without species, 5 without quality"; empty when nothing is. */
   export const blanks=(items:Item[])=>([['eNoSpecies',items.filter(i=>!i.species).length],['eNoQuality',items.filter(i=>!i.quality).length]] as const)
     .filter(([,n])=>n).map(([key,n])=>fill(key,{n})).join(t('eSep'));
+  /** Species of the given picked sounds, most recently updated first, distinct by scientific name, at most three. */
+  export const recentSpecies=(items:Item[])=>[...new Map(items.filter(i=>i.species).sort((a,b)=>b.updated_at.localeCompare(a.updated_at))
+    .map(i=>[i.species!.scientific_name,i.species!])).values()].slice(0,3);
   // A species search opens with its field focused, without moving the page.
   export const focusInput=(node:HTMLElement)=>{node.querySelector('input')?.focus({preventScroll:true});};
   /** The picked sounds of one site. Changes are shown at once and sent one after another, so the last one wins; the list is read again after the last. */
@@ -38,9 +41,9 @@
   import SpeciesPicker from './SpeciesPicker.svelte';
   import Button from './ui/Button.svelte';
   // The labels of one picked sound; every change reports the whole label and the parent saves it.
-  let { value, group=null, name, onchange }:{value:Label;group?:Named|null;name:(s:Named)=>string;onchange:(label:Label)=>void}=$props();
+  // `recent`: species recently entered on this site's other sounds, offered as one-tap choices while the species is blank; nothing is filled in on its own.
+  let { value, recent=[], name, onchange }:{value:Label;recent?:Named[];name:(s:Named)=>string;onchange:(label:Label)=>void}=$props();
   let editing=$state<'species'|'other'|null>(null),guide=$state(false);
-  const same=(a:Named|null,b:Named|null)=>!!a&&!!b&&a.scientific_name===b.scientific_name;
   const named=(row:Species):Named=>({id:row.id,scientific_name:row.scientific_name});
   function change(patch:Partial<Label>){
     const next={...value,...patch};
@@ -53,9 +56,10 @@
 <div class="pick-form">
   <span class="name">{t('pfSpecies')}{#if !value.species}<span class="missing">{t('pfMissing')}</span>{/if}</span>
   <div class="controls">
-    {#if value.species}<strong>{name(value.species)}</strong>{#if same(value.species,group)}<span class="tag">{t('pfGroupMark')}</span>{/if}{/if}
-    {#if editing!=='species'}<button type="button" class="link" onclick={()=>editing='species'}>{t(value.species?'pfChange':'pfEnter')}</button>{/if}
-    {#if group&&!same(value.species,group)}<button type="button" class="link" onclick={()=>change({species:group})}>{t('pfFollowGroup')}</button>{/if}
+    {#if value.species}<strong>{name(value.species)}</strong>{/if}
+    {#if editing!=='species'}<button type="button" class="link" onclick={()=>editing='species'}>{t(value.species?'pfChange':'pfEnter')}</button>
+      {#if !value.species&&recent.length}<span class="muted">{t('ePfRecent')}</span>
+        {#each recent as s (s.scientific_name)}<Button size="sm" onclick={()=>change({species:s})}>{name(s)}</Button>{/each}{/if}{/if}
   </div>
   {#if editing==='species'}<div class="search wide" use:focusInput>
     <SpeciesPicker bind:value={()=>null,(row:Species|null)=>{if(row){editing=null;change({species:named(row)});}}} label={t('pfSpeciesName')}/>

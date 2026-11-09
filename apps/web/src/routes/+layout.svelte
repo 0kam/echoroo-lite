@@ -10,17 +10,21 @@
   import './app.css';
   let { children } = $props();
   const scrollPositions=new Map<string,number>();
-  const scrollKey=()=>page.url.hash.split('?')[0];
-  let stopRestore=()=>{};
-  beforeNavigate(()=>{stopRestore();scrollPositions.set(scrollKey(),document.querySelector('main')?.scrollTop??0);});
-  afterNavigate(async()=>{
+  const scrollKey=(url:URL|undefined=page.url)=>url?.hash.split('?')[0];
+  let stopRestore=()=>{},restoring=false;
+  // A page that changes only its query while its scroll is still being restored (the sound map reopening its last group) keeps that restore.
+  const redirect=(from:{url:URL}|null,to:{url:URL}|null)=>restoring&&!!from&&scrollKey(from.url)===scrollKey(to?.url);
+  beforeNavigate(({from,to})=>{if(redirect(from,to))return;stopRestore();scrollPositions.set(scrollKey(),document.querySelector('main')?.scrollTop??0);});
+  afterNavigate(async({from,to})=>{
+    if(redirect(from,to))return;
     await tick();const main=document.querySelector('main');if(!main)return;
     const target=scrollPositions.get(scrollKey())??0;
     const restore=()=>{main.scrollTop=target;if(main.scrollHeight-main.clientHeight>=target)stopRestore();};
     // Results arrive after navigation; restore once the list has its full height.
     const observer=new MutationObserver(restore);
     const events=['wheel','touchstart','keydown','pointerdown'];
-    stopRestore=()=>{observer.disconnect();events.forEach(event=>main.removeEventListener(event,stopRestore));};
+    restoring=true;
+    stopRestore=()=>{restoring=false;observer.disconnect();events.forEach(event=>main.removeEventListener(event,stopRestore));};
     events.forEach(event=>main.addEventListener(event,stopRestore,{once:true}));
     observer.observe(main,{childList:true,subtree:true});restore();
   });

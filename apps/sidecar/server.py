@@ -91,14 +91,6 @@ class PickedEdit(BaseModel):
         return self
 
 
-class PickedSpeciesEdit(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-    dataset_id: int = Field(ge=1)
-    node: int = Field(ge=0)
-    species: ScientificName | None
-    previous: ScientificName | None
-
-
 class PickedExportRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     dataset_id: int = Field(ge=1)
@@ -472,11 +464,6 @@ def create_app(root, models, token):
         if end_s <= start_s:
             raise HTTPException(422, 'invalid_input')
         return picked_result(delete, root, dataset, recording_id, start_s, end_s)
-
-    @app.post('/explore/picked/species')
-    def picked_species(body: PickedSpeciesEdit):
-        from picked import set_node_species
-        return picked_result(set_node_species, root, body)
 
     @app.post('/explore/picked/export')
     def picked_export(body: PickedExportRequest):

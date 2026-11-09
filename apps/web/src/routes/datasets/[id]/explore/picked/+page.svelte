@@ -9,7 +9,7 @@
   import { commonName,type Species } from '$lib/species';
   import { fill } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
-  import PickForm,{blanks,pickedSounds,pickKey,type Item,type Named} from '$lib/PickForm.svelte';
+  import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Item,type Named} from '$lib/PickForm.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -17,7 +17,7 @@
   const id=Number(page.params.id),picks=pickedSounds(id);
   void picks.reload();
   const items=$derived(Object.values(picks.state.items));
-  const missing=$derived(blanks(items));
+  const missing=$derived(blanks(items)),recent=$derived(recentSpecies(items));
   let folder=$state(''),saved=$state<{path:string;count:number}|null>(null);
   // A change that fails may be far down the list, so its error is shown as a toast; a list that cannot load says so in place.
   // `untrack`: the toast list itself must not re-run this, or one failure would raise toasts forever.
@@ -54,7 +54,7 @@
           {#snippet meta()}<span title={where(item)}>{where(item)}</span>{/snippet}
           {#snippet actions()}{#if item.exported_at}<span class="saved">{t('pkExported')}</span>{/if}<Button size="sm" onclick={()=>picks.remove(item)}>{t('pkRemove')}</Button>{/snippet}
         </AudioRegion>
-        <div class="labels"><PickForm value={item} name={speciesName} onchange={label=>picks.save({...item,...label})}/></div>
+        <div class="labels"><PickForm value={item} {recent} name={speciesName} onchange={label=>picks.save({...item,...label})}/></div>
       </article>
       {:else}<p class="muted">{t('pkEmpty')}</p>{/each}
     </section>

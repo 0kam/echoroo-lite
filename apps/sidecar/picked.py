@@ -117,28 +117,6 @@ def delete(root, dataset_id, recording_id, start_s, end_s):
     return {'deleted': cursor.rowcount > 0}
 
 
-def set_node_species(root, body):
-    from explore import _current_run
-    _, _, _, run = _current_run(root, body.dataset_id)
-    if run is None:
-        raise CatalogError('not_found')
-    with connect(root) as db:
-        node = db.execute('SELECT lo,hi FROM explore_nodes WHERE run_id=? AND node=?',
-                          (run['id'], body.node)).fetchone()
-        if node is None:
-            raise CatalogError('not_found')
-        cursor = db.execute('''UPDATE picked_sounds SET species=?,
-            updated_at=CURRENT_TIMESTAMP WHERE (species IS NULL OR species=?)
-            AND recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
-            AND EXISTS (SELECT 1 FROM explore_points p
-                JOIN segments s ON s.id=p.segment_id JOIN analyses a ON a.id=s.analysis_id
-                WHERE p.run_id=? AND p.position>=? AND p.position<?
-                AND a.recording_id=picked_sounds.recording_id
-                AND s.start_s=picked_sounds.start_s AND s.end_s=picked_sounds.end_s)''',
-            (body.species, body.previous, body.dataset_id, run['id'], node['lo'], node['hi']))
-    return {'updated': cursor.rowcount}
-
-
 def _digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()

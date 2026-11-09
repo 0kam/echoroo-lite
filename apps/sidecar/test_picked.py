@@ -127,20 +127,6 @@ class PickedCheck(unittest.TestCase):
         self.assertEqual(self.client.delete('/explore/picked', params={
             'dataset': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5}).json(), {'deleted': False})
 
-    def test_node_species_updates_only_null_and_previous(self):
-        self.assertEqual(self.put(0, 5).status_code, 200)
-        self.assertEqual(self.put(5, 10, species='Old species').status_code, 200)
-        self.assertEqual(self.put(10, 12, species='Changed separately').status_code, 200)
-        response = self.client.post('/explore/picked/species', json={
-            'dataset_id': 1, 'node': 0, 'species': 'New species', 'previous': 'Old species'})
-        self.assertEqual((response.status_code, response.json()), (200, {'updated': 2}))
-        items = self.client.get('/explore/picked', params={'dataset': 1}).json()['items']
-        self.assertEqual([item['species']['scientific_name'] for item in items],
-                         ['New species', 'New species', 'Changed separately'])
-        missing = self.client.post('/explore/picked/species', json={
-            'dataset_id': 1, 'node': 99, 'species': None, 'previous': 'New species'})
-        self.assertEqual((missing.status_code, missing.json()), (404, {'detail': 'not_found'}))
-
     def test_export_zip_metadata_audio_manifest_and_errors(self):
         output = Path(self.temporary.name) / 'output'; output.mkdir()
         empty = self.client.post('/explore/picked/export', json={'dataset_id': 1, 'folder': str(output)})

@@ -13,8 +13,7 @@
   import { fill,modelName } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
-  import PickForm,{blanks,focusInput,pickedSounds,pickKey,type Named} from '$lib/PickForm.svelte';
-  import SpeciesPicker from '$lib/SpeciesPicker.svelte';
+  import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -26,7 +25,9 @@
   // `anchor`: the position the sounds are sorted around, or -1 for the group's centre.
   type List=Page&{pending:boolean;error:string;anchor:number};
   type Points={n:number;x:Float32Array;y:Float32Array;box:[number,number,number,number]};
-  const id=Number(page.params.id),PAGE=20,MAX_ZOOM=1000,draftKey=`echoroo-explore:${id}`,speciesKey=`echoroo-explore-species:${id}`;
+  const id=Number(page.params.id),PAGE=20,MAX_ZOOM=1000,draftKey=`echoroo-explore:${id}`;
+  // Group species were dropped; clear what older versions kept in this browser.
+  try{localStorage.removeItem(`echoroo-explore-species:${id}`);}catch{/* Private windows may refuse storage. */}
   // Categorical hues stepped for the light and the dark surface; a group has at most eight smaller groups, one colour each.
   const LIGHT=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
   const DARK=['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
@@ -34,8 +35,8 @@
   // The group being viewed lives in the URL (`?node=`). Moving between groups replaces it, so the browser's back button leaves the map; back and forward on the map walk the groups.
   const nodeId=$derived(Number(new URL(page.url.hash.slice(1),page.url).searchParams.get('node'))||0);
   const here=(node:number)=>`${resolve(`/datasets/${id}/explore`)}?node=${node}`;
-  // Coming back without `?node=` reopens the same group, rows, order, chosen sound and as many sounds as before.
-  let draft=(()=>{try{return JSON.parse(localStorage.getItem(draftKey)||'null');}catch{return null;}})() as {created_at?:string;node?:number;loaded?:Record<string,number>;order?:string;pick?:number}|null;
+  // Coming back without `?node=` reopens the same group, rows, current sound and as many sounds as before.
+  let draft=(()=>{try{return JSON.parse(localStorage.getItem(draftKey)||'null');}catch{return null;}})() as {created_at?:string;node?:number;loaded?:Record<string,number>;pick?:number}|null;
   let restoring=!new URL(page.url.hash.slice(1),page.url).searchParams.has('node')&&!!draft;
   let data=$state<Status|null>(null),error=$state(''),pointsError=$state(''),names=$state<Record<string,Species>>({});
   // The child picked on the map or opened in the list (its index): its row is highlighted and the other children are dimmed.
@@ -46,16 +47,13 @@
   // The last sound stays shown until the next one arrives, so the card never shrinks and the page never jumps.
   let pickAt=$state(-1),pick=$state<Segment|null>(null),shownAt=$state(-1),pickError=$state(''),autoplayPick=$state(true);
   let watched=$state<number|null>(null),transformed=$state(false),canBack=$state(false),canForward=$state(false);
-  // Sounds in a group are listed nearest to the sound chosen on the map (until one is chosen, nearest to the group's centre), or always nearest to the centre.
-  let order=$state<'centre'|'near'>(draft?.order==='centre'?'centre':'near');
-  const anchorOf=()=>order==='near'?pickAt:-1;
+  // Sounds in a group are listed nearest to the current sound; until a dot is clicked, nearest to the group's centre.
+  const anchorOf=()=>pickAt;
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   // Sounds picked for export, saved in the sidecar; the line under the map counts them and what is still blank.
   const picks=pickedSounds(id);void picks.reload();
   const tally=$derived.by(()=>{const items=Object.values(picks.state.items);return {n:items.length,blanks:blanks(items)};});
-  // The species chosen for each group of this map: a typing aid kept in this browser, not a record (picked sounds keep their own species).
-  let groupSpecies=$state<Record<number,Named>>({}),choosing=$state<number|null>(null);
-  const savedSpecies=(created:string|null)=>{try{const saved=JSON.parse(localStorage.getItem(speciesKey)||'null');return saved?.created_at===created?saved.nodes??{}:{};}catch{return {};}};
+  const recent=$derived(recentSpecies(Object.values(picks.state.items)));
   const job=$derived(activeJob());
   const building=$derived(job?.stage.startsWith('explore_')&&datasetOf(job.dataset_id)?.site_id===datasetOf(id)?.site_id?job:null);
   const ended=$derived(app.jobs.find(j=>j.id===watched&&(j.status==='failed'||j.status==='cancelled')));
@@ -72,7 +70,7 @@
       if(restoring){restoring=false;if(next.created_at===draft?.created_at&&draft?.node&&draft.node!==wanted){void go(draft.node);return;}}
       const before=data?.node,fresh=next.created_at!==data?.created_at,moved=next.node?.node!==before?.node;
       data=next;error='';
-      if(fresh){points=null;lists={};groupSpecies=savedSpecies(next.created_at);if(next.node)void loadPoints(next);}
+      if(fresh){points=null;lists={};if(next.node)void loadPoints(next);}
       if(!next.node)return;
       // Every group shown joins the back/forward list, unless back or forward brought us here.
       let visited=visits.get(id);
@@ -104,7 +102,7 @@
   function whole(){if(node?.node)void go(0);else fly(true);}
   // Group numbers change when the map is made again, so a new map starts from the whole map.
   const build=createTask(async()=>{watched=(await api<{id:number}>('/explore',{dataset_id:id})).id;await refreshCatalog();if(nodeId)void go(0);});
-  // Loads a group's sounds in the chosen order until `count` are loaded or none are left.
+  // Loads a group's sounds in order until `count` are loaded or none are left.
   async function loadList(at:number,count=PAGE){
     const anchor=anchorOf();
     lists[at]??={total:0,segments:[],pending:false,error:'',anchor};
@@ -120,15 +118,15 @@
       list.total=total;list.segments=segments;list.anchor=anchor;
     }catch(e){list.error=e instanceof Error?e.message:'unknown_error';}
     finally{list.pending=false;}
-    // Another sound or order may have been chosen while this was loading.
+    // Another dot may have been clicked while this was loading.
     if(!list.error&&list.anchor!==anchorOf())void loadList(at,list.segments.length);
   }
-  // A new chosen sound or order re-sorts the shown lists; each keeps as many sounds as it shows.
+  // A new current sound re-sorts the shown lists; each keeps as many sounds as it shows.
   $effect(()=>{const anchor=anchorOf();untrack(()=>{for(const [at,list] of Object.entries(lists))
     if(list.anchor!==anchor&&(open[+at]||+at===node?.node))void loadList(+at,list.segments.length);});});
   $effect(()=>{if(!node||!data?.created_at)return;
     const shown=children.length?children.filter(c=>open[c.node]).map(c=>c.node):[node.node];
-    const value=JSON.stringify({created_at:data.created_at,node:node.node,loaded:Object.fromEntries(shown.map(at=>[at,lists[at]?.segments.length||PAGE])),order,pick:pickAt});
+    const value=JSON.stringify({created_at:data.created_at,node:node.node,loaded:Object.fromEntries(shown.map(at=>[at,lists[at]?.segments.length||PAGE])),pick:pickAt});
     try{localStorage.setItem(draftKey,value);}catch{/* Private windows may refuse storage. */}});
   async function choose(at:number,play=true){
     pickAt=at;pickError='';autoplayPick=play;
@@ -136,19 +134,11 @@
       if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
-  // Checking a sound picks it with its group's species and nothing else filled in; unchecking removes it and its labels.
-  function pickSound(s:Segment,at:number,checked:boolean){
+  // Ticking a sound adds it for export with nothing filled in; unticking removes it and its labels.
+  function pickSound(s:Segment,checked:boolean){
     if(!checked){void picks.remove(s);return;}
     void picks.save({recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,path:s.path,recorded_at:s.recorded_at,timezone:s.timezone,
-      species:groupSpecies[at]??null,background:[],sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
-  }
-  // A group's species also goes to its picked sounds that have none or still have the group's previous species; sounds changed one by one keep theirs.
-  function chooseGroupSpecies(at:number,species:Named){
-    const previous=groupSpecies[at]??null;choosing=null;
-    if(previous?.scientific_name===species.scientific_name)return;
-    groupSpecies[at]=species;
-    try{localStorage.setItem(speciesKey,JSON.stringify({created_at:data?.created_at,nodes:groupSpecies}));}catch{/* Private windows may refuse storage. */}
-    void picks.send(()=>api('/explore/picked/species',{dataset_id:id,node:at,species:species.scientific_name,previous:previous?.scientific_name??null}));
+      species:null,background:[],sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
   }
   // Picking a sound opens its group's row; rows share one `name`, so the browser closes the row that was open.
   // A newly opened row out of view is brought up after the double-click window, so a fast second click still lands on the same dot.
@@ -292,40 +282,26 @@
     if(child>=0)show(child);
   }
 </script>
-{#snippet about(s:Segment)}<span title={`${when(s)} · ${candidates(s)}`}>{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
-{#snippet check(s:Segment,at:number)}<label class="check"><input type="checkbox" checked={!!picks.state.items[pickKey(s)]} onchange={event=>pickSound(s,at,event.currentTarget.checked)}/>{t('ePick')}</label>{/snippet}
-{#snippet groupBox(g:Group)}
-  {@const chosen=groupSpecies[g.node]}
-  <div class="group-species">
-    <p><span class="field-name">{t('eGroupSpecies')}</span> {#if chosen}<strong>{speciesName(chosen)}</strong>{:else}<span class="muted">{t('eGroupUnset')}</span>{/if}</p>
-    {#if choosing===g.node}<div class="search" use:focusInput>
-      <SpeciesPicker bind:value={()=>null,(row:Species|null)=>{if(row){names[row.id]=row;asked.add(row.id);chooseGroupSpecies(g.node,{id:row.id,scientific_name:row.scientific_name});}}} label={t('pfSpeciesName')}/>
-      <Button size="sm" onclick={()=>choosing=null}>{t('mCancel')}</Button></div>
-    {:else}<div class="actions">{#if suggested(g).length}<span class="muted">{t('eFromAi')}</span>{/if}
-      {#each suggested(g) as s (s.scientific_name)}{@const on=chosen?.scientific_name===s.scientific_name}
-        <Button size="sm" active={on} aria-pressed={on} onclick={()=>chooseGroupSpecies(g.node,{id:s.id,scientific_name:s.scientific_name})}>{speciesName(s)} {pct(s.share)}</Button>{/each}
-      <Button size="sm" onclick={()=>choosing=g.node}>{t('eOtherSpecies')}</Button></div>{/if}
-    <p class="muted">{t('eGroupSpeciesHint')}</p>
-  </div>
-{/snippet}
+<!-- In the list the line may wrap to two lines, and the row of the current sound is marked. -->
+{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{/if}{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
 {#snippet sounds(at:number)}
   {@const list=lists[at]}
   {#each list?.segments??[] as s (s.segment_id)}{@const p=picks.state.items[pickKey(s)]}<div class="member" class:picked={!!p}>
-    {@render check(s,at)}
-    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>
-    {#if p}<div class="labels"><PickForm value={p} group={groupSpecies[at]??null} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
+    <label class="check"><input type="checkbox" checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
+    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s,pick?.segment_id===s.segment_id)}{/snippet}</AudioRegion>
+    {#if p}<div class="labels"><PickForm value={p} {recent} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
   </div>{/each}
   {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
   {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
   {:else if !list||list.pending}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 {/snippet}
-{#snippet sorting()}<div class="sorting"><label>{t('eOrder')}<select bind:value={order}>
-    <option value="near">{t('eOrderNear')}</option><option value="centre">{t('eOrderCentre')}</option></select></label>
-  <p class="muted">{order==='near'&&pickAt<0?t('eOrderNeedsPick'):t('localTime')}</p></div>{/snippet}
+{#snippet orderNote()}<p class="muted">{t(pickAt<0?'eOrderNeedsPick':'eOrderNear')}<br>{t('localTime')}</p>{/snippet}
 <svelte:window onkeydown={escape}/>
 <div class="page wide" onplaycapture={solo}>
   <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
-  <div class="page-header"><div><h1>{t('eTitle')}</h1><p>{t('eLead')}</p></div></div>
+  <!-- The three steps of the page; the list numbers them, so the drawn numbers are hidden from screen readers. -->
+  <div><h1>{t('eTitle')}</h1>
+    <ol class="flow">{#each [1,2,3] as n (n)}<li><span class="num" aria-hidden="true">{n}</span><strong>{t(`eStep${n}`)}</strong><p class="muted">{t(`eStep${n}Text`)}</p></li>{/each}</ol></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if ended}<p class={ended.status==='failed'?'error':'notice'} role="status">{t(ended.status==='cancelled'?'cancelled':ended.error??'explore_failed')}</p>{/if}
   {#if data}
@@ -365,16 +341,14 @@
               {@const child=children.findIndex(c=>c.lo<=shownAt&&shownAt<c.hi)}
               <h3 class="line">{t('ePicked')}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
               <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
-              {#key s.segment_id}<div class="sound">{@render check(s,child>=0?children[child].node:node.node)}
-                <AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion></div>{/key}
+              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>{/key}
             {/if}
           </div>
-          <!-- One row of fixed height: picking or labelling a sound changes the numbers, never the map's size. -->
+          <!-- One row of fixed height, empty until a sound is ticked: ticking or labelling a sound changes the numbers, never the map's size. -->
           <div class="tally">
             {#if tally.n}<p><strong>{fill('eTally',{n:tally.n})}</strong>
                 {#if tally.blanks}<span title={tally.blanks}>{tally.blanks}</span>{/if}</p>
-              <Button variant="primary" size="sm" href={resolve(`/datasets/${id}/explore/picked`)}>{t('eToPicked')}</Button>
-            {:else}<p class="muted">{t('eTallyHint')}</p>{/if}
+              <Button variant="primary" size="sm" href={resolve(`/datasets/${id}/explore/picked`)}>{t('eToPicked')}</Button>{/if}
           </div>
           {#if picks.state.error}<p class="error" role="alert">{t(picks.state.error)}</p>{/if}
         </section>
@@ -389,7 +363,7 @@
           {#if children.length}
             <h2>{t('eListHeading')}</h2>
             <p class="muted">{t('eListHint')}</p>
-            {@render sorting()}
+            {@render orderNote()}
             {#each children as c,index (c.node)}
               <details class="group" name="groups" class:selected={selected===index} class:dim={selected!==null&&selected!==index} id={`group-${c.node}`}
                 bind:open={open[c.node]} ontoggle={event=>{if(event.currentTarget.open)void loadList(c.node);}}>
@@ -402,15 +376,13 @@
                 </summary>
                 {#if open[c.node]}<div class="body stack">
                   {#if c.child_count}<div class="actions"><Button size="sm" onclick={()=>go(c.node)}>{t('eOpen')}</Button><span class="muted">{fill('eInner',{n:c.child_count})}</span></div>{/if}
-                  {@render groupBox(c)}
                   {@render sounds(c.node)}
                 </div>{/if}
               </details>
             {/each}
           {:else}
             <h2>{fill('eMembersHeading',{n:node.size.toLocaleString(app.locale)})}</h2>
-            {@render sorting()}
-            {@render groupBox(node)}
+            {@render orderNote()}
             {@render sounds(node.node)}
           {/if}
         </section>
@@ -418,13 +390,18 @@
     {/if}
   {:else if !error}<p role="status"><Spinner/> {t('eLoading')}</p>{/if}
 </div>
-<style>.explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+<style>.flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0 0;padding:0;list-style:none}
+  .flow li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px 8px;align-items:center;padding:12px;border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--color-card-bg))}
+  .flow .num{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:rgb(var(--primary-700));color:#fffaf3;font-size:14px;font-weight:600}
+  :global(.dark) .flow .num{background:rgb(var(--primary-500));color:rgb(var(--stone-50))}
+  .flow p{grid-column:2;margin:0}
+  .explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   /* The map column stays in view and never runs past the window: 140px is the 76px top bar, the 32px page padding and 16px above and below. */
   .map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
-  /* The map shrinks in short windows so the chosen sound under it stays in view. */
+  /* The map shrinks in short windows so the current sound under it stays in view. */
   .map{position:relative}.map-nav{position:absolute;top:8px;left:8px;display:flex;gap:4px}
-  /* The map takes the height left over by the hint, the chosen-sound card and the 44px picked-sounds row (with its 12px gap), so all of them fit in the window. */
-  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 514px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  /* The map takes the height left over by the hint (three lines at 1024px), the current-sound card and the 44px tally row with their 12px gaps, so the column fits a 768px window. */
+  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 540px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
   /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
   .pick{display:flex;flex-direction:column;gap:8px;min-height:198px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
   .line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -439,20 +416,21 @@
   .group[open] .chevron{transform:rotate(90deg)}
   .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
-  /* A narrow first column holds the check left of the play button; a picked sound's labels sit under it. */
-  .member,.sound{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px;align-items:center}
-  .member{padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
+  /* A 56px first column holds the check, its label under the box, left of the play button; a ticked sound's labels sit under it. */
+  .member{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;align-items:center;padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
   .member.picked{margin:0 -12px;padding:8px 12px 12px;background:rgb(var(--primary-500)/.12)}
   /* The labels use the whole row width, from under the check, so their items stay on one line in a narrow column. */
   .labels{grid-column:1/-1}
-  .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;cursor:pointer}
+  /* English labels wrap at the space; Japanese stays one word. */
+  .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;line-height:1.2;text-align:center;word-break:keep-all;cursor:pointer}
   .check input{width:22px;height:22px;accent-color:rgb(var(--primary-700))}
-  .group-species{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:8px;background:rgb(var(--stone-100))}
-  .field-name{font-size:14px;font-weight:500;color:rgb(var(--stone-800))}
-  .search{display:flex;flex-direction:column;align-items:flex-start;gap:8px}.search :global(label){align-self:stretch}
+  /* The date and AI suggestions of a listed sound wrap to two lines at most instead of being cut. */
+  .member .about{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;white-space:normal}
+  /* Outlined, so the mark stays visible on a ticked row's tint; the word, not the colour, carries the meaning. */
+  .current{display:inline-block;margin-right:6px;padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;background:rgb(var(--color-card-bg));color:rgb(var(--primary-700));font-size:13px;font-weight:600;line-height:1.5}
   .tally{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
   .tally p{min-width:0;font-size:14px;line-height:1.3}
   .tally p>*{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tally :global(.button){flex:none}
-  .sorting{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px}.sorting label{display:flex;align-items:center;gap:8px}.sorting select{width:auto;margin:0}.sorting p{margin:0}
   .empty :global(.button){align-self:center}
+  @media(max-width:700px){.flow{grid-template-columns:minmax(0,1fr)}}
   @media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static;max-height:none;overflow:visible}canvas{height:320px}}</style>
