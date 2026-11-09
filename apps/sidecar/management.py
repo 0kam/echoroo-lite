@@ -31,8 +31,9 @@ def location_status(db, site, enabled=None):
     engines = {}
     stale = False
     rows = db.execute('''SELECT a.id,a.recording_id,a.engine,a.metadata,a.scores_path,
-        EXISTS (SELECT 1 FROM segments s JOIN vectors v ON v.rowid=s.id WHERE s.analysis_id=a.id) AS embedded
-        FROM analyses a JOIN recordings r ON r.id=a.recording_id
+        e.analysis_id IS NOT NULL AS embedded FROM analyses a LEFT JOIN
+        (SELECT s.analysis_id FROM vectors v JOIN segments s ON s.id=v.rowid GROUP BY s.analysis_id) e
+        ON e.analysis_id=a.id JOIN recordings r ON r.id=a.recording_id
         JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=? AND a.id IN
         (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''', (site['id'],))
     for row in rows:
