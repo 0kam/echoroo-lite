@@ -37,6 +37,7 @@ PACMAP_ITERATIONS = 450
 PACMAP_LR = 1.0
 SEED = 20261101
 CACHE_VERSION = 1
+MAP_VERSION = 2  # 2 = groups cut from the 2-D map; runs without it are version 1
 SCORE_THRESHOLD = 0.1
 CANDIDATE_MIN = 0.05
 
@@ -761,16 +762,16 @@ def build(root, dataset_id, job_id=None, cancel=None):
             projected, pca = exact_pca(matrix, temporary / 'pca50-source.f32', cancel)
             stage_seconds['pca'] = time.perf_counter() - started
             _check_cancel(cancel)
-            _progress(root, job_id, 'explore_tree', 2)
-            started = time.perf_counter()
-            tree, root_node, tree_details = binary_tree(projected, cancel)
-            nodes, order = flatten_tree(tree, root_node, projected, cancel)
-            stage_seconds['tree'] = time.perf_counter() - started
-            _check_cancel(cancel)
-            _progress(root, job_id, 'explore_layout', 3)
+            _progress(root, job_id, 'explore_layout', 2)
             started = time.perf_counter()
             layout, layout_mode = layout_points(projected, cancel)
             stage_seconds['layout'] = time.perf_counter() - started
+            _check_cancel(cancel)
+            _progress(root, job_id, 'explore_tree', 3)
+            started = time.perf_counter()
+            tree, root_node, tree_details = binary_tree(layout, cancel)
+            nodes, order = flatten_tree(tree, root_node, projected, cancel)
+            stage_seconds['tree'] = time.perf_counter() - started
             _check_cancel(cancel)
             _progress(root, job_id, 'explore_summarizing', 4)
             started = time.perf_counter()
@@ -814,7 +815,7 @@ def build(root, dataset_id, job_id=None, cancel=None):
                           'cache_index': index_path.name, 'cache_version': CACHE_VERSION, 'pca': pca,
                           'method': tree_details['method'], 'tree': tree_details,
                           'node_count': len(nodes), 'depth': max(item['depth'] for item in nodes),
-                          'layout': layout_mode, 'stage_seconds': stage_seconds,
+                          'layout': layout_mode, 'map_version': MAP_VERSION, 'stage_seconds': stage_seconds,
                           'candidate_filter': filters,
                           'score_threshold': SCORE_THRESHOLD, 'candidate_min': CANDIDATE_MIN}
                 db.execute('UPDATE explore_runs SET params=? WHERE id=?', (json.dumps(params, ensure_ascii=False), staged_id))
@@ -898,9 +899,13 @@ def status(root, dataset_id, node=0):
                     'segment_count': 0}
         params = json.loads(run['params'])
         current = sorted(row['analysis_id'] for row in compatible_analyses(db, dataset_id, model_sha, engine))
-        state = 'building' if building else 'stale' if current != params.get('analysis_ids') else 'ready'
+        stale_reason = ('data' if current != params.get('analysis_ids') else
+                        'method' if params.get('map_version') != MAP_VERSION else None)
+        state = 'building' if building else 'stale' if stale_reason else 'ready'
         result = {'status': state, 'created_at': run['created_at'], 'engine': run['engine'],
                   'segment_count': params['segment_count']}
+        if state == 'stale':
+            result['stale_reason'] = stale_reason
         # A stale map, or the one being replaced, stays browsable until the new one is published.
         selected = _node_row(db, run['id'], node)
         if selected is None:
