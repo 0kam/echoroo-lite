@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>音の地図（見本 v5）</title>
+<style>
+/* Light-theme colours and controls from apps/web/src/lib/theme.css and apps/web/src/routes/app.css. */
+:root{--primary-100:248 224 222;--primary-200:240 195 192;--primary-500:215 130 126;--primary-600:190 105 100;--primary-700:160 80 76;--stone-50:255 250 243;--stone-100:250 244 237;--stone-200:244 237 232;--stone-300:223 218 217;--stone-500:152 147 165;--stone-600:105 101 131;--stone-800:70 66 97;--stone-900:55 52 80;--color-page-bg:250 244 237;--color-card-bg:255 250 243;--color-card-border:223 218 217;--color-warning:234 157 52;--color-warning-light:253 240 218;
+  font-family:Inter,system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;color:rgb(var(--stone-900));background:rgb(var(--color-page-bg));font-size:16px;line-height:1.65;--radius:12px;--button-radius:10px;--spec-sm:120px}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0}
+button,input,select{font:inherit}
+h1,h2,h3,p{margin:0}h1{font-size:28px;font-weight:650;letter-spacing:-.02em}h2{font-size:21px;font-weight:600}h3{font-size:18px;font-weight:600}
+a{color:rgb(var(--primary-700))}.muted{color:rgb(var(--stone-600));font-size:14px}
+.button,button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:8px 24px;border:1px solid rgb(var(--stone-300));border-radius:var(--button-radius);background:rgb(var(--color-card-bg));color:rgb(var(--stone-800));cursor:pointer;text-decoration:none;max-width:100%;text-align:center;line-height:1.3;font-size:16px}
+.button:hover,button:hover{background:rgb(var(--stone-200))}
+button:disabled{background:rgb(var(--stone-200));color:rgb(var(--stone-500));border-color:rgb(var(--stone-200));cursor:not-allowed}
+.button.primary{background:rgb(var(--primary-700));color:#fffaf3;border-color:transparent;font-weight:500}.button.primary:hover{background:rgb(var(--primary-600))}
+.button.sm{min-height:44px;padding:8px 16px;font-size:14px}
+button.link{font-size:inherit;border:0;background:transparent;padding:0;min-height:0;color:rgb(var(--primary-700));text-align:left;white-space:normal;text-decoration:underline}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid rgb(var(--primary-600));outline-offset:2px}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.segmented{display:inline-flex;border:1px solid rgb(var(--stone-300));border-radius:var(--button-radius);overflow:hidden}
+.segmented button{min-height:44px;padding:4px 12px;border:0;border-radius:0;font-size:14px}.segmented button+button{border-left:1px solid rgb(var(--stone-300))}
+.segmented button[aria-pressed=true]{background:rgb(var(--primary-100));color:rgb(var(--primary-700));font-weight:600}
+label{display:block;font-size:14px;font-weight:500;color:rgb(var(--stone-800))}
+input,select{display:block;width:100%;min-width:0;margin-top:4px;padding:8px 12px;border:1px solid rgb(var(--stone-300));border-radius:6px;background:rgb(var(--stone-50));color:rgb(var(--stone-900))}
+input[type=checkbox]{display:inline-block;width:20px;height:20px;margin:0;flex:none}
+details{font-size:14px}summary{cursor:pointer;font-weight:500}
+.shell{display:flex;flex-direction:column;height:100vh}
+.topbar{flex:none;display:flex;align-items:center;gap:24px;min-height:76px;padding:12px 4%;background:rgb(var(--color-card-bg));border-bottom:1px solid rgb(var(--color-card-border))}
+.brand{font-weight:650;letter-spacing:.02em;color:rgb(var(--primary-700));white-space:nowrap}
+.main{flex:1;overflow-y:auto;padding:32px 24px 48px}
+.main>.page{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:24px}
+.crumbs{display:flex;align-items:center;font-size:16px;margin-bottom:-8px}
+.crumbs a{display:inline-flex;align-items:center;min-height:44px;padding:8px 16px;border:1px solid rgb(var(--stone-300));border-radius:var(--button-radius);background:rgb(var(--color-card-bg));color:inherit;text-decoration:none}
+.crumbs a::before{content:'‹';margin-right:8px;font-size:22px;line-height:1}
+.panel{background:rgb(var(--color-card-bg));border:1px solid rgb(var(--color-card-border));border-radius:var(--radius);padding:24px;box-shadow:0 1px 2px rgb(0 0 0/.05)}
+.stack{display:flex;flex-direction:column;gap:12px}
+/* New in v5: three steps under the title instead of the lead paragraph; the numbers come from the page, not the text. */
+.flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0 0;padding:0;list-style:none}
+.flow li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px 8px;align-items:center;padding:12px;border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--color-card-bg))}
+.flow .num{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:rgb(var(--primary-700));color:#fffaf3;font-size:14px;font-weight:600}
+.flow p{grid-column:2}
+/* The explore page (routes/datasets/[id]/explore/+page.svelte). */
+.explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
+.map{position:relative}.map-nav{position:absolute;top:8px;left:8px;display:flex;gap:4px}
+/* The app subtracts 514px; the v5 map hint wraps to three lines at 1024px, so the mock subtracts 540px to keep the column inside a 768px window. */
+.map img{display:block;width:100%;height:clamp(220px,calc(100vh - 540px),560px);object-fit:contain;border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50))}
+.pick{display:flex;flex-direction:column;gap:8px;min-height:198px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
+.line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trail{display:flex;flex-wrap:wrap;align-items:center;gap:0 4px}
+.trail a,.trail strong{display:inline-flex;align-items:center;min-height:44px;padding:0 4px}.trail strong{font-weight:600}
+.group{font-size:16px;border:1px solid rgb(var(--color-card-border));border-radius:8px;transition:opacity .15s}
+.group.selected{border-left:4px solid rgb(var(--primary-700))}.group.dim{opacity:.55}
+.group>summary{display:grid;grid-template-columns:28px minmax(0,1fr) 16px;gap:8px;align-items:start;padding:12px;list-style:none;font-weight:400}
+.group>summary::-webkit-details-marker{display:none}
+.ghead{display:flex;flex-direction:column;gap:4px}.ghead .muted{font-weight:400}
+.chevron{color:rgb(var(--stone-600));font-size:18px;line-height:28px;text-align:center;transition:transform .15s}.group[open] .chevron{transform:rotate(90deg)}
+.body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
+.badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
+/* A 56px first column holds the check (box over its label) left of the play button; a ticked sound's labels use the whole row under it. */
+.member{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;align-items:center;padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
+.member.picked{margin:0 -12px;padding:8px 12px 12px;background:rgb(var(--primary-500)/.12)}
+.member>.pick-form{grid-column:1/-1}
+.check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;white-space:nowrap;cursor:pointer}
+.check input{width:22px;height:22px;accent-color:rgb(var(--primary-700))}
+.tag{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;background:rgb(var(--stone-200));font-size:14px}
+.tally{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
+.tally p{min-width:0;font-size:14px;line-height:1.3}.tally p>*{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tally .button{flex:none}
+.annot{font-size:13px;color:#7a3b8f;background:#f6ecfa;border-radius:6px;padding:4px 8px}
+/* AudioRegion.svelte with compact, dense and fixedRange. */
+.region{display:flex;flex-direction:column;gap:8px}
+.region-controls{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px}
+.spectrogram-grid{display:grid;grid-template-columns:44px minmax(0,1fr);gap:4px 8px}
+.unit{align-self:end;text-align:right;font-size:12px;color:rgb(var(--stone-600))}
+.rhead{display:flex;justify-content:flex-end;min-height:0}
+.frequencies{position:relative;font-size:12px;line-height:1;color:rgb(var(--stone-600))}
+.frequencies span{position:absolute;right:0;transform:translateY(50%);font-variant-numeric:tabular-nums}
+.frequencies .edge-low{transform:none}.frequencies .edge-high{transform:translateY(100%)}
+.spectrogram{position:relative;height:var(--spec-height);background:#010101;overflow:hidden;border-radius:4px}
+.spectrogram img{width:100%;height:100%;display:block}
+.guide{position:absolute;left:0;right:0;height:1px;background:rgb(255 255 255/.15);pointer-events:none}
+.dense{display:grid;grid-template-columns:44px minmax(0,1fr);gap:0 8px;align-items:center}
+.dense .spectrogram-grid{grid-column:2;grid-row:1}.dense .region-controls{grid-column:1;grid-row:1}.dense .region-controls .button{width:44px;padding:0}
+.dense .rhead{justify-content:flex-start;align-items:center;gap:8px;min-width:0}
+.dense .meta{flex:1;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* PickForm.svelte. */
+.pick-form{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:4px 12px}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
+.wide{grid-column:2}
+.name{align-self:start;padding-top:12px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-size:14px;font-weight:500;line-height:1.3;color:rgb(var(--stone-800))}
+.pick-form .link{min-height:44px;padding:0 4px;font-size:14px}
+.tag:has(.remove){padding-right:0}
+.remove{min-height:44px;min-width:44px;padding:0;border:0;background:transparent;font-size:18px}
+.missing{padding:0 4px;border:1px solid rgb(var(--color-warning));border-radius:4px;background:rgb(var(--color-warning-light));color:rgb(var(--stone-800));font-size:12px;font-weight:400}
+.search{display:flex;flex-direction:column;align-items:flex-start;gap:8px}.search label{align-self:stretch}
+.qguide{padding:8px 12px;border-radius:8px;background:rgb(var(--stone-100));font-size:14px}
+.qguide dl{display:grid;grid-template-columns:2em 1fr;gap:2px 8px;margin:0}.qguide dt{font-weight:600}.qguide dd{margin:0}
+@media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static;max-height:none;overflow:visible}.map img{height:320px}}
+@media(max-width:700px){.flow{grid-template-columns:minmax(0,1fr)}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar"><span class="brand">Echoroo Lite</span><span class="muted" id="note"></span></header>
+  <main class="main">
+    <div class="page">
+      <div class="crumbs"><a href="#">種の一覧に戻る</a></div>
+      <div>
+        <h1>音の地図</h1>
+        <ol class="flow">
+          <li><span class="num" aria-hidden="true">1</span><strong>地図で探す</strong><p class="muted">似た音ほど近くに並ぶので、点を押して聞いてみましょう。</p></li>
+          <li><span class="num" aria-hidden="true">2</span><strong>近くの音を集める</strong><p class="muted">右の一覧から、いまの音と同じ種類の音にチェックします。</p></li>
+          <li><span class="num" aria-hidden="true">3</span><strong>書き出す</strong><p class="muted">種名を付けて、音声と表を ZIP に保存します。</p></li>
+        </ol>
+      </div>
+      <p class="muted" id="made"></p>
+      <div class="explore">
+        <section class="panel stack map-panel" aria-label="地図">
+          <div class="map"><img id="map" alt="すべての区間の散布図。色の付いた点がいま見ているまとまりで、色と番号は横の一覧にある小さなまとまりを表します。">
+            <div class="map-nav" role="group" aria-label="地図の移動"><button type="button" class="button sm">‹ 戻る</button><button type="button" class="button sm" disabled>進む ›</button><button type="button" class="button sm">全体に戻る</button></div></div>
+          <p class="muted" id="map-hint"></p>
+          <div class="pick" id="card"></div>
+          <div class="tally" id="tally"></div>
+        </section>
+        <section class="panel stack">
+          <nav class="trail" aria-label="いまの場所" id="trail"></nav>
+          <p id="summary"></p>
+          <h2>中のまとまり（多い順）</h2>
+          <p class="muted">まとまりは、地図を細かく見ていくための目安です。種の分け方ではありません。小さいまとまりには、珍しい音が入っていることがあります。</p>
+          <!-- v5: the order is fixed. Before a dot is clicked the line reads 地図で点を押すまでは、まとまりの中心に近い順に並びます。 -->
+          <p class="muted">いまの音に近い順に並んでいます。日時は録音地点のタイムゾーンで表示します。</p>
+          <div id="rows" class="stack"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+<datalist id="species-list"></datalist>
+<script>const DATA=/*DATA*/;</script>
+<script>
+const COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
+const QUALITY=[['A','大きくはっきり。雑音がほとんどない'],['B','はっきりしているが、少し遠いか少し雑音がある'],['C','聞き取れるが、遠いか雑音がかなりある'],['D','小さい、または雑音が多い'],['E','かろうじて聞こえる']];
+const TYPES=[['song','さえずり'],['call','地鳴き'],['','わからない']];
+const $=id=>document.getElementById(id);
+const pct=(v,digits=0)=>new Intl.NumberFormat('ja',{style:'percent',maximumFractionDigits:digits}).format(v);
+const num=v=>v.toLocaleString('ja');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const when=s=>new Intl.DateTimeFormat('ja',{dateStyle:'medium',timeStyle:'medium',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
+const groupName=name=>name?`まとまり ${name}`:'全体';
+const listOf=(items,share)=>items.map(i=>`${i.name} ${pct(share(i))}`).join('・');
+const aiHint=g=>g.hint<.2||!g.top.length?`AI の候補なし（無音や虫の声の可能性）・候補のある音 ${pct(g.hint)}`:`AI の候補（参考）: ${listOf(g.top,t=>t.share)}（候補のある音 ${pct(g.hint)}）`;
+const candidates=s=>s.candidates.length?`AI の候補: ${listOf(s.candidates,c=>c.score)}`:'AI の候補なし';
+const {node,rows:groups,selected,sounds}=DATA,opened=groups[selected];
+
+$('note').textContent=`見本 v5（2026-11-09）：テスト音源の実データ（${groupName(node.name)}、${groupName(opened.name)} を開いた状態）。音は鳴らず、地図は画像です。チェックと入力は画面の中だけで動き、保存されません。`;
+$('made').textContent=`${new Intl.DateTimeFormat('ja',{dateStyle:'medium'}).format(new Date(`${DATA.created_at.replace(' ','T')}Z`))}に、${DATA.model}の解析結果（${num(DATA.total)}区間）から作りました。`;
+$('map').src=DATA.map;
+$('map-hint').textContent=`点を押すと下で鳴ります。二度押すと、そのまとまりの中に入って拡大します。ホイールで拡大、ドラッグで移動。点 1 つは ${+DATA.clip_s.toFixed(1)} 秒です。`;
+$('trail').innerHTML=DATA.trail.map((n,i)=>(i?'<span class="muted" aria-hidden="true">›</span>':'')+(i<DATA.trail.length-1?`<a href="#">${esc(groupName(n))}</a>`:`<strong aria-current="page">${esc(groupName(n))}</strong>`)).join('');
+$('summary').innerHTML=`${num(node.size)} 区間、全体の ${pct(node.size/DATA.total,1)}。<br><span class="muted">${esc(aiHint(node))}</span>`;
+$('species-list').innerHTML=DATA.species.map(n=>`<option value="${esc(n)}">`).join('');
+
+// Ticked sounds by segment id. `t` stands in for the sidecar's updated_at: any change makes a sound the newest.
+let clock=DATA.picks.length;
+const picks=new Map(DATA.picks.map((p,i)=>[p.id,{...p,others:false,background:[],t:i}])),ui={edit:null,addOther:null,guide:null};
+// Species of the other ticked sounds of this site, most recently updated first, at most three.
+const recent=id=>[...new Set([...picks].filter(([k,p])=>k!==id&&p.species).sort((a,b)=>b[1].t-a[1].t).map(([,p])=>p.species))].slice(0,3);
+const blanks=()=>{const all=[...picks.values()];return [['種が未入力',all.filter(p=>!p.species).length],['質が未入力',all.filter(p=>!p.quality).length]].filter(([,n])=>n).map(([t,n])=>`${t} ${n} 件`).join('・');};
+
+function region(s,inList){
+  const tag=inList&&s.id===DATA.current?'<span class="tag">いまの音</span> ':'';
+  const ticks=s.ticks.map(([k,f])=>`<span style="bottom:${f*100}%"${f===0?' class="edge-low"':f===1?' class="edge-high"':''}>${k}</span>`).join('');
+  const guides=s.ticks.filter(([,f])=>f>0&&f<1).map(([,f])=>`<div class="guide" style="bottom:${f*100}%"></div>`).join('');
+  return `<div class="region dense" style="--spec-height:var(--spec-sm)"><div class="spectrogram-grid"><span class="unit">kHz</span>
+    <div class="rhead"><div class="meta">${tag}<span title="${esc(`${when(s)} · ${candidates(s)}`)}">${esc(when(s))} · <span class="muted">${esc(candidates(s))}</span></span></div></div>
+    <div class="frequencies" aria-hidden="true">${ticks}</div><div class="spectrogram" role="group" aria-label="スペクトログラム"><img src="${s.image}" alt="">${guides}</div></div>
+    <div class="region-controls"><button type="button" class="button" aria-label="この音を聞く">▶</button></div></div>`;
+}
+function segmented(options,value,act,id,label){return `<span class="segmented" role="group" aria-label="${label}">${options.map(([v,l])=>`<button type="button" aria-pressed="${value===v}" data-act="${act}" data-id="${id}" data-v="${v}">${l}</button>`).join('')}</span>`;}
+function form(id){
+  const p=picks.get(id),names=p.species||ui.edit===id?[]:recent(id);
+  return `<div class="pick-form">
+    <span class="name">種${p.species?'':'<span class="missing">未入力</span>'}</span>
+    <div class="controls">${p.species?`<strong>${esc(p.species)}</strong>`:''}${ui.edit===id?'':`<button type="button" class="link" data-act="edit" data-id="${id}">${p.species?'変える':'入れる'}</button>`}
+      ${names.length?`<span class="muted">前に入れた種：</span>${names.map(n=>`<button type="button" class="button sm" data-act="recent" data-id="${id}" data-v="${esc(n)}">${esc(n)}</button>`).join('')}`:''}</div>
+    ${ui.edit===id?`<div class="search wide"><label>種名（一般名・学名）<input type="search" list="species-list" data-act="species" data-id="${id}"></label><button type="button" class="button sm" data-act="cancel">キャンセル</button></div>`:''}
+    <span class="name">声</span><div class="controls">${segmented(TYPES,p.type,'type',id,'声')}</div>
+    <span class="name">質${p.quality?'':'<span class="missing">未入力</span>'}</span>
+    <div class="controls">${segmented(QUALITY.map(([q])=>[q,q]),p.quality,'quality',id,'質')}<button type="button" class="link" data-act="guide" data-id="${id}" aria-expanded="${ui.guide===id}">質の目安</button></div>
+    ${ui.guide===id?`<div class="qguide wide"><dl>${QUALITY.map(([q,t])=>`<dt>${q}</dt><dd>${t}</dd>`).join('')}</dl><p class="muted">Xeno-canto の録音の質の基準です。迷ったら C。</p></div>`:''}
+    <span class="name">ほかの種の声</span>
+    <div class="controls">${segmented([['no','なし'],['yes','あり']],p.others?'yes':'no','others',id,'ほかの種の声')}
+      ${p.others?p.background.map((n,i)=>`<span class="tag">${esc(n)}<button type="button" class="remove" aria-label="${esc(n)} を消す" data-act="bg-remove" data-id="${id}" data-v="${i}">×</button></span>`).join('')+(ui.addOther===id?'':`<button type="button" class="link" data-act="bg-add" data-id="${id}">種を足す</button>`):''}</div>
+    ${ui.addOther===id&&p.others?`<div class="search wide"><label>ほかの種の名前（分からなければ足さなくてかまいません）<input type="search" list="species-list" data-act="background" data-id="${id}"></label><button type="button" class="button sm" data-act="cancel">キャンセル</button></div>`:''}
+  </div>`;
+}
+
+$('card').innerHTML=`<h3 class="line">いまの音 · ${esc(groupName(opened.name))}</h3><div class="sound">${region(sounds[0],false)}</div>`;
+$('rows').innerHTML=groups.map((g,i)=>`<details class="group ${i===selected?'selected':'dim'}" name="groups"${i===selected?' open':''}>
+  <summary><span class="badge" style="background:${COLORS[i%COLORS.length]}" aria-hidden="true">${i+1}</span>
+    <span class="ghead"><h3>${esc(groupName(g.name))} — <span class="muted">${num(g.size)} 区間（${pct(g.size/node.size)}）</span></h3><span class="muted">${esc(aiHint(g))}</span></span><span class="chevron" aria-hidden="true">›</span></summary>
+  <div class="body stack">${g.children?`<div class="actions"><button type="button" class="button sm">中を見る</button><span class="muted">中に ${g.children} 個のまとまり。下はこのまとまりの音で、20 件ずつ表示します。</span></div>`:''}
+    ${i===selected?'<div id="sounds" style="display:contents"></div><button type="button" class="button" style="align-self:flex-start">さらに20件を表示</button>':'<p class="annot">見本ではこの行の音を省略しています。</p>'}</div></details>`).join('');
+
+function render(){
+  // Keep keyboard focus on the same control across the re-render.
+  const key=el=>el?.dataset?.id?[el.tagName,el.dataset.act,el.dataset.id,el.dataset.v].join('|'):null,focused=key(document.activeElement);
+  $('sounds').innerHTML=sounds.map(s=>`<div class="member${picks.has(s.id)?' picked':''}"><label class="check"><input type="checkbox" data-act="pick" data-id="${s.id}"${picks.has(s.id)?' checked':''}>書き出す</label>${region(s,true)}${picks.has(s.id)?form(s.id):''}</div>`).join('');
+  const b=blanks();
+  $('tally').innerHTML=picks.size?`<p><strong>書き出す音 ${picks.size} 件</strong>${b?`<span title="${b}">${b}</span>`:''}</p><button type="button" class="button primary sm">書き出す音の一覧へ</button>`:'';
+  if(focused)[...document.querySelectorAll('[data-id]')].find(el=>key(el)===focused)?.focus({preventScroll:true});
+}
+document.addEventListener('click',event=>{
+  const el=event.target.closest('[data-act]');if(!el||el.tagName==='INPUT')return;
+  const act=el.dataset.act,id=Number(el.dataset.id),p=picks.get(id),v=el.dataset.v;
+  if(act==='type')p.type=v;
+  else if(act==='quality')p.quality=p.quality===v?'':v;
+  else if(act==='others'){p.others=v==='yes';if(!p.others){p.background=[];ui.addOther=null;}}
+  else if(act==='guide')ui.guide=ui.guide===id?null:id;
+  else if(act==='edit')ui.edit=id;
+  else if(act==='recent')p.species=v;
+  else if(act==='cancel')ui.edit=ui.addOther=null;
+  else if(act==='bg-add')ui.addOther=id;
+  else if(act==='bg-remove')p.background.splice(Number(v),1);
+  else return;
+  if(['type','quality','others','recent','bg-remove'].includes(act))p.t=++clock;
+  render();
+  if(act==='edit'||act==='bg-add')document.querySelector('.search input')?.focus({preventScroll:true});
+});
+document.addEventListener('change',event=>{
+  const el=event.target,id=Number(el.dataset.id),p=picks.get(id),value=el.value?.trim();
+  if(el.dataset.act==='pick'){if(el.checked)picks.set(id,{id,species:'',type:'',quality:'',others:false,background:[],t:++clock});else picks.delete(id);}
+  else if(el.dataset.act==='species'&&value){p.species=value;p.t=++clock;ui.edit=null;}
+  else if(el.dataset.act==='background'&&value){if(!p.background.includes(value))p.background.push(value);p.t=++clock;ui.addOther=null;}
+  else return;
+  render();
+});
+render();
+</script>
+</body>
+</html>

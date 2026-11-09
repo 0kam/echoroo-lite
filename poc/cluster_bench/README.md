@@ -48,3 +48,11 @@ figures are `docs/benchmarks/agreement-proto-2026-11-05.*` and `docs/benchmarks/
 built from the map), over three seeds: PaCMAP settings, a numpy UMAP-style layout, exact t-SNE as a reference, input
 preprocessing, and inputs with Kinglet-B embeddings or Perch class scores added (`fuji_extra.py` computes those from the
 Fuji WAV clips into `.local-data`). Results: `docs/benchmarks/layout-proto-2026-11-05.*` and `layout-fuji-2026-11-05.png`.
+
+## Sound map flow mock (2026-11-09)
+
+`flow_mock.py` bakes `docs/prototypes/explore-flow-mock.html` from `flow_mock_template.html` with a running sidecar
+(read-only): the v5 sound map of `docs/explore-and-contribute-proposal-2026-11.md` (find a sound on the map, tick nearby
+sounds, export) for one group with one row open, its sounds ordered closest to the current sound (`near=`), three of
+them ticked (two with different species, one blank). It is a changed copy of `label_mock.py` / `label_mock_template.html` (the v3 mock), which stay as they were.
+Run it with this folder's venv: `flow_mock.py <sidecar url> <token> <dataset id> <group, e.g. 1> [open child] [output]`.
