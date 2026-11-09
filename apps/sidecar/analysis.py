@@ -107,8 +107,9 @@ def pending_pairs(root, models, records, site):
                for engine in engines if engine not in ('perch', 'birdnet')}
     with connect(root) as db:
         latest = {(r['recording_id'], r['engine']): r for r in db.execute('''SELECT a.*,
-            EXISTS (SELECT 1 FROM segments s JOIN vectors v ON v.rowid=s.id WHERE s.analysis_id=a.id) AS embedded
-            FROM analyses a WHERE recording_id IN (SELECT value FROM json_each(?)) AND
+            e.analysis_id IS NOT NULL AS embedded FROM analyses a LEFT JOIN
+            (SELECT s.analysis_id FROM vectors v JOIN segments s ON s.id=v.rowid GROUP BY s.analysis_id) e
+            ON e.analysis_id=a.id WHERE recording_id IN (SELECT value FROM json_each(?)) AND
             id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''',
             (json.dumps([r['id'] for r in records]),))}
         changed = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?', (site.get('id'),)).fetchone())

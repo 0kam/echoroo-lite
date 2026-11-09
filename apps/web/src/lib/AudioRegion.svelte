@@ -91,6 +91,8 @@
         function clean() { clearTimeout(timer); cancelMetadata = undefined; player.removeEventListener('loadedmetadata', done); player.removeEventListener('error', fail); }
         cancelMetadata = done;
         audio.addEventListener('loadedmetadata', done); audio.addEventListener('error', fail);
+        // Nothing is fetched until the first play (preload="none"), so start loading now.
+        if (audio.networkState !== HTMLMediaElement.NETWORK_LOADING) audio.load();
       });
       if (version !== playbackVersion) return;
       audio.currentTime = from; stopAt = to;
@@ -121,7 +123,8 @@
     if(fixedRange)span=Math.min(60,end-start);
     navigate(fixedRange?start:Math.floor(start / span) * span);
     initialized=true;
-    return () => { request++; stop(); };
+    // Release the media player at once: WebKit (Tauri) stops loading any sound after a few hundred players pile up.
+    return () => { request++; stop(); audio?.removeAttribute('src'); audio?.load(); };
   });
 </script>
 
@@ -167,7 +170,8 @@
   </div>{/if}
   <!-- Field recordings have no speech transcript. -->
   <!-- svelte-ignore a11y_media_has_caption -->
-  <audio bind:this={audio} preload="metadata" src={mediaURL(`${mediaPath}/audio`)} aria-label={t('audio')}
+  <!-- preload="none": a list of sounds must not open one media player per row (WebKit stops loading after a few hundred). -->
+  <audio bind:this={audio} preload="none" src={mediaURL(`${mediaPath}/audio`)} aria-label={t('audio')}
     onerror={() => { error = 'unreadable_audio'; status = 'idle'; }} onplaying={() => { if (!audio.paused) { status = 'playing'; scheduleStop(); onplaying?.(); } }}
     onwaiting={() => { if (status === 'playing') status = 'loading'; }}
     onpause={() => { if (audio.paused && (status !== 'loading' || stopAt !== null)) { status = 'idle'; clearTimeout(stopTimer); } }} onended={stop} onseeked={scheduleStop} onratechange={scheduleStop}
