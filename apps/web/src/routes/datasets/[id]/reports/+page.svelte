@@ -7,7 +7,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,dayRange,duration } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { activityText,fill,presenceText,rangeQuery,type Overview } from '$lib/workflow';
+  import { activityText,fill,focusMissing,missingText,presenceText,rangeQuery,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -37,6 +37,9 @@
       revision:overview.revision,species_ids:selected,folder,locale:app.locale});
     history=await api(`/datasets/${id}/exports`);
   });
+  let tried=$state(false);
+  const noSpecies=$derived(tried&&!selected.length),noFolder=$derived(tried&&!isTauri()&&!folder);
+  const missing=$derived(missingText([!selected.length&&'wIncludeSpecies',!isTauri()&&!folder&&'exportFolder']));
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:overview?.site.timezone}).format(new Date(value.replace(' ','T')+'Z'));
   const openReport=createTask(async(exportId:number,kind:'document'|'folder')=>{
@@ -53,14 +56,16 @@
       <p>{dayRange(overview.start_date,overview.end_date)} · {overview.site.timezone}</p>
       <p>{fill('rRecordingsCount',{n:overview.records.toLocaleString(app.locale)})} · {fill('wTotalLength',{duration:duration(overview.recorded_seconds)})}</p>
       <h3>{t('wIncludeSpecies')} · {fill('wSpeciesCount',{n:selected.length})}</h3>
+      {#if noSpecies}<p class="field-error" id="species-error">{t('rSaveIdle')}</p>{/if}
       {#each [['confirmed','rGroupConfirmed'],['not_found','rGroupMissed'],['unchecked','rGroupAi']] as [status,title]}{@const rows=overview.species.filter(row=>row.presence.status===status)}
         {#if rows.length}<details open={status==='confirmed'}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
           {#if status==='unchecked'}<p class="notice">{t('rAiOnlyCaution')}</p>{/if}
-          {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending}/>
+          {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending} aria-invalid={noSpecies||undefined} aria-describedby={noSpecies?'species-error':undefined}/>
             <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i>
               <span class="muted">{presenceText(row.presence)} · {t('wActivity')}: {activityText(row.models)}</span></span></label>{/each}
         </details>{/if}{/each}
-      {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} disabled={exportFiles.pending}/></label>{/if}
+      {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} disabled={exportFiles.pending} aria-invalid={noFolder||undefined} aria-describedby={noFolder?'folder-error':undefined}/></label>
+        {#if noFolder}<p class="field-error" id="folder-error">{t('rNeedFolder')}</p>{/if}{/if}
       <!-- Same shape as adding recordings: a status box that is always there, then one fixed main button. -->
       <div class="status-box" role="status" aria-live="polite">
         {#if exportFiles.pending}<p class="busy"><Spinner/> {t('rPreparing')}</p><Button size="sm" pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>
@@ -72,8 +77,8 @@
         {:else}<p>{t('rExportContents')}</p>{/if}
         {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{/if}
       </div>
-      <Button variant={output?'default':'primary'} pending={exportFiles.pending} disabled={!selected.length||(!isTauri()&&!folder)} aria-describedby="export-reason" onclick={()=>exportFiles.run()}>{t('rCreate')}</Button>
-      <p class="muted" id="export-reason">{!selected.length?t('rSaveIdle'):!isTauri()&&!folder?t('rNeedFolder'):''}</p>
+      <Button variant={output?'default':'primary'} pending={exportFiles.pending} aria-describedby="export-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else exportFiles.run();}}>{t('rCreate')}</Button>
+      <p class={tried&&missing?'field-error':'muted'} id="export-reason">{missing}</p>
     </section>
     {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="history">
       <div><p>{when(item.created_at)}</p>

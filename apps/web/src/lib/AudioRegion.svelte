@@ -19,10 +19,12 @@
   // `selectable` false: a long recording to browse and play, with no part to choose. `actions` sit beside the play button.
   // `autoplay` plays the interval once on mount; mount it from a click so the browser allows sound.
   // `dense` (with `compact` and `fixedRange`): the play button sits left of the figure and `meta` and `actions` share one line above it, with no time axis, for long lists.
+  // `invalid`: a note shown under the From/To fields when the chosen part cannot be used.
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta }:
+    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta, invalid='' }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet } = $props();
+      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet;invalid?:string } = $props();
+  const invalidId=$props.id();
   const choosing = $derived(!fixedRange && selectable);
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
   let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
@@ -170,8 +172,9 @@
   </div>{/if}
   {#if !zoomable}<div class="region-controls">
     {@render playbackButton()}{#if !dense}{@render actions?.()}{/if}
-    {#if choosing}<label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} /></label>
-    <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} /></label>
+    {#if choosing}<label>{t('rangeStart')}<input type="number" min="0" max={source.seconds} step="any" bind:value={start} aria-invalid={!!invalid||undefined} aria-describedby={invalid?invalidId:undefined} /></label>
+    <label>{t('rangeEnd')}<input type="number" min="0" max={source.seconds} step="any" bind:value={end} aria-invalid={!!invalid||undefined} aria-describedby={invalid?invalidId:undefined} /></label>
+    {#if invalid}<p class="field-error range-hint" id={invalidId}>{invalid}</p>{/if}
     <span class="muted range-hint">{t('rangeHint')}</span>{/if}
   </div>{/if}
   <!-- Field recordings have no speech transcript. -->

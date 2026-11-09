@@ -1,4 +1,5 @@
 import { resolve } from '$app/paths';
+import { tick } from 'svelte';
 import type { Species } from './species';
 import type { Report, ReportOptions } from './reports';
 import type { AudioSource } from './AudioRegion.svelte';
@@ -42,6 +43,15 @@ export type SpeciesResult = Omit<Overview,'species'> & {species:Species;report:R
 // `{n|one|other}` in a message picks the singular word when the value is 1 (English plurals).
 export const fill = (key:string,values:Record<string,string|number>) => Object.entries(values).reduce((text,[name,value])=>text.replaceAll(`{${name}}`,String(value))
   .replace(new RegExp(`\\{${name}\\|([^|}]*)\\|([^}]*)\\}`,'g'),(_,one:string,other:string)=>Number(value)===1?one:other),t(key));
+/** "Still missing: …" naming each missing item by its label key; empty when nothing is missing. */
+export const missingText = (keys:(string|false)[]) => {const names=keys.filter(key=>key!==false).map(t);return names.length?fill('uStillMissing',{items:new Intl.ListFormat(app.locale).format(names)}):'';};
+/** After a press with missing input: bring the first marked field into view (opening its section) and put the cursor in it. */
+export async function focusMissing(root:ParentNode=document) {
+  await tick();
+  const field=root.querySelector<HTMLElement>('[aria-invalid="true"], .field-error[tabindex]');
+  const section=field?.closest('details');if(section)section.open=true;
+  field?.scrollIntoView({block:'center'});field?.focus({preventScroll:true});
+}
 export const customName = (model:{created_at?:string}) => fill('customModelNumber',{date:new Intl.DateTimeFormat(app.locale,{month:'numeric',day:'numeric'}).format(new Date(`${model.created_at?.replace(' ','T')}Z`))});
 const modelOf = (engine:string) => app.ai.models.find(model=>model.id===engine);
 /** Display name from GET /models; 'custom' is an AI made for one species. */

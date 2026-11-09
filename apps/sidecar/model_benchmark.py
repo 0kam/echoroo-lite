@@ -58,7 +58,8 @@ def benchmark(root, models, engine=None):
     previous = settings(root)['benchmark'] if engine is not None else {}
     rate = 48000
     rng = np.random.default_rng(20261026)
-    audio = rng.normal(0, .005, rate * 80).astype(np.float32)
+    # 300 s between the short and long jobs keeps fast models' marginal cost above timing noise.
+    audio = rng.normal(0, .005, rate * 320).astype(np.float32)
     t = np.arange(rate, dtype=np.float32) / rate
     for second in (5, 20, 40):
         audio[second * rate:(second + 1) * rate] += .05 * np.sin(2 * np.pi * (1200 * t + 800 * t * t))
@@ -66,23 +67,24 @@ def benchmark(root, models, engine=None):
     with tempfile.TemporaryDirectory(prefix='echoroo-benchmark-') as folder:
         folder = Path(folder).resolve()
         paths = {}
-        for seconds in (20, 80):
+        for seconds in (20, 320):
             path = folder / f'BENCHMARK_{seconds}_20240808_060000.wav'
             sf.write(path, audio[:seconds*rate], rate, subtype='PCM_16')
             paths[seconds] = path
-        short_files = [paths[20]]
-        for index, clock in enumerate(('060020', '060040', '060100'), start=1):
-            path = folder / f'BENCHMARK_20_20240808_{clock}.wav'
-            sf.write(path, audio[index*20*rate:(index+1)*20*rate], rate, subtype='PCM_16')
-            short_files.append(path)
+        split_files = []
+        for index, clock in enumerate(('060000', '060120', '060240', '060400')):
+            path = folder / f'BENCHMARK_80_20240808_{clock}.wav'
+            sf.write(path, audio[index*80*rate:(index+1)*80*rate], rate, subtype='PCM_16')
+            split_files.append(path)
         for engine in engines:
             if not available(models, engine):
                 continue
             site = dict(latitude=35, longitude=138)
             with prepare_models(models, [engine], site) as loaded:
-                benchmark_job(folder / f'{engine}-warmup', [paths[20]], models, engine, loaded)
-                samples = [benchmark_job(folder / f'{engine}-{index}', inputs, models, engine, loaded)
-                           for index, inputs in enumerate(([paths[20]], [paths[80]], short_files))]
+                # The faster of two runs per job filters out warm-up and background load.
+                samples = [min((benchmark_job(folder / f'{engine}-{index}-{run}', inputs, models, engine, loaded)
+                                for run in range(2)), key=lambda sample: sample[2])
+                           for index, inputs in enumerate(([paths[20]], [paths[320]], split_files))]
                 results[engine] = fit_costs(samples)
                 job_costs.append(results[engine].pop('seconds_per_job'))
             del loaded

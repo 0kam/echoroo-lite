@@ -93,6 +93,9 @@ input[readonly] { background: rgb(var(--stone-200)); }
 input::placeholder { color: rgb(var(--stone-500)); }
 input[type="checkbox"], input[type="radio"] { display: inline-block; width: 20px; height: 20px; margin: 0; flex: none; }
 .checkbox { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+/* Missing input after a press: red field border, and a short note under the field (darkened to keep 4.5:1 at 14px). */
+[aria-invalid="true"] { border-color: rgb(var(--color-danger)); }
+.field-error { font-size: 14px; color: color-mix(in srgb, rgb(var(--color-danger)) 75%, rgb(var(--stone-900))); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px; }
 .inline { display: flex; align-items: flex-end; gap: 8px; }
 .inline > label { flex: 1; }

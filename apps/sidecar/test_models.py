@@ -158,7 +158,8 @@ def fake_birdnet(directory, calls):
 
 
 def wait_job(client):
-    deadline = time.monotonic() + 15
+    # Generous for slow Windows CI runners; the loop returns as soon as the job ends.
+    deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         job = client.get('/catalog').json()['jobs'][0]
         if job['status'] not in ('queued', 'running'):
@@ -348,12 +349,12 @@ class ModelsTest(unittest.TestCase):
                 measured_paths.extend(paths)
                 seconds = sum(sf.info(path).duration for path in paths)
                 measurements.append((engine, len(paths), seconds))
-                if data.name.endswith('-warmup'):
+                if data.name.endswith('-0'):
                     return len(paths), seconds, 999.
                 if len(paths) == 4:
                     samples = np.concatenate([sf.read(path, dtype='float32')[0] for path in paths])
                     np.testing.assert_array_equal(samples,
-                        sf.read(paths[0].with_name('BENCHMARK_80_20240808_060000.wav'), dtype='float32')[0])
+                        sf.read(paths[0].with_name('BENCHMARK_320_20240808_060000.wav'), dtype='float32')[0])
                 return len(paths), seconds, .4 + len(paths)*.3 + seconds/3600*18
             data = root/'data'
             with TestClient(create_app(data, directory, 'test'), headers={'Authorization':'Bearer test'}) as client, \
@@ -368,7 +369,7 @@ class ModelsTest(unittest.TestCase):
                 self.assertTrue(all(type(m['seconds_per_hour']) is int and m['seconds_per_hour'] == 18
                     and m['seconds_per_file'] == .3 for m in result['models']))
                 self.assertEqual(loads, ['perch','kinglet-b','kinglet-s','kinglet-xs','birdnet-v3'])
-                expected = [(1,20), (1,20), (1,80), (4,80)]
+                expected = [*[(1,20)]*2, *[(1,320)]*2, *[(4,320)]*2]
                 self.assertEqual(measurements, [(engine,files,seconds) for engine in REGISTRY for files,seconds in expected])
                 self.assertTrue(all(not path.exists() for path in measured_paths))
                 with connect(data) as db:
@@ -412,14 +413,14 @@ class ModelsTest(unittest.TestCase):
                 client.put('/models', json={'main':'kinglet-s', 'extra':['perch']})
                 first = client.post('/models/benchmark', json={'engine':'kinglet-b'})
                 self.assertEqual(first.status_code, 200, first.text)
-                self.assertEqual(measured, ['kinglet-b']*4)
+                self.assertEqual(measured, ['kinglet-b']*6)
                 self.assertEqual(settings(data)['benchmark']['models'],
                                  {'kinglet-b':dict(seconds_per_hour=18,seconds_per_file=.3)})
                 self.assertEqual(first.json()['seconds_per_job'], .8)
                 costs.update(job=.2, file=.1, hour=12)
                 second = client.post('/models/benchmark', json={'engine':'kinglet-xs'})
                 self.assertEqual(second.status_code, 200, second.text)
-                self.assertEqual(measured, ['kinglet-b']*4 + ['kinglet-xs']*4)
+                self.assertEqual(measured, ['kinglet-b']*6 + ['kinglet-xs']*6)
                 self.assertEqual(settings(data)['benchmark']['models'],
                     {'kinglet-b':dict(seconds_per_hour=18,seconds_per_file=.3),
                      'kinglet-xs':dict(seconds_per_hour=12,seconds_per_file=.1)})
@@ -440,7 +441,7 @@ class ModelsTest(unittest.TestCase):
                     response = client.post('/models/benchmark', json={'engine':engine})
                     self.assertEqual((response.status_code,response.json()),(400,{'detail':'invalid_input'}))
                     self.assertEqual(client.get('/models').json(), last.json())
-                self.assertEqual(measured, ['kinglet-b']*4 + ['kinglet-xs']*4 + ['kinglet-b']*4)
+                self.assertEqual(measured, ['kinglet-b']*6 + ['kinglet-xs']*6 + ['kinglet-b']*6)
 
     def test_benchmark_then_birdnet_job_preserves_import_time_model_directory(self):
         with tempfile.TemporaryDirectory() as temp:

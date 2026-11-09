@@ -8,7 +8,7 @@
   import { api } from '$lib/api.svelte';
   import { t,activeJob,dayRange,fileName } from '$lib/app.svelte';
   import { type Species } from '$lib/species';
-  import { rangeQuery } from '$lib/workflow';
+  import { fill,focusMissing,missingText,rangeQuery } from '$lib/workflow';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
   import SpeciesPicker from '$lib/SpeciesPicker.svelte';
   import XenoCantoSearch from '$lib/XenoCantoSearch.svelte';
@@ -31,6 +31,11 @@
   $effect(()=>{const chosen=species?.id??'';untrack(()=>{if(ready&&chosen!==clipsFor){clips=[];clipsFor=chosen;if(!chosen)source=null;}});});
   $effect(()=>{if(ready)saveDraft();});
   const valid=$derived(!!source&&Number.isFinite(start)&&Number.isFinite(end)&&end-start>=.2-1e-9&&end-start<=30&&start>=0&&end<=source.seconds);
+  // A press with missing input marks what is missing instead of running (no example yet, an unusable part, or no file path).
+  let triedClip=$state(false),triedFile=$state(false);
+  const noExample=$derived(triedClip&&!source&&!clips.length),badPart=$derived(triedClip&&!!source&&!valid),noPath=$derived(triedFile&&!isTauri()&&!referencePath.trim());
+  const missing=$derived(missingText([!clips.length&&!valid&&(source?'uClipPart':'uExampleCall')]));
+  const showMissing=(file=false)=>{if(file)triedFile=true;else triedClip=true;void focusMissing();};
   function chooseReference(row:Reference){source=row;start=0;end=Math.min(5,row.seconds);}
   function saveDraft(){localStorage.setItem(`echoroo-search-${id}`,JSON.stringify({clips,clipsFor,species,source,start,end,xc}));}
   function addClip(){if(!source||!valid)return;
@@ -65,20 +70,22 @@
   <div class="steps">
   <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/>{#if source&&!species}<p class="info">{t('sPrefillHint')}</p>{/if}</section>
   {#if species}
-    <section class="panel step-card"><h2>{t('wSource')}</h2><div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
-      <Button pending={addReference.pending} disabled={search.pending||(!isTauri()&&!referencePath.trim())} onclick={()=>addReference.run()}>{t('referenceFromFile')}</Button></div>
-      {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending}/></label>{/if}
+    <section class="panel step-card"><h2>{t('wSource')}</h2>{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
+      <Button pending={addReference.pending} disabled={search.pending} onclick={()=>!isTauri()&&!referencePath.trim()?showMissing(true):addReference.run()}>{t('referenceFromFile')}</Button></div>
+      {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending} aria-invalid={noPath||undefined} aria-describedby={noPath?'path-error':undefined}/></label>
+        {#if noPath}<p class="field-error" id="path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
       {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference}/></div>{/key}{/if}
       {#if source}<Button disabled={search.pending} onclick={()=>source=null}>{t('uBackSounds')}</Button>{#key `${source.kind}:${source.id}`}<div class="reference-player" inert={search.pending} aria-disabled={search.pending}><p>{fileName(source.path)}</p>
-        <AudioRegion {source} bind:start bind:end/>
+        <AudioRegion {source} bind:start bind:end invalid={badPart?fill('uClipLength',{max:30}):''}/>
         {#if source.attribution}<p class="muted">XC{source.attribution.id} · {source.attribution.recordist} · {source.attribution.license}</p>{/if}</div>{/key}
-        <Button disabled={!valid||search.pending||clips.length>=20} onclick={()=>{addClip();source=null;}}>{t('addQueryClip')}</Button>
+        <Button disabled={search.pending||clips.length>=20} onclick={()=>{if(!valid)showMissing();else{addClip();source=null;}}}>{t('addQueryClip')}</Button>
       {/if}
       {#if clips.length}<h3>{t('wQueriesAdded')}</h3><div class="added-clips">{#each clips as clip,index}<div class="actions"><Button disabled={search.pending} onclick={()=>{source=clip.source;start=clip.start_s;end=clip.end_s;}}>{fileName(clip.source.path)} · {clip.start_s.toFixed(1)}–{clip.end_s.toFixed(1)} {t('seconds')}</Button><Button disabled={search.pending} aria-label={`${t('removeReference')}: ${fileName(clip.source.path)}`} onclick={()=>{clips.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div>{/each}</div>{/if}
     </section>
     <section class="panel step-card"><h2>{t('sSearchStepRun')}</h2><p class="muted">{#if first&&last}{dayRange(first,last)} · {/if} {t('wAutoSaved')}</p>
       {#if search.pending}<p class="muted" role="status">{t('searchingAudioStatus')}</p>{/if}
-      <Button variant="primary" pending={search.pending} disabled={!!activeJob()||(!clips.length&&!valid)} onclick={()=>search.run()}>{search.pending?t('searchingAudio'):t('wSearchAction')}</Button>
+      <Button variant="primary" pending={search.pending} disabled={!!activeJob()} aria-describedby="search-reason" onclick={()=>missing?showMissing():search.run()}>{search.pending?t('searchingAudio'):t('wSearchAction')}</Button>
+      {#if !search.pending}<p class={triedClip&&missing?'field-error':'muted'} id="search-reason">{missing||(activeJob()?t('management_busy'):'')}</p>{/if}
       {#if search.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
       {#if search.error}<p class="error" role="alert">{t(search.error)}{#if search.error==='search_exists'} · <a href={`${resolve(`/datasets/${id}/species/${species.id}`)}${first&&last?`?${rangeQuery(first,last)}`:''}`}>{t('wOpenSpecies')}</a>{/if}</p>{/if}</section>
   {/if}

@@ -55,9 +55,11 @@
       <p class="muted">{t('uTimeZone')}: {details.site.timezone}</p>
       <div class="actions"><Button type="submit" variant="primary" pending={save.pending} disabled={!dirty||renameId!==null}>{t('mSave')}</Button>
         {#if (dirty||changingPlace)&&renameId===null}<Button disabled={save.pending} onclick={()=>receive(details!)}>{t('mCancel')}</Button>{/if}</div>
+      {#if renameId!==null}<p class="muted">{t('mSaveFirst')}</p>{:else if !dirty}<p class="muted">{t('mNoChanges')}</p>{/if}
       {#if save.error}<p class="error" role="alert">{t(save.error)}</p>{/if}
     </form>
     <section class="panel"><div class="section-heading"><h2>{t('mImports')}</h2><Button href={`${resolve('/datasets/new')}?site=${id}&return=${encodeURIComponent(`/sites/${id}/manage`)}`}>{t('uAddRecordings')}</Button></div>
+      {#if (dirty||changingPlace)&&renameId===null&&details.datasets.length}<p class="muted">{t('mSaveFirst')}</p>{/if}
       {#each details.datasets as dataset}
         <div class="collection">
           {#if renameId===dataset.id}<form class="actions" onsubmit={event=>{event.preventDefault();rename.run();}}>
@@ -73,7 +75,8 @@
       {#if rename.error}<p class="error" role="alert">{t(rename.error)}</p>{/if}
     </section>
     <section class="panel"><h2>{t('mRemoveSite')}</h2><p>{t('mKeepFiles')}</p>
-      <Button variant="danger" disabled={dirty} pending={inspect.pending} onclick={()=>inspect.run(null)}>{t('mRemoveSite')}</Button></section>
+      <Button variant="danger" disabled={dirty} pending={inspect.pending} onclick={()=>inspect.run(null)}>{t('mRemoveSite')}</Button>
+      {#if dirty}<p class="muted">{t('mSaveFirst')}</p>{/if}</section>
   {/if}
   {#if load.pending}<p role="status">{t('loading')}</p>{/if}
   {#if load.error||inspect.error}<p class="error" role="alert">{t(load.error||inspect.error)}</p>{/if}

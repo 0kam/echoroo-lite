@@ -11,6 +11,7 @@
   import type { Species } from './species';
   import Button from './ui/Button.svelte';
   import { createTask } from './ui/task.svelte';
+  import { fill, focusMissing, missingText } from './workflow';
   let { initial = null, onadded }: { initial?: QuizClip | null; onadded: (clip: QuizClip) => void | Promise<void> } = $props();
   let species = $state<Species | null>(untrack(() => initial?.species ?? null));
   let source = $state<AudioSource | null>(untrack(() => initial?.source ?? null));
@@ -24,7 +25,12 @@
   onMount(()=>{if(!initial){try{const saved=JSON.parse(sessionStorage.getItem('echoroo-quiz-audio')||'null');if(saved)({species,source,path,start,end,credit}=saved);}catch{}}restored=true;});
   $effect(()=>{if(restored&&!initial)sessionStorage.setItem('echoroo-quiz-audio',JSON.stringify({species,source,path,start,end,credit}));});
   const name = (value: string) => value.split(/[\\/]/).pop();
-  const valid = $derived(source && species && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= source.seconds && end - start >= .2 - 1e-9 && end - start <= 60 + 1e-9);
+  const partOk = $derived(!!source && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= source.seconds && end - start >= .2 - 1e-9 && end - start <= 60 + 1e-9);
+  // A press with missing input marks what is missing instead of saving or searching.
+  let tried = $state(false), triedPath = $state(false);
+  const missing = $derived(missingText([!species && 'species', !partOk && 'uClipPart']));
+  const noPath = $derived(triedPath && !isTauri() && !path.trim());
+  const showMissing = () => { tried = true; void focusMissing(); };
   function select(row: AudioSource) {
     source = row; start = 0; end = Math.min(5, row.seconds); playerKey++;
     credit = { recordist: '', source_url: '', license: '' }; note = '';
@@ -47,20 +53,22 @@
 
 <section class="editor" aria-label={t('quizAddAudio')}>
 
-  <SpeciesPicker bind:value={species} disabled={save.pending} />
-  <details class="xc-panel"><summary>{t('xcFind')}</summary><XenoCantoSearch {species} onselect={select} /></details>
-  <div class="source-controls"><Button pending={addReference.pending} disabled={!isTauri() && !path.trim()} onclick={() => addReference.run()}>{t('addReference')}</Button></div>
-  {#if !isTauri()}<label>{t('referencePath')}<input bind:value={path} /></label>{/if}
+  <SpeciesPicker bind:value={species} disabled={save.pending} invalid={tried && !species ? t('uChooseSpecies') : ''} />
+  <details class="xc-panel"><summary>{t('xcFind')}</summary><XenoCantoSearch {species} onselect={select} onmissing={showMissing} /></details>
+  <div class="source-controls"><Button pending={addReference.pending} onclick={() => { if (!isTauri() && !path.trim()) { triedPath = true; void focusMissing(); } else addReference.run(); }}>{t('addReference')}</Button></div>
+  {#if !isTauri()}<label>{t('referencePath')}<input bind:value={path} aria-invalid={noPath || undefined} aria-describedby={noPath ? 'quiz-path-error' : undefined} /></label>
+    {#if noPath}<p class="field-error" id="quiz-path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
   {#if source}
     <p class="muted">{name(source.path)}</p>
-    {#key playerKey}<AudioRegion {source} bind:start bind:end />{/key}
+    {#key playerKey}<AudioRegion {source} bind:start bind:end invalid={tried && !partOk ? fill('uClipLength', { max: 60 }) : ''} />{/key}
     <details><summary>{t('quizCredit')}</summary><div class="form-grid">
       <label>{t('quizRecordist')}<input bind:value={credit.recordist} maxlength="200" /></label>
       <label>{t('quizSourceURL')}<input bind:value={credit.source_url} maxlength="1000" /></label>
       <label>{t('quizLicense')}<input bind:value={credit.license} maxlength="1000" /></label>
     </div></details>
     <p class="muted">{t('quizLabelHint')}</p>
-    <Button variant="primary" pending={save.pending} disabled={!valid} onclick={() => save.run()}>{t('quizSaveClip')}</Button>
+    <Button variant="primary" pending={save.pending} aria-describedby="quiz-save-reason" onclick={() => missing ? showMissing() : save.run()}>{t('quizSaveClip')}</Button>
+    <p class={tried && missing ? 'field-error' : 'muted'} id="quiz-save-reason">{missing}</p>
   {/if}
   {#if addReference.error || save.error}<p class="error" role="alert">{t(addReference.error || save.error)}</p>{/if}
 </section>
