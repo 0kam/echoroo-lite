@@ -125,7 +125,7 @@ try {
         $window = Wait-ForDesktopText '調べている種' 'echoroo-startup-species-list'
         Press-FirstTableAction
         $window = Wait-ForDesktopText '種の一覧に戻る' 'echoroo-startup-species'
-        $window = Wait-ForDesktopText 'いるか' 'echoroo-startup-species-presence'
+        $window = Wait-ForDesktopText '声はあったか' 'echoroo-startup-species-presence'
         $window = Wait-ForDesktopText 'いつ・どれくらいか' 'echoroo-startup-species-counting'
 
         Press-DesktopAction '鳴き声クイズ'
