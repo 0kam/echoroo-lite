@@ -25,6 +25,12 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost http://127.0.0.1:*; media-src http://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:* https://tile.openstreetmap.org"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/0kam/echoroo-lite/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFBOTA1MEU0MjBFMjgzNjcKUldSbmcrSWc1RkNRR3VJeWNLcXVHb1QxMXJ2b0gvNGpHVjNkbHA0dERhUzcyT0dWaDV0ZzJ4NlgK"
+    }
+  },
   "bundle": {
     "active": false,
     "icon": [

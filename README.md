@@ -70,6 +70,7 @@
 - ディスク：アプリ本体に約2GB（AIのモデルを含みます）。解析結果の保存に、録音1時間あたり数十MB（使うAIの数によって増えます）。
 - インストーラーには電子署名がありません。初回の開き方は[インストールの手順](docs/install-guide.md)をご覧ください。
 - 地図の表示と、クイズ用のお手本の取り込み（Xeno-Canto）にはインターネットを使います。
+- 起動したときに、新しい版が出ているかをインターネットで確かめます。新しい版をダウンロードするのは、「更新する」を押したときだけです。あなたの情報や録音を送ることはありません。
 
 ## ライセンス
 
@@ -85,6 +86,7 @@ Echoroo Lite is a desktop app that finds bird calls in recordings with AI, lets 
 - **Output**: an HTML report (site and period, confirmed species, AI precision, date × time-of-day charts, evidence audio) plus CSV and audio files.
 - **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models distilled from Perch 2.0 for 317 Japanese bird species, by the author of this app), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
 - **Requirements**: Windows 10/11 x64; macOS 12+ on Apple silicon; Linux x86_64 (Ubuntu 22.04+ or similar). 8 GB RAM recommended; about 2 GB of disk for the app plus tens of MB per recorded hour for results. Installers are unsigned.
+- **Internet**: used to show the map, to fetch quiz reference audio from Xeno-Canto, and to check for a new version when the app starts. A new version is downloaded only when you press **Update**. Nothing about you or your recordings is sent.
 - **License**: source code under Apache-2.0; the distributed app is for non-commercial use because it includes BirdNET 2.4 (CC BY-NC-SA 4.0).
 
 ## Developer notes

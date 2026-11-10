@@ -32,7 +32,8 @@ class SidecarCheck(unittest.TestCase):
                 self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
 
     def test_incompatible_database_starts_but_only_health_is_available(self):
-        for version in (0, SCHEMA_VERSION + 1):
+        # Data from a newer app is reported separately: the UI then offers an app update, never a deletion.
+        for version, reason in ((0, "data_incompatible"), (SCHEMA_VERSION + 1, "data_newer")):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 with closing(sqlite3.connect(root / "echoroo.sqlite")) as db:
@@ -43,12 +44,12 @@ class SidecarCheck(unittest.TestCase):
                 with TestClient(create_app(root, ROOT / "poc/models", "test-token"), headers=headers) as client:
                     health = client.get("/health")
                     self.assertEqual(health.status_code, 200)
-                    self.assertEqual(health.json()["status"], "data_incompatible")
-                    self.assertEqual(health.json()["detail"], "data_incompatible")
+                    self.assertEqual(health.json()["status"], reason)
+                    self.assertEqual(health.json()["detail"], reason)
                     self.assertEqual(health.json()["data_folder"], str(root))
                     response = client.get("/catalog")
                     self.assertEqual(response.status_code, 400)
-                    self.assertEqual(response.json(), {"detail": "data_incompatible"})
+                    self.assertEqual(response.json(), {"detail": reason})
 
     def test_unexpected_endpoint_error_is_json_with_cors(self):
         with tempfile.TemporaryDirectory() as temp:

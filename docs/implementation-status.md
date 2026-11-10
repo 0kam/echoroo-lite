@@ -1,5 +1,20 @@
 # 実装状況（2026-09-10）
 
+## 2026-11-10：アプリ内の更新
+
+[設計案](app-update-proposal-2026-11.md)（見本を見たユーザーが同日了承）を実装した。アプリ側とリリース手順側を Fable のサブエージェントが 1 つずつ書き、差分を確認してからコミットした。入れ替えと再起動そのものは、どの OS でもまだ実行していない。
+
+- shell（`main.rs`・`Cargo.toml`・`tauri.conf.json`・`capabilities/default.json`）：`tauri-plugin-updater` 2.14。確認・ダウンロード・入れ替えは Rust のコマンド（`update_check`・`update_download`・`update_install`）で行い、JS 側のプラグインと `tauri-plugin-process` は入れていない（再起動は `request_restart()`）。sidecar を止めて待つ処理を `stop_sidecar` にまとめ、終了時と、Windows の入れ替え直前（`on_before_exit`。Windows はインストーラーを起動してその場で終了し `RunEvent::Exit` が来ない）の両方で使う。インストーラーの書き出しに失敗したときはフックの前に戻るので、sidecar は動いたまま。確認の待ち時間は 30 秒（ダウンロードには掛からない）。開発ビルドでは入れ替えを拒否する。公開鍵と確認先を設定に入れた。`createUpdaterArtifacts` はコミットした設定に入れていない。
+- **Tauri 本体を 2.11.5 → 2.12.5 に上げた**（wry 0.55 → 0.57、`@tauri-apps/api` と CLI は 2.12.4）。updater 2.13 以降が Tauri 2.12 を要求し、それより前の updater は Mac の入れ替えに失敗すると入っていたアプリが消えるため（2.13.2 で修正）。3 OS での通常の動作の再確認が要る。
+- web（`update.svelte.ts`・`UpdateControl.svelte`・`+layout.svelte`・`settings/+page.svelte`・`i18n.ts`）：起動時に 1 回確認し、上のメニューの下の帯に見本の 5 つの状態を出す。設定のページに「アプリの更新」の欄。解析中（`activeJob()`）は［更新する］も［再起動して更新］も押せない。大きさは `latest.json` の各 OS の `size` から。文言は設計案の表のとおりで、進み具合の読み上げ用に `updProgress` を足した。
+- 互換性（`server.py`・`test_sidecar.py`）：データの `user_version` がアプリより新しいときは `data_newer` を返し、画面は「アプリを更新すると開けます」と更新の操作、ダウンロードのページへのボタンを出す（未接続の画面でも更新を始められる）。`storage.py` は変えていない。
+- リリース（`release.yml`・`scripts/make_update_manifest.py`）：鍵があるときだけ更新用ファイルを作る（CI の中で `tauri.updater.conf.json` を書いて渡す）。タグのビルドで鍵がなければ最初のステップで失敗する。Mac は `--bundles app,dmg`（`.app.tar.gz` は `app` からしか作られない）。ファイルは GitHub の付け替えと同じく空白を `.` にした名前で置き、Mac の更新用は `Echoroo.Lite_<版>_aarch64-update.app.tar.gz`。release ジョブで `latest.json`（`windows-x86_64`・`darwin-aarch64`・`linux-x86_64`・`linux-x86_64-deb`、各 `url`・`signature`・`size`）を作って下書きに付ける。スクリプトはファイルや署名が欠けているとき、名前の版がタグと違うときに失敗する。
+- 文書：README と[インストールの手順](install-guide.md)に、起動時に新しい版を確かめること、ダウンロードはボタンを押したときだけであること、利用者の情報や録音を送らないことを日英で足した。
+- 確認：Svelte 検査 0 errors / 0 warnings、`cargo clippy`・`cargo fmt --check` 指摘なし、Python 93 件（モデルが要る 2 件のため `poc/models` を一時的にリンク）、`make_update_manifest.py --self-check`。開発ブラウザ（1024×768・1280×800、日英）で帯の全状態・設定の欄・データが新しいときの画面（サブエージェント。一時的な仕込みで表示し、後で戻した）。本物のプラグインの経路は `tauri dev`・使い捨ての鍵・手元の `latest.json`・3.5 MB の署名済みダミーで、確認 → 「新しい版があります」→ ダウンロード → 「準備ができました」まで。改ざんしたファイルは署名の検証で失敗の表示になった。鍵なしの `tauri build` と、使い捨ての鍵での `.app.tar.gz`・`.sig` の生成も通った。
+- 未確認：入れ替えと再起動（全 OS）、Windows・Linux の実機、実際の約 750 MB でのメモリと時間、`release.yml` の実行（最初のタグのビルドで分かる）、署名なしのままで OS の警告が出ないか、スクリーンリーダーでの読み上げ。`tauri dev` の窓は直接見ておらず、表示はログで確かめた。
+- 分かったこと：`.deb` で入れた場合もプラグインは自分で更新できる（`linux-x86_64-deb` の項目が要る。`pkexec dpkg -i` で管理者パスワードを聞く）。ダウンロードは全体をメモリに持ち、勝手に再起動しない設計のため「準備ができました」の間ずっと約 750 MB を持ち続ける。Mac は権限がなければ管理者パスワードを聞く。
+- 残る気がかり：解析以外の長い処理（検索・取り込み・書き出し・速度の計測）はジョブ一覧に載らないので、その間も再起動のボタンは押せる（sidecar はリクエストの完了を待ってから終わる）。地図作りは `jobs` に入るので、地図のブランチとマージした後は同じ仕組みで止まる。失敗の文言は 1 種類で、署名の不一致やディスク不足でも「インターネットの接続を…」と出る（理由は stderr のみ）。
+
 ## 2026-11-09：トライアルユーザーの指摘への対応
 
 トライアルユーザーから 2 点の指摘（2026-11-09）。リリース版（main）から分けたブランチで直した。sidecar は Codex、文言は Opus のサブエージェント（言い換えの案は Fable 5）が書き、差分を確認してからコミットした。
