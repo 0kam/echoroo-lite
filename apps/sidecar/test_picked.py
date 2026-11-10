@@ -114,6 +114,8 @@ class PickedCheck(unittest.TestCase):
             {'id': known['Parus cinereus'], 'scientific_name': 'Parus cinereus'},
             {'id': None, 'scientific_name': 'Unknown bird'}])
         self.assertTrue(item['others'])
+        # The range that will be exported comes with each sound, so the list page plays exactly that.
+        self.assertEqual((item['clip_start_s'], item['clip_end_s']), (0, 7.5))
         self.assertEqual(self.client.get('/explore/picked', params={'dataset': 1}).json()['items'], [item])
         invalid = self.put(start=5, end=5)
         self.assertEqual((invalid.status_code, invalid.json()), (422, {'detail': 'invalid_input'}))
@@ -154,17 +156,20 @@ class PickedCheck(unittest.TestCase):
                              ('Horornis', 'diphone', ''))
             self.assertEqual(row['background species'], 'Parus cinereus,Zosterops japonicus')
             self.assertEqual((row['sound type(s)'], row['quality']), ('call', 'B'))
-            self.assertEqual(row['remarks'], 'Selected by listening on the Echoroo Lite sound map '
-                             '(5 s interval at 0\u20135 s of the source recording).')
+            self.assertEqual(row['remarks'], 'Selected by listening on the Echoroo Lite sound map. '
+                             'This clip is 0\u20137.5 s of the source recording; checked by listening: '
+                             '0\u20135 s of this clip; the rest is unchecked context.')
             audio_name = 'audio/' + row['filename']
             with sf.SoundFile(io.BytesIO(archive.read(audio_name))) as sound:
-                self.assertEqual((sound.samplerate, sound.frames, sound.subtype), (8000, 40000, 'PCM_24'))
+                self.assertEqual((sound.samplerate, sound.frames, sound.subtype), (8000, 60000, 'PCM_24'))
             manifest = json.loads(archive.read('manifest.json'))
-            self.assertEqual(manifest['schema'], 'echoroo_picked_sounds_v1')
+            self.assertEqual(manifest['schema'], 'echoroo_picked_sounds_v2')
             self.assertEqual(manifest['site'], {'name': 'Fuji', 'timezone': 'Asia/Tokyo',
                                                 'latitude': 35.12345, 'longitude': 138.98765})
             self.assertEqual(manifest['items'][0]['filename'], row['filename'])
             self.assertEqual(manifest['items'][0]['background'], ['Parus cinereus', 'Zosterops japonicus'])
+            self.assertEqual([manifest['items'][0][key] for key in ('start_s', 'end_s', 'clip_start_s', 'clip_end_s')],
+                             [0, 5, 0, 7.5])
             for filename, details in manifest['files'].items():
                 content = archive.read(filename)
                 self.assertEqual(details, {'sha256': hashlib.sha256(content).hexdigest(), 'bytes': len(content)})
@@ -172,6 +177,36 @@ class PickedCheck(unittest.TestCase):
             self.assertIsNotNone(db.execute('SELECT exported_at FROM picked_sounds').fetchone()[0])
         # Correcting a label after export keeps the mark: the sound has been handed out once already.
         self.assertIsNotNone(self.put(quality='A').json()['exported_at'])
+
+    def test_export_adds_margin_inside_the_recording(self):
+        # The source is 12 s long: one sound with both margins, one cut at the start, one cut at the end.
+        expected = {(3, 8): (0.5, 10.5, '2.5\u20137.5'), (0, 5): (0, 7.5, '0\u20135'), (10, 12): (7.5, 12, '2.5\u20134.5')}
+        for start, end in expected:
+            self.assertEqual(self.put(start, end).status_code, 200)
+        listed = self.client.get('/explore/picked', params={'dataset': 1}).json()['items']
+        self.assertEqual({(item['start_s'], item['end_s']): (item['clip_start_s'], item['clip_end_s'])
+                          for item in listed}, {key: value[:2] for key, value in expected.items()})
+        output = Path(self.temporary.name) / 'output'; output.mkdir()
+        response = self.client.post('/explore/picked/export', json={'dataset_id': 1, 'folder': str(output)})
+        self.assertEqual(response.status_code, 200, response.text)
+        with zipfile.ZipFile(response.json()['path']) as archive:
+            remarks = {row['filename']: row['remarks'] for row in csv.DictReader(
+                io.StringIO(archive.read('metadata.csv').decode('utf-8-sig')))}
+            items = json.loads(archive.read('manifest.json'))['items']
+            # File names carry the local time at which each clip starts.
+            self.assertEqual([item['filename'] for item in items], [
+                '20240102_003000_unknown.wav', '20240102_003000_unknown_2.wav', '20240102_003007_unknown.wav'])
+            for item in items:
+                first, last, checked = expected[item['start_s'], item['end_s']]
+                self.assertEqual((item['clip_start_s'], item['clip_end_s']), (first, last))
+                with sf.SoundFile(io.BytesIO(archive.read('audio/' + item['filename']))) as sound:
+                    self.assertEqual(sound.frames, (last - first) * 8000)
+                self.assertEqual(remarks[item['filename']], 'Selected by listening on the Echoroo Lite sound map. '
+                                 f'This clip is {first:g}\u2013{last:g} s of the source recording; checked by listening: '
+                                 f'{checked} s of this clip; the rest is unchecked context.')
+            readme = archive.read('README.txt').decode('utf-8')
+            self.assertIn('前後 2.5 秒', readme)
+            self.assertIn('2.5 s before and after', readme)
 
 
 if __name__ == '__main__':

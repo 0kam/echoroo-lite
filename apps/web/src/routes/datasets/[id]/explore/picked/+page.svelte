@@ -49,8 +49,11 @@
   {#if picks.state.loaded}
     <section class="panel stack">
       <h2>{fill('pkListHeading',{n:items.length})}</h2>
-      {#each items as item (pickKey(item))}<article class="item">
-        <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.end_s}} fixedRange compact dense start={item.start_s} end={item.end_s}>
+      {#if items.length}<p>{t('pkMargin')}</p>{/if}
+      <!-- The figure and the play button cover what is exported: the range the sidecar gives with each sound. The lines mark the interval heard on the map.
+           A sound ticked a moment ago has no range until the list is read again; it shows the interval heard meanwhile. -->
+      {#each items as item (pickKey(item))}{@const from=item.clip_start_s??item.start_s}{@const to=item.clip_end_s??item.end_s}<article class="item">
+        <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:to}} fixedRange compact dense start={from} end={to} marked={[item.start_s,item.end_s]}>
           {#snippet meta()}<span class="where">{where(item)}</span>{/snippet}
           {#snippet actions()}{#if item.exported_at}<span class="saved">{t('pkExported')}</span>{/if}<Button size="sm" onclick={()=>picks.remove(item)}>{t('pkRemove')}</Button>{/snippet}
         </AudioRegion>

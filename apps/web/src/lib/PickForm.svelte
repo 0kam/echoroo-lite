@@ -5,7 +5,9 @@
   // `id` is null when the species list has no row for the scientific name.
   export type Named={id:string|null;scientific_name:string};
   export type Label={species:Named|null;background:Named[];sound_type:''|'song'|'call';quality:''|'A'|'B'|'C'|'D'|'E';others:boolean};
-  export type Item=Label&{recording_id:number;start_s:number;end_s:number;path:string;recorded_at:string;timezone:string;exported_at:string|null;updated_at:string};
+  // `clip_start_s`–`clip_end_s`: the part of the recording that is exported (the interval and a short margin), as the sidecar reports it;
+  // a sound ticked a moment ago has none until the list is read again.
+  export type Item=Label&{recording_id:number;start_s:number;end_s:number;clip_start_s?:number;clip_end_s?:number;path:string;recorded_at:string;timezone:string;exported_at:string|null;updated_at:string};
   type Interval={recording_id:number;start_s:number;end_s:number};
   // Picked sounds are keyed by recording and interval, as the sidecar stores them.
   export const pickKey=(s:Interval)=>`${s.recording_id}:${s.start_s}:${s.end_s}`;

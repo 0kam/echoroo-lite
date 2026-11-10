@@ -1,5 +1,15 @@
 # 実装状況（2026-09-10）
 
+## 2026-11-10：書き出す音に前後 2.5 秒を足す
+
+ユーザーの決定（同日）を実装した。理由と記録の形は[設計案の改訂（2026-11-10）](explore-and-contribute-proposal-2026-11.md)。Fable のサブエージェントが書き、差分を確認してからコミットした。
+
+- sidecar（`picked.py`・`test_picked.py`）：WAV は `[start − 2.5, end + 2.5]` を録音の中に切り詰めた範囲。規則は `_clip` の 1 か所で、`GET/PUT /explore/picked` の各行が `clip_start_s`・`clip_end_s` を返す。remarks は「This clip is 82.5–92.5 s of the source recording; checked by listening: 2.5–7.5 s of this clip; the rest is unchecked context.」の形。manifest は `echoroo_picked_sounds_v2`（`start_s`・`end_s` は確かめた区間のまま、`clip_start_s`・`clip_end_s` を追加）。README に日英 2 文ずつ。time of day とファイル名の時刻はクリップの開始。`picked_sounds` の表とキーは変更なし。
+- web（`explore/picked/+page.svelte`・`AudioRegion.svelte`・`PickForm.svelte`・`workflow-messages.ts`）：書き出す音の一覧の図と再生を書き出す範囲にし、聞いた部分を 2 本の線で示す（`AudioRegion` の `marked`。既存の `.selection` を使う）。注記 `pkMargin`（前後 2.5 秒が付くこと、線の外側にほかの種や人の声がないか確かめること）。確認での修正：チェックした直後で範囲がまだ届いていない音は、聞いた区間で表示する。
+- 確認：Python 103 件、Svelte 検査 0 errors / 0 warnings。開発ブラウザ（1024×768、日英、確認用データの複製、サブエージェント）：通常の行は線が 25%〜75%、録音の先頭と末尾の音は 7.5 秒に切り詰め、再生の範囲が書き出しと一致、ZIP の WAV は 10.0 秒 8 本と 7.5 秒 2 本、`metadata.csv` は 29 列のまま。
+- 未確認：Tauri（WebKit）での見た目、24 bit 音源の実データでの書き出し（単体テストのみ）。
+- 残る気がかり：録音の端で切り詰めた行は線の片方が図の端に重なる。7.5 秒の図も同じ幅なので行によって時間の縮尺が違う。前後がまったくない録音でも remarks に「the rest is unchecked context」が付く。注記の「2.5」は文言に直接書いてあり、sidecar の定数と連動しない。「ほかの種の声」は 5 秒を聞いて付けた値のままで、前後に別の種がいたときに直すかは注記を読んだ利用者に任せている。
+
 ## 2026-11-10：音の地図の最終調整（文言と折り返し）
 
 ユーザーの方針（同日）：地図の機能は今のままとし、UI の最終調整・アプリ内の更新・互換性の調整まで行う。実装は画面もロジックも Fable のサブエージェントが書き、差分を確認してからコミットする。「BirdNET の版との互換」は課題から外した（メインの AI に選べるのは Perch と Kinglet だけで、どちらも 1536 次元の特徴量を保存時に検査している）。

@@ -24,9 +24,16 @@ XC_FIELDS = (
     'collection specimen reference', 'remarks', 'quality')
 
 
-README = """Echoroo Lite の音の地図で、聞いて選んだ音です。
+# Context exported before and after the interval that was checked by listening. Half of a 5 s
+# interval and no more, so any 5 s crop of a clip still holds at least half of the checked part.
+MARGIN_S = 2.5
+
+README = f"""Echoroo Lite の音の地図で、聞いて選んだ音です。
 
 audio/ に WAV、metadata.csv に各音の情報、manifest.json に元の録音とファイルの確認情報があります。
+各 WAV には、聞いて確かめた区間の前後 {MARGIN_S:g} 秒も入っています（録音の端では短くなります）。
+聞いて確かめた部分は、metadata.csv の remarks と manifest.json に記録しています
+（start_s・end_s が確かめた区間、clip_start_s・clip_end_s が WAV の範囲。どちらも元の録音の秒）。
 録音者名・ライセンス・標高は空欄です。提供するときに記入してください。
 座標はぼかしていません。珍しい種を含む場合は、渡す前に公開範囲を確認してください。
 研究機関への受け渡し、または Xeno-canto のフォームへ転記する元資料に使えます。
@@ -34,6 +41,9 @@ audio/ に WAV、metadata.csv に各音の情報、manifest.json に元の録音
 These sounds were selected by listening on the Echoroo Lite sound map.
 
 audio/ contains WAV files, metadata.csv describes them, and manifest.json records their sources and file checks.
+Each WAV also holds {MARGIN_S:g} s before and after the interval that was checked by listening (less at the ends of a recording).
+The checked part is recorded in the remarks column of metadata.csv and in manifest.json
+(start_s and end_s: the checked interval; clip_start_s and clip_end_s: the range of the WAV; all in seconds of the source recording).
 Recordist name, license, and elevation are blank. Complete them before contributing the files.
 Coordinates are not obscured. Check the appropriate disclosure before sharing rare species.
 The package can be given to a research institution or used as a source for the Xeno-canto form.
@@ -67,11 +77,17 @@ def _species_ids(db, rows):
         '(SELECT value FROM json_each(?))', (json.dumps(sorted(names)),))}
 
 
+def _clip(row):
+    """The exported range in source seconds: the checked interval plus the margin, kept inside the recording."""
+    return {'clip_start_s': max(0.0, row['start_s'] - MARGIN_S),
+            'clip_end_s': min(row['seconds'], row['end_s'] + MARGIN_S)}
+
+
 def _shape(row, species_ids):
     background = json.loads(row['background'])
     species = row['species']
     return {'recording_id': row['recording_id'], 'start_s': row['start_s'], 'end_s': row['end_s'],
-            'path': row['path'], 'recorded_at': row['recorded_at'], 'timezone': row['timezone'],
+            **_clip(row), 'path': row['path'], 'recorded_at': row['recorded_at'], 'timezone': row['timezone'],
             'species': {'id': species_ids.get(species), 'scientific_name': species} if species else None,
             'background': [{'id': species_ids.get(name), 'scientific_name': name} for name in background],
             'sound_type': row['sound_type'], 'quality': row['quality'], 'others': bool(row['others']),
@@ -100,7 +116,7 @@ def put(root, body):
             quality=excluded.quality,others=excluded.others,updated_at=CURRENT_TIMESTAMP''',
             (body.recording_id, body.start_s, body.end_s, body.species,
              json.dumps(body.background, ensure_ascii=False), body.sound_type, body.quality, body.others))
-        row = db.execute('''SELECT p.*,r.path,r.recorded_at,r.timezone FROM picked_sounds p
+        row = db.execute('''SELECT p.*,r.path,r.recorded_at,r.timezone,r.seconds FROM picked_sounds p
             JOIN recordings r ON r.id=p.recording_id
             WHERE p.recording_id=? AND p.start_s=? AND p.end_s=?''',
             (body.recording_id, body.start_s, body.end_s)).fetchone()
@@ -123,10 +139,11 @@ def _digest(path):
 
 
 def _local_time(row, zone):
+    """When the exported clip starts, in the site's timezone."""
     instant = datetime.fromisoformat(row['recorded_at'])
     if instant.tzinfo is None:
         instant = instant.replace(tzinfo=timezone.utc)
-    return (instant + timedelta(seconds=row['start_s'])).astimezone(zone)
+    return (instant + timedelta(seconds=_clip(row)['clip_start_s'])).astimezone(zone)
 
 
 def _taxon(name):
@@ -146,9 +163,13 @@ def _filename(row, zone, used):
 def _metadata(row, filename, site, zone):
     local = _local_time(row, zone)
     genus, species, subspecies = _taxon(row['species'])
-    start, end, length = (f'{value:g}' for value in (row['start_s'], row['end_s'], row['end_s'] - row['start_s']))
-    remarks = (f'Selected by listening on the Echoroo Lite sound map '
-               f'({length} s interval at {start}\u2013{end} s of the source recording).')
+    clip = _clip(row)
+    first = clip['clip_start_s']
+    start, end, checked_start, checked_end = (f'{value:g}' for value in (
+        first, clip['clip_end_s'], row['start_s'] - first, row['end_s'] - first))
+    remarks = (f'Selected by listening on the Echoroo Lite sound map. '
+               f'This clip is {start}\u2013{end} s of the source recording; checked by listening: '
+               f'{checked_start}\u2013{checked_end} s of this clip; the rest is unchecked context.')
     background = json.loads(row['background'])
     if row['others'] and not background:
         remarks += ' Other species audible (not identified).'
@@ -187,11 +208,13 @@ def export(root, body):
                 filename = _filename(row, zone, used)
                 checked_source(row)
                 subtype = 'PCM_24' if sf.info(row['path']).subtype == 'PCM_24' else 'PCM_16'
-                samples, interval = read_interval(row, row['start_s'], row['end_s'], native_rate=True)
+                clip = _clip(row)
+                samples, interval = read_interval(row, clip['clip_start_s'], clip['clip_end_s'],
+                                                  60 + 2 * MARGIN_S, native_rate=True)
                 sf.write(audio_folder / filename, samples, interval['sample_rate'], subtype=subtype)
                 metadata.append(_metadata(row, filename, site, zone))
                 manifest_items.append({'filename': filename, 'source_file': Path(row['path']).name,
-                    'start_s': row['start_s'], 'end_s': row['end_s'], 'recorded_at': row['recorded_at'],
+                    'start_s': row['start_s'], 'end_s': row['end_s'], **clip, 'recorded_at': row['recorded_at'],
                     'timezone': row['timezone'], 'species': row['species'],
                     'background': json.loads(row['background']), 'sound_type': row['sound_type'],
                     'quality': row['quality'], 'others': bool(row['others'])})
@@ -201,7 +224,7 @@ def export(root, body):
             (folder / 'README.txt').write_text(README, encoding='utf-8')
             files = {path.relative_to(folder).as_posix(): {'sha256': _digest(path), 'bytes': path.stat().st_size}
                      for path in sorted(folder.rglob('*')) if path.is_file()}
-            manifest = {'schema': 'echoroo_picked_sounds_v1', 'created_at': created.isoformat(),
+            manifest = {'schema': 'echoroo_picked_sounds_v2', 'created_at': created.isoformat(),
                 'site': {key: site[key] for key in ('name', 'timezone', 'latitude', 'longitude')},
                 'items': manifest_items, 'files': files}
             (folder / 'manifest.json').write_text(

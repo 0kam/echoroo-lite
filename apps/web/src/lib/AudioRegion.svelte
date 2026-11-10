@@ -20,10 +20,11 @@
   // `autoplay` plays the interval once on mount; mount it from a click so the browser allows sound.
   // `dense` (with `compact` and `fixedRange`): the play button sits left of the figure and `meta` and `actions` share one line above it, with no time axis, for long lists.
   // `invalid`: a note shown under the From/To fields when the chosen part cannot be used.
+  // `marked`: a part of a fixed range to set off with two lines, as [from, to] in seconds of the source.
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta, invalid='' }:
+    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta, invalid='', marked }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet;invalid?:string } = $props();
+      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet;invalid?:string;marked?:[number,number] } = $props();
   const invalidId=$props.id();
   const choosing = $derived(!fixedRange && selectable);
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
@@ -163,7 +164,7 @@
       <canvas bind:this={canvas} aria-label={t('spectrogram')}></canvas>
       {#if !loading && !error}
         {#each ticks as tick}{#if tick.row_fraction > 0 && tick.row_fraction < 1}<div class="guide" style:bottom={`${tick.row_fraction * 100}%`}></div>{/if}{/each}
-        {#if choosing}<div class="selection" style:left={`${percent(start)}%`} style:width={`${Math.max(0, percent(end) - percent(start))}%`}></div>{/if}
+        {#if choosing || marked}{@const [from, to] = marked ?? [start, end]}<div class="selection" style:left={`${percent(from)}%`} style:width={`${Math.max(0, percent(to) - percent(from))}%`}></div>{/if}
         {#if cursor >= viewStart && cursor <= viewEnd}<div class="playhead" style:left={`${percent(cursor)}%`}></div>{/if}
       {/if}
       {#if loading || error}<div class="spectrogram-state" role="status">{t(error || 'loadingSpectrogram')}</div>{/if}
