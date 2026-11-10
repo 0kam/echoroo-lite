@@ -287,7 +287,6 @@ export const en = {
   searchingAudio: "Searching…",
   searchingAudioStatus: "Searching the recordings for similar sounds. Results will open when it finishes.",
   queryRangeHint: "Select 0.2–30 seconds. Long selections use the best match across 5-second windows.",
-  searchProgress: "Loading Perch and comparing audio intervals…",
   similarSounds: "Similar sounds",
   searchedReference: "Searched reference interval",
   searchCoverage: "Recordings searched",
@@ -301,7 +300,7 @@ export const en = {
   invalid_interval: "Select a valid interval within the audio (up to 60 seconds for display, 30 for search).",
   query_interval: "Select 0.2–30 seconds for the reference interval.",
   silent_query: "The selected interval contains only digital silence. Choose another interval.",
-  no_search_embeddings: "No compatible Perch embeddings. Analyse recordings in this group first.",
+  no_search_embeddings: "None of this site's recordings have been analysed with the current main AI. Analyse the recordings first.",
   reference_format: "Use a WAV, FLAC or MP3 reference.",
   reference_channels: "Use non-empty mono or stereo reference audio.",
   // Navigation and shell
@@ -656,7 +655,6 @@ export const ja: Record<Key, string> = {
   searchingAudio: "検索中…",
   searchingAudioStatus: "録音から似た声を探しています。完了すると結果が開きます。",
   queryRangeHint: "0.2〜30秒を選択。長い参照区間は5秒ごとに照合し、最も高い類似度を使います。",
-  searchProgress: "Perch を読み込み、音の区間を照合しています…",
   similarSounds: "似ている音",
   searchedReference: "検索に使った参照区間",
   searchCoverage: "検索対象の録音",
@@ -670,7 +668,7 @@ export const ja: Record<Key, string> = {
   invalid_interval: "録音の中の有効な区間を選んでください（表示は60秒、検索は30秒まで）。",
   query_interval: "検索の参照区間は0.2〜30秒で指定してください。",
   silent_query: "選択区間はデジタル無音です。別の区間を選んでください。",
-  no_search_embeddings: "対応する Perch の埋め込みがありません。先にこの地点の録音を解析してください。",
+  no_search_embeddings: "いまのメインのAIで解析した録音が、この地点にまだありません。先に録音を解析してください。",
   reference_format: "参照音は WAV・FLAC・MP3 に対応しています。",
   reference_channels: "空でないモノラルまたはステレオの参照音を選んでください。",
   // Navigation and shell

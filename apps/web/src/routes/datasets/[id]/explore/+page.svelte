@@ -282,7 +282,7 @@
     if(child>=0)show(child);
   }
 </script>
-<!-- In the list the line may wrap to two lines, and the row of the current sound is marked. -->
+<!-- In the list the line wraps, and the row of the current sound is marked. -->
 {#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{/if}{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
 {#snippet sounds(at:number)}
   {@const list=lists[at]}
@@ -424,8 +424,8 @@
   /* English labels wrap at the space; Japanese stays one word. */
   .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;line-height:1.2;text-align:center;word-break:keep-all;cursor:pointer}
   .check input{width:22px;height:22px;accent-color:rgb(var(--primary-700))}
-  /* The date and AI suggestions of a listed sound wrap to two lines at most instead of being cut. */
-  .member .about{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;white-space:normal}
+  /* The date and AI suggestions of a listed sound wrap instead of being cut: English needs three lines or more for two or three suggestions. */
+  .member .about{white-space:normal}
   /* Outlined, so the mark stays visible on a ticked row's tint; the word, not the colour, carries the meaning. */
   .current{display:inline-block;margin-right:6px;padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;background:rgb(var(--color-card-bg));color:rgb(var(--primary-700));font-size:13px;font-weight:600;line-height:1.5}
   .tally{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}

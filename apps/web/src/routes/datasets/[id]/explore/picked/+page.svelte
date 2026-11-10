@@ -51,7 +51,7 @@
       <h2>{fill('pkListHeading',{n:items.length})}</h2>
       {#each items as item (pickKey(item))}<article class="item">
         <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.end_s}} fixedRange compact dense start={item.start_s} end={item.end_s}>
-          {#snippet meta()}<span title={where(item)}>{where(item)}</span>{/snippet}
+          {#snippet meta()}<span class="where">{where(item)}</span>{/snippet}
           {#snippet actions()}{#if item.exported_at}<span class="saved">{t('pkExported')}</span>{/if}<Button size="sm" onclick={()=>picks.remove(item)}>{t('pkRemove')}</Button>{/snippet}
         </AudioRegion>
         <div class="labels"><PickForm value={item} {recent} name={speciesName} onchange={label=>picks.save({...item,...label})}/></div>
@@ -80,6 +80,8 @@
   .item{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
   /* The labels line up with the spectrogram, right of the play button. */
   .labels{padding-left:52px}
+  /* The date, file and seconds wrap instead of being cut (English runs past one line). */
+  .where{white-space:normal;overflow-wrap:anywhere}
   .saved{white-space:nowrap}
   .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}
   @media(max-width:600px){.labels{padding-left:0}}
