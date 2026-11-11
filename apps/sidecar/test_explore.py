@@ -291,7 +291,9 @@ class ExploreCheck(unittest.TestCase):
         def traced(root, analyses, *args):
             reads.append([row['analysis_id'] for row in analyses])
             return original(root, analyses, *args)
-        with patch('explore._stream_vectors', side_effect=traced):
+        # A plain function, not a mock: a mock keeps the mapped arrays it was called with until
+        # garbage collection, and Windows cannot delete a mapped file.
+        with patch('explore._stream_vectors', traced):
             explore.build(self.root, 1)
         self.assertEqual(reads, [[second]])
         new_index = json.loads(index_path.read_text())
@@ -348,9 +350,9 @@ class ExploreCheck(unittest.TestCase):
             seen['flatten'] = np.asarray(projected).copy()
             return original_flatten(tree, root, projected, cancel)
 
-        with patch.object(explore, 'layout_points', side_effect=traced_layout), \
-                patch.object(explore, 'binary_tree', side_effect=traced_tree), \
-                patch.object(explore, 'flatten_tree', side_effect=traced_flatten):
+        with patch.object(explore, 'layout_points', traced_layout), \
+                patch.object(explore, 'binary_tree', traced_tree), \
+                patch.object(explore, 'flatten_tree', traced_flatten):
             explore.build(self.root, 1)
         self.assertEqual(seen['tree'].shape, (24, 2))
         np.testing.assert_array_equal(seen['tree'], seen['layout'])
@@ -371,6 +373,37 @@ class ExploreCheck(unittest.TestCase):
         stale = self.client.get('/explore', params={'dataset': 1}).json()
         self.assertEqual((stale['status'], stale['stale_reason']), ('stale', 'data'))
         self.assertEqual(stale['node']['node'], 0)
+
+    def test_stopped_builds_leave_no_temporary_files(self):
+        # Windows cannot delete, replace or shrink a file that is still memory-mapped.
+        folder = self.root / 'explore'
+
+        def stop(*args, **kwargs):
+            raise CatalogError('cancelled')
+
+        def stopped_build(function):
+            with patch.object(explore, function, stop), self.assertRaisesRegex(CatalogError, 'cancelled'):
+                explore.build(self.root, 1)
+            with connect(self.root) as db:
+                self.assertIsNone(db.execute('SELECT 1 FROM explore_runs').fetchone())
+
+        self.add_analysis(24, 7)
+        stopped_build('_stream_vectors')  # while the cache is first written
+        self.assertEqual(list(folder.iterdir()), [])
+        stopped_build('layout_points')  # while the staged PCA file is mapped
+        cache = sorted(path.name for path in folder.iterdir())
+        self.assertEqual([Path(name).suffix for name in cache], ['.f32', '.i64', '.json'])
+        vectors = folder / cache[0]
+        self.assertEqual(vectors.stat().st_size, 24 * explore.EMBEDDING_DIMS * 4)
+        self.add_analysis(8, 8)
+        stopped_build('_stream_vectors')  # while the cache is extended
+        self.assertEqual(vectors.stat().st_size, 24 * explore.EMBEDDING_DIMS * 4)
+        abandoned = folder / '.stage-abandoned'
+        abandoned.mkdir()
+        (abandoned / 'pca50-source.f32').write_bytes(b'left by a build that crashed')
+        explore.build(self.root, 1)
+        self.assert_tree(32)
+        self.assertEqual(list(folder.glob('.stage-*')), [])
 
     def test_leaf_tree_and_landmark_layout_with_patched_thresholds(self):
         self.add_analysis(200, 4)

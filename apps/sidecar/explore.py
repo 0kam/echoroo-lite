@@ -2,9 +2,11 @@
 import hashlib
 import heapq
 import json
+import shutil
 import struct
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from uuid import uuid4
 
@@ -178,7 +180,10 @@ def embedding_cache(root, site_id, engine, model_sha, analyses, cancel=None):
             matrix.flush()
             segment_ids.flush()
             _write_json(index_path, new_index)
-        except Exception:
+        except Exception as error:
+            # Windows cannot shrink or delete a mapped file, and the frames of the failed calls
+            # (kept by the traceback) still hold these arrays.
+            traceback.clear_frames(error.__traceback__)
             del matrix, segment_ids
             with matrix_path.open('r+b') as stream:
                 stream.truncate(old_rows * EMBEDDING_DIMS * np.dtype('<f4').itemsize)
@@ -204,7 +209,11 @@ def embedding_cache(root, site_id, engine, model_sha, analyses, cancel=None):
             temporary_matrix.replace(matrix_path)
             temporary_ids.replace(ids_path)
             _write_json(index_path, index)
+        except BaseException as error:
+            traceback.clear_frames(error.__traceback__)
+            raise
         finally:
+            matrix = segment_ids = None
             temporary_matrix.unlink(missing_ok=True)
             temporary_ids.unlink(missing_ok=True)
     matrix = np.memmap(matrix_path, mode='r', dtype='<f4', shape=(index['rows'], EMBEDDING_DIMS))
@@ -706,6 +715,10 @@ def _remove_run_files(root, params):
 
 
 def _cleanup_staging(root, site_id, engine):
+    # Builds run one at a time, so a staging directory found here was abandoned by a crash or could
+    # not be deleted while one of its files was still open. One that is still locked waits again.
+    for leftover in (Path(root) / 'explore').glob('.stage-*'):
+        shutil.rmtree(leftover, ignore_errors=True)
     with connect(root) as db:
         rows = db.execute("SELECT id,params FROM explore_runs WHERE site_id=? AND engine=? AND json_extract(params,'$.staging')=1",
                           (site_id, engine)).fetchall()
@@ -755,43 +768,51 @@ def build(root, dataset_id, job_id=None, cancel=None):
         stage_seconds['cache'] = time.perf_counter() - started
         _check_cancel(cancel)
         folder = Path(root) / 'explore'
-        with tempfile.TemporaryDirectory(prefix='.stage-', dir=folder) as temporary:
+        with tempfile.TemporaryDirectory(prefix='.stage-', dir=folder, ignore_cleanup_errors=True) as temporary:
             temporary = Path(temporary)
-            _progress(root, job_id, 'explore_pca', 1)
-            started = time.perf_counter()
-            projected, pca = exact_pca(matrix, temporary / 'pca50-source.f32', cancel)
-            stage_seconds['pca'] = time.perf_counter() - started
-            _check_cancel(cancel)
-            _progress(root, job_id, 'explore_layout', 2)
-            started = time.perf_counter()
-            layout, layout_mode = layout_points(projected, cancel)
-            stage_seconds['layout'] = time.perf_counter() - started
-            _check_cancel(cancel)
-            _progress(root, job_id, 'explore_tree', 3)
-            started = time.perf_counter()
-            tree, root_node, tree_details = binary_tree(layout, cancel)
-            nodes, order = flatten_tree(tree, root_node, projected, cancel)
-            stage_seconds['tree'] = time.perf_counter() - started
-            _check_cancel(cancel)
-            _progress(root, job_id, 'explore_summarizing', 4)
-            started = time.perf_counter()
-            summaries, candidates, filters = node_summaries(
-                root, analyses, index, segment_ids, projected, nodes, order, cancel)
-            params = {'staging': True}
-            with connect(root) as db:
-                staged_sha = f'{model_sha}.staging.{uuid4().hex}'
-                staged_id = db.execute('INSERT INTO explore_runs(site_id,engine,model_sha,params) VALUES(?,?,?,?)',
-                    (dataset['site_id'], engine, staged_sha, json.dumps(params))).lastrowid
-            points_name = f'points-{staged_id}.bin'
-            pca_name = f'pca50-{staged_id}.f32'
-            staged_points = temporary / points_name
-            staged_pca = temporary / pca_name
-            write_scatter(staged_points, layout[order], segment_ids[order])
-            ordered_pca = np.memmap(staged_pca, mode='w+', dtype='<f4', shape=(len(order), PCA_DIMS))
-            for start in range(0, len(order), PCA_BATCH):
-                end = min(start + PCA_BATCH, len(order))
-                ordered_pca[start:end] = projected[order[start:end]]
-            ordered_pca.flush(); del ordered_pca
+            try:
+                _progress(root, job_id, 'explore_pca', 1)
+                started = time.perf_counter()
+                projected, pca = exact_pca(matrix, temporary / 'pca50-source.f32', cancel)
+                stage_seconds['pca'] = time.perf_counter() - started
+                _check_cancel(cancel)
+                _progress(root, job_id, 'explore_layout', 2)
+                started = time.perf_counter()
+                layout, layout_mode = layout_points(projected, cancel)
+                stage_seconds['layout'] = time.perf_counter() - started
+                _check_cancel(cancel)
+                _progress(root, job_id, 'explore_tree', 3)
+                started = time.perf_counter()
+                tree, root_node, tree_details = binary_tree(layout, cancel)
+                nodes, order = flatten_tree(tree, root_node, projected, cancel)
+                stage_seconds['tree'] = time.perf_counter() - started
+                _check_cancel(cancel)
+                _progress(root, job_id, 'explore_summarizing', 4)
+                started = time.perf_counter()
+                summaries, candidates, filters = node_summaries(
+                    root, analyses, index, segment_ids, projected, nodes, order, cancel)
+                params = {'staging': True}
+                with connect(root) as db:
+                    staged_sha = f'{model_sha}.staging.{uuid4().hex}'
+                    staged_id = db.execute('INSERT INTO explore_runs(site_id,engine,model_sha,params) VALUES(?,?,?,?)',
+                        (dataset['site_id'], engine, staged_sha, json.dumps(params))).lastrowid
+                points_name = f'points-{staged_id}.bin'
+                pca_name = f'pca50-{staged_id}.f32'
+                staged_points = temporary / points_name
+                staged_pca = temporary / pca_name
+                write_scatter(staged_points, layout[order], segment_ids[order])
+                ordered_pca = np.memmap(staged_pca, mode='w+', dtype='<f4', shape=(len(order), PCA_DIMS))
+                for start in range(0, len(order), PCA_BATCH):
+                    end = min(start + PCA_BATCH, len(order))
+                    ordered_pca[start:end] = projected[order[start:end]]
+                ordered_pca.flush(); del ordered_pca
+            except BaseException as error:
+                traceback.clear_frames(error.__traceback__)
+                raise
+            finally:
+                # Windows cannot delete a mapped file: unmap the staged files, also when the build
+                # fails, before the directory is removed.
+                projected = ordered_pca = None
             _check_cancel(cancel)
             final_files = [folder / points_name, folder / pca_name]
             staged_points.replace(final_files[0]); staged_pca.replace(final_files[1])
