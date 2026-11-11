@@ -67,6 +67,14 @@ sudo apt install gstreamer1.0-plugins-good gstreamer1.0-libav
 - 初回に、解析に使うAIを選び、このパソコンでの解析の速さを測ります（十数秒）。録音を追加するときと解析の前に、かかる時間の目安が出ます。
 - 元の音声ファイルは移動・変更されません。
 
+## 新しい版への更新
+
+0.1.3 より新しい版では、新しい版が出るとアプリの上のほうにお知らせが出ます。「更新する」を押すと、アプリの中で新しい版に入れ替えられます。
+
+0.1.3 までの版にはこの機能がありません。その場合は一度だけ、上の手順で新しい版を入れてください。入れ直しても、下の保存場所のデータは残ります。
+
+Releases のページにある `.sig`、`-update.app.tar.gz`、`latest.json` は、アプリが更新に使うファイルです。自分でダウンロードする必要はありません。
+
 ## データの保存場所とアンインストール
 
 | OS | 保存場所 |
@@ -122,6 +130,12 @@ If macOS says the app "is damaged", the download was corrupted; download it agai
 
 - `.deb`: `sudo apt install ./Echoroo.Lite_0.1.3_amd64.deb` (installs the GStreamer plugins needed for audio).
 - AppImage: `chmod +x` the file and run it. If there is no sound, install `gstreamer1.0-plugins-good` and `gstreamer1.0-libav`.
+
+## Updating
+
+In versions newer than 0.1.3, the app shows a notice at the top when a new version is out. Press **Update** to switch to it inside the app.
+Version 0.1.3 and earlier cannot do this: install the new version once by hand, as described above. Your data stays where it is.
+The `.sig`, `-update.app.tar.gz` and `latest.json` files on the Releases page are used by the app for updates; you do not need to download them.
 
 ## Data and uninstalling
 

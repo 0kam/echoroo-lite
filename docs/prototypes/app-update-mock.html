@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アプリの更新（見本）</title>
+<style>
+  /* Colour roles copied from apps/web/src/lib/theme.css (light theme). */
+  :root {
+    --primary-100: 248 224 222; --primary-200: 240 195 192; --primary-600: 190 105 100; --primary-700: 160 80 76;
+    --stone-200: 244 237 232; --stone-300: 223 218 217; --stone-600: 105 101 131; --stone-800: 70 66 97; --stone-900: 55 52 80;
+    --page: 250 244 237; --card: 255 250 243; --border: 223 218 217; --nav: 242 233 225; --nav-border: 206 202 205;
+    --success: 40 105 131; --success-light: 232 243 246; --warning: 234 157 52; --warning-light: 253 240 218;
+    --danger: 180 99 122; --danger-light: 245 224 231;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 16px/1.6 "Hiragino Sans", "BIZ UDPGothic", "Yu Gothic UI", system-ui, sans-serif; color: rgb(var(--stone-900)); background: #e9e4de; padding: 24px 16px 64px; }
+  .doc { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .doc > h1 { font-size: 24px; }
+  .doc > p { color: rgb(var(--stone-800)); max-width: 70ch; }
+  .state > h2 { font-size: 17px; margin-bottom: 4px; }
+  .state > p { font-size: 14px; color: rgb(var(--stone-800)); margin-bottom: 10px; max-width: 80ch; }
+  .screen { border: 1px solid rgb(var(--nav-border)); border-radius: 10px; overflow: hidden; background: rgb(var(--page)); box-shadow: 0 2px 10px rgb(0 0 0 / .08); }
+  .topbar { display: flex; align-items: center; gap: 24px; padding: 10px 24px; background: rgb(var(--nav)); border-bottom: 1px solid rgb(var(--nav-border)); font-size: 15px; }
+  .brand { font-weight: 650; color: rgb(var(--primary-700)); }
+  .brand b { font-weight: 500; color: rgb(var(--stone-600)); }
+  .topbar nav { display: flex; gap: 24px; }
+  .topbar nav span.current { border-bottom: 3px solid rgb(var(--primary-700)); }
+  .spacer { flex: 1; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; font-size: 14px; background: rgb(var(--primary-100)); color: rgb(var(--primary-700)); }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .lang { border: 1px solid rgb(var(--border)); border-radius: 6px; padding: 2px 8px; font-size: 14px; background: rgb(var(--card)); }
+
+  /* The update strip: one row under the top bar, on every page. */
+  .update { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 24px; background: rgb(var(--success-light)); border-bottom: 1px solid rgb(var(--success) / .35); }
+  .update.failed { background: rgb(var(--danger-light)); border-bottom-color: rgb(var(--danger) / .4); }
+  .update .text { flex: 1 1 320px; min-width: 0; }
+  .update .text small { display: block; font-size: 14px; color: rgb(var(--stone-800)); }
+  .update .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .update a { color: rgb(var(--primary-700)); font-size: 14px; }
+  progress { width: 100%; height: 10px; margin-top: 6px; accent-color: rgb(var(--success)); }
+
+  button { font: inherit; min-height: 44px; padding: 8px 16px; border: 1px solid rgb(var(--border)); border-radius: 8px; background: rgb(var(--card)); color: inherit; cursor: pointer; }
+  button.primary { background: rgb(var(--primary-700)); color: #fffaf3; border-color: transparent; font-weight: 500; }
+  button.ghost { background: transparent; border-color: transparent; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .ph { height: 56px; border-radius: 8px; background: repeating-linear-gradient(135deg, rgb(var(--stone-200)) 0 10px, rgb(var(--page)) 10px 20px); border: 1px dashed rgb(var(--border)); display: grid; place-items: center; color: rgb(var(--stone-600)); font-size: 14px; }
+  .panel { background: rgb(var(--card)); border: 1px solid rgb(var(--border)); border-radius: 10px; padding: 20px 24px; max-width: 720px; display: flex; flex-direction: column; gap: 10px; }
+  .panel h3 { font-size: 18px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .muted { color: rgb(var(--stone-600)); font-size: 14px; }
+  .error { padding: 8px 12px; border-left: 3px solid rgb(var(--danger)); background: rgb(var(--danger-light)); border-radius: 0 6px 6px 0; }
+  code { font-size: 13px; overflow-wrap: anywhere; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+</style>
+</head>
+<body>
+<div class="doc">
+  <h1>アプリの更新（見本）</h1>
+  <p>設計案：<code>docs/app-update-proposal-2026-11.md</code>。帯はどのページでも上のメニューのすぐ下に出ます。ボタンは見本なので動きません。</p>
+
+  <section class="state">
+    <h2>1. 起動したとき、新しい版がある</h2>
+    <p>起動のたびに 1 回だけ確かめます。オフラインのときは何も出しません。自動ではダウンロードしません。</p>
+    <div class="screen">
+      <div class="topbar"><span class="brand">Echoroo <b>Lite</b></span><nav><span class="current">録音と結果</span><span>クイズ</span><span>設定</span></nav><span class="spacer"></span><span class="lang">日本語</span></div>
+      <div class="update" role="status">
+        <div class="text">新しい版（0.2.0）があります。 <a href="#">変更点を見る</a></div>
+        <div class="actions"><button class="primary">更新する（約 750 MB）</button><button class="ghost">あとで</button></div>
+      </div>
+      <div class="body"><div class="ph">いま開いているページ（そのまま使えます）</div></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>2. 解析の途中</h2>
+    <p>解析や地図作りの間は更新を始められません。終わるとボタンが押せるようになります。</p>
+    <div class="screen">
+      <div class="topbar"><span class="brand">Echoroo <b>Lite</b></span><nav><span class="current">録音と結果</span><span>クイズ</span><span>設定</span></nav><span class="spacer"></span><span class="chip"><i></i>解析中: 筑波の森 · 12 / 40</span><span class="lang">日本語</span></div>
+      <div class="update" role="status">
+        <div class="text">新しい版（0.2.0）があります。 <a href="#">変更点を見る</a><small>解析が終わると更新できます。</small></div>
+        <div class="actions"><button class="primary" disabled>更新する（約 750 MB）</button><button class="ghost">あとで</button></div>
+      </div>
+      <div class="body"><div class="ph">いま開いているページ</div></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>3. ダウンロード中</h2>
+    <p>ダウンロードの間もアプリを使えます。</p>
+    <div class="screen">
+      <div class="topbar"><span class="brand">Echoroo <b>Lite</b></span><nav><span class="current">録音と結果</span><span>クイズ</span><span>設定</span></nav><span class="spacer"></span><span class="lang">日本語</span></div>
+      <div class="update" role="status">
+        <div class="text">新しい版をダウンロードしています… 312 / 748 MB
+          <progress max="748" value="312" aria-label="ダウンロードの進み具合"></progress>
+          <small>このままアプリを使えます。アプリを閉じると、ダウンロードはやり直しになります。</small></div>
+      </div>
+      <div class="body"><div class="ph">いま開いているページ</div></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>4. ダウンロードが終わった</h2>
+    <p>勝手には再起動しません。区切りのよいところでボタンを押します。解析の途中は、2 と同じく押せません。</p>
+    <div class="screen">
+      <div class="topbar"><span class="brand">Echoroo <b>Lite</b></span><nav><span class="current">録音と結果</span><span>クイズ</span><span>設定</span></nav><span class="spacer"></span><span class="lang">日本語</span></div>
+      <div class="update" role="status">
+        <div class="text">更新の準備ができました。再起動すると新しい版になります。</div>
+        <div class="actions"><button class="primary">再起動して更新</button></div>
+      </div>
+      <div class="body"><div class="ph">いま開いているページ</div></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>5. うまくいかなかった</h2>
+    <p>アプリはそのまま使えます。何度やってもだめなときのために、手動で入れ直す道を残します。</p>
+    <div class="screen">
+      <div class="topbar"><span class="brand">Echoroo <b>Lite</b></span><nav><span class="current">録音と結果</span><span>クイズ</span><span>設定</span></nav><span class="spacer"></span><span class="lang">日本語</span></div>
+      <div class="update failed" role="alert">
+        <div class="text">更新できませんでした。インターネットの接続を確かめて、もう一度試してください。</div>
+        <div class="actions"><button class="primary">もう一度</button><button>ダウンロードのページを開く</button></div>
+      </div>
+      <div class="body"><div class="ph">いま開いているページ</div></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>6. 設定のページの「アプリの更新」</h2>
+    <p>いまの版の番号と、自分で確かめるボタン。［あとで］を押した人や、起動したまま何日も使う人の戻り先です。</p>
+    <div class="grid">
+      <div class="panel"><h3>アプリの更新</h3><p>いまの版：0.1.4</p><div class="row"><button>新しい版があるか確かめる</button></div></div>
+      <div class="panel"><h3>アプリの更新</h3><p>いまの版：0.1.4</p><div class="row"><button>新しい版があるか確かめる</button><span class="muted">最新の版です。</span></div></div>
+      <div class="panel"><h3>アプリの更新</h3><p>いまの版：0.1.4</p><p>新しい版（0.2.0）があります。 <a href="#" style="color:rgb(var(--primary-700));font-size:14px">変更点を見る</a></p><div class="row"><button class="primary">更新する（約 750 MB）</button></div></div>
+      <div class="panel"><h3>アプリの更新</h3><p>いまの版：0.1.4</p><div class="row"><button>新しい版があるか確かめる</button><span class="muted">確かめられませんでした。インターネットの接続を確かめてください。</span></div></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>7. データのほうが新しいとき（互換性）</h2>
+    <p>新しい版で作ったデータを古い版で開いた場合。いまは「データフォルダを移動するか削除して」と出ますが、消さずに済むよう、更新を案内します。</p>
+    <div class="screen">
+      <div class="topbar"><span class="brand">Echoroo <b>Lite</b></span><nav><span>録音と結果</span><span>クイズ</span><span>設定</span></nav><span class="spacer"></span><span class="lang">日本語</span></div>
+      <div class="body">
+        <div class="panel" style="max-width:none">
+          <p class="error">このデータは、いまより新しい版のアプリで作られています。アプリを更新すると開けます。</p>
+          <p class="muted">データフォルダ：<code>/Users/…/Library/Application Support/org.echoroo.lite</code></p>
+          <div class="row"><button class="primary">更新する（約 750 MB）</button><button>ダウンロードのページを開く</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

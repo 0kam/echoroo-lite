@@ -1,7 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { untrack } from 'svelte';
 export type Connection = { url: string; token: string };
-export type Health = { status: 'ok' | 'data_incompatible'; data_folder: string; detail?: string | null };
+export type Health = { status: 'ok' | 'data_incompatible' | 'data_newer'; data_folder: string; detail?: string | null };
 export let connection: Connection;
 /** Number of requests in flight; the activity bar reads it. */
 export const activity = $state({ count: 0 });
