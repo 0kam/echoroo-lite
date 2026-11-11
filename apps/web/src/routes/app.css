@@ -89,6 +89,12 @@ input, select, textarea {
   border: 1px solid rgb(var(--stone-300)); border-radius: 6px;
   background: rgb(var(--stone-50)); color: rgb(var(--stone-900));
 }
+/* WebKit draws a native 23px pop-up button and ignores min-height unless the native look is switched off, so the arrow is drawn here. */
+select {
+  -webkit-appearance: none; appearance: none; padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23787068' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 12px 8px;
+}
 input[readonly] { background: rgb(var(--stone-200)); }
 input::placeholder { color: rgb(var(--stone-500)); }
 input[type="checkbox"], input[type="radio"] { display: inline-block; width: 20px; height: 20px; min-height: 0; margin: 0; flex: none; }
@@ -115,7 +121,7 @@ summary { cursor: pointer; font-weight: 500; min-height: 44px; padding: 8px 0; }
 .brand b { font-weight: 500; color: rgb(var(--stone-600)); }
 .dark .brand { color: rgb(var(--primary-500)); }
 .topbar .spacer { flex: 1; }
-.topbar select { width: auto; margin: 0; padding: 4px 8px; font-size: 14px; }
+.topbar select { width: auto; margin: 0; padding: 4px 32px 4px 8px; font-size: 14px; }
 .main-nav { display: flex; gap: 24px; align-items: center; }
 .main-nav a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; padding: 8px 0; color: inherit; white-space: nowrap; }
 .main-nav a.current { border-bottom: 3px solid rgb(var(--primary-700)); }
