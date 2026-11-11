@@ -5,6 +5,8 @@
   import { page } from '$app/state';
   import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession } from '$lib/app.svelte';
   import ModelChoice from '$lib/ModelChoice.svelte';
+  import UpdateControl from '$lib/UpdateControl.svelte';
+  import { checkForUpdate, update } from '$lib/update.svelte';
   import ActivityBar from '$lib/ui/ActivityBar.svelte';
   import Toasts from '$lib/ui/Toasts.svelte';
   import './app.css';
@@ -36,7 +38,7 @@
     const id = Number(page.params.id);
     if (route.startsWith('/datasets/[id]') && Number.isInteger(id) && id !== app.datasetId) rememberDataset(id);
   });
-  onMount(() => { restorePreferences(); return startSession(); });
+  onMount(() => { restorePreferences(); void checkForUpdate(); return startSession(); });
 </script>
 
 <svelte:head><title>Echoroo Lite</title><link rel="icon" type="image/svg+xml" href="/favicon.svg" /></svelte:head>
@@ -60,6 +62,8 @@
     </select>
 
   </header>
+  <!-- Data made by a newer app: the page itself offers the update, without "Later". -->
+  {#if !update.later && app.connectionError !== 'data_newer'}<UpdateControl strip />{/if}
   <main class="main">
     {#if app.connected}
       <!-- A lost connection is reported in the page, not in the top bar. -->
@@ -76,8 +80,9 @@
     {:else}
       <div class="page"><div class="panel empty" role="status">
         <p class:error={!!app.connectionError}>{t(app.connectionError || 'connecting')}</p>
-        {#if app.connectionError === 'data_incompatible' && app.dataFolder}<p>{t('dataFolderPath')} <code>{app.dataFolder}</code></p>{/if}
-        {#if app.connectionError}<button class="button" onclick={() => location.reload()}>{t('retryConnection')}</button>{/if}
+        {#if (app.connectionError === 'data_incompatible' || app.connectionError === 'data_newer') && app.dataFolder}<p>{t('dataFolderPath')} <code>{app.dataFolder}</code></p>{/if}
+        {#if app.connectionError === 'data_newer'}<UpdateControl page quiet />
+        {:else if app.connectionError}<button class="button" onclick={() => location.reload()}>{t('retryConnection')}</button>{/if}
       </div></div>
     {/if}
   </main>

@@ -22,16 +22,20 @@ jobs:
             bundles: nsis
             artifact: windows-x86_64
             installer_count: 1
+            update_file_count: 1 # -setup.exe.sig
           - os: macos-15
             target: aarch64-apple-darwin
-            bundles: dmg
+            # "app" is listed because the update archive (.app.tar.gz) is only made from it.
+            bundles: app,dmg
             artifact: macos-aarch64
             installer_count: 1
+            update_file_count: 2 # -update.app.tar.gz and its .sig
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: deb,appimage
             artifact: linux-x86_64
             installer_count: 2
+            update_file_count: 2 # .AppImage.sig and .deb.sig
     env:
       SIGNING_APPLE_CERTIFICATE: ${{ matrix.os == 'macos-15' && secrets.APPLE_CERTIFICATE || '' }}
       SIGNING_APPLE_CERTIFICATE_PASSWORD: ${{ matrix.os == 'macos-15' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
@@ -40,6 +44,16 @@ jobs:
       SIGNING_APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos-15' && secrets.APPLE_SIGNING_IDENTITY || '' }}
       SIGNING_APPLE_TEAM_ID: ${{ matrix.os == 'macos-15' && secrets.APPLE_TEAM_ID || '' }}
     steps:
+      - name: Require the update signing key for a release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          HAS_UPDATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [[ "$HAS_UPDATE_KEY" != true ]]; then
+            echo "::error::The repository secret TAURI_SIGNING_PRIVATE_KEY is missing. A release built without it has no update files, so installed apps would never be offered it."
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -78,6 +92,11 @@ jobs:
         run: python scripts/check_frozen.py "apps/desktop/binaries/echoroo-sidecar-${{ matrix.target }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}" --models poc/models --sample-audio scripts/fixtures/horornis-diphone-xc1177906.mp3 --diagnostics --data "$RUNNER_TEMP/echoroo-inference-data"
       - name: Build desktop installer
         shell: bash
+        env:
+          # Only this step sees the update signing key. The password secret may be unset:
+          # Tauri then signs with an empty password, which is right for a key made without one.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           signing_config=()
           if [[ "${{ matrix.os }}" == "macos-15" ]]; then
@@ -95,16 +114,40 @@ jobs:
             fi
           fi
 
+          # Update files for the in-app updater are built only when the signing key is present,
+          # so manual runs without the key still build plain installers.
+          updater_config=()
+          expected_update_files=0
+          if [[ -n "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo '{"bundle":{"createUpdaterArtifacts":true}}' > apps/desktop/tauri.updater.conf.json
+            updater_config=(--config tauri.updater.conf.json)
+            expected_update_files="${{ matrix.update_file_count }}"
+            echo "Update signing key found; building signed update files."
+          else
+            echo "No update signing key; building installers without update files."
+          fi
+
           bundle_dir="apps/desktop/target/${{ matrix.target }}/release/bundle"
           mkdir -p release-assets
+          # GitHub turns spaces in release asset names into dots. Stage the files under those
+          # names so that the URLs in latest.json are the names GitHub serves.
           stage_installers() {
             while IFS= read -r -d '' source; do
-              cp "$source" "release-assets/$(basename "$source")"
-            done < <(find "$bundle_dir" -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -print0)
+              cp "$source" "release-assets/$(basename "$source" | tr ' ' '.')"
+            done < <(find "$bundle_dir" -maxdepth 2 -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.exe.sig' -o -name '*.deb.sig' -o -name '*.AppImage.sig' \) -print0)
           }
 
-          (cd apps/desktop && npx tauri build --target "${{ matrix.target }}" --config tauri.bundle.conf.json "${signing_config[@]}" --bundles "${{ matrix.bundles }}")
+          (cd apps/desktop && npx tauri build --target "${{ matrix.target }}" --config tauri.bundle.conf.json "${signing_config[@]}" "${updater_config[@]}" --bundles "${{ matrix.bundles }}")
           stage_installers
+
+          if [[ "${{ matrix.os }}" == "macos-15" && "$expected_update_files" -gt 0 ]]; then
+            # Tauri names the update archive "Echoroo Lite.app.tar.gz". Give it the DMG's version
+            # and arch, and "-update" so nobody takes it for the installer.
+            dmg=$(find release-assets -maxdepth 1 -type f -name '*.dmg' -print -quit)
+            update_archive="release-assets/$(basename "$dmg" .dmg)-update.app.tar.gz"
+            cp "$bundle_dir"/macos/*.app.tar.gz "$update_archive"
+            cp "$bundle_dir"/macos/*.app.tar.gz.sig "$update_archive.sig"
+          fi
 
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             installer=$(find "$bundle_dir/nsis" -maxdepth 1 -type f -name '*.exe' -print -quit)
@@ -114,8 +157,12 @@ jobs:
             pwsh -NoProfile -File scripts/check_windows_install.ps1 -Installer "$installer" -Data "$RUNNER_TEMP/echoroo-inference-data"
           fi
 
-          count=$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')
-          test "$count" -eq "${{ matrix.installer_count }}"
+          ls -l release-assets
+          installers=$(find release-assets -maxdepth 1 -type f ! -name '*.sig' ! -name '*.tar.gz' | wc -l | tr -d ' ')
+          update_files=$(find release-assets -maxdepth 1 -type f \( -name '*.sig' -o -name '*.tar.gz' \) | wc -l | tr -d ' ')
+          echo "Installers: $installers (expected ${{ matrix.installer_count }}); update files: $update_files (expected $expected_update_files)"
+          test "$installers" -eq "${{ matrix.installer_count }}"
+          test "$update_files" -eq "$expected_update_files"
       - uses: actions/upload-artifact@v4
         with:
           name: Echoroo-Lite-0.1.3-${{ matrix.artifact }}
@@ -128,14 +175,18 @@ jobs:
     needs: build
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
-      - name: Attach installers to a draft release
+      - name: Write latest.json for the in-app updater
+        run: |
+          python3 scripts/make_update_manifest.py --self-check
+          python3 scripts/make_update_manifest.py release-assets "$GITHUB_REF_NAME"
+      - name: Attach installers and update files to a draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          # No checkout here, so gh needs the repository named explicitly.
           GH_REPO: ${{ github.repository }}
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then

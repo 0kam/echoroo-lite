@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from storage import CatalogError, checked_source, connect, initialize, preview_folder
+from storage import SCHEMA_VERSION, CatalogError, checked_source, connect, initialize, preview_folder
 from species import decorate_candidates, initialize_species, list_species, save_species
 import models as model_registry
 from models import Engine, SpeciesEngine, ValidationEngine
@@ -269,10 +269,15 @@ class QuizEnabledRequest(BaseModel):
 
 def create_app(root, models, token):
     model_registry.configure_birdnet(models)
-    compatible = initialize(root)
-    if compatible:
+    # Why the catalog cannot be opened, or None. Data made by a newer app needs an app update, never a deletion.
+    incompatible = None
+    if initialize(root):
         initialize_species(root)
         model_registry.configure(root, models)
+    else:
+        with connect(root) as db:
+            newer = db.execute("PRAGMA user_version").fetchone()[0] > SCHEMA_VERSION
+        incompatible = "data_newer" if newer else "data_incompatible"
     cancel = threading.Event()
     operation_cancel = threading.Event()
     lock = threading.Lock()
@@ -326,8 +331,8 @@ def create_app(root, models, token):
             raise HTTPException(401, "unauthorized")
 
     def require_compatible(request: Request):
-        if not compatible and request.url.path != "/health":
-            raise CatalogError("data_incompatible")
+        if incompatible and request.url.path != "/health":
+            raise CatalogError(incompatible)
 
     app = FastAPI(lifespan=lifespan, dependencies=[Depends(authorize), Depends(require_compatible), Depends(request_lease)],
                   docs_url=None, redoc_url=None, openapi_url=None)
@@ -348,9 +353,9 @@ def create_app(root, models, token):
     @app.get("/health")
     def health():
         from analysis import birdnet_available
-        return {"status": "ok" if compatible else "data_incompatible", "data_folder": str(root),
+        return {"status": incompatible or "ok", "data_folder": str(root),
                 "birdnet": birdnet_available(models), "models": model_registry.enabled_engines(root, models),
-                "detail": None if compatible else "data_incompatible"}
+                "detail": incompatible}
 
     @app.get('/models')
     def detection_models():
