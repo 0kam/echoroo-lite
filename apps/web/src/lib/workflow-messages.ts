@@ -376,7 +376,7 @@ export const workflowEn = {
   pkListHeading:"Sounds to export ({n})",
   pkEmpty:"Nothing here yet. On the sound map, tick “Add to export” to the left of a sound.",
   pkMargin:"Each sound is exported with 2.5 seconds before and after it. The part between the two lines is what you heard on the map. Play each sound and listen to the parts outside the lines for other species or people's voices.",
-  pkWhere:"{file}, {start}–{end} s",
+  pkWhere:"{file}, {start}–\u2060{end}\u00a0s",
   pkExported:"Exported",
   pkRemove:"Remove",
   pkExportHeading:"Export",

@@ -71,7 +71,7 @@
         {#if exportZip.pending}<p><Spinner/> {t('pkExporting')}</p>
         {:else if exportZip.error}<p class="error">{t(exportZip.error)}</p>
         {:else if saved}<p><strong>{t('pkSaved')}</strong></p><p class="path">{saved.path}</p>
-        {:else}<p>{fill('pkExportIntro',{n:items.length})}{#if isTauri()} {t('pkChooseLater')}{/if}</p>{/if}
+        {:else}<p>{fill('pkExportIntro',{n:items.length})}{#if isTauri()}{app.locale==='ja'?'':' '}{t('pkChooseLater')}{/if}</p>{/if}
       </div>
       <Button variant={saved?'default':'primary'} pending={exportZip.pending} disabled={!items.length||(!isTauri()&&!folder)} onclick={()=>exportZip.run()}>{t('pkExportButton')}</Button>
       {#if items.length&&!isTauri()&&!folder}<p class="muted">{t('rNeedFolder')}</p>{/if}
