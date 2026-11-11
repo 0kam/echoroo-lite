@@ -326,12 +326,12 @@
           {#if pointsError}<p class="error" role="alert">{t(pointsError)}</p>{/if}
           <!-- The list is the keyboard path to the same groups; the map adds pointer zoom, pan, picking and double-click to go inside. -->
           <div class="map">
+            <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
             <div class="map-nav" role="group" aria-label={t('eMapNav')}>
               <Button size="sm" disabled={!canBack} onclick={()=>step(-1)}>{t('eBackView')}</Button>
               <Button size="sm" disabled={!canForward} onclick={()=>step(1)}>{t('eForwardView')}</Button>
               <Button size="sm" disabled={!node.node&&!transformed} onclick={whole}>{t('eTop')}</Button>
             </div>
-            <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
           </div>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
           <!-- Fixed text lines and a kept-up card: a new pick changes what the card shows, never how tall it is. -->
@@ -400,10 +400,10 @@
   .explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   /* The map column stays in view and never runs past the window: 140px is the 76px top bar, the 32px page padding and 16px above and below. */
   .map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
-  /* The buttons sit above the map, never over its points. The map shrinks in short windows so the current sound under it stays in view. */
-  .map-nav{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
-  /* The map takes the height left over by its 44px button row (8px gap), the hint (three lines at 1024px), the current-sound card and the 44px tally row with their 12px gaps, so the column fits a 768px window. */
-  canvas{display:block;width:100%;height:clamp(176px,calc(100vh - 592px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  /* The map shrinks in short windows so the current sound under it stays in view. */
+  .map{position:relative}.map-nav{position:absolute;top:8px;left:8px;display:flex;gap:4px}
+  /* The map takes the height left over by the hint (three lines at 1024px), the current-sound card and the 44px tally row with their 12px gaps, so the column fits a 768px window. */
+  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 540px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
   /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
   .pick{display:flex;flex-direction:column;gap:8px;min-height:198px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
   .line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
