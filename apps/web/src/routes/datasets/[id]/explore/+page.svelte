@@ -316,7 +316,8 @@
       <p>{t('eEmpty')}</p><p>{t('eTakesMinutes')}</p>
       <Button variant="primary" pending={build.pending} disabled={!!job} onclick={()=>build.run()}>{t('eBuild')}</Button>
       {#if job&&!build.pending}<p>{t('job_busy')}</p>{/if}
-      {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}</section>{/if}
+      {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
+      {#if build.error==='no_search_embeddings'}<Button href={resolve(`/datasets/${id}`)}>{t('eBackToAnalyse')}</Button>{/if}</section>{/if}
     {#if node}
       <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelName(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
       <div class="explore">

@@ -8,6 +8,7 @@
   import Button from '$lib/ui/Button.svelte';
   import SiteMap from '$lib/SiteMap.svelte';
   import { createTask } from '$lib/ui/task.svelte';
+  import { notify } from '$lib/ui/toast.svelte';
   import { fill } from '$lib/workflow';
   type Collection = Dataset & {count:number;seconds:number;first:string|null;last:string|null};
   type Details = {site:Site;datasets:Collection[]};
@@ -26,8 +27,8 @@
   function receive(value:Details){details=value;name=value.site.name;latitude=value.site.latitude;longitude=value.site.longitude;changingPlace=false;renameId=null;}
   const load=createTask(async()=>receive(await api(`/sites/${id}/management`)));
   onMount(()=>{void load.run();});
-  const save=createTask(async()=>{receive(await api(`/sites/${id}/edit`,{name,latitude,longitude}));await refreshCatalog();},{toast:true});
-  const rename=createTask(async()=>{receive(await api(`/sites/${id}/datasets/${renameId}/edit`,{name:collectionName}));await refreshCatalog();},{toast:true});
+  const save=createTask(async()=>{receive(await api(`/sites/${id}/edit`,{name,latitude,longitude}));await refreshCatalog();notify('pkSaved');},{toast:true});
+  const rename=createTask(async()=>{receive(await api(`/sites/${id}/datasets/${renameId}/edit`,{name:collectionName}));await refreshCatalog();notify('pkSaved');},{toast:true});
   const inspect=createTask(async(datasetId:number|null)=>{remove.error='';removal=await api(`/sites/${id}/delete-preview${datasetId===null?'':`?dataset_id=${datasetId}`}`);dialog.showModal();});
   const remove=createTask(async()=>{
     if(!removal)return;
@@ -35,6 +36,7 @@
     app.recordingsVersion++;await refreshCatalog();dialog.close();
     if(removal.dataset_id===null){details=null;renameId=null;await goto(resolve('/datasets'));}
     else await load.run();
+    notify('mRemoved','success',undefined,{name:removal.name});
     removal=null;
   });
   const date=(value:string|null)=>value&&details?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeZone:details.site.timezone}).format(new Date(value)):'—';
