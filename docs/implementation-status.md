@@ -1,5 +1,13 @@
 # 実装状況（2026-09-10）
 
+## 2026-11-11：0.2.0 のリリース準備
+
+ユーザーの指示（同日）で、地図のブランチを main に入れて 0.2.0 として出す。版番号を 0.2.0 に上げた（`Cargo.toml`・`Cargo.lock`・`tauri.conf.json`・`package.json` 2 つ・`package-lock.json`・workflow 2 つの成果物名・[インストールの手順](install-guide.md)・`windows-preview.md`）。README に音の地図（実験的）の説明を足し、インストールの手順に「0.2.0 で開いたデータは 0.1.3 以前では開けない。古い版の案内が出てもデータは削除しない」と書いた。
+
+- 確認：Python 103 件、Svelte 検査 0 errors / 0 warnings、`make_update_manifest.py --self-check`、`check_report_player.mjs`。
+- 更新用ファイルを作るリリース手順（`release.yml`）は、今回のタグで初めて CI で動く。下書きの中身（インストーラー 4 つ、更新用ファイルと `.sig`、`latest.json`）は、公開の前に確かめる。
+- 未確認のまま出すもの：Windows と Linux でのアプリ内更新の入れ替え、Windows での今回の画面の変更、初めての利用者による確認。
+
 ## 2026-11-10：アプリ内の更新
 
 [設計案](app-update-proposal-2026-11.md)（見本を見たユーザーが同日了承）を実装した。アプリ側とリリース手順側を Fable のサブエージェントが 1 つずつ書き、差分を確認してからコミットした。入れ替えと再起動は Mac（Apple シリコン）でだけ通した（下の「Mac での通し確認」）。Windows と Linux ではまだ実行していない。

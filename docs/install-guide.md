@@ -1,4 +1,4 @@
-# インストールの手順（Echoroo Lite 0.1.3）
+# インストールの手順（Echoroo Lite 0.2.0）
 
 [English](#installation-echoroo-lite-010)
 
@@ -20,7 +20,7 @@ CC BY-NC-SA 4.0 で提供されているためです。鳥の鳴き声の録音�
 
 ## Windows 10 / 11（64ビット）
 
-1. [Releases](https://github.com/0kam/echoroo-lite/releases) から `Echoroo.Lite_0.1.3_x64-setup.exe` をダウンロードして開きます。
+1. [Releases](https://github.com/0kam/echoroo-lite/releases) から `Echoroo.Lite_0.2.0_x64-setup.exe` をダウンロードして開きます。
 2. 「WindowsによってPCが保護されました」と出たら、**「詳細情報」**を押し、**「実行」**を押します。
 3. 案内に沿ってインストールします。必要なら Microsoft Edge WebView2 も自動で入ります（インターネット接続が必要です）。
 4. スタートメニューの「Echoroo Lite」から起動します。
@@ -29,7 +29,7 @@ CC BY-NC-SA 4.0 で提供されているためです。鳥の鳴き声の録音�
 
 Intel の Mac には対応していません。
 
-1. [Releases](https://github.com/0kam/echoroo-lite/releases) から `Echoroo.Lite_0.1.3_aarch64.dmg` をダウンロードして開き、「Echoroo Lite」を「アプリケーション」フォルダへドラッグします。
+1. [Releases](https://github.com/0kam/echoroo-lite/releases) から `Echoroo.Lite_0.2.0_aarch64.dmg` をダウンロードして開き、「Echoroo Lite」を「アプリケーション」フォルダへドラッグします。
 2. 「アプリケーション」フォルダの「Echoroo Lite」を開きます。
    「“Echoroo Lite”は開いていません」「開発元を検証できません」と出たら、**「完了」**（または「キャンセル」）を押します。
 3. **システム設定 → プライバシーとセキュリティ** を開き、下の方の「“Echoroo Lite”は使用をブロックされました」の横にある **「このまま開く」** を押します。
@@ -43,7 +43,7 @@ Intel の Mac には対応していません。
 ### .deb（Ubuntu・Debian 系）
 
 ```bash
-sudo apt install ./Echoroo.Lite_0.1.3_amd64.deb
+sudo apt install ./Echoroo.Lite_0.2.0_amd64.deb
 ```
 
 音声の再生に必要な GStreamer のプラグインも一緒に入ります。
@@ -51,8 +51,8 @@ sudo apt install ./Echoroo.Lite_0.1.3_amd64.deb
 ### AppImage（その他の配布物）
 
 ```bash
-chmod +x Echoroo.Lite_0.1.3_amd64.AppImage
-./Echoroo.Lite_0.1.3_amd64.AppImage
+chmod +x Echoroo.Lite_0.2.0_amd64.AppImage
+./Echoroo.Lite_0.2.0_amd64.AppImage
 ```
 
 音が出ない場合は、GStreamer のプラグインを入れてください（Ubuntu の例）。
@@ -69,9 +69,11 @@ sudo apt install gstreamer1.0-plugins-good gstreamer1.0-libav
 
 ## 新しい版への更新
 
-0.1.3 より新しい版では、新しい版が出るとアプリの上のほうにお知らせが出ます。「更新する」を押すと、アプリの中で新しい版に入れ替えられます。
+0.2.0 からは、新しい版が出るとアプリの上のほうにお知らせが出ます。「更新する」を押すと、アプリの中で新しい版に入れ替えられます。
 
 0.1.3 までの版にはこの機能がありません。その場合は一度だけ、上の手順で新しい版を入れてください。入れ直しても、下の保存場所のデータは残ります。
+
+0.2.0 で一度開いたデータは、0.1.3 以前の版では開けなくなります（解析結果や確認の答えはそのまま残ります）。0.1.3 以前に戻して開くと「データフォルダを移動するか削除して…」という案内が出ますが、**データは削除せず**、0.2.0 以降を入れ直してください。
 
 Releases のページにある `.sig`、`-update.app.tar.gz`、`latest.json` は、アプリが更新に使うファイルです。自分でダウンロードする必要はありません。
 
@@ -87,7 +89,7 @@ Releases のページにある `.sig`、`-update.app.tar.gz`、`latest.json` は
 
 ---
 
-# Installation (Echoroo Lite 0.1.3)
+# Installation (Echoroo Lite 0.2.0)
 
 ## Terms of use
 
@@ -111,7 +113,7 @@ The app is not code-signed, so the operating system warns on first launch. Open 
 
 ## Windows 10 / 11 (64-bit)
 
-1. Download and open `Echoroo.Lite_0.1.3_x64-setup.exe` from [Releases](https://github.com/0kam/echoroo-lite/releases).
+1. Download and open `Echoroo.Lite_0.2.0_x64-setup.exe` from [Releases](https://github.com/0kam/echoroo-lite/releases).
 2. If "Windows protected your PC" appears, click **More info**, then **Run anyway**.
 3. Follow the installer. Microsoft Edge WebView2 is installed if missing (internet required).
 
@@ -119,7 +121,7 @@ The app is not code-signed, so the operating system warns on first launch. Open 
 
 Intel Macs are not supported.
 
-1. Download `Echoroo.Lite_0.1.3_aarch64.dmg` from [Releases](https://github.com/0kam/echoroo-lite/releases), open it and drag Echoroo Lite to Applications.
+1. Download `Echoroo.Lite_0.2.0_aarch64.dmg` from [Releases](https://github.com/0kam/echoroo-lite/releases), open it and drag Echoroo Lite to Applications.
 2. Open it from Applications. If macOS says it cannot verify the developer, click **Done** (or Cancel).
 3. Open **System Settings → Privacy & Security**, find "Echoroo Lite was blocked", click **Open Anyway**, authenticate, and click **Open**.
 4. Later launches open normally.
@@ -128,13 +130,14 @@ If macOS says the app "is damaged", the download was corrupted; download it agai
 
 ## Linux (64-bit, e.g. Ubuntu 22.04 or later)
 
-- `.deb`: `sudo apt install ./Echoroo.Lite_0.1.3_amd64.deb` (installs the GStreamer plugins needed for audio).
+- `.deb`: `sudo apt install ./Echoroo.Lite_0.2.0_amd64.deb` (installs the GStreamer plugins needed for audio).
 - AppImage: `chmod +x` the file and run it. If there is no sound, install `gstreamer1.0-plugins-good` and `gstreamer1.0-libav`.
 
 ## Updating
 
-In versions newer than 0.1.3, the app shows a notice at the top when a new version is out. Press **Update** to switch to it inside the app.
+From version 0.2.0, the app shows a notice at the top when a new version is out. Press **Update** to switch to it inside the app.
 Version 0.1.3 and earlier cannot do this: install the new version once by hand, as described above. Your data stays where it is.
+Data opened once with 0.2.0 can no longer be opened by 0.1.3 or earlier (analysis results and answers are kept). If an older version tells you to move or delete the data folder, **do not delete it**: install 0.2.0 or later again.
 The `.sig`, `-update.app.tar.gz` and `latest.json` files on the Releases page are used by the app for updates; you do not need to download them.
 
 ## Data and uninstalling

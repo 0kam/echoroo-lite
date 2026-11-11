@@ -47,6 +47,10 @@
 
 （画像はアプリの動作を示すための例で、地点名・座標は仮のものです。）
 
+### 音の地図で探す（実験的）
+
+地点の結果の一番下にある「音の地図」では、似た音ほど近くに並ぶ地図から、録音の中の音を聞いて探せます。同じ種類の音を集めて種名を付け、音声（前後 2.5 秒つきの WAV）と一覧（CSV）を 1 つの ZIP に書き出せます。AI が種名を出さなかった音や、一覧にない生き物の声を探すための機能で、まだ実験的なものです。
+
 ## 使えるAI
 
 | AI | 内容 |
@@ -84,6 +88,7 @@ Echoroo Lite is a desktop app that finds bird calls in recordings with AI, lets 
 - **Input**: a folder of mono WAV/FLAC/MP3 files whose names include the start time (e.g. `SM2-NP-05_20250710_100000.wav`, `REC_2025-07-10_10-00-00_001.wav`) and the site location.
 - **Steps**: add and analyse recordings → listen to the AI's top sounds to confirm presence → optionally check the AI's accuracy (up to 60 sounds) to set a score threshold → export a report.
 - **Output**: an HTML report (site and period, confirmed species, AI precision, date × time-of-day charts, evidence audio) plus CSV and audio files.
+- **Sound map (experimental)**: a map where similar sounds sit close together; listen, collect sounds of the same kind, name the species and export them as WAV clips (with 2.5 s of context on each side) plus a CSV table in one ZIP.
 - **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models distilled from Perch 2.0 for 317 Japanese bird species, by the author of this app), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
 - **Requirements**: Windows 10/11 x64; macOS 12+ on Apple silicon; Linux x86_64 (Ubuntu 22.04+ or similar). 8 GB RAM recommended; about 2 GB of disk for the app plus tens of MB per recorded hour for results. Installers are unsigned.
 - **Internet**: used to show the map, to fetch quiz reference audio from Xeno-Canto, and to check for a new version when the app starts. A new version is downloaded only when you press **Update**. Nothing about you or your recordings is sent.
