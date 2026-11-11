@@ -1,0 +1,308 @@
+{
+ "layouts": {
+  "shipped: PaCMAP on PCA-50": {
+   "purity": 0.807,
+   "purity_sd": 0.004,
+   "f1_median": 0.449,
+   "f1_sd": 0.021,
+   "f1_ge_half": 17.0,
+   "global": 0.52,
+   "seconds": 1.0,
+   "input_purity": 0.798
+  },
+  "cosine PCA-50": {
+   "purity": 0.809,
+   "purity_sd": 0.005,
+   "f1_median": 0.412,
+   "f1_sd": 0.019,
+   "f1_ge_half": 16.0,
+   "global": 0.542,
+   "seconds": 0.9,
+   "input_purity": 0.803
+  },
+  "cosine PCA-100": {
+   "purity": 0.793,
+   "purity_sd": 0.002,
+   "f1_median": 0.434,
+   "f1_sd": 0.014,
+   "f1_ge_half": 16.7,
+   "global": 0.452,
+   "seconds": 0.9,
+   "input_purity": 0.809
+  },
+  "PCA-100": {
+   "purity": 0.808,
+   "purity_sd": 0.004,
+   "f1_median": 0.443,
+   "f1_sd": 0.01,
+   "f1_ge_half": 18.0,
+   "global": 0.458,
+   "seconds": 0.9,
+   "input_purity": 0.798
+  },
+  "neighbours 15": {
+   "purity": 0.8,
+   "purity_sd": 0.002,
+   "f1_median": 0.396,
+   "f1_sd": 0.005,
+   "f1_ge_half": 15.0,
+   "global": 0.465,
+   "seconds": 1.0,
+   "input_purity": 0.798
+  },
+  "neighbours 20": {
+   "purity": 0.777,
+   "purity_sd": 0.002,
+   "f1_median": 0.358,
+   "f1_sd": 0.015,
+   "f1_ge_half": 12.0,
+   "global": 0.481,
+   "seconds": 1.1,
+   "input_purity": 0.798
+  },
+  "neighbours 30": {
+   "purity": 0.751,
+   "purity_sd": 0.016,
+   "f1_median": 0.29,
+   "f1_sd": 0.016,
+   "f1_ge_half": 9.0,
+   "global": 0.57,
+   "seconds": 1.4,
+   "input_purity": 0.798
+  },
+  "far pairs 10 (less repulsion)": {
+   "purity": 0.803,
+   "purity_sd": 0.004,
+   "f1_median": 0.37,
+   "f1_sd": 0.005,
+   "f1_ge_half": 13.3,
+   "global": 0.512,
+   "seconds": 0.6,
+   "input_purity": 0.798
+  },
+  "far pairs 40 (more repulsion)": {
+   "purity": 0.803,
+   "purity_sd": 0.002,
+   "f1_median": 0.436,
+   "f1_sd": 0.005,
+   "f1_ge_half": 17.3,
+   "global": 0.551,
+   "seconds": 1.4,
+   "input_purity": 0.798
+  },
+  "mid-near 10": {
+   "purity": 0.801,
+   "purity_sd": 0.003,
+   "f1_median": 0.404,
+   "f1_sd": 0.024,
+   "f1_ge_half": 16.7,
+   "global": 0.527,
+   "seconds": 0.9,
+   "input_purity": 0.798
+  },
+  "iterations 900": {
+   "purity": 0.804,
+   "purity_sd": 0.003,
+   "f1_median": 0.439,
+   "f1_sd": 0.017,
+   "f1_ge_half": 16.0,
+   "global": 0.477,
+   "seconds": 1.7,
+   "input_purity": 0.798
+  },
+  "spectral start": {
+   "purity": 0.799,
+   "purity_sd": 0.001,
+   "f1_median": 0.433,
+   "f1_sd": 0.019,
+   "f1_ge_half": 16.7,
+   "global": 0.464,
+   "seconds": 0.8,
+   "input_purity": 0.798
+  },
+  "UMAP-style (numpy)": {
+   "purity": 0.786,
+   "purity_sd": 0.006,
+   "f1_median": 0.417,
+   "f1_sd": 0.012,
+   "f1_ge_half": 14.7,
+   "global": 0.588,
+   "seconds": 2.6,
+   "input_purity": 0.798
+  },
+  "t-SNE exact (reference)": {
+   "purity": 0.796,
+   "purity_sd": 0.003,
+   "f1_median": 0.443,
+   "f1_sd": 0.005,
+   "f1_ge_half": 16.7,
+   "global": 0.561,
+   "seconds": 45.2,
+   "input_purity": 0.798
+  }
+ },
+ "inputs": {
+  "shipped: PCA-50": {
+   "purity": 0.807,
+   "purity_sd": 0.004,
+   "f1_median": 0.449,
+   "f1_sd": 0.021,
+   "f1_ge_half": 17.0,
+   "global": 0.52,
+   "seconds": 0.9,
+   "input_purity": 0.798
+  },
+  "recording mean removed": {
+   "purity": 0.604,
+   "purity_sd": 0.009,
+   "f1_median": 0.204,
+   "f1_sd": 0.003,
+   "f1_ge_half": 6.7,
+   "global": 0.286,
+   "seconds": 0.9,
+   "input_purity": 0.511
+  },
+  "cosine, recording mean removed": {
+   "purity": 0.605,
+   "purity_sd": 0.01,
+   "f1_median": 0.203,
+   "f1_sd": 0.004,
+   "f1_ge_half": 7.0,
+   "global": 0.29,
+   "seconds": 0.9,
+   "input_purity": 0.516
+  },
+  "whitened": {
+   "purity": 0.796,
+   "purity_sd": 0.006,
+   "f1_median": 0.414,
+   "f1_sd": 0.007,
+   "f1_ge_half": 16.7,
+   "global": 0.152,
+   "seconds": 0.9,
+   "input_purity": 0.763
+  },
+  "half-whitened": {
+   "purity": 0.814,
+   "purity_sd": 0.005,
+   "f1_median": 0.444,
+   "f1_sd": 0.011,
+   "f1_ge_half": 16.7,
+   "global": 0.32,
+   "seconds": 0.9,
+   "input_purity": 0.79
+  },
+  "first component dropped": {
+   "purity": 0.801,
+   "purity_sd": 0.006,
+   "f1_median": 0.42,
+   "f1_sd": 0.012,
+   "f1_ge_half": 12.7,
+   "global": 0.489,
+   "seconds": 0.9,
+   "input_purity": 0.796
+  },
+  "first 2 components dropped": {
+   "purity": 0.792,
+   "purity_sd": 0.005,
+   "f1_median": 0.423,
+   "f1_sd": 0.036,
+   "f1_ge_half": 15.0,
+   "global": 0.471,
+   "seconds": 0.9,
+   "input_purity": 0.792
+  },
+  "neighbouring windows averaged": {
+   "purity": 0.767,
+   "purity_sd": 0.002,
+   "f1_median": 0.437,
+   "f1_sd": 0.002,
+   "f1_ge_half": 16.0,
+   "global": 0.401,
+   "seconds": 0.9,
+   "input_purity": 0.773
+  },
+  "mean removed + half-whitened": {
+   "purity": 0.637,
+   "purity_sd": 0.012,
+   "f1_median": 0.223,
+   "f1_sd": 0.006,
+   "f1_ge_half": 7.0,
+   "global": 0.035,
+   "seconds": 0.9,
+   "input_purity": 0.491
+  }
+ },
+ "models": {
+  "shipped: Perch PCA-50": {
+   "purity": 0.807,
+   "purity_sd": 0.004,
+   "f1_median": 0.449,
+   "f1_sd": 0.021,
+   "f1_ge_half": 17.0,
+   "global": 0.52,
+   "seconds": 0.9,
+   "input_purity": 0.798
+  },
+  "Kinglet-B embedding": {
+   "purity": 0.816,
+   "purity_sd": 0.003,
+   "f1_median": 0.383,
+   "f1_sd": 0.008,
+   "f1_ge_half": 16.3,
+   "global": 0.467,
+   "seconds": 0.9,
+   "input_purity": 0.809
+  },
+  "Perch + Kinglet-B": {
+   "purity": 0.808,
+   "purity_sd": 0.002,
+   "f1_median": 0.401,
+   "f1_sd": 0.011,
+   "f1_ge_half": 15.0,
+   "global": 0.462,
+   "seconds": 0.9,
+   "input_purity": 0.809
+  },
+  "Perch + AI class scores x0.5": {
+   "purity": 0.807,
+   "purity_sd": 0.005,
+   "f1_median": 0.417,
+   "f1_sd": 0.018,
+   "f1_ge_half": 14.3,
+   "global": 0.43,
+   "seconds": 0.9,
+   "input_purity": 0.793
+  },
+  "Perch + AI class scores x1": {
+   "purity": 0.79,
+   "purity_sd": 0.006,
+   "f1_median": 0.388,
+   "f1_sd": 0.024,
+   "f1_ge_half": 10.7,
+   "global": 0.574,
+   "seconds": 0.9,
+   "input_purity": 0.785
+  },
+  "Perch + AI class scores x2": {
+   "purity": 0.752,
+   "purity_sd": 0.014,
+   "f1_median": 0.284,
+   "f1_sd": 0.008,
+   "f1_ge_half": 8.0,
+   "global": 0.682,
+   "seconds": 0.9,
+   "input_purity": 0.764
+  },
+  "Perch + Kinglet-B + scores x1": {
+   "purity": 0.804,
+   "purity_sd": 0.01,
+   "f1_median": 0.371,
+   "f1_sd": 0.021,
+   "f1_ge_half": 11.3,
+   "global": 0.508,
+   "seconds": 0.9,
+   "input_purity": 0.794
+  }
+ }
+}

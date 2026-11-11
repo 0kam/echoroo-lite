@@ -1,0 +1,42 @@
+# agreement_proto.py (2026-11-05): ECHOROO_PROTO_DATA=<test data> poc/cluster_bench/.venv/bin/python poc/cluster_bench/agreement_proto.py fuji 3
+# Per method: map measures at depth 0 / depth 1 (island purity, share of a group inside its largest island, badge accuracy, chance-corrected 10-NN agreement), species best-node F1.
+
+=== Fuji (annotated): n=2160, species 40 ===
+   M0: islands one colour 0.577/0.572  group in one island 0.728/0.799  badge 0.775/0.742  kNN kappa 0.885/0.855  F1 median 0.469 >=0.5 16/40  top 6
+   M1: islands one colour 1.000/0.846  group in one island 0.729/0.794  badge 0.992/0.945  kNN kappa 1.000/0.997  F1 median 0.459 >=0.5 17/40  top 2
+   M2: islands one colour 0.994/0.698  group in one island 0.724/0.773  badge 0.938/0.902  kNN kappa 0.985/0.972  F1 median 0.378 >=0.5 16/40  top 2
+   M3: islands one colour 0.577/0.594  group in one island 0.728/0.806  badge 0.775/0.729  kNN kappa 0.885/0.881  F1 median 0.469 >=0.5 16/40  top 6
+   M4: islands one colour 0.994/0.922  group in one island 0.374/0.970  badge 0.765/0.984  kNN kappa 0.985/0.976  F1 median 0.469 >=0.5 16/40  top 6
+   M5: islands one colour 0.920/0.862  group in one island 0.739/0.888  badge 0.676/0.605  kNN kappa 0.975/0.883  F1 median 0.361 >=0.5 16/40  top 8
+   M6: islands one colour 0.602/0.513  group in one island 0.794/0.907  badge 0.877/0.845  kNN kappa 0.973/0.916  F1 median 0.452 >=0.5 16/40  top 7
+   M7: islands one colour 1.000/0.807  group in one island 0.729/0.828  badge 0.992/0.963  kNN kappa 1.000/0.984  F1 median 0.460 >=0.5 17/40  top 2
+   seconds {'global map': 0.9, 'M0': 0.0, 'M1': 0.0, 'M2': 2.6, 'M5': 0.1, 'M6': 0.7, 'M7': 0.0, 'M4': 1.0, 'M3 group maps': 0.8}
+
+=== dataset 3 (AI proxy, Japan list, score >= 0.1): n=8700, species 7 ===
+   M0: islands one colour 0.880/0.668  group in one island 0.758/0.865  badge 0.826/0.852  kNN kappa 0.959/0.894  F1 median 0.370 >=0.5 2/7  top 3
+   M1: islands one colour 1.000/0.696  group in one island 0.872/0.839  badge 0.951/0.986  kNN kappa 1.000/0.994  F1 median 0.308 >=0.5 1/7  top 3
+   M2: islands one colour 1.000/0.833  group in one island 0.709/0.889  badge 0.981/0.906  kNN kappa 0.998/0.976  F1 median 0.353 >=0.5 1/7  top 2
+   M3: islands one colour 0.880/0.814  group in one island 0.758/0.766  badge 0.826/0.886  kNN kappa 0.959/0.912  F1 median 0.370 >=0.5 2/7  top 3
+   M4: islands one colour 0.904/0.873  group in one island 0.534/0.991  badge 0.903/0.992  kNN kappa 0.992/0.986  F1 median 0.370 >=0.5 2/7  top 3
+   M5: islands one colour 0.799/0.694  group in one island 0.764/0.931  badge 0.766/0.868  kNN kappa 0.984/0.945  F1 median 0.312 >=0.5 2/7  top 8
+   M6: islands one colour 0.899/0.628  group in one island 0.773/0.855  badge 0.837/0.810  kNN kappa 0.989/0.939  F1 median 0.280 >=0.5 2/7  top 3
+   M7: islands one colour 1.000/0.720  group in one island 0.872/0.839  badge 0.951/0.972  kNN kappa 1.000/0.971  F1 median 0.276 >=0.5 1/7  top 3
+   seconds {'global map': 3.7, 'M0': 0.8, 'M1': 0.4, 'M2': 11.5, 'M5': 1.0, 'M6': 0.3, 'M7': 0.7, 'M4': 4.2, 'M3 group maps': 3.6}
+
+# M7 weight sweep (map coordinates appended to PCA-50, weight x the PCA-50/map spread ratio; 0 = M0, 'map only' = M1)
+=== fuji n=2160
+  weight 0       : islands 0.577/0.572 badge 0.775/0.742 kNN kappa 0.885/0.855  F1 median 0.469 >=0.5 16/40 top 6
+  weight 0.5     : islands 0.830/0.638 badge 0.934/0.881 kNN kappa 0.980/0.926  F1 median 0.469 >=0.5 17/40 top 3
+  weight 1       : islands 0.837/0.700 badge 0.944/0.888 kNN kappa 0.983/0.959  F1 median 0.463 >=0.5 17/40 top 3
+  weight 2       : islands 1.000/0.807 badge 0.992/0.963 kNN kappa 1.000/0.984  F1 median 0.460 >=0.5 17/40 top 2
+  weight 4       : islands 1.000/0.852 badge 0.992/0.932 kNN kappa 1.000/0.991  F1 median 0.444 >=0.5 18/40 top 2
+  weight 8       : islands 1.000/0.840 badge 0.992/0.955 kNN kappa 1.000/0.992  F1 median 0.457 >=0.5 18/40 top 2
+  weight map only: islands 1.000/0.846 badge 0.992/0.945 kNN kappa 1.000/0.997  F1 median 0.459 >=0.5 17/40 top 2
+=== 3 n=8700
+  weight 0       : islands 0.880/0.668 badge 0.826/0.852 kNN kappa 0.959/0.894  F1 median 0.370 >=0.5 2/7 top 3
+  weight 0.5     : islands 0.995/0.723 badge 0.956/0.939 kNN kappa 0.999/0.964  F1 median 0.370 >=0.5 1/7 top 3
+  weight 1       : islands 1.000/0.649 badge 0.951/0.945 kNN kappa 1.000/0.916  F1 median 0.333 >=0.5 2/7 top 3
+  weight 2       : islands 1.000/0.720 badge 0.951/0.972 kNN kappa 1.000/0.971  F1 median 0.276 >=0.5 1/7 top 3
+  weight 4       : islands 1.000/0.720 badge 0.951/0.978 kNN kappa 1.000/0.989  F1 median 0.364 >=0.5 1/7 top 3
+  weight 8       : islands 1.000/0.720 badge 0.951/0.977 kNN kappa 1.000/0.987  F1 median 0.364 >=0.5 1/7 top 3
+  weight map only: islands 1.000/0.696 badge 0.951/0.986 kNN kappa 1.000/0.994  F1 median 0.308 >=0.5 1/7 top 3

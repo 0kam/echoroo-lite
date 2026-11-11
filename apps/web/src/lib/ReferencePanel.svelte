@@ -66,7 +66,8 @@
       <Button size="sm" onclick={() => void openExternal(page.url)}>{t('refLearn').replace('{site}', page.name)}</Button>
       {#if data.in_quiz}<Button size="sm" href={practice}>{t('wPractice')}</Button>{/if}
     </div>
-    {#if !data.in_quiz}<p class="muted">{t('wPracticeMissing')}</p>{/if}
+    <!-- `practice` is `/quiz?species=…&return=…`; the add page reads the same query. -->
+    {#if !data.in_quiz}<p class="muted">{t('wPracticeMissing')}</p><Button href={practice.replace('?','/add?')}>{t('quizAddAudio')}</Button>{/if}
   {/if}
 </section>
 

@@ -10,6 +10,8 @@
   let filtered=$state<Report|null>(null),filter=$state<Cell|null>(null),index=$state(0),loading=$state(false),error=$state('');
   let version=0;
   const visible=$derived(filtered??report),hit=$derived(visible.evidence[index]);
+  // Why the chosen hour has no sound to play: no recording, nothing analysed, or analysed without a detection.
+  const emptyHour=(cell:Cell)=>cell.status==='no_recording'?'uHourNoRecording':cell.status==='unanalysed'||cell.status==='not_evaluated'?'uHourNotAnalysed':'uHourNoCalls';
   async function select(cell:Cell|null){
     const current=++version;error='';filter=cell;index=0;
     if(!cell){filtered=null;loading=false;return;}
@@ -32,7 +34,7 @@
         <p>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:report.site.timezone}).format(new Date(hit.local_time))} · {index+1} / {visible.evidence.length}</p>
         {#key `${hit.recording_id}:${hit.start_s}`}<AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange start={hit.start_s} end={hit.end_s}/>{/key}
         <div class="actions"><Button disabled={index===0} onclick={()=>index--}>‹ {t('uPreviousSound')}</Button><Button disabled={index>=visible.evidence.length-1} onclick={()=>index++}>{t('uNextSound')} ›</Button></div>
-      {:else}<p class="empty">{t(filter?'uNoSoundHere':'uNoDetection')}</p>{/if}
+      {:else}<p class="empty">{t(filter?emptyHour(filter):'uNoDetection')}</p>{/if}
     </section>
   </div>
 {/if}

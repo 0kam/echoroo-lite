@@ -1,10 +1,11 @@
-export type Toast = { id: number; key: string; kind: 'success' | 'error' | 'info'; detail?: string };
+export type Toast = { id: number; key: string; kind: 'success' | 'error' | 'info'; detail?: string;
+  values?: Record<string, string | number> };
 export const toasts = $state<Toast[]>([]);
 let next = 1;
-/** Shows a short message; `key` is a message key, `detail` is shown verbatim. */
-export function notify(key: string, kind: Toast['kind'] = 'success', detail?: string) {
+/** Shows a short message; `key` is a message key (`values` fill its placeholders), `detail` is shown verbatim. */
+export function notify(key: string, kind: Toast['kind'] = 'success', detail?: string, values?: Toast['values']) {
   const id = next++;
-  toasts.push({ id, key, kind, detail });
+  toasts.push({ id, key, kind, detail, values });
   setTimeout(() => dismiss(id), kind === 'error' ? 8000 : 4000);
 }
 export function dismiss(id: number) {

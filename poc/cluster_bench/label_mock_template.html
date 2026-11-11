@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>選んだ音の書き出し（モック v3）</title>
+<style>
+:root{--primary-100:248 224 222;--primary-200:240 195 192;--primary-700:160 80 76;--stone-50:255 250 243;--stone-100:250 244 237;--stone-200:244 237 232;--stone-300:223 218 217;--stone-600:105 101 131;--stone-800:70 66 97;--stone-900:55 52 80;--warn:150 90 0;--warn-bg:253 243 222;--ok:40 105 131;--ok-bg:232 243 246}
+*{box-sizing:border-box}
+body{margin:0;background:rgb(var(--stone-100));color:rgb(var(--stone-900));font:16px/1.6 Inter,system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif}
+h1{font-size:28px;margin:0 0 4px;line-height:1.3}h2{font-size:20px;margin:0 0 8px}h3{font-size:16px;margin:0}
+p{margin:0}.muted{color:rgb(var(--stone-600))}small{font-size:13px}
+button{font:inherit;color:inherit;cursor:pointer}
+.mockbar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:8px 24px;background:#373450;color:#fff;font-size:14px}
+.mockbar nav{display:flex;gap:4px;margin-left:auto}.mockbar nav button{border:1px solid #fff6;border-radius:6px;background:none;color:#fff;padding:4px 12px;min-height:36px}.mockbar nav button[aria-pressed=true]{background:#fff;color:#373450}
+main{max-width:1280px;margin:0 auto;padding:24px 24px 120px}
+.lead{max-width:760px;margin-bottom:16px}
+.panel{background:rgb(var(--stone-50));border:1px solid rgb(var(--stone-300));border-radius:12px;padding:24px}
+.stack{display:flex;flex-direction:column;gap:12px}
+.explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.map-panel{position:sticky;top:68px}
+.map{position:relative}.map img{display:block;width:100%;border:1px solid rgb(var(--stone-300));border-radius:8px}
+.map-nav{position:absolute;top:8px;left:8px;display:flex;gap:4px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:8px 16px;border:1px solid rgb(var(--stone-300));border-radius:8px;background:rgb(var(--stone-50));font-size:14px;text-decoration:none}
+.btn:disabled{opacity:.45;cursor:default}.btn.primary{background:rgb(var(--primary-700));border-color:rgb(var(--primary-700));color:#fff;font-size:16px;font-weight:600}
+.btn.on{background:rgb(var(--primary-100));border-color:rgb(var(--primary-200));color:rgb(var(--primary-700));font-weight:600}
+.link{border:0;background:none;padding:0 4px;min-height:32px;color:rgb(var(--primary-700));text-decoration:underline;font-size:14px}
+.trail{display:flex;flex-wrap:wrap;gap:0 6px;font-size:15px}.trail b{font-weight:600}
+.sorting{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;font-size:14px}
+select,input[type=text],input[type=search]{font:inherit;font-size:15px;padding:8px 10px;border:1px solid rgb(var(--stone-300));border-radius:6px;background:#fff;min-height:40px}
+.group{border:1px solid rgb(var(--stone-300));border-radius:8px}.group.open{border-left:4px solid rgb(var(--primary-700))}
+.group>.summary{display:grid;grid-template-columns:28px minmax(0,1fr) 16px;gap:8px;padding:12px;cursor:pointer;align-items:start}
+.badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
+.chev{transition:transform .15s;color:rgb(var(--stone-600))}.group.open .chev{transform:rotate(90deg)}
+.body{padding:12px;border-top:1px solid rgb(var(--stone-300));display:flex;flex-direction:column;gap:12px}
+.group-species{padding:12px;border-radius:8px;background:rgb(var(--stone-100));display:flex;flex-direction:column;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.member{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 8px;padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
+.member.picked{background:rgb(var(--primary-100)/.35);margin:0 -12px;padding:8px 12px 12px}
+.side{display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:18px}
+.check{display:flex;flex-direction:column;align-items:center;font-size:12px;gap:2px;cursor:pointer;min-height:44px;justify-content:center}
+.check input{width:22px;height:22px;margin:0;accent-color:rgb(var(--primary-700))}
+.play{width:44px;height:44px;padding:0;border:1px solid rgb(var(--stone-300));border-radius:8px;background:rgb(var(--stone-50))}
+.spec-grid{display:grid;grid-template-columns:36px minmax(0,1fr);gap:4px 6px;min-width:0}
+.unit{font-size:12px;color:rgb(var(--stone-600));text-align:right;align-self:end}
+.meta{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.freqs{position:relative;font-size:12px;color:rgb(var(--stone-600))}.freqs span{position:absolute;right:0;transform:translateY(50%);line-height:1}
+.spec{display:block;width:100%;height:120px;border-radius:4px;background:#010101;image-rendering:auto}
+.form{grid-column:2;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding-top:4px}
+.field{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.field-name{font-size:14px;font-weight:600;color:rgb(var(--stone-800));min-width:2.5em}
+.seg{display:inline-flex}.seg .btn{border-radius:0;min-width:44px;padding:8px 10px}.seg .btn:first-child{border-radius:8px 0 0 8px}.seg .btn:last-child{border-radius:0 8px 8px 0}.seg .btn+.btn{margin-left:-1px}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:999px;background:rgb(var(--stone-200));font-size:14px}
+.missing{color:rgb(var(--warn));font-weight:600}
+.legend{grid-column:2;font-size:14px;background:rgb(var(--stone-100));border-radius:8px;padding:8px 12px}.legend dl{display:grid;grid-template-columns:2em 1fr;margin:0;gap:2px 8px}.legend dt{font-weight:700}.legend dd{margin:0}
+.tray{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:center;padding:12px 24px;background:rgb(var(--stone-50));border-top:1px solid rgb(var(--stone-300));box-shadow:0 -4px 16px #0001}
+.note{border-left:4px solid rgb(var(--warn));background:rgb(var(--warn-bg));padding:8px 12px;border-radius:4px;font-size:15px}
+.done{color:rgb(var(--ok));font-weight:600}
+.picked-row{display:grid;grid-template-columns:52px 220px minmax(0,1fr) auto;gap:8px 12px;align-items:start;padding:12px 0;border-top:1px solid rgb(var(--stone-300))}
+.picked-row .spec{height:72px}.picked-row .form{grid-column:auto;padding:0}
+table{border-collapse:collapse;font-size:13px;width:100%}th,td{border:1px solid rgb(var(--stone-300));padding:4px 6px;text-align:left;vertical-align:top}th{background:rgb(var(--stone-100));font-weight:500}
+.scroll{overflow-x:auto}
+pre{background:rgb(var(--stone-100));border-radius:8px;padding:12px;font-size:13px;overflow-x:auto;margin:0}
+.toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:6;max-width:640px;background:#373450;color:#fff;padding:12px 16px;border-radius:8px;font-size:15px}
+.annot{font-size:13px;color:#7a3b8f;background:#f6ecfa;border-radius:6px;padding:4px 8px}
+@media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static}.picked-row{grid-template-columns:52px minmax(0,1fr)}.picked-row>.form,.picked-row>.remove{grid-column:2}}
+</style>
+</head>
+<body>
+<div class="mockbar"><span>モック v3（2026-11-05）：実演用の実データ。音は鳴らず、保存と書き出しは画面の動きだけです。<span id="where"></span></span>
+  <nav><button id="tab-map" aria-pressed="true">① 地図で選ぶ</button><button id="tab-list" aria-pressed="false">② 一覧と書き出し</button></nav></div>
+<main>
+  <section id="view-map">
+    <h1>音の地図</h1>
+    <p class="lead muted">録音の中の音を似たものどうしのまとまりに分けて表示します。気になる音を選び、種などの情報を付けて書き出せます。</p>
+    <div class="explore">
+      <section class="panel stack map-panel">
+        <div class="map"><img id="map" alt="いま見ているまとまりの地図"><div class="map-nav"><button class="btn">‹ 戻る</button><button class="btn" disabled>進む ›</button><button class="btn">全体に戻る</button></div></div>
+        <p class="muted">点を押すと地図の下で再生、二度押すとそのまとまりの中へ。ホイールで拡大、ドラッグで移動。点1つは5秒です。</p>
+        <p class="annot">モックでは地図は画像です。地図の点を押したときの「選んだ音」のカードにも同じ「選ぶ」が付きます。</p>
+      </section>
+      <section class="panel stack">
+        <nav class="trail" id="trail"></nav>
+        <p id="summary"></p>
+        <h2>中のまとまり（多い順）</h2>
+        <p class="muted">行を押すと、そのまとまりの音が開きます。まとまりは聞いて探すための目安で、種の分け方ではありません。</p>
+        <div class="sorting"><label>並べ方 <select><option>選んだ音に近い順</option><option>まとまりの中心に近い順</option></select></label><span class="muted">日時は録音地点のタイムゾーンで表示します。</span></div>
+        <div id="rows" class="stack"></div>
+      </section>
+    </div>
+    <div class="tray" id="tray"></div>
+  </section>
+
+  <section id="view-list" hidden>
+    <button class="btn" id="back-map">‹ 音の地図に戻る</button>
+    <h1 style="margin-top:16px">選んだ音の一覧と書き出し</h1>
+    <p class="lead muted">地図で選んだ音です。ここでも直せます。書き出すと、音声と一覧表（CSV）を 1 つの ZIP にまとめて保存します。</p>
+    <section class="panel stack" id="list"></section>
+    <section class="panel stack" style="margin-top:16px" id="export"></section>
+  </section>
+</main>
+<datalist id="species-list"></datalist>
+<script>const DATA=/*DATA*/;</script>
+<script>
+const COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
+const QUALITY=[['A','大きくはっきり。雑音がほとんどない'],['B','はっきりしているが、少し遠いか少し雑音がある'],['C','聞き取れるが、遠いか雑音がかなりある'],['D','小さい、または雑音が多い'],['E','かろうじて聞こえる']];
+const TYPES=[['song','さえずり'],['call','地鳴き'],['','わからない']];
+const pct=v=>`${Math.round(v*100)}%`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const when=s=>new Intl.DateTimeFormat('ja',{dateStyle:'medium',timeStyle:'medium',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
+const groupName=g=>g.name?`まとまり ${g.name}`:'全体';
+const aiHint=g=>g.hint<.2||!g.top.length?`AI の候補なし（無音や虫の声の可能性）・候補のある音 ${pct(g.hint)}`:`AI の候補（参考）: ${g.top.map(t=>`${t.name} ${pct(t.share)}`).join('・')}（候補のある音 ${pct(g.hint)}）`;
+const candidates=s=>s.candidates.length?`AI の候補: ${s.candidates.map(c=>`${c.name} ${pct(c.score)}`).join('・')}`:'AI の候補なし';
+document.getElementById('species-list').innerHTML=DATA.species.map(n=>`<option value="${esc(n)}">`).join('');
+document.getElementById('map').src=DATA.map;
+document.getElementById('where').textContent=`いま見ているのは ${groupName(DATA.node)}（${DATA.node.size} 区間）。`;
+document.getElementById('trail').innerHTML=DATA.trail.map((n,i)=>i<DATA.trail.length-1?`<a href="#">${esc(groupName({name:n}))}</a> ›`:`<b>${esc(groupName({name:n}))}</b>`).join(' ');
+document.getElementById('summary').innerHTML=`${DATA.node.size} 区間。<br><span class="muted">${esc(aiHint(DATA.node))}</span>`;
+
+// State: picked sounds by segment id; the species a group gives to its picked sounds; open editors.
+const picked=new Map(),groupSpecies={},open={[DATA.opened]:true},ui={legend:null,edit:null,groupEdit:false,addOther:null,toast:''};
+const byId=new Map(DATA.sounds.map(s=>[s.id,s]));
+const missing=()=>{const all=[...picked.values()];return {species:all.filter(p=>!p.species).length,quality:all.filter(p=>!p.quality).length};};
+
+function seg(options,value,action,id){return `<span class="seg" role="group">${options.map(([v,l])=>`<button class="btn${value===v?' on':''}" aria-pressed="${value===v}" data-act="${action}" data-id="${id}" data-v="${v}">${l}</button>`).join('')}</span>`;}
+function form(id,compact){
+  const p=picked.get(id);
+  const species=ui.edit===id?`<input type="search" list="species-list" placeholder="種名を入れる" data-act="species-input" data-id="${id}" value="${esc(p.species||'')}"><button class="btn" data-act="species-done" data-id="${id}">決める</button>`
+    :`${p.species?`<b>${esc(p.species)}</b>`:'<span class="missing">未入力</span>'}${p.follows&&p.species?' <small class="muted">まとまりの種</small>':''} <button class="link" data-act="species-edit" data-id="${id}">${p.species?'変える':'入れる'}</button>${!p.follows&&groupSpecies[p.group]?` <button class="link" data-act="species-follow" data-id="${id}">まとまりの種に戻す</button>`:''}`;
+  const others=p.others?`${seg([['no','なし'],['yes','あり']],'yes','others',id)} ${p.background.map((n,i)=>`<span class="tag">${esc(n)}<button class="link" aria-label="${esc(n)} を消す" data-act="bg-remove" data-id="${id}" data-v="${i}">×</button></span>`).join('')}
+      ${ui.addOther===id?`<input type="search" list="species-list" placeholder="種名（分からなければ空のまま）" data-act="bg-input" data-id="${id}"><button class="btn" data-act="bg-done" data-id="${id}">足す</button>`:`<button class="link" data-act="bg-add" data-id="${id}">種を足す</button>`}`
+    :seg([['no','なし'],['yes','あり']],'no','others',id);
+  return `<div class="form">
+    <div class="field"><span class="field-name">種</span>${species}</div>
+    <div class="field"><span class="field-name">声</span>${seg(TYPES,p.type,'type',id)}</div>
+    <div class="field"><span class="field-name">質</span>${seg(QUALITY.map(([q])=>[q,q]),p.quality,'quality',id)}<button class="link" data-act="legend" data-id="${id}" aria-expanded="${ui.legend===id}">質の目安</button>${p.quality?'':'<span class="missing">未入力</span>'}</div>
+    <div class="field"><span class="field-name">ほかの種の声</span>${others}</div>
+  </div>${ui.legend===id?`<div class="legend"><dl>${QUALITY.map(([q,t])=>`<dt>${q}</dt><dd>${t}</dd>`).join('')}</dl><small class="muted">Xeno-canto の録音の質の基準です。迷ったら C。</small></div>`:''}`;
+}
+function spectrogram(s){return `<div class="spec-grid"><span class="unit">kHz</span><div class="meta" title="${esc(when(s))} · ${esc(candidates(s))}">${esc(when(s))} · <span class="muted">${esc(candidates(s))}</span>${picked.get(s.id)?.exported?' · <span class="done">書き出し済み</span>':''}</div>
+  <div class="freqs" aria-hidden="true">${s.ticks.map((t,i)=>s.fractions[i]>0&&s.fractions[i]<1?`<span style="bottom:${s.fractions[i]*100}%">${t}</span>`:'').join('')}</div><img class="spec" src="${s.image}" alt="スペクトログラム"></div>`;}
+function member(s,group){
+  const p=picked.get(s.id);
+  return `<div class="member${p?' picked':''}"><div class="side"><label class="check"><input type="checkbox" data-act="pick" data-id="${s.id}" data-group="${group}"${p?' checked':''}>選ぶ</label><button class="play" aria-label="この音を聞く">▶</button></div>
+    ${spectrogram(s)}${p?form(s.id):''}</div>`;
+}
+function groupSpeciesBox(g){
+  const chosen=groupSpecies[g.node];
+  return `<div class="group-species"><div class="field"><span class="field-name">このまとまりの種</span>${chosen?`<b>${esc(chosen)}</b>`:'<span class="muted">まだ決めていません</span>'}</div>
+    ${ui.groupEdit===g.node?`<div class="chips"><input type="search" list="species-list" placeholder="種名を入れる" data-act="group-input" data-id="${g.node}"><button class="btn" data-act="group-done" data-id="${g.node}">決める</button></div>`
+    :`<div class="chips">${g.top.length?'<span class="muted">AI の候補から：</span>':''}${g.top.map(t=>`<button class="btn${chosen===t.name?' on':''}" data-act="group-pick" data-id="${g.node}" data-v="${esc(t.name)}">${esc(t.name)} ${pct(t.share)}</button>`).join('')}<button class="btn" data-act="group-edit" data-id="${g.node}">ほかの種を選ぶ…</button></div>`}
+    <small class="muted">ここで決めた種が、このまとまりで選んだ音の種に入ります。音ごとに変えることもできます。</small></div>`;
+}
+function renderMap(){
+  document.getElementById('rows').innerHTML=DATA.rows.map((g,i)=>{const isOpen=open[g.node];
+    return `<div class="group${isOpen?' open':''}"><div class="summary" data-act="toggle" data-id="${g.node}" role="button" aria-expanded="${!!isOpen}" tabindex="0">
+      <span class="badge" style="background:${COLORS[i%COLORS.length]}">${i+1}</span><span><h3>${esc(groupName(g))} — <span class="muted" style="font-weight:400">${g.size} 区間</span></h3><span class="muted" style="font-size:14px">${esc(aiHint(g))}</span></span><span class="chev">›</span></div>
+      ${isOpen?`<div class="body">${g.children?`<div class="chips"><button class="btn">中を見る</button><span class="muted">中に ${g.children} 個のまとまり。下はこのまとまりの音で、20 件ずつ表示します。</span></div>`:''}
+        ${g.node===DATA.opened?groupSpeciesBox(g)+DATA.sounds.map(s=>member(s,g.node)).join('')+'<button class="btn">さらに20件を表示</button>':'<p class="annot">モックではこの行の音は省略しています。</p>'}</div>`:''}</div>`;}).join('');
+  const m=missing();
+  document.getElementById('tray').innerHTML=picked.size?`<span><b>選んだ音 ${picked.size} 件</b>${m.species?` ・ <span class="missing">種が未入力 ${m.species} 件</span>`:''}${m.quality?` ・ <span class="missing">質が未入力 ${m.quality} 件</span>`:''}</span><button class="btn primary" data-act="to-list">一覧と書き出しへ</button>`
+    :'<span class="muted">音の左の「選ぶ」にチェックすると、ここに数えられます。</span>';
+}
+function renderList(){
+  const m=missing(),rows=[...picked.entries()];
+  document.getElementById('list').innerHTML=`<h2>選んだ音（${rows.length} 件）</h2>`+(rows.length?rows.map(([id,p])=>{const s=byId.get(id);
+    return `<article class="picked-row"><div class="side" style="padding-top:0"><button class="play" aria-label="この音を聞く">▶</button></div>
+      <div><img class="spec" src="${s.image}" alt="スペクトログラム"><small class="muted">${esc(when(s))}<br>${esc(groupName({name:DATA.rows.find(r=>r.node===p.group).name}))} · ${esc(s.file)} ${s.start_s}–${s.end_s} 秒${p.exported?'<br><span class="done">書き出し済み</span>':''}</small></div>
+      ${form(id)}<button class="btn remove" data-act="remove" data-id="${id}">外す</button></article>`;}).join(''):'<p class="muted">まだ選んだ音がありません。音の地図で音の左の「選ぶ」にチェックしてください。</p>');
+  const sample=rows.slice(0,3).map(([id,p],i)=>{const s=byId.get(id);
+    return `<tr><td>${esc(`site_${when(s).replace(/[^0-9]/g,'').slice(0,12)}_${i+1}.wav`)}</td><td>${esc(p.species||'（空欄）')}</td><td>${esc({song:'song',call:'call'}[p.type]||'（空欄）')}</td><td>${esc(p.quality||'（空欄）')}</td><td>${esc(p.background.join('; ')||(p.others?'（空欄）':''))}</td><td>Echoroo Lite の音の地図で聞いて選んだ 5 秒。${p.others&&!p.background.length?'ほかの種の声あり（種不明）。':''}</td></tr>`;}).join('');
+  document.getElementById('export').innerHTML=`<h2>書き出す</h2>
+    <p>選んだ音 ${rows.length} 件を、音声と一覧表（CSV）を 1 つの ZIP にまとめて保存します。保存先は次の画面で選びます。</p>
+    ${m.species||m.quality?`<p class="note">${m.species?`種が未入力の音が ${m.species} 件`:''}${m.species&&m.quality?'、':''}${m.quality?`質が未入力の音が ${m.quality} 件`:''}あります。空欄のまま書き出せますが、提供の前に埋めてください。</p>`:''}
+    <p><button class="btn primary" data-act="export"${rows.length?'':' disabled'}>書き出す（ZIP）</button></p>
+    <p class="muted">録音者名・ライセンス・座標のぼかしは、実際に提供するときに入れます（この書き出しには入りません）。座標はそのまま入るので、珍しい種の音を人に渡すときは注意してください。</p>
+    <details><summary>ZIP の中身</summary><pre>echoroo-picked-実演用-2026-11-05.zip
+  audio/…wav       聞いて選んだ 5 秒そのまま（元の音質のまま）
+  metadata.csv     Xeno-canto の一括登録の表と同じ 29 列（Excel で開ける UTF-8）
+  README.txt       中身の説明（日本語と英語）
+  manifest.json    ファイルが壊れていないかを確かめるための値</pre>
+    <p class="muted" style="margin-top:8px">CSV で埋める列：ファイル名、緯度・経度（地点の座標）、国（Japan）、地名（地点名）、録音日・時刻（地点のタイムゾーン）、属・種、声の種類、質、ほかの種、自動録音（yes）、メモ。空欄で残す列：録音者名、ライセンス、標高（提供のときに入れる）。</p>
+    ${sample?`<div class="scroll" style="margin-top:8px"><table><thead><tr><th>filename</th><th>genus / species</th><th>sound type</th><th>quality</th><th>background species</th><th>remarks</th></tr></thead><tbody>${sample}</tbody></table></div><small class="muted">CSV の一部（モックでは種を和名で表示。実際は学名）。</small>`:''}</details>`;
+}
+function render(){renderMap();renderList();}
+function setGroupSpecies(node,name){
+  const before=groupSpecies[node];groupSpecies[node]=name;ui.groupEdit=false;
+  // Sounds that follow the group, or have no species yet, take the new one; sounds changed one by one keep theirs.
+  for(const p of picked.values())if(p.group===node&&(p.follows||!p.species||p.species===before)){p.species=name;p.follows=true;}
+}
+document.addEventListener('click',event=>{
+  const el=event.target.closest('[data-act]');if(!el||el.tagName==='INPUT')return;
+  const act=el.dataset.act,id=Number(el.dataset.id),p=picked.get(id),v=el.dataset.v;
+  if(act==='toggle')open[id]=!open[id];
+  else if(act==='type')p.type=v;
+  else if(act==='quality')p.quality=p.quality===v?'':v;
+  else if(act==='others'){p.others=v==='yes';if(!p.others){p.background=[];ui.addOther=null;}}
+  else if(act==='legend')ui.legend=ui.legend===id?null:id;
+  else if(act==='species-edit')ui.edit=id;
+  else if(act==='species-done'){const input=document.querySelector(`input[data-act=species-input][data-id="${id}"]`);p.species=input.value.trim();p.follows=p.species===groupSpecies[p.group];ui.edit=null;}
+  else if(act==='species-follow'){p.species=groupSpecies[p.group];p.follows=true;}
+  else if(act==='bg-add')ui.addOther=id;
+  else if(act==='bg-done'){const input=document.querySelector(`input[data-act=bg-input][data-id="${id}"]`);if(input.value.trim())p.background.push(input.value.trim());ui.addOther=null;}
+  else if(act==='bg-remove')p.background.splice(Number(v),1);
+  else if(act==='group-pick')setGroupSpecies(id,v);
+  else if(act==='group-edit')ui.groupEdit=id;
+  else if(act==='group-done'){const input=document.querySelector(`input[data-act=group-input][data-id="${id}"]`);if(input.value.trim())setGroupSpecies(id,input.value.trim());else ui.groupEdit=false;}
+  else if(act==='remove')picked.delete(id);
+  else if(act==='to-list'){show('list');return;}
+  else if(act==='export'){for(const q of picked.values())q.exported=true;toast('（モック）保存先を選ぶ画面が開き、ZIP を保存します。保存すると、選んだ音に「書き出し済み」の印が付きます。');}
+  else return;
+  render();
+});
+document.addEventListener('change',event=>{
+  const el=event.target;if(el.dataset.act!=='pick')return;
+  const id=Number(el.dataset.id),group=Number(el.dataset.group);
+  if(el.checked)picked.set(id,{group,species:groupSpecies[group]||'',follows:true,type:'',quality:'',others:false,background:[],exported:false});
+  else picked.delete(id);
+  render();
+});
+document.addEventListener('keydown',event=>{const el=event.target;
+  if(event.key==='Enter'&&el.dataset?.act==='toggle'){open[el.dataset.id]=!open[el.dataset.id];render();}
+  if(event.key==='Enter'&&el.tagName==='INPUT'){const done=el.parentElement.querySelector('button[data-act$="-done"]');done?.click();}});
+function show(view){document.getElementById('view-map').hidden=view!=='map';document.getElementById('view-list').hidden=view!=='list';
+  document.getElementById('tab-map').setAttribute('aria-pressed',view==='map');document.getElementById('tab-list').setAttribute('aria-pressed',view==='list');scrollTo(0,0);}
+let toastTimer;function toast(text){clearTimeout(toastTimer);document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.role='status';el.textContent=text;document.body.append(el);toastTimer=setTimeout(()=>el.remove(),6000);}
+document.getElementById('tab-map').onclick=()=>show('map');document.getElementById('tab-list').onclick=()=>show('list');document.getElementById('back-map').onclick=()=>show('map');
+render();
+</script>
+</body>
+</html>

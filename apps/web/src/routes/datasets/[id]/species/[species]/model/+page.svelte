@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
-  import { app,t } from '$lib/app.svelte';
+  import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { customName,fill,type CustomModel,type CustomModelReadiness,type SearchHit,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
@@ -12,6 +12,7 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),speciesId=page.params.species!;
+  const site=$derived(siteOf(datasetOf(id)));
   const range=new URLSearchParams([...new URL(page.url.hash.slice(1),page.url).searchParams].filter(([key])=>key.endsWith('_date')));
   const draftKey=`echoroo-model:${id}:${speciesId}:${range}`;
   let ready=$state<CustomModelReadiness|null>(null),error=$state(''),confirming=$state<number|null>(null),shown=$state(10);
@@ -39,7 +40,7 @@
 </script>
 <div class="page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
-  <h1>{t('customModelTitle')}</h1>
+  <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('customModelTitle')}</h1></div>
   <!-- A missing search is a step still to do, not an error. -->
   {#if error}<p class={error==='custom_search_needed'?'info':'error'} role={error==='custom_search_needed'?'status':'alert'}>{t(error)}</p>{#if error==='custom_search_needed'}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>{/if}{/if}
   {#if ready}

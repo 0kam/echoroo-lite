@@ -15,7 +15,7 @@ export type QuizSession = {id: number; count: number; answered: number; complete
 export function quizContext(url: URL) {
   const params = new URL(url.hash.slice(1) || url.pathname + url.search, url).searchParams;
   const candidate = params.get('return') ?? '';
-  const returnPath = /^\/datasets\/\d+\/(species\/[a-zA-Z0-9-]+|validation\/\d+)(\?[^#]*)?$/.test(candidate) ? candidate : '';
+  const returnPath = /^\/datasets\/\d+\/(species\/[a-zA-Z0-9-]+(?:\/presence)?|validation\/\d+)(\?[^#]*)?$/.test(candidate) ? candidate : '';
   const species = params.get('species') ?? '';
   const query = new URLSearchParams();
   if (returnPath) query.set('return', returnPath);

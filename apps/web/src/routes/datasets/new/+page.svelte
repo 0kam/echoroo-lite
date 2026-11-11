@@ -12,6 +12,7 @@
   import SiteMap from '$lib/SiteMap.svelte';
   import { analysisSeconds,appHref,fill,focusMissing,missingText,returnPath,roughTime } from '$lib/workflow';
   import { createTask } from '$lib/ui/task.svelte';
+  import { notify } from '$lib/ui/toast.svelte';
   type Preview={count:number;seconds:number;first:string|null;last:string|null;skipped:{path:string;code:string}[]};
   const query=new URL(page.url.hash.slice(1),page.url).searchParams;
   const pcZone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
@@ -47,11 +48,12 @@
   const filenameExamples=['2MA04037_20240808_060000.wav','20240808T060000.wav','REC_2024-08-08_06-00-00_001.wav'];
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const register=createTask(async()=>{
-    const added=await api<{dataset_id:number}>('/imports',body());await refreshCatalog();
+    const added=await api<{dataset_id:number;count:number}>('/imports',body());await refreshCatalog();
     const site=app.datasets.find(d=>d.id===added.dataset_id)!.site_id;
     const id=Math.min(...app.datasets.filter(d=>d.site_id===site).map(d=>d.id));rememberDataset(id);
     restored=false;sessionStorage.removeItem(draftKey);
     await goto(resolve(`/datasets/${id}`));
+    notify('uRecordingsAdded','success',undefined,{n:added.count.toLocaleString(app.locale)});
   });
   // Skipped files are summarised by reason; the file names stay in a short list underneath.
   const reasons=$derived([...(preview?.skipped??[]).reduce((counts,item)=>counts.set(item.code,(counts.get(item.code)??0)+1),new Map<string,number>())]);

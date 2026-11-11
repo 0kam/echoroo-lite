@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音の地図（モック）</title>
+<style>
+  /* Static mock for docs/explore-and-contribute-proposal-2026-11.md. Not production code. */
+  :root{
+    --bg:#faf7f2; --panel:#ffffff; --line:#e4ddd3; --ink:#3f3a36; --muted:#6f6a63;
+    --accent:#2a6f4e; --accent-soft:#e7f1ec;
+    --c0:#4e79a7; --c1:#f28e2b; --c2:#59a14f; --c3:#e15759; --c4:#b07aa1;
+    --c5:#76b7b2; --c6:#edc948; --c7:#9c755f;
+  }
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:Inter,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;font-size:16px;line-height:1.6}
+  .top{padding:10px 24px;border-bottom:1px solid var(--line);font-size:14px;color:var(--muted)}
+  main{max-width:1180px;margin:0 auto;padding:20px 24px 48px}
+  h1{font-size:28px;font-weight:650;margin:8px 0 4px}
+  .lead{font-size:16px;color:var(--muted);margin:0 0 20px}
+  h2{font-size:21px;font-weight:600;margin:0 0 12px}
+  .cols{display:grid;grid-template-columns:minmax(380px,1fr) minmax(420px,1fr);gap:20px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  canvas{width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fdfcfa}
+  .hint{font-size:14px;color:var(--muted);margin-top:8px}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;font-size:13px;color:var(--muted)}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+  .cluster{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;overflow:hidden}
+  .cluster>button{all:unset;display:flex;gap:12px;align-items:center;width:100%;
+    box-sizing:border-box;padding:10px 12px;cursor:pointer}
+  .cluster>button:hover{background:#f6f2ea}
+  .swatch{width:14px;height:14px;border-radius:4px;flex:none}
+  .cname{font-size:18px;font-weight:600;flex:none}
+  .cmeta{font-size:14px;color:var(--muted)}
+  .spec{height:34px;width:120px;border-radius:4px;flex:none;
+    background:linear-gradient(90deg,#1b1038,#432b6b 30%,#8a4a7d 55%,#e3a03c 75%,#432b6b);opacity:.85}
+  .open{background:var(--accent-soft)}
+  .members{border-top:1px solid var(--line);padding:4px 12px 12px}
+  .row{display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .row:last-of-type{border-bottom:none}
+  .play{all:unset;cursor:pointer;width:34px;height:34px;border-radius:50%;flex:none;
+    background:var(--accent);color:#fff;text-align:center;line-height:34px;font-size:14px}
+  .t{font-size:14px;color:var(--muted);min-width:150px}
+  a.action{color:var(--accent);font-size:14px;text-decoration:underline;margin-left:auto}
+  .more{font-size:14px;margin-top:6px}
+  .more a{color:var(--accent)}
+  .note{font-size:14px;color:var(--muted);border:1px solid var(--line);border-radius:8px;
+    background:var(--panel);padding:10px 12px;margin:16px 0 20px}
+  .rebuild{font-size:14px;margin-top:16px}
+  .rebuild button{font-size:14px;padding:6px 14px;border:1px solid var(--line);border-radius:8px;
+    background:var(--panel);cursor:pointer}
+  @media (max-width:900px){.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="top">地点と録音 › 春日山 › 音の地図</div>
+<main>
+  <h1>音の地図</h1>
+  <p class="lead">録音の中の音を、似たものどうしのまとまりにして表示します。AI の種名に頼らずに、気になる音を聞いて探せます。</p>
+
+  <div class="note">この地図は 2026-10-12 の解析（Perch V2・213,480 区間）から作りました。録音を追加した場合は作り直してください。</div>
+
+  <div class="cols">
+    <section class="panel">
+      <h2>全体の様子</h2>
+      <canvas id="map" width="640" height="500" aria-label="全区間の 2 次元の散布図。色は音のまとまり"></canvas>
+      <p class="hint">点 1 つが録音の 5 秒です。ホイールで拡大、ドラッグで移動できます。右の一覧を選ぶと、その音のまとまりが明るくなります。</p>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <section class="panel">
+      <h2>音のまとまり（多い順）</h2>
+
+      <div class="cluster">
+        <button><span class="swatch" style="background:var(--c0)"></span>
+          <span class="cname">まとまり 1</span><span class="spec"></span>
+          <span class="cmeta">48,210 件 · 風や無音が中心のようです</span></button>
+      </div>
+
+      <div class="cluster">
+        <button class="open"><span class="swatch" style="background:var(--c2)"></span>
+          <span class="cname">まとまり 4</span><span class="spec"></span>
+          <span class="cmeta">3,420 件 · AI の候補: ウグイス（参考）</span></button>
+        <div class="members">
+          <div class="row"><button class="play">▶</button><span class="spec"></span>
+            <span class="t">5月12日 5:42（地点の時刻）</span><a class="action" href="#">この音に似た声を探す</a></div>
+          <div class="row"><button class="play">▶</button><span class="spec"></span>
+            <span class="t">5月12日 6:03</span><a class="action" href="#">この音に似た声を探す</a></div>
+          <div class="row"><button class="play">▶</button><span class="spec"></span>
+            <span class="t">5月18日 4:55</span><a class="action" href="#">この音に似た声を探す</a></div>
+          <p class="more"><a href="#">さらに 20 件を聞く（中心に近い順）</a></p>
+        </div>
+      </div>
+
+      <div class="cluster">
+        <button><span class="swatch" style="background:var(--c3)"></span>
+          <span class="cname">まとまり 12</span><span class="spec"></span>
+          <span class="cmeta">214 件 · AI の候補はありません</span></button>
+      </div>
+
+      <p class="hint">小さいまとまりほど、珍しい音の可能性があります。</p>
+      <div class="rebuild"><button>地図を作り直す</button> <span class="hint">約 4 分かかります</span></div>
+    </section>
+  </div>
+</main>
+<script>
+  // Fake scatter: seeded blobs, display only.
+  const ctx = document.getElementById('map').getContext('2d');
+  const colors = ['#4e79a7','#f28e2b','#59a14f','#e15759','#b07aa1','#76b7b2','#edc948','#9c755f'];
+  let s = 42; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const gauss = () => (rnd()+rnd()+rnd()+rnd()-2)/2;
+  const blobs = colors.map(() => ({x: 60+rnd()*520, y: 50+rnd()*400, r: 18+rnd()*55}));
+  blobs.forEach((b,i) => {
+    ctx.fillStyle = colors[i] + (i===2 ? 'ff' : '55');
+    const n = i===0 ? 2600 : 250+rnd()*700;
+    for (let j=0;j<n;j++){
+      ctx.beginPath();
+      ctx.arc(b.x+gauss()*b.r, b.y+gauss()*b.r, 1.1, 0, 7);
+      ctx.fill();
+    }
+  });
+  document.getElementById('legend').innerHTML = colors.map((c,i) =>
+    `<span><span class="dot" style="background:${c}"></span>まとまり ${[1,2,4,7,9,12,15,18][i]}</span>`).join('');
+</script>
+</body>
+</html>

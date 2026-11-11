@@ -5,15 +5,16 @@
   import { isTauri } from '@tauri-apps/api/core';
   import { chooseDirectory } from '$lib/files';
   import { api } from '$lib/api.svelte';
-  import { app,t,dayRange,duration } from '$lib/app.svelte';
+  import { app,t,datasetOf,dayRange,duration,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
   import { activityText,fill,focusMissing,missingText,presenceText,rangeQuery,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string;results?:{report_id:number}[]};
+  type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string;results?:{report_id:number;start_date?:string;end_date?:string}[]};
   type Snapshot = {id:number;created_at:string;species:Species|null;start_date:string|null;end_date:string|null};
   const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
+  const site=$derived(siteOf(datasetOf(id)));
   let overview=$state<Overview|null>(null),selected=$state<string[]>([]),error=$state(''),folder=$state('');
   let output=$state<Export|null>(null),history=$state<Export[]>([]),earlier=$state<Snapshot[]>([]);
   const draftKey=`echoroo-export-${id}-${query}`;
@@ -48,7 +49,7 @@
 </script>
 <div class="page narrow report-page">
   <div class="crumbs"><a href={back}>{t('uBackResults')}</a></div>
-  <div class="page-header"><div><h1>{t('wExport')}</h1><p>{t('rExportIntro')}</p></div></div>
+  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('wExport')}</h1><p>{t('rExportIntro')}</p></div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if overview}
     <section class="panel">
@@ -82,6 +83,8 @@
     </section>
     {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="history">
       <div><p>{when(item.created_at)}</p>
+        <!-- The period of the report, from its first result; exports without results carry none. -->
+        {#if item.results?.[0]?.start_date&&item.results[0].end_date}<p>{dayRange(item.results[0].start_date,item.results[0].end_date)}</p>{/if}
         <small class="path">{item.folder_path??item.path}</small></div>
       {#if item.folder_path}<Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{/if}
     </div>{/each}</section>{/if}

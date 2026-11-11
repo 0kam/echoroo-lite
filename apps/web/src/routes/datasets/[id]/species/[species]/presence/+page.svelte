@@ -4,7 +4,7 @@
   import { untrack } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
-  import { app,t } from '$lib/app.svelte';
+  import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { fill,modelName,presenceText,rangeQuery,type PresenceList,type PresenceRow } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
@@ -13,6 +13,7 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),speciesId=page.params.species!;
+  const site=$derived(siteOf(datasetOf(id)));
   const query=$derived(new URL(page.url.hash.slice(1),page.url).searchParams);
   const source=$derived(query.get('source')==='search'?'search':'ai');
   const dates=$derived(new URLSearchParams([...query].filter(([key])=>key.endsWith('_date'))).toString());
@@ -45,13 +46,13 @@
     await api('/presence/misses',{dataset_id:id,species_id:speciesId,start_date:list.start_date,end_date:list.end_date,source,listened});
     saved=listened;await load();
   },{toast:true});
-  const flagged=(row:PresenceRow)=>row.models.map(model=>fill('pRank',{model:modelName(model.engine),rank:model.rank})).join('・');
+  const flagged=(row:PresenceRow)=>row.models.map(model=>fill('pRank',{model:modelName(model.engine),rank:model.rank})).join(app.locale==='ja'?'・':', ');
   const time=(row:PresenceRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:list?.site.timezone}).format(new Date(row.local_time));
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}/presence?${range}&source=${source}`)}`);
 </script>
 <div class="page wide presence-page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
-  <div class="page-header"><div><h1>{list?fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name}):t('sPresenceTitle')}</h1>{#if list}<p>{t('pHint')}</p>{/if}</div></div>
+  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{list?fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name}):t('sPresenceTitle')}</h1>{#if list}<p>{t('pHint')}</p>{/if}</div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if list}
     {#if list.has_ai&&list.run_id}<div class="actions" role="group" aria-label={t('sPresenceTitle')}>
@@ -83,7 +84,9 @@
   {:else if !error}<p role="status"><Spinner/> {t('pPreparing')}</p>{/if}
 </div>
 <style>.with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}
-  .examples-column{position:sticky;top:16px}@media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}
+  /* The examples stay in view and never run past the window: 140px is the 76px top bar, the 32px page padding and 16px above and below. */
+  .examples-column{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
+  @media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static;max-height:none;overflow:visible}}
   p{margin:8px 0}.page-header p{margin:4px 0 0}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
   .row.marked{border-left:4px solid rgb(var(--primary-700));padding-left:12px}
   .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.rank{font-weight:700}.caution p{margin:0 0 8px}.miss{margin:16px 0;padding:12px;border:1px solid rgb(var(--stone-300));border-radius:8px}</style>

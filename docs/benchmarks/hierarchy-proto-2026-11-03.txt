@@ -1,0 +1,185 @@
+# hierarchy_proto.py — recorded 2026-11-03 (tau 0.6, leaves = n/40 in [8, 1000], fit subsample 20,000)
+# user datasets: two folders imported by the user on 2026-11-02 into a verification data copy (8,700 Perch segments; 21,840 Kinglet-B segments)
+
+=== Fuji: n=2160, species>=5 windows: 40 ===
+flat k-means k=15                  best-F1 median 0.150 mean 0.216 >=0.5: 5/40
+flat k-means k=25                  best-F1 median 0.199 mean 0.259 >=0.5: 7/40
+flat k-means k=54                  best-F1 median 0.250 mean 0.303 >=0.5: 8/40
+tree leaves=54 tau=0.6             best-F1 median 0.263 mean 0.347 >=0.5: 12/40  depth median 2 max 4
+   nodes 77, internal 23, children/node median 3 max 8, depth max 4
+   root children (size, background%, top labels):
+     node 1: size  191, background   27%, [('toratsugumi', 79), ('hototogisu', 57), ('fukurou', 11)]
+     node 9: size  372, background   37%, [('kibitaki', 98), ('akahara', 90), ('hashibutogarasu', 33)]
+     node 21: size  654, background    1%, [('kibitaki', 321), ('koruri', 265), ('uguisu', 135)]
+     node 44: size  487, background    0%, [('higara', 229), ('kibitaki', 167), ('koruri', 120)]
+     node 59: size  366, background    0%, [('uguisu', 302), ('higara', 166), ('kibitaki', 114)]
+     node 73: size   90, background    1%, [('kibitaki', 89), ('hototogisu', 16), ('juuichi', 11)]
+tree leaves=54 tau=0.0 (binary)    best-F1 median 0.263 mean 0.344 >=0.5: 11/40  depth median 2 max 3
+   nodes 70, internal 16, children/node median 3 max 8, depth max 3
+   tree build (leaf fit + ward + flatten) 0.0s
+
+=== dataset 3 (perch): n=8700, leaves 217 (app flat k=10) | pca 0.3s, leaves 0.1s (20 it), tree 0.00s ===
+   nodes 323, children/node median 3 max 7, depth max 6
+   all: size   8700  AI-hint rate  32.1%  mean score 0.118  caudatus 13%, ater 12%
+   node 1 (depth 1, 4 children): size   6661  AI-hint rate  35.6%  mean score 0.131  caudatus 15%, aurea 12%
+       node 2 (depth 2, 5 children): size   2308  AI-hint rate  49.9%  mean score 0.206  caudatus 30%, ater 22%
+       node 116 (depth 2, 3 children): size   1984  AI-hint rate  38.0%  mean score 0.113  aluco 34%, aurea 23%
+       node 160 (depth 2, 3 children): size   2203  AI-hint rate  15.3%  mean score 0.058  Water 39%, aurea 35%
+       node 205 (depth 2, 4 children): size    166  AI-hint rate  75.3%  mean score 0.264  migratorius 69%, bicolor 9%
+   node 218 (depth 1, 5 children): size   2039  AI-hint rate  20.7%  mean score 0.078  ater 17%, gracilenta 10%
+       node 219 (depth 2, 4 children): size    918  AI-hint rate  12.6%  mean score 0.058  gracilenta 12%, soui 10%
+       node 260 (depth 2, 7 children): size    467  AI-hint rate  30.6%  mean score 0.094  caudatus 12%, ater 11%
+       node 286 (depth 2, 6 children): size    215  AI-hint rate  23.7%  mean score 0.084  gracilenta 24%, tenuirostre 22%
+       node 303 (depth 2, 5 children): size     68  AI-hint rate  80.9%  mean score 0.266  ater 76%, major 9%
+       node 309 (depth 2, 5 children): size    371  AI-hint rate  15.6%  mean score 0.065  tenuirostre 36%, columbiana 19%
+flat k=10 vs AI proxy (22 spp)     best-F1 median 0.064 mean 0.165 >=0.5: 3/22
+tree tau=0.6 vs AI proxy           best-F1 median 0.249 mean 0.342 >=0.5: 7/22  depth median 4 max 6
+
+=== dataset 2 (kinglet-b): n=21840, leaves 546 (app flat k=10) | pca 0.5s, leaves 0.4s (20 it), tree 0.01s ===
+   nodes 822, children/node median 3 max 7, depth max 8
+   all: size  21840  AI-hint rate  10.5%  mean score 0.046  ater 25%, aurea 22%
+   node 1 (depth 1, 2 children): size   4393  AI-hint rate  12.7%  mean score 0.052  ater 42%, regulus 39%
+       node 2 (depth 2, 6 children): size   1669  AI-hint rate  29.2%  mean score 0.112  regulus 43%, ater 42%
+       node 128 (depth 2, 5 children): size   2724  AI-hint rate   2.6%  mean score 0.015  ater 40%, caudatus 26%
+   node 279 (depth 1, 5 children): size   8222  AI-hint rate  20.1%  mean score 0.087  aurea 31%, caudatus 27%
+       node 280 (depth 2, 6 children): size   2431  AI-hint rate  43.2%  mean score 0.192  caudatus 42%, ater 31%
+       node 418 (depth 2, 4 children): size   2739  AI-hint rate   2.2%  mean score 0.026  curvirostra 49%, regulus 13%
+       node 497 (depth 2, 3 children): size   1224  AI-hint rate  42.9%  mean score 0.120  aurea 97%, curvirostra 2%
+       node 546 (depth 2, 4 children): size   1547  AI-hint rate   0.3%  mean score 0.015  pyrrhula 80%, cinerea 20%
+       node 585 (depth 2, 3 children): size    281  AI-hint rate   2.8%  mean score 0.023  chrysolaus 50%, obscurus 25%
+   node 603 (depth 1, 3 children): size   9225  AI-hint rate   0.8%  mean score 0.007  regulus 54%, caudatus 15%
+       node 604 (depth 2, 5 children): size   5713  AI-hint rate   0.1%  mean score 0.004  regulus 25%, platyrhynchos 25%
+       node 728 (depth 2, 4 children): size    699  AI-hint rate   9.7%  mean score 0.039  regulus 60%, caudatus 16%
+       node 768 (depth 2, 3 children): size   2813  AI-hint rate   0.2%  mean score 0.006  curvirostra 50%, chloropus 17%
+flat k=10 vs AI proxy (7 spp)      best-F1 median 0.186 mean 0.244 >=0.5: 2/7
+tree tau=0.6 vs AI proxy           best-F1 median 0.447 mean 0.478 >=0.5: 2/7  depth median 3 max 6
+
+=== scale: n=210000 leaves=1000 iterations=5 | pca 3.2s, leaf fit+assign 0.9s, ward+flatten 0.01s | nodes 1432, children/node median 3 max 8, depth max 7 | peak rss 1756 MiB ===
+{
+ "fuji": {
+  "flat_k15": {
+   "median": 0.1495147568794751,
+   "mean": 0.21647041857345126,
+   "ge_half": 5,
+   "n": 40
+  },
+  "flat_k25": {
+   "median": 0.1990990990990991,
+   "mean": 0.25887561646096946,
+   "ge_half": 7,
+   "n": 40
+  },
+  "flat_k54": {
+   "median": 0.25,
+   "mean": 0.3025089505297534,
+   "ge_half": 8,
+   "n": 40
+  },
+  "tree_tau0.6": {
+   "median": 0.2627947096032202,
+   "mean": 0.34666063313743567,
+   "ge_half": 12,
+   "n": 40
+  },
+  "tree_tau0.0": {
+   "median": 0.2627947096032202,
+   "mean": 0.34425875385303834,
+   "ge_half": 11,
+   "n": 40
+  }
+ },
+ "dataset3": {
+  "flat": {
+   "median": 0.06355614438556144,
+   "mean": 0.16453571055465688,
+   "ge_half": 3,
+   "n": 22
+  },
+  "tree": {
+   "median": 0.24871794871794872,
+   "mean": 0.3423253730740748,
+   "ge_half": 7,
+   "n": 22
+  }
+ },
+ "dataset2": {
+  "flat": {
+   "median": 0.18576388888888887,
+   "mean": 0.243707716853982,
+   "ge_half": 2,
+   "n": 7
+  },
+  "tree": {
+   "median": 0.4468864468864469,
+   "mean": 0.4778009456272914,
+   "ge_half": 2,
+   "n": 7
+  }
+ },
+ "scale": {
+  "pca_s": 3.1929917079396546,
+  "leaves_s": 0.856488750083372,
+  "tree_s": 0.013161167036741972,
+  "nodes": 1432
+ }
+}
+
+# ---- hierarchy_exact.py (exact Ward vs leaves; complete trees) ----
+
+=== Fuji n=2160 ===
+exact Ward, all points             best-F1 median 0.469 mean 0.461 >=0.5: 16/40  depth median 3 max 7
+   nodes 3084, children/node median 3 max 8, depth max 8, build 0.1s
+leaves 54 + Ward                   best-F1 median 0.263 mean 0.347 >=0.5: 12/40  depth median 2 max 4
+   nodes 77, children/node median 3 max 8, depth max 4, build 0.0s
+leaves 500 + Ward                  best-F1 median 0.477 mean 0.450 >=0.5: 17/40  depth median 3 max 5
+   nodes 731, children/node median 3 max 8, depth max 6, build 0.1s
+
+=== dataset 3 n=8700 (22 AI-proxy spp) ===
+exact Ward, all points             best-F1 median 0.343 mean 0.378 >=0.5: 7/22  depth median 4 max 6
+   nodes 12238, children/node median 3 max 8, depth max 10, build 0.9s
+leaves 217 + Ward                  best-F1 median 0.249 mean 0.342 >=0.5: 7/22  depth median 4 max 6
+   nodes 323, children/node median 3 max 7, depth max 6, build 0.1s
+leaves 2000 + Ward                 best-F1 median 0.318 mean 0.370 >=0.5: 7/22  depth median 5 max 7
+   nodes 2881, children/node median 3 max 8, depth max 9, build 0.6s
+   + exact Ward inside each of 1116 leaves: 0.0s
+
+=== dataset 2 n=21840 (7 AI-proxy spp) ===
+exact Ward, all points             best-F1 median 0.447 mean 0.446 >=0.5: 3/7  depth median 4 max 5
+   nodes 30709, children/node median 3 max 8, depth max 11, build 6.8s
+leaves 546 + Ward                  best-F1 median 0.447 mean 0.478 >=0.5: 2/7  depth median 3 max 6
+   nodes 822, children/node median 3 max 7, depth max 8, build 0.4s
+leaves 2000 + Ward                 best-F1 median 0.508 mean 0.491 >=0.5: 4/7  depth median 3 max 6
+   nodes 2961, children/node median 3 max 8, depth max 8, build 1.6s
+   + exact Ward inside each of 1716 leaves: 0.1s
+
+=== scale n=210000 (pca 2.9s) ===
+   leaves 1000: fit+assign 0.9s (5 it), Ward on centers 0.01s, within-leaf trees 0.7s (largest leaf 1552), nodes above leaves 1432
+   leaves 2000: fit+assign 1.7s (4 it), Ward on centers 0.04s, within-leaf trees 0.4s (largest leaf 490), nodes above leaves 2864
+   leaves 4000: fit+assign 3.2s (3 it), Ward on centers 0.17s, within-leaf trees 0.5s (largest leaf 98), nodes above leaves 6536
+
+# ---- embedding_proto.py (numpy PaCMAP vs PCA vs openTSNE; 10-NN same-label share in 2D) ----
+
+=== Fuji (single-species windows): n=2160, labelled 357, classes 20 ===
+   50d (reference)    10-NN same-label 0.798     0.0s
+   PCA 2D             10-NN same-label 0.584     0.0s
+   PaCMAP (numpy)     10-NN same-label 0.807     1.0s
+   openTSNE           10-NN same-label 0.791     3.6s
+
+=== dataset 3 (AI proxy, score>=0.1): n=8700, labelled 2145, classes 22 ===
+   50d (reference)    10-NN same-label 0.753     0.0s
+   PCA 2D             10-NN same-label 0.328     0.0s
+   PaCMAP (numpy)     10-NN same-label 0.675     4.0s
+   openTSNE           10-NN same-label 0.725    13.4s
+
+=== dataset 2 (AI proxy, score>=0.1): n=21840, labelled 2123, classes 7 ===
+   50d (reference)    10-NN same-label 0.932     0.0s
+   PCA 2D             10-NN same-label 0.381     0.0s
+   PaCMAP (numpy)     10-NN same-label 0.845    11.2s
+   openTSNE           10-NN same-label 0.898    24.0s
+
+# ---- embedding_landmarks.py ----
+=== dataset 2 n=21840: full PaCMAP purity was 0.845 ===
+   landmarks 2000: purity 0.803  layout 0.9s + placement 0.2s
+   landmarks 5000: purity 0.841  layout 2.2s + placement 0.5s
+=== scale n=210000: landmarks 10000: layout 4.8s + placement 12.5s ===
+=== scale n=210000: landmarks 20000: layout 11.0s + placement 24.4s ===

@@ -6,7 +6,7 @@
   import { isTauri } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { api } from '$lib/api.svelte';
-  import { t,activeJob,dayRange,fileName } from '$lib/app.svelte';
+  import { t,activeJob,datasetOf,dayRange,fileName,siteOf } from '$lib/app.svelte';
   import { type Species } from '$lib/species';
   import { fill,focusMissing,missingText,rangeQuery } from '$lib/workflow';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
@@ -17,6 +17,7 @@
   type Reference=AudioSource&{attribution?:{id:number;recordist:string;license:string}};
   type Clip={source:Reference;start_s:number;end_s:number};
   const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
+  const site=$derived(siteOf(datasetOf(id)));
   // Example calls belong to one species; choosing another species starts a new list.
   let species=$state<Species|null>(null),source=$state<Reference|null>(null),clips=$state<Clip[]>([]),clipsFor=$state('');
   let first=$state(query.get('start_date')||''),last=$state(query.get('end_date')||''),start=$state(0),end=$state(5),referencePath=$state(''),error=$state('');
@@ -59,19 +60,21 @@
     try{const saved=JSON.parse(localStorage.getItem(`echoroo-search-${id}`)||'null');
       if(saved){clips=saved.clips??[];clipsFor=saved.clipsFor??'';species=saved.species??null;source=saved.source??null;start=saved.start??0;end=saved.end??5;xc=saved.xc??true;}}
     catch{clips=[];}
+    // Without a Xeno-Canto key its search cannot run, so the PC is the source to start from.
+    if(!(await api<{configured:boolean}>('/xeno-canto/key').catch(()=>({configured:false}))).configured)xc=false;
     ready=true;
     if(query.get('species')){const chosen=await api<Species>(`/species/${encodeURIComponent(query.get('species')!)}`);if(chosen.id!==species?.id)species=chosen;}
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
 </script>
 <div class="page search-page"><div class="crumbs"><a href={back.href}>{t(back.label)}</a></div>
-  <div class="page-header"><div><h1>{t(fromSpecies?'sSearchTitle':'sFindMissing')}</h1><p>{t('wFindHint')}</p></div></div>
+  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t(fromSpecies?'sSearchTitle':'sFindMissing')}</h1><p>{t('wFindHint')}</p></div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   <!-- Same numbered steps as adding recordings: species, example calls, search. -->
   <div class="steps">
-  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/></section>
+  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/>{#if source&&!species}<p class="info">{t('sPrefillHint')}</p>{/if}</section>
   {#if species}
     <section class="panel step-card"><h2>{t('wSource')}</h2>{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
-      <Button pending={addReference.pending} disabled={search.pending} onclick={()=>!isTauri()&&!referencePath.trim()?showMissing(true):addReference.run()}>{t('referenceFromFile')}</Button></div>
+      <Button active={!xc} pending={addReference.pending} disabled={search.pending} onclick={()=>{xc=false;if(!isTauri()&&!referencePath.trim())showMissing(true);else addReference.run();}}>{t('referenceFromFile')}</Button></div>
       {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending} aria-invalid={noPath||undefined} aria-describedby={noPath?'path-error':undefined}/></label>
         {#if noPath}<p class="field-error" id="path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
       {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference}/></div>{/key}{/if}

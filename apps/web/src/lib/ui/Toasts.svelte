@@ -1,12 +1,13 @@
 <script lang="ts">
   import { t } from '../app.svelte';
+  import { fill } from '../workflow';
   import { toasts, dismiss } from './toast.svelte';
 </script>
 
 <div class="toasts" aria-live="polite">
   {#each toasts as toast (toast.id)}
     <div class={`toast ${toast.kind}`} role={toast.kind === 'error' ? 'alert' : 'status'}>
-      <span>{t(toast.key)}{#if toast.detail}<br /><small>{toast.detail}</small>{/if}</span>
+      <span>{fill(toast.key, toast.values ?? {})}{#if toast.detail}<br /><small>{toast.detail}</small>{/if}</span>
       <button class="close" onclick={() => dismiss(toast.id)} aria-label={t('close')}>×</button>
     </div>
   {/each}

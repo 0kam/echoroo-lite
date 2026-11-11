@@ -11,7 +11,7 @@
   import Button from '$lib/ui/Button.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   import { notify } from '$lib/ui/toast.svelte';
-  import { focusMissing, missingText } from '$lib/workflow';
+  import { fill, focusMissing, missingText } from '$lib/workflow';
   const context = quizContext(page.url);
   const returnUrl = context.returnPath ? `${resolve('/datasets')}${context.returnPath.slice('/datasets'.length)}` : '';
   const continuation = context.query ? `?${context.query}` : '';
@@ -25,6 +25,8 @@
     .sort((a, b) => commonName(a.species, app.locale).localeCompare(commonName(b.species, app.locale), app.locale)));
   const birds=$derived([...new Map(visible.filter(c=>c.enabled).map(c=>[c.species_id,c.species])).values()]);
   const speciesCount = $derived(new Set((library?.clips ?? []).filter(clip => selected.includes(clip.id) && clip.enabled).map(clip => clip.species_id)).size);
+  // Birds in the whole library, whatever is selected or filtered: a quiz cannot start with fewer than two.
+  const libraryBirds = $derived(new Set((library?.clips ?? []).filter(clip => clip.enabled).map(clip => clip.species_id)).size);
   // A press with missing input marks the birds or the name instead of running.
   let triedStart = $state(false), triedSave = $state(false);
   const fewBirds = $derived(triedStart && speciesCount < 2), noBirds = $derived(triedSave && !selected.length), noName = $derived(triedSave && !setName.trim());
@@ -62,8 +64,10 @@
       <label>{t('quizFilter')}<input bind:value={filter}/></label>
       <div class="birds">{#each birds as bird}<label class="checkbox bird"><input type="checkbox" aria-invalid={fewBirds||noBirds||undefined} aria-describedby={noBirds?'birds-error':fewBirds?'start-reason':undefined} checked={visible.some(c=>c.species_id===bird.id&&selected.includes(c.id))} onchange={e=>{const ids=library!.clips.filter(c=>c.enabled&&c.species_id===bird.id).map(c=>c.id);selected=e.currentTarget.checked?[...new Set([...selected,...ids])]:selected.filter(id=>!ids.includes(id));setId='';}}/><span>{commonName(bird,app.locale)}<i class="scientific-name">{bird.scientific_name}</i></span></label>{/each}</div>
       {#if noBirds}<p class="field-error" id="birds-error">{t('uChooseBirds')}</p>{/if}
-      <Button variant="primary" pending={start.pending} aria-describedby="start-reason" onclick={()=>{if(speciesCount<2){triedStart=true;void focusMissing();}else start.run();}}>{t('quizStart')} · {speciesCount} {t('quizSpecies')}</Button>
-      {#if speciesCount<2}<p class={triedStart?'field-error':'muted'} id="start-reason">{t('uChooseTwoBirds')}</p>{/if}
+      {#if libraryBirds<2}<p>{fill('uQuizNeedBirds',{n:2-libraryBirds})}</p>
+        <Button variant="primary" href={`${resolve('/quiz/add')}${continuation}`}>{t('uQuizAddCall')}</Button>
+      {:else}<Button variant="primary" pending={start.pending} aria-describedby="start-reason" onclick={()=>{if(speciesCount<2){triedStart=true;void focusMissing();}else start.run();}}>{t('quizStart')} · {speciesCount} {t('quizSpecies')}</Button>
+      {#if speciesCount<2}<p class={triedStart?'field-error':'muted'} id="start-reason">{t('uChooseTwoBirds')}</p>{/if}{/if}
       {#if start.error}<p class="error">{t(start.error)}</p>{/if}
     </section>
     <form class="panel" novalidate onsubmit={e=>{e.preventDefault();if(missing){triedSave=true;void focusMissing();}else saveSet.run();}}><label>{t('uQuizSelectionName')}<input bind:value={setName} required maxlength="200" aria-invalid={noName||undefined} aria-describedby={noName?'name-error':undefined}/></label>

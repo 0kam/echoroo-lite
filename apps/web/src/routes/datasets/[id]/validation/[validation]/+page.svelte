@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
-  import { app,t } from '$lib/app.svelte';
+  import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { fill,modelName,rangeQuery,workload,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
@@ -13,6 +13,7 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),sid=Number(page.params.validation);
+  const site=$derived(siteOf(datasetOf(id)));
   let validation=$state<Validation|null>(null),error=$state(''),started=$state(false),corrected=$state(false),heard=$state<ExampleRef[]>();
   // The answer bar is fixed to the bottom; the page keeps that much space free so it never covers the spectrogram.
   let barHeight=$state(0);
@@ -43,11 +44,12 @@
   const practice=$derived(validation?`${resolve('/quiz')}?species=${validation.species.id}&return=${encodeURIComponent(`/datasets/${id}/validation/${sid}`)}`:'');
 </script>
 {#snippet examples()}{#if validation}<div class="examples-column"><ReferencePanel species={validation.species} datasetId={id} validationId={sid} {practice} onexamples={list=>heard=list}/></div>{/if}{/snippet}
-<div class="page wide validation-page" style:padding-bottom={started&&!done&&validation?.question?`${barHeight+24}px`:undefined}><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
+<div class="page wide validation-page" style:padding-bottom={started&&!done&&validation?.question?`${barHeight+24}px`:undefined} style:--answer-bar={started&&!done&&validation?.question?`${barHeight}px`:'0px'}><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if validation}
     {#if done||!started||validation.question}<div class="page-header"><div>
       <!-- While answering, the one heading is the question and the model is its subtitle. Progress lives in the answer bar. -->
+      {#if site}<div class="site-name">{site.name}</div>{/if}
       {#if done||!started}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
       {:else}<h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>{/if}
       <p>{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p></div></div>{/if}
@@ -84,8 +86,10 @@
 </div>
 <style>.answer-feedback{position:fixed;left:24px;right:24px;z-index:4;padding:12px;background:rgb(var(--color-page-bg));box-shadow:0 0 0 1px currentColor;border-radius:8px}
   :global(.main:has(.validation-page)){padding-top:16px}.page.validation-page{gap:8px}
-  .with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}.examples-column{display:flex;flex-direction:column;gap:8px;position:sticky;top:16px}
-  @media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static}}
+  .with-examples{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,380px);gap:16px;align-items:start}
+  /* The examples stay in view and end above the answer bar: 124px is the 76px top bar, this page's 16px padding and 16px above and below. */
+  .examples-column{display:flex;flex-direction:column;gap:8px;position:sticky;top:16px;max-height:calc(100vh - 124px - var(--answer-bar));overflow-y:auto}
+  @media(max-width:950px){.with-examples{grid-template-columns:minmax(0,1fr)}.examples-column{position:static;max-height:none;overflow:visible}}
   .validation-page .crumbs{margin-bottom:0}.validation-page .panel{padding:16px}.validation-page h1{margin:0;line-height:1.25}
   .validation-page .sci{display:inline;margin-left:12px;white-space:nowrap}
   .progress-row{flex-basis:100%;order:-2;display:flex;align-items:center;gap:12px;white-space:nowrap}.progress-row progress{flex:1;min-width:0;height:12px;accent-color:rgb(var(--color-success))}
