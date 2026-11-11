@@ -99,12 +99,15 @@ def get_run(root, run_id):
         return {**dict(run), 'snapshot': snap}
 
 
-def top_hits(db, run_id, limit, offset=0):
+def top_hits(db, run_id, limit, offset=0, segments=None):
+    """Hits by similarity; `segments` keeps only those segment ids."""
     return [dict(r) for r in db.execute('''SELECT h.segment_id,h.similarity,s.start_s,s.end_s,
         r.id AS recording_id,r.path,r.seconds,r.recorded_at,r.timezone
         FROM search_hits h JOIN segments s ON s.id=h.segment_id JOIN analyses a ON a.id=s.analysis_id
-        JOIN recordings r ON r.id=a.recording_id WHERE h.run_id=? ORDER BY h.similarity DESC,h.segment_id LIMIT ? OFFSET ?''',
-        (run_id, limit, offset))]
+        JOIN recordings r ON r.id=a.recording_id WHERE h.run_id=?
+          AND (? IS NULL OR h.segment_id IN (SELECT value FROM json_each(?)))
+        ORDER BY h.similarity DESC,h.segment_id LIMIT ? OFFSET ?''',
+        (run_id, *[None if segments is None else json.dumps(segments)] * 2, limit, offset))]
 
 
 def deletion(db, run_id):

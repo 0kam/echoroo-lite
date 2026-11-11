@@ -140,6 +140,16 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual(next(hit['label'] for hit in ready['hits'] if hit['recording_id']==rows[0]['recording_id']
                                   and hit['start_s']==rows[0]['start_s']),'target')
             self.assertEqual((ready['can_train'], ready['reasons']), (False, ['custom_positive_examples_needed', 'custom_negative_examples_needed']))
+            # Less similar sounds: unlabelled, below the rows shown, stable per round; the server caps one page at 200 rows.
+            url = f'/datasets/1/species/{sid}/custom-model'
+            less = client.get(url, params={**{k: scope[k] for k in ('start_date', 'end_date')}, 'limit': 0, 'boundary': 0, 'shown': 10}).json()
+            top10 = {h['segment_id'] for h in client.get(url, params={**{k: scope[k] for k in ('start_date', 'end_date')}, 'limit': 10}).json()['hits']}
+            self.assertEqual(len(less['boundary_hits']), 10)
+            self.assertFalse(top10 & {h['segment_id'] for h in less['boundary_hits']})
+            self.assertTrue(all(h['label'] is None and h['local_time'] for h in less['boundary_hits']))
+            self.assertEqual(client.get(url, params={'limit': 201}).status_code, 422)
+            paged = [h['segment_id'] for o in (0, 5) for h in client.get(url, params={'limit': 5, 'offset': o}).json()['hits']]
+            self.assertEqual(paged, [h['segment_id'] for h in client.get(url, params={'limit': 10}).json()['hits']])
             voice = [h for h in ready['hits'] if h['similarity'] > .99][:3]
             with connect(root) as db:
                 silent = [r[0] for r in db.execute('SELECT h.segment_id FROM search_hits h WHERE h.run_id=? AND h.similarity<.5 ORDER BY h.segment_id LIMIT 3', (run['id'],))]
@@ -210,6 +220,31 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual(client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']['status'], 'unchecked')
             with patch('search_runs.load_perch', return_value=(Session(), 'perch-sha')), patch('search.load_perch', return_value=(Session(), 'perch-sha')):
                 self.assertEqual(client.post('/search-runs', json=search).status_code, 200)
+
+
+class BoundaryRanksCheck(unittest.TestCase):
+    def test_choice(self):
+        from custom_models import boundary_ranks
+        wide = boundary_ranks(10000, {}, 10, 0)
+        self.assertEqual(wide, boundary_ranks(10000, {}, 10, 0))
+        self.assertEqual(len(set(wide)), 10)
+        self.assertTrue(all(9 < r < 10000 for r in wide))
+        # Centre-weighted: more picks in the middle half than in the outer quarters together.
+        self.assertGreater(sum(2500 <= r < 7500 for r in wide), sum(r < 2500 or r >= 7500 for r in wide))
+        # Labels shrink the bracket; labelled and visible rows are never picked.
+        known = {100: 'target', 5: 'target', 300: 'other', 150: 'other', 120: 'target', 9000: 'other'}
+        narrow = boundary_ranks(10000, known, 10, 0)
+        self.assertTrue(all(120 < r < 150 for r in narrow) and len(set(narrow)) == 10)
+        self.assertEqual(boundary_ranks(10000, {**known, 125: 'other'}, 10, 0), [121, 122, 123, 124])
+        # Rounds differ while labels stay the same.
+        rounds = [tuple(boundary_ranks(10000, known, 10, k)) for k in range(5)]
+        self.assertTrue(all(a != b for a, b in zip(rounds, rounds[1:])))
+        self.assertEqual(set(boundary_ranks(30, {}, 10, 1)) & set(boundary_ranks(30, {}, 10, 0)), set())
+        # Small and empty brackets.
+        self.assertEqual(boundary_ranks(15, {}, 10, 0), [10, 11, 12, 13, 14])
+        self.assertEqual(boundary_ranks(40, {20: 'target', 21: 'other'}, 10, 0), [15, 16, 17, 18, 19, 22, 23, 24, 25, 26])
+        self.assertEqual(boundary_ranks(40, {20: 'target', 21: 'other'}, 10, 1), [10, 11, 12, 13, 14, 27, 28, 29, 30, 31])
+        self.assertEqual(boundary_ranks(10, {}, 10, 0), [])
 
 
 if __name__ == '__main__':

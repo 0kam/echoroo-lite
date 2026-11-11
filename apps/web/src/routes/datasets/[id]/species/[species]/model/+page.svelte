@@ -16,15 +16,24 @@
   const range=new URLSearchParams([...new URL(page.url.hash.slice(1),page.url).searchParams].filter(([key])=>key.endsWith('_date')));
   const draftKey=`echoroo-model:${id}:${speciesId}:${range}`;
   let ready=$state<CustomModelReadiness|null>(null),error=$state(''),confirming=$state<number|null>(null),shown=$state(10);
+  let boundary=$state<SearchHit[]>([]),round=0;
   try{shown=Number(sessionStorage.getItem(draftKey))||10;}catch{/* The list position is only a convenience. */}
   $effect(()=>{try{sessionStorage.setItem(draftKey,String(shown));}catch{/* Private windows may refuse storage. */}});
+  const PAGE=200; // The server returns at most 200 rows per request.
+  const fetchReady=(query:string)=>api<CustomModelReadiness>(`/datasets/${id}/species/${speciesId}/custom-model?${range}&${query}`);
   async function load(){
-    try{ready=await api<CustomModelReadiness>(`/datasets/${id}/species/${speciesId}/custom-model?${range}&limit=${Math.max(30,shown)}`);}
-    catch(e){error=e instanceof Error?e.message:'unknown_error';}
+    try{
+      const want=Math.max(30,shown),next=await fetchReady(`limit=${Math.min(want,PAGE)}`);
+      for(let offset=PAGE;offset<Math.min(want,next.hit_count);offset+=PAGE)next.hits.push(...(await fetchReady(`limit=${Math.min(want-offset,PAGE)}&offset=${offset}`)).hits);
+      ready=next;
+    }catch(e){error=e instanceof Error?e.message:'unknown_error';}
   }
-  onMount(()=>void load());
+  // A new batch only on request, so rows do not move while they are being labelled.
+  const loadBoundary=createTask(async()=>{boundary=(await fetchReady(`limit=0&boundary=${round++}&shown=${shown}`)).boundary_hits;},{toast:true});
+  onMount(async()=>{await load();if(ready)void loadBoundary.run();});
   const label=createTask(async(hit:SearchHit,value:'target'|'other')=>{
-    await api(`/search-runs/${ready!.run_id}/labels`,{segment_id:hit.segment_id,label:hit.label===value?null:value});await load();
+    const saved=await api<{label:SearchHit['label']}>(`/search-runs/${ready!.run_id}/labels`,{segment_id:hit.segment_id,label:hit.label===value?null:value});
+    boundary=boundary.map(row=>row.segment_id===hit.segment_id?{...row,label:saved.label}:row);await load();
   },{toast:true});
   const build=createTask(async()=>{if(!ready)return;await api('/custom-models',{dataset_id:id,species_id:speciesId,
     start_date:range.get('start_date'),end_date:range.get('end_date')});await load();});
@@ -46,17 +55,23 @@
   {#if ready}
     <p class="species">{commonName(ready.species,app.locale)} <i class="sci">{ready.species.scientific_name}</i></p>
     <p>{t('customModelIntro')}</p>
-    <section class="panel"><h2>{t('pSourceSearch')}</h2>
+    {#snippet row(hit:SearchHit,rank?:number)}<article class="row">
+      <div class="row-head">{#if rank}<span class="rank">{rank}</span>{/if}<span>{time(hit)}</span><span class="muted">{fill('pSimilarity',{value:hit.similarity.toFixed(2)})}</span></div>
+      <AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange compact start={hit.start_s} end={hit.end_s}>
+        {#snippet actions()}<div class="actions" role="group" aria-label={t('customModelTitle')}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
+          <Button active={hit.label===value} aria-pressed={hit.label===value} pending={label.pending} onclick={()=>label.run(hit,value as 'target'|'other')}>{hit.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>{/snippet}
+      </AudioRegion>
+    </article>{/snippet}
+    <section class="panel"><h2>{t('mdTopTitle')}</h2>
       <p><strong>{fill('mdCounts',{positive:ready.examples.positive_5s,negative:ready.examples.negative_5s,checks:ready.examples.negative_from_checks})}</strong></p>
       <p class="muted">{fill('mdNeed',{n:ready.requirements.positive_5s})}</p>
-      {#each ready.hits.slice(0,shown) as hit,index (hit.segment_id)}<article class="row">
-        <div class="row-head"><span class="rank">{index+1}</span><span>{time(hit)}</span><span class="muted">{fill('pSimilarity',{value:hit.similarity.toFixed(2)})}</span></div>
-        <AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange compact start={hit.start_s} end={hit.end_s}>
-          {#snippet actions()}<div class="actions" role="group" aria-label={t('customModelTitle')}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
-            <Button active={hit.label===value} aria-pressed={hit.label===value} pending={label.pending} onclick={()=>label.run(hit,value as 'target'|'other')}>{hit.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>{/snippet}
-        </AudioRegion>
-      </article>{/each}
+      {#each ready.hits.slice(0,shown) as hit,index (hit.segment_id)}{@render row(hit,index+1)}{/each}
       {#if shown<ready.hit_count}<Button onclick={()=>{shown+=10;if(shown>ready!.hits.length)void load();}}>{t('pMore')}</Button>{/if}
+    </section>
+    <section class="panel"><h2>{t('mdLessTitle')}</h2>
+      <p>{t('mdLessIntro')}</p>
+      {#each boundary as hit (hit.segment_id)}{@render row(hit)}{/each}
+      <Button pending={loadBoundary.pending} onclick={()=>loadBoundary.run()}>{t('mdLessMore')}</Button>
     </section>
     <section class="panel">
       {#if ready.can_train}<Button variant={latest?'default':'primary'} pending={build.pending} onclick={()=>build.run()}>{t('customModelCreate')}</Button>

@@ -31,7 +31,7 @@ export type CustomModel = {id:number;created_at:string;dataset_id:number;run_id:
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
   training:{positive_5s:number;negative_5s:number;negative_from_checks:number};inference:{scored_5s:number};applicable:boolean;reason:string|null};
 export type SearchHit = {segment_id:number;similarity:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;label:'target'|'other'|null};
-export type CustomModelReadiness = {run_id:number;species:Species;hits:SearchHit[];hit_count:number;
+export type CustomModelReadiness = {run_id:number;species:Species;hits:SearchHit[];hit_count:number;boundary_hits:SearchHit[];
   examples:{positive_5s:number;negative_5s:number;negative_from_checks:number};requirements:{positive_5s:number;negative_5s:number};
   can_train:boolean;reasons:string[];models:CustomModel[]};
 export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;

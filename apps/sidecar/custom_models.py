@@ -10,6 +10,7 @@ import os
 import shutil
 import tempfile
 from datetime import date
+from itertools import islice, zip_longest
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -113,15 +114,75 @@ def _materials(db, ctx, species_id):
     return run, labels
 
 
-def readiness(root, ctx, species_id, limit=30, offset=0):
+def boundary_ranks(total, known, shown, round_, size=10):
+    """Up to `size` unlabelled ranks (0 = most similar) around where the voice stops.
+
+    The voice is assumed present down to the deepest "voice" label (or the last row shown in the
+    similarity list) and absent from the next "no voice" label below it. Ranks between the two are
+    picked at centre-weighted (triangular) quantiles, so they cluster mid-bracket and thin out
+    towards its ends. Each round shifts the quantiles and avoids the previous round's ranks.
+    """
+    lo = max([shown - 1] + [rank for rank, label in known.items() if label == 'target'])
+    hi = min([total] + [rank for rank, label in known.items() if label == 'other' and rank > lo])
+    inside = sorted(rank for rank in known if lo < rank < hi)
+    free = hi - lo - 1 - len(inside)
+    if free == 0:
+        # Boundary pinned between two labels: take the nearest unlabelled ranks on both sides.
+        order = (r for pair in zip_longest(range(hi, total), range(lo, shown - 1, -1)) for r in pair
+                 if r is not None and r not in known)
+        return sorted(list(islice(order, (round_ + 1) * size))[-size:])
+
+    def rank_of(index):  # index-th unlabelled rank inside the bracket
+        rank = lo + 1 + index
+        for labelled in inside:
+            if labelled > rank:
+                break
+            rank += 1
+        return rank
+    if free <= size:
+        return [rank_of(i) for i in range(free)]
+
+    def nearest(index, taken):
+        for step in range(free):
+            for candidate in (index - step, index + step):
+                if 0 <= candidate < free and candidate not in taken:
+                    return candidate
+
+    previous = set()
+    for k in range(round_ + 1):
+        phase, picked = (0.5 + k * 0.6180339887) % 1, set()
+        for i in range(size):
+            u = (i + phase) / size
+            x = (u / 2) ** 0.5 if u < 0.5 else 1 - ((1 - u) / 2) ** 0.5
+            avoid = picked | previous if len(picked | previous) < free else picked
+            picked.add(nearest(min(int(x * free), free - 1), avoid))
+        previous = picked
+    return sorted(rank_of(i) for i in previous)
+
+
+RANKED = 'SELECT segment_id,ROW_NUMBER() OVER (ORDER BY similarity DESC,segment_id)-1 AS rank FROM search_hits WHERE run_id=?'
+
+
+def readiness(root, ctx, species_id, limit=30, offset=0, boundary=None, shown=0):
+    """`boundary` (a round number) also returns `boundary_hits`: less similar sounds near where the voice stops."""
     from search_runs import top_hits
     with connect(root) as db:
         run, labels = _materials(db, ctx, species_id)
         chosen = {segment: value['label'] for segment, value in labels.items() if value['origin'] != 'check'}
         hits = [{**hit, 'label': chosen.get(hit['segment_id'])} for hit in top_hits(db, run['id'], limit, offset)]
         total = db.execute('SELECT COUNT(*) FROM search_hits WHERE run_id=?', (run['id'],)).fetchone()[0]
+        boundary_hits = []
+        if boundary is not None:
+            # Every answer counts here, "not heard" checks included, so none is asked again.
+            known = {rank: labels[segment]['label'] for segment, rank in db.execute(
+                f'SELECT segment_id,rank FROM ({RANKED}) WHERE segment_id IN (SELECT value FROM json_each(?))',
+                (run['id'], json.dumps(list(labels))))}
+            ranks = boundary_ranks(total, known, shown, boundary)
+            segments = [r[0] for r in db.execute(f'SELECT segment_id FROM ({RANKED}) WHERE rank IN (SELECT value FROM json_each(?))',
+                                                 (run['id'], json.dumps(ranks)))]
+            boundary_hits = [{**hit, 'label': None} for hit in top_hits(db, run['id'], len(segments), 0, segments)]
     zone = ZoneInfo(ctx['site']['timezone'])
-    for hit in hits:
+    for hit in hits + boundary_hits:
         hit['local_time'] = window_key(hit, hit['start_s'], zone)[1]
     positive = sum(value['label'] == 'target' for value in labels.values())
     negative = sum(value['label'] == 'other' for value in labels.values())
@@ -129,7 +190,7 @@ def readiness(root, ctx, species_id, limit=30, offset=0):
     positive_from_presence = sum(value == {'label': 'target', 'origin': 'presence'} for value in labels.values())
     reasons = [reason for reason, missing in [('custom_positive_examples_needed', positive < MIN_CLASS_EXAMPLES),
                                               ('custom_negative_examples_needed', negative < MIN_CLASS_EXAMPLES)] if missing]
-    return {'run_id': run['id'], 'species': names_for_id(root, species_id), 'hits': hits, 'hit_count': total,
+    return {'run_id': run['id'], 'species': names_for_id(root, species_id), 'hits': hits, 'hit_count': total, 'boundary_hits': boundary_hits,
             'examples': {'positive_5s': positive, 'negative_5s': negative, 'negative_from_checks': negative_from_checks,
                          'positive_from_presence': positive_from_presence},
             'requirements': {'positive_5s': MIN_CLASS_EXAMPLES, 'negative_5s': MIN_CLASS_EXAMPLES},
