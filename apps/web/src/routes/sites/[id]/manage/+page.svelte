@@ -43,7 +43,7 @@
 </script>
 <div class="page narrow">
   <div class="crumbs"><a href={resolve('/datasets')}>{t('uBackSites')}</a></div>
-  <h1>{t('mManage')}</h1>
+  <div>{#if details}<div class="site-name">{details.site.name}</div>{/if}<h1>{t('mManage')}</h1></div>
   {#if details}
     <form class="panel stack" onsubmit={event=>{event.preventDefault();save.run();}}>
       <label>{t('siteName')}<input bind:value={name} disabled={renameId!==null||save.pending} required maxlength="200"/></label>

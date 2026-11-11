@@ -4,7 +4,7 @@
   import { untrack } from 'svelte';
   import { isTauri } from '@tauri-apps/api/core';
   import { api } from '$lib/api.svelte';
-  import { app,t,fileName } from '$lib/app.svelte';
+  import { app,t,datasetOf,fileName,siteOf } from '$lib/app.svelte';
   import { chooseDirectory } from '$lib/files';
   import { commonName,type Species } from '$lib/species';
   import { fill } from '$lib/workflow';
@@ -15,6 +15,7 @@
   import { createTask } from '$lib/ui/task.svelte';
   import { notify } from '$lib/ui/toast.svelte';
   const id=Number(page.params.id),picks=pickedSounds(id);
+  const site=$derived(siteOf(datasetOf(id)));
   void picks.reload();
   const items=$derived(Object.values(picks.state.items));
   const missing=$derived(blanks(items)),recent=$derived(recentSpecies(items));
@@ -44,7 +45,7 @@
 </script>
 <div class="page narrow" onplaycapture={solo}>
   <div class="crumbs"><a href={resolve(`/datasets/${id}/explore`)}>{t('pkBack')}</a></div>
-  <div class="page-header"><div><h1>{t('pkTitle')}</h1><p>{t('pkLead')}</p></div></div>
+  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('pkTitle')}</h1><p>{t('pkLead')}</p></div></div>
   {#if picks.state.error&&!picks.state.loaded}<p class="error" role="alert">{t(picks.state.error)}</p>{/if}
   {#if picks.state.loaded}
     <section class="panel stack">

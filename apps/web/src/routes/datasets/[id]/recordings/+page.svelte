@@ -89,6 +89,6 @@
   .filter { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-bottom: 12px; }
   .filter label { width: 180px; }
   .recordings { max-height: calc(100vh - 300px); }
-  .recordings a { color: inherit; text-decoration: none; font-weight: 500; }
+  .recordings a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; text-decoration: none; font-weight: 500; }
   .right { text-align: right; }
 </style>

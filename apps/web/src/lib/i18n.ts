@@ -510,7 +510,7 @@ export const ja: Record<Key, string> = {
   reportHistory: "報告の履歴",
   chooseReport: "保存した報告を選択",
   reportResult: "報告",
-  reportSnapshotHint: "作成時の条件と判定を固定した報告です。条件や判定を更新した場合は、新しい報告を作成してください。",
+  reportSnapshotHint: "作成時の条件と判定を固定したレポートです。条件や判定を更新した場合は、新しいレポートを作成してください。",
   exportReport: "報告 ZIP を書き出す",
   exportingReport: "書き出し中…",
   exportFolder: "書き出し先フォルダ",

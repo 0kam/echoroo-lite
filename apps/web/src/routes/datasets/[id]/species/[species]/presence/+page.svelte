@@ -4,7 +4,7 @@
   import { untrack } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
-  import { app,t } from '$lib/app.svelte';
+  import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { fill,modelName,presenceText,rangeQuery,type PresenceList,type PresenceRow } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
@@ -13,6 +13,7 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),speciesId=page.params.species!;
+  const site=$derived(siteOf(datasetOf(id)));
   const query=$derived(new URL(page.url.hash.slice(1),page.url).searchParams);
   const source=$derived(query.get('source')==='search'?'search':'ai');
   const dates=$derived(new URLSearchParams([...query].filter(([key])=>key.endsWith('_date'))).toString());
@@ -51,7 +52,7 @@
 </script>
 <div class="page wide presence-page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
-  <div class="page-header"><div><h1>{list?fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name}):t('sPresenceTitle')}</h1>{#if list}<p>{t('pHint')}</p>{/if}</div></div>
+  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{list?fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name}):t('sPresenceTitle')}</h1>{#if list}<p>{t('pHint')}</p>{/if}</div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if list}
     {#if list.has_ai&&list.run_id}<div class="actions" role="group" aria-label={t('sPresenceTitle')}>

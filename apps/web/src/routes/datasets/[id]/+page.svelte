@@ -31,6 +31,9 @@
   $effect(()=>{void id;void jobSignature;void page.url.hash;void page.url.search;untrack(()=>void load());});
   // Progress reloads are throttled so a large overview does not compete with analysis; a skipped one is retried on a later catalogue poll.
   $effect(()=>{if(progress&&untrack(()=>!inFlight&&performance.now()-started>=Math.max(10000,5*took)))untrack(()=>void load(true));});
+  // Saved reports are counted in the background; without an answer the link is simply not shown.
+  let saved=$state(0);
+  $effect(()=>{const current=id;saved=0;api<unknown[]>(`/datasets/${current}/exports`).then(list=>{if(current===id)saved=list.length;},()=>{});});
   const analyze=createTask(async()=>{await api('/jobs',{dataset_id:id,recording_id:null});await refreshCatalog();},{toast:true});
   const range=$derived(result?`?${rangeQuery(result.start_date,result.end_date)}`:'');
   type Row=Overview['species'][number];
@@ -74,7 +77,8 @@
       <p>{fill('wProgress',{total:result.species.length-(stage==='check'?groups.few.length:0)-(stage==='rare'?0:groups.rare.length),confirmed:groups.confirmed.length,missed:groups.missed.length})}</p>
       {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,time:effort.time})}</p>{/if}
       <div class="actions">{#if next}<Button variant="primary" href={speciesHref(next)}>{fill('wNextOpen',{name:commonName(next.species,app.locale)||next.species.scientific_name})}</Button>{/if}
-        <Button variant={next?'default':'primary'} href={reports}>{t('wExport')}</Button></div></section>{/if}
+        <Button variant={next?'default':'primary'} href={reports}>{t('wExport')}</Button>
+        {#if saved}<Button href={reports}>{fill('wSavedReports',{n:saved})}</Button>{/if}</div></section>{/if}
     <section class="panel stack"><div class="section-heading"><div class="stat-row"><span>{fill('wRecordingsAnalysed',{analysed:result.analysed_recordings,records:result.records})}</span>
       <span>{fill('wTotalLength',{duration:duration(result.recorded_seconds)})}</span>
       <span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span></div></div>
@@ -98,7 +102,7 @@
       {#if !result.species.length}<p>{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</p>{/if}
     </section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
     <!-- Off the main workflow: browsing sounds without the AI's species names. -->
-    <section class="panel explore-entry"><a href={resolve(`/datasets/${id}/explore`)}>{t('eEntry')} ›</a><p class="muted">{t('eEntryHint')}</p></section>
+    <section class="panel explore-entry"><Button href={resolve(`/datasets/${id}/explore`)}>{t('eEntry')} ›</Button><p class="muted">{t('eEntryHint')}</p></section>
   {:else if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
 </div>
-<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none;color:inherit}td a:hover strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}table{table-layout:fixed}col.name{width:28%}col.state{width:22%}td{overflow-wrap:break-word}.explore-entry p{margin-top:4px}</style>
+<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none;color:inherit}td a:hover strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}table{table-layout:fixed}col.name{width:28%}col.state{width:22%}td{overflow-wrap:break-word}.explore-entry p{margin-top:8px}</style>

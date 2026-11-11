@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
-  import { app,t } from '$lib/app.svelte';
+  import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { activity,activityText,checkName,checkText,defaultModel,fill,listenLabel,presenceText,rangeQuery,remainingSounds,windowSeconds,workload,type Check,type Overview,type SpeciesResult,type Validation } from '$lib/workflow';
   import QualityPanel from '$lib/QualityPanel.svelte';
@@ -13,9 +13,10 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),speciesId=page.params.species!;
+  const site=$derived(siteOf(datasetOf(id)));
   const initial=new URL(page.url.hash.slice(1),page.url).searchParams;
   let result=$state<SpeciesResult|null>(null),engine=$state(initial.get('engine')||'auto'),modelId=$state(Number(initial.get('model_id'))||0),error=$state(''),loading=$state(true),liveUrl=$state('');
-  let request=0,about=$state<{in_quiz:boolean}|null>(null),detected=$state<Overview['species'][number]['models']>([]);
+  let request=0,about=$state<{in_quiz:boolean}|null>(null),detected=$state<Overview['species'][number]['models']|null>(null);
   // Which deletion is waiting for confirmation: a check's model key, or 'search'.
   let confirming=$state(''),preview=$state<{marks:number;labels:number;custom_models:number;checks:number}|null>(null);
   // Each AI's payload for the current period, so switching chart tabs back and forth is instant.
@@ -54,7 +55,10 @@
   const selected=$derived(result?.checks.find(item=>item.key===result?.selected)??null);
   // B3: one AI is enough. The one already started, else the one with more detections; the others are optional.
   // Overview rows carry the detection and interval counts; the species payload carries the current checks.
-  const counted=$derived(result?result.checks.map(item=>({...detected.find(model=>model.key===item.key),...item})):[]);
+  const counted=$derived(result?result.checks.map(item=>({...detected?.find(model=>model.key===item.key),...item})):[]);
+  // An AI that found none of this species has nothing to check. The overview lists an AI for a species only when it has detections or a check;
+  // until the overview arrives (or if it fails) every AI keeps its button.
+  const undetected=(item:Check)=>{if(!detected||item.validation)return false;const row=detected.find(model=>model.key===item.key);return !row||row.candidate_windows===0;};
   const required=$derived(result?result.checks.find(item=>item.validation?.applicable)??result.checks.find(item=>item.key===defaultModel(counted)?.key)??result.checks[0]:undefined);
   const ordered=$derived(result&&required?[required,...result.checks.filter(item=>item!==required)]:[]);
   const settled=$derived(result?activity(result.checks):'not_started');
@@ -78,6 +82,7 @@
 <div class="page">
   <div class="crumbs"><a href={`${resolve(`/datasets/${id}`)}?${range}`}>{t('uBackResults')}</a></div>
   <div class="page-header"><div>
+    {#if site}<div class="site-name">{site.name}</div>{/if}
     <h1>{result?commonName(result.species,app.locale):t('species')}{#if result?.region==='unusual'} <span class="rare">{t('wUnusual')}</span>{/if} <i class="sci">{result?.species.scientific_name}</i></h1></div>
   </div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
@@ -99,10 +104,10 @@
         <h2 id="activity-title">{t('sActivityTitle')}</h2>
         {#if result.checks.length}<p class="status"><strong>{activityText(result.checks)}</strong></p>{/if}
         <p class="muted">{t(result.checks.length>1?'sActivityHint':'sActivityHintOne')}</p>
-        {#if remaining&&result.checks.length}<p class="muted">{fill('sWorkload',{n:remaining,time:effort.time})}</p>{/if}
+        {#if remaining&&result.checks.some(item=>!undetected(item))}<p class="muted">{fill('sWorkload',{n:remaining,time:effort.time})}</p>{/if}
         {#each ordered as item (item.key)}<div class="check-row">
-          <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{checkText(item.validation)}</span></div>
-          <Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>
+          <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation)}</span></div>
+          {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>{/if}
         </div>{:else}<p>{t('wNoModel')}</p>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
         {#if showModel}{#if result.search}<div class="actions"><Button href={modelHref}>{t('customModelTitle')}</Button></div>{:else}<p class="muted">{t('sModelNeedsSearch')}</p>{/if}{/if}

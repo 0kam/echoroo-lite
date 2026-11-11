@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
-  import { app,t } from '$lib/app.svelte';
+  import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { fill,modelName,rangeQuery,workload,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
@@ -13,6 +13,7 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
   const id=Number(page.params.id),sid=Number(page.params.validation);
+  const site=$derived(siteOf(datasetOf(id)));
   let validation=$state<Validation|null>(null),error=$state(''),started=$state(false),corrected=$state(false),heard=$state<ExampleRef[]>();
   // The answer bar is fixed to the bottom; the page keeps that much space free so it never covers the spectrogram.
   let barHeight=$state(0);
@@ -48,6 +49,7 @@
   {#if validation}
     {#if done||!started||validation.question}<div class="page-header"><div>
       <!-- While answering, the one heading is the question and the model is its subtitle. Progress lives in the answer bar. -->
+      {#if site}<div class="site-name">{site.name}</div>{/if}
       {#if done||!started}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
       {:else}<h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>{/if}
       <p>{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p></div></div>{/if}

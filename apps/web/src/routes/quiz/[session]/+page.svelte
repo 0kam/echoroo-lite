@@ -28,6 +28,8 @@
     try {
       session = await api<QuizSession>(`/quiz/sessions/${session.id}/answers`, { position: session.question.position, species_id: speciesId });
       await tick(); feedbackElement?.focus();
+      // The button that moves on sits under the feedback; keep it on screen.
+      document.querySelector('.quiz-session .next')?.scrollIntoView({ block: 'nearest' });
     } finally { answering = null; }
   }, { toast: true });
   const advance = createTask(async () => {
@@ -110,7 +112,7 @@
   .choices :global(.choice) { justify-content: flex-start; text-align: left; white-space: normal; min-height: 72px; }
   .choices :global(.unknown) { min-height: 50px; }
   .feedback { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid rgb(var(--primary-200)); padding: 16px; border-radius: 6px; }
-  :global(.next) { margin-top: 16px; }
+  :global(.next) { margin-top: 16px; scroll-margin-bottom: 16px; }
   .result-score { margin: 12px 0; font-size: 28px; color: rgb(var(--primary-700)); }
   .review-heading { margin-top: 24px; }
   .review-list { max-height: 340px; overflow: auto; }
