@@ -21,7 +21,7 @@
    （聞いている途中・入力の途中で画面が消えないように）。
 5. ［再起動して更新］で sidecar を止め、入れ替えて、新しい版で開き直す。
 6. 解析や地図作りなど時間のかかる処理の間は、［更新する］も［再起動して更新］も押せず、
-   横に「解析が終わると更新できます。」と出す。
+   横に「いまの処理が終わると更新できます。」と出す。
 7. 失敗したら帯に理由と［もう一度］［ダウンロードのページを開く］を出す。アプリはそのまま使える。
 8. 設定のページに「アプリの更新」の欄を足す。いまの版の番号、［新しい版があるか確かめる］、
    結果（「最新の版です。」／新しい版があるときは帯と同じボタン）。
@@ -96,7 +96,7 @@
 | updStartNoSize | 更新する | Update |
 | updLater | あとで | Later |
 | updNotes | 変更点を見る | See what changed |
-| updBusy | 解析が終わると更新できます。 | You can update when the analysis has finished. |
+| updBusy | いまの処理が終わると更新できます。 | You can update when the current task has finished. |
 | updDownloading | 新しい版をダウンロードしています… {done} / {total} | Downloading the new version… {done} / {total} |
 | updKeepUsing | このままアプリを使えます。アプリを閉じると、ダウンロードはやり直しになります。 | You can keep using the app. If you close it, the download starts over. |
 | updReady | 更新の準備ができました。再起動すると新しい版になります。 | The update is ready. Restart to switch to the new version. |
