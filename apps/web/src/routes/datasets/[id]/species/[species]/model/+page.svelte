@@ -1,12 +1,11 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { customName,fill,type CustomModel,type CustomModelReadiness,type SearchHit,type Validation } from '$lib/workflow';
+  import { fill,modelName,type LabelRow,type SpeciesAI } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -14,83 +13,85 @@
   const id=Number(page.params.id),speciesId=page.params.species!;
   const site=$derived(siteOf(datasetOf(id)));
   const range=new URLSearchParams([...new URL(page.url.hash.slice(1),page.url).searchParams].filter(([key])=>key.endsWith('_date')));
-  const draftKey=`echoroo-model:${id}:${speciesId}:${range}`;
-  let ready=$state<CustomModelReadiness|null>(null),error=$state(''),confirming=$state<number|null>(null),shown=$state(10);
-  let boundary=$state<SearchHit[]>([]),round=0;
-  try{shown=Number(sessionStorage.getItem(draftKey))||10;}catch{/* The list position is only a convenience. */}
-  $effect(()=>{try{sessionStorage.setItem(draftKey,String(shown));}catch{/* Private windows may refuse storage. */}});
-  const PAGE=200; // The server returns at most 200 rows per request.
-  const fetchReady=(query:string)=>api<CustomModelReadiness>(`/datasets/${id}/species/${speciesId}/custom-model?${range}&${query}`);
-  async function load(){
-    try{
-      const want=Math.max(30,shown),next=await fetchReady(`limit=${Math.min(want,PAGE)}`);
-      for(let offset=PAGE;offset<Math.min(want,next.hit_count);offset+=PAGE)next.hits.push(...(await fetchReady(`limit=${Math.min(want-offset,PAGE)}&offset=${offset}`)).hits);
-      ready=next;
-    }catch(e){error=e instanceof Error?e.message:'unknown_error';}
-  }
-  // A new batch only on request, so rows do not move while they are being labelled.
-  const loadBoundary=createTask(async()=>{boundary=(await fetchReady(`limit=0&boundary=${round++}&shown=${shown}`)).boundary_hits;},{toast:true});
-  onMount(async()=>{await load();if(ready)void loadBoundary.run();});
-  const label=createTask(async(hit:SearchHit,value:'target'|'other')=>{
-    const saved=await api<{label:SearchHit['label']}>(`/search-runs/${ready!.run_id}/labels`,{segment_id:hit.segment_id,label:hit.label===value?null:value});
-    boundary=boundary.map(row=>row.segment_id===hit.segment_id?{...row,label:saved.label}:row);await load();
+  // `info` holds the counts and the AI; the two lists change only when a new batch is loaded, so rows do not move while answering.
+  let info=$state<SpeciesAI|null>(null),batch=$state<LabelRow[]>([]),answered=$state<LabelRow[]>([]),source=$state<SpeciesAI['source']>(null);
+  let error=$state(''),round=0,answeredShown=$state(10),confirming=$state(false);
+  const fetchState=(query='')=>api<SpeciesAI>(`/datasets/${id}/species/${speciesId}/custom-model?${range}${query}`);
+  const next=createTask(async()=>{const value=await fetchState(`&batch=${round}`);
+    info=value;batch=value.batch??[];answered=value.answered;source=value.source;answeredShown=10;});
+  onMount(async()=>{await next.run();if(next.error)error=next.error;});
+  const label=createTask(async(row:LabelRow,value:'target'|'other')=>{
+    const saved=await api<{label:LabelRow['label']}>(`/datasets/${id}/species/${speciesId}/labels`,{segment_id:row.segment_id,label:row.label===value?null:value});
+    row.label=saved.label;info=await fetchState();
   },{toast:true});
-  const build=createTask(async()=>{if(!ready)return;await api('/custom-models',{dataset_id:id,species_id:speciesId,
-    start_date:range.get('start_date'),end_date:range.get('end_date')});await load();});
+  // The period the server used for this page, so a link without dates still makes the AI for what is shown.
+  const build=createTask(async()=>{await api('/custom-models',{dataset_id:id,species_id:speciesId,
+    start_date:info!.start_date,end_date:info!.end_date});round=0;await next.run();});
+  const another=()=>{round++;void next.run();};
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
-  const check=createTask(async(model:CustomModel)=>{
-    const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,start_date:model.scope.start_date,end_date:model.scope.end_date,model:'custom',model_id:model.id});
-    await goto(resolve(`/datasets/${id}/validation/${validation.id}`));
-  },{toast:true});
-  const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=null;await load();},{toast:true});
-  const latest=$derived(ready?.models.find(model=>model.applicable));
-  const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${latest?`&engine=custom&model_id=${latest.id}`:''}`);
-  const time=(hit:SearchHit)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium'}).format(new Date(hit.local_time));
+  const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;round=0;await next.run();},{toast:true});
+  const model=$derived(info?.model??null);
+  const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
+  const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium'}).format(new Date(row.local_time));
+  const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
+  const score=(value:number)=>{const text=value.toFixed(2);
+    return source==='custom'?fill('mdScoreCustom',{value:text}):source==='search'?fill('pSimilarity',{value:text}):fill('mdScoreBuiltin',{model:modelName(info!.engine),value:text});};
 </script>
 <div class="page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('customModelTitle')}</h1></div>
-  <!-- A missing search is a step still to do, not an error. -->
-  {#if error}<p class={error==='custom_search_needed'?'info':'error'} role={error==='custom_search_needed'?'status':'alert'}>{t(error)}</p>{#if error==='custom_search_needed'}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>{/if}{/if}
-  {#if ready}
-    <p class="species">{commonName(ready.species,app.locale)} <i class="sci">{ready.species.scientific_name}</i></p>
-    <p>{t('customModelIntro')}</p>
-    {#snippet row(hit:SearchHit,rank?:number)}<article class="row">
-      <div class="row-head">{#if rank}<span class="rank">{rank}</span>{/if}<span>{time(hit)}</span><span class="muted">{fill('pSimilarity',{value:hit.similarity.toFixed(2)})}</span></div>
-      <AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange compact start={hit.start_s} end={hit.end_s}>
-        {#snippet actions()}<div class="actions" role="group" aria-label={t('customModelTitle')}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
-          <Button active={hit.label===value} aria-pressed={hit.label===value} pending={label.pending} onclick={()=>label.run(hit,value as 'target'|'other')}>{hit.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>{/snippet}
+  {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
+  {#if info}
+    <p class="species">{commonName(info.species,app.locale)} <i class="sci">{info.species.scientific_name}</i></p>
+    {#snippet counts()}<p><strong>{fill('mdCounts',{positive:info!.examples.positive_5s,negative:info!.examples.negative_5s})}</strong>
+      <span class="muted">{fill('mdNeed',{n:info!.requirements.positive_5s})}</span></p>{/snippet}
+    <section class="panel">
+      {@render counts()}
+      {#if info.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info.examples.other_answers})}</p>{/if}
+      <p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>
+      {#if model&&!model.applicable}<p class="info">{t(model.reason??'custom_model_scope_changed')}</p>{/if}
+    </section>
+    {#snippet row(item:LabelRow)}<article class="row">
+      <div class="row-head"><span>{time(item)}</span>{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
+      <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}>
+        {#snippet actions()}<div class="actions" role="group" aria-label={time(item)}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
+          <Button active={item.label===value} aria-pressed={item.label===value} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>{/snippet}
       </AudioRegion>
     </article>{/snippet}
-    <section class="panel"><h2>{t('mdTopTitle')}</h2>
-      <p><strong>{fill('mdCounts',{positive:ready.examples.positive_5s,negative:ready.examples.negative_5s,checks:ready.examples.negative_from_checks})}</strong></p>
-      <p class="muted">{fill('mdNeed',{n:ready.requirements.positive_5s})}</p>
-      {#each ready.hits.slice(0,shown) as hit,index (hit.segment_id)}{@render row(hit,index+1)}{/each}
-      {#if shown<ready.hit_count}<Button onclick={()=>{shown+=10;if(shown>ready!.hits.length)void load();}}>{t('pMore')}</Button>{/if}
+    <section class="panel"><h2>{t('mdNextTitle')}</h2>
+      <!-- Nothing to rank by is a step still to do, not an error. -->
+      {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
+        <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
+      {:else}
+        <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelName(info.engine)})}</p>
+        <p class="muted">{t('mdUndo')}</p>
+        {#each batch as item (item.segment_id)}{@render row(item)}{:else}<p>{t('mdNoneLeft')}</p>{/each}
+      {/if}
+      <div class="footer">
+        {@render counts()}
+        {#if !info.can_train}{#each info.reasons as reason}<p class="info">{t(reason)}</p>{/each}{/if}
+        <div class="actions">
+          <Button variant="primary" disabled={!info.can_train} pending={build.pending} onclick={()=>build.run()}>{t(model?'mdRebuild':'customModelCreate')}</Button>
+          {#if source}<Button disabled={build.pending} pending={next.pending} onclick={another}>{t('mdAnother')}</Button>{/if}
+          <Button href={back}>{t('mdDone')}</Button>
+        </div>
+        {#if build.pending}<p role="status"><Spinner/> {t('customModelPreparing')}</p><Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
+        {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
+        {#if next.error&&!error}<p class="error" role="alert">{t(next.error)}</p>{/if}
+      </div>
     </section>
-    <section class="panel"><h2>{t('mdLessTitle')}</h2>
-      <p>{t('mdLessIntro')}</p>
-      {#each boundary as hit (hit.segment_id)}{@render row(hit)}{/each}
-      <Button pending={loadBoundary.pending} onclick={()=>loadBoundary.run()}>{t('mdLessMore')}</Button>
-    </section>
-    <section class="panel">
-      {#if ready.can_train}<Button variant={latest?'default':'primary'} pending={build.pending} onclick={()=>build.run()}>{t('customModelCreate')}</Button>
-        {#if build.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button><p role="status"><Spinner/> {t('customModelPreparing')}</p>{/if}
-      {:else}{#each ready.reasons as reason}<p class="info">{t(reason)}</p>{/each}{/if}
-      {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
-    </section>
-    {#if ready.models.length}<section class="panel"><h2>{t('modelList')}</h2>
-      {#each ready.models as model (model.id)}<div class="model-row"><div><strong>{customName(model)}</strong>
-          <div class="muted">{model.applicable?fill('mdCounts',{positive:model.training.positive_5s,negative:model.training.negative_5s,checks:model.training.negative_from_checks}):t(model.reason??'custom_model_scope_changed')}</div></div>
-        <div class="actions">{#if model.applicable}<Button variant="primary" pending={check.pending} onclick={()=>check.run(model)}>{t('mdCheck')}</Button>{/if}
-          <Button variant="ghost" onclick={()=>confirming=confirming===model.id?null:model.id}>{t('modelDelete')}</Button></div>
-        {#if confirming===model.id}<div class="confirm"><p>{t('modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=null}>{t('mCancel')}</Button><Button variant="danger" pending={remove.pending} onclick={()=>remove.run(model.id)}>{t('modelDeleteYes')}</Button></div></div>{/if}
-      </div>{/each}
-    </section>{/if}
-    <div class="actions"><Button href={back}>{t('wBackSpecies')}</Button></div>
+    {#if answered.length}<details class="panel"><summary>{fill('mdAnswered',{n:answered.length})}</summary>
+      <p class="muted">{t('mdUndo')}</p>
+      {#each answered.slice(0,answeredShown) as item (item.segment_id)}{@render row(item)}{/each}
+      {#if answeredShown<answered.length}<Button onclick={()=>answeredShown+=10}>{t('pMore')}</Button>{/if}
+    </details>{/if}
+    {#if model}<details class="more"><summary>{t('sMore')}</summary>
+      <Button variant="danger" size="sm" onclick={()=>confirming=!confirming}>{t('modelDelete')}</Button>
+      {#if confirming}<div class="confirm"><p>{t('modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=false}>{t('mCancel')}</Button>
+        <Button variant="danger" pending={remove.pending} onclick={()=>remove.run(model.id)}>{t('modelDeleteYes')}</Button></div></div>{/if}
+    </details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
 <style>section p{margin:12px 0}.species{margin:0}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
-  .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.rank{font-weight:700}
-  .model-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid rgb(var(--stone-200))}
-  .confirm{flex-basis:100%;padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}</style>
+  .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.footer{border-top:1px solid rgb(var(--stone-300));padding-top:4px}
+  details summary{min-height:44px;padding:10px 0;cursor:pointer}.confirm{margin-top:8px;padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}</style>

@@ -27,13 +27,16 @@ export type PresenceRow = {recording_id:number;start_s:number;end_s:number;score
 export type Region = 'usual'|'unusual'|null;
 export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|null;rows:PresenceRow[];has_ai:boolean;start_date:string;end_date:string;
   site:{id:number;name:string;timezone:string};presence:Presence;region?:Region};
-export type CustomModel = {id:number;created_at:string;dataset_id:number;run_id:number;species:Species;
+export type CustomModel = {id:number;round:number;created_at:string;dataset_id:number;run_id:number|null;species:Species;
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
-  training:{positive_5s:number;negative_5s:number;negative_from_checks:number};inference:{scored_5s:number};applicable:boolean;reason:string|null};
-export type SearchHit = {segment_id:number;similarity:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;label:'target'|'other'|null};
-export type CustomModelReadiness = {run_id:number;species:Species;hits:SearchHit[];hit_count:number;boundary_hits:SearchHit[];
-  examples:{positive_5s:number;negative_5s:number;negative_from_checks:number};requirements:{positive_5s:number;negative_5s:number};
-  can_train:boolean;reasons:string[];models:CustomModel[]};
+  training:{positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null};
+/** A 5-second sound to answer on the species-AI page; `score` is null in the list of answered sounds. */
+export type LabelRow = {segment_id:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;
+  score:number|null;label:'target'|'other'|null};
+/** The species-AI page. `batch` and `source` come only when a round is asked for; source null = nothing to choose sounds by. */
+export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;source:'custom'|'search'|'builtin'|null;engine:string;
+  batch:LabelRow[]|null;answered:LabelRow[];examples:{positive_5s:number;negative_5s:number;other_answers:number};
+  requirements:{positive_5s:number;negative_5s:number};can_train:boolean;reasons:string[]};
 export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
   threshold?:number|null;validation:Validation|null};
 export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;
@@ -78,7 +81,8 @@ export const windowSeconds = (engine:string) => modelOf(engine)?.window_s??5;
 export function checkText(value:Validation|null) {
   if(!value)return t('cNotStarted');
   if(value.status==='in_progress')return fill('cInProgress',{answered:value.counts.answered,total:value.counts.total});
-  return t(value.status==='stale'?'wStale':value.status==='decided'?'cDecided':'cUndecided');
+  if(value.status==='stale')return t(value.model_reason==='custom_model_rebuilt'?'custom_model_rebuilt':'wStale');
+  return t(value.status==='decided'?'cDecided':'cUndecided');
 }
 /** The one button into a check: start, continue (answered/total), or see the result. */
 export function listenLabel(value:Validation|null) {

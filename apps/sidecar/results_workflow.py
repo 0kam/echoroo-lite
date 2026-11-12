@@ -74,6 +74,8 @@ def context(root, dataset_id, first=None, last=None):
         revision=[tuple(db.execute(f'SELECT COALESCE(MAX(id),0),COUNT(*) FROM {table}').fetchone()) for table in
                   ('search_runs','window_answers','validation_sessions','presence_marks','presence_misses','model_labels','custom_models')]
         revision.append([tuple(r) for r in db.execute("SELECT id,json_extract(snapshot,'$.stage'),json_extract(snapshot,'$.method') FROM validation_sessions ORDER BY id")])
+        # A species AI made again keeps its id; its files' digest tells the versions apart.
+        revision.append([tuple(r) for r in db.execute('SELECT id,artifact_sha256 FROM custom_models ORDER BY id')])
         revision.append([tuple(r) for r in db.execute('SELECT id,names FROM species ORDER BY id')])
     result['names_revision']=hashlib.sha256(json.dumps(revision[-1]).encode()).hexdigest()
     with connect(root) as db:

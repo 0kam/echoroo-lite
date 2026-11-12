@@ -150,7 +150,7 @@ def delete(root, site_id, dataset_id, revision):
         remove('validation_sessions','id',plan['validations'])
         remove('window_answers','recording_id',plan['recordings'])
         remove('custom_models','id',plan['custom_models'])
-        for table in ('presence_marks','model_labels','search_hits'):
+        for table in ('presence_marks','search_hits'):
             remove(table,'run_id',plan['searches'])
         remove('presence_marks','recording_id',plan['recordings'])
         db.execute('DELETE FROM model_labels WHERE segment_id IN (SELECT id FROM segments WHERE analysis_id IN (SELECT value FROM json_each(?)))',(json.dumps(aids),))

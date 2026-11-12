@@ -530,17 +530,16 @@ def create_app(root, models, token):
 
     @app.get('/datasets/{dataset_id}/species/{species_id}/custom-model')
     def custom_model_readiness(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
-                               limit: int = Query(default=30, ge=0, le=200), offset: int = Query(default=0, ge=0),
-                               boundary: int | None = Query(default=None, ge=0, le=10000), shown: int = Query(default=0, ge=0)):
+                               batch: int | None = Query(default=None, ge=0, le=10000)):
         from custom_models import readiness
         from results_workflow import context
         ctx = context(root, dataset_id, start_date.isoformat() if start_date else None, end_date.isoformat() if end_date else None)
-        return readiness(root, ctx, species_id, limit, offset, boundary, shown)
+        return readiness(root, ctx, species_id, batch)
 
-    @app.post('/search-runs/{run_id}/labels')
-    def custom_model_label(run_id: int, body: ModelLabel):
+    @app.post('/datasets/{dataset_id}/species/{species_id}/labels')
+    def custom_model_label(dataset_id: int, species_id: str, body: ModelLabel):
         from custom_models import set_label
-        return set_label(root, run_id, body.segment_id, body.label)
+        return set_label(root, dataset_id, species_id, body.segment_id, body.label)
 
     @app.post('/custom-models')
     def custom_model_create(body: ScopeRequest):

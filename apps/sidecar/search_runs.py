@@ -116,7 +116,6 @@ def deletion(db, run_id):
         raise CatalogError('not_found')
     models = [r[0] for r in db.execute('SELECT id FROM custom_models WHERE run_id=? ORDER BY id', (run_id,))]
     return run, {'marks': db.execute('SELECT COUNT(*) FROM presence_marks WHERE run_id=?', (run_id,)).fetchone()[0],
-                 'labels': db.execute('SELECT COUNT(*) FROM model_labels WHERE run_id=?', (run_id,)).fetchone()[0],
                  'custom_models': len(models), 'model_ids': models,
                  'checks': db.execute('SELECT COUNT(*) FROM validation_sessions WHERE model IN (SELECT value FROM json_each(?))',
                                       (json.dumps([f'custom:{m}' for m in models]),)).fetchone()[0]}
@@ -128,7 +127,8 @@ def delete_preview(root, run_id):
 
 
 def delete_run(root, run_id):
-    """The search, its presence marks, not-found records, model labels, and custom models built from it."""
+    """The search, its presence marks, not-found records, and species AIs last made with it.
+    Voice / no-voice labels belong to the species, not the search, and stay."""
     from custom_models import delete_model
     with connect(root) as db:
         run, plan = deletion(db, run_id)
@@ -136,7 +136,7 @@ def delete_run(root, run_id):
         delete_model(root, model_id)
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
-        for table in ('presence_marks', 'model_labels', 'search_hits'):
+        for table in ('presence_marks', 'search_hits'):
             db.execute(f'DELETE FROM {table} WHERE run_id=?', (run_id,))
         db.execute('''DELETE FROM presence_misses WHERE source='search' AND species_id=?
             AND dataset_id IN (SELECT id FROM datasets WHERE site_id=?)''', (run['species_id'], run['site_id']))
