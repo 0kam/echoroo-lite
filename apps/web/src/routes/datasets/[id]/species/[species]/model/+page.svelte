@@ -15,9 +15,10 @@
   const range=new URLSearchParams([...new URL(page.url.hash.slice(1),page.url).searchParams].filter(([key])=>key.endsWith('_date')));
   // `info` holds the counts and the AI; the two lists change only when a new batch is loaded, so rows do not move while answering.
   let info=$state<SpeciesAI|null>(null),batch=$state<LabelRow[]>([]),answered=$state<LabelRow[]>([]),source=$state<SpeciesAI['source']>(null);
-  let error=$state(''),round=0,answeredShown=$state(10),confirming=$state(false);
+  let error=$state(''),skipped:number[]=[],answeredShown=$state(10),confirming=$state(false);
   const fetchState=(query='')=>api<SpeciesAI>(`/datasets/${id}/species/${speciesId}/custom-model?${range}${query}`);
-  const next=createTask(async()=>{const value=await fetchState(`&batch=${round}`);
+  // Sounds shown and passed over are not offered again until the AI is made again.
+  const next=createTask(async()=>{const value=await fetchState(`&batch=true${skipped.map(segment=>`&skip=${segment}`).join('')}`);
     info=value;batch=value.batch??[];answered=value.answered;source=value.source;answeredShown=10;});
   onMount(async()=>{await next.run();if(next.error)error=next.error;});
   const label=createTask(async(row:LabelRow,value:'target'|'other')=>{
@@ -26,10 +27,10 @@
   },{toast:true});
   // The period the server used for this page, so a link without dates still makes the AI for what is shown.
   const build=createTask(async()=>{await api('/custom-models',{dataset_id:id,species_id:speciesId,
-    start_date:info!.start_date,end_date:info!.end_date});round=0;await next.run();});
-  const another=()=>{round++;void next.run();};
+    start_date:info!.start_date,end_date:info!.end_date});skipped=[];await next.run();});
+  const another=()=>{skipped.push(...batch.filter(row=>!row.label).map(row=>row.segment_id));void next.run();};
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
-  const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;round=0;await next.run();},{toast:true});
+  const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;skipped=[];await next.run();},{toast:true});
   const model=$derived(info?.model??null);
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
   const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium'}).format(new Date(row.local_time));
@@ -44,7 +45,7 @@
   {#if info}
     <p class="species">{commonName(info.species,app.locale)} <i class="sci">{info.species.scientific_name}</i></p>
     {#snippet counts()}<p><strong>{fill('mdCounts',{positive:info!.examples.positive_5s,negative:info!.examples.negative_5s})}</strong>
-      <span class="muted">{fill('mdNeed',{n:info!.requirements.positive_5s})}</span></p>{/snippet}
+      {#if !info!.can_train}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>{/snippet}
     <section class="panel">
       {@render counts()}
       {#if info.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info.examples.other_answers})}</p>{/if}
@@ -63,13 +64,14 @@
       {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
         <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
       {:else}
+        {#if !model}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
         <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelName(info.engine)})}</p>
         <p class="muted">{t('mdUndo')}</p>
         {#each batch as item (item.segment_id)}{@render row(item)}{:else}<p>{t('mdNoneLeft')}</p>{/each}
       {/if}
       <div class="footer">
         {@render counts()}
-        {#if !info.can_train}{#each info.reasons as reason}<p class="info">{t(reason)}</p>{/each}{/if}
+        {#each info.reasons.filter(reason=>reason!=='custom_more_answers_needed') as reason}<p class="info">{t(reason)}</p>{/each}
         <div class="actions">
           <Button variant="primary" disabled={!info.can_train} pending={build.pending} onclick={()=>build.run()}>{t(model?'mdRebuild':'customModelCreate')}</Button>
           {#if source}<Button disabled={build.pending} pending={next.pending} onclick={another}>{t('mdAnother')}</Button>{/if}

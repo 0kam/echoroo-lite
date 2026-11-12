@@ -24,6 +24,7 @@ from species import names_for
 from storage import CatalogError, checked_source, connect
 
 MIN_CLASS_EXAMPLES = 3
+MIN_EXAMPLES = 20  # answers in all before an AI can be made (owner decision 2026-11-12)
 L2 = 1.0
 
 
@@ -168,41 +169,39 @@ def boundary_ranks(total, known, shown, round_, size=10):
 
 RANKED = 'SELECT segment_id,similarity,ROW_NUMBER() OVER (ORDER BY similarity DESC,segment_id)-1 AS rank FROM search_hits WHERE run_id=?'
 BATCH = 10
-TOP = 3  # likely voice, offered until "voice" reaches MIN_CLASS_EXAMPLES
+TOP = 3  # likely voice, offered while "voice" is under MIN_CLASS_EXAMPLES
 ENDS = 2  # species-AI batches: clearly high and clearly low scores, each
 NEAR_POOL = 4
 
 
-def bracket_ranks(total, known, round_, need_voice):
-    """Before a species AI exists: ranks to offer from a ranking (0 = most likely voice). While "voice" is short,
-    the top TOP unanswered ranks; the rest from `boundary_ranks` around where the voice stops."""
-    top = list(islice((r for r in range(total) if r not in known), round_ * TOP, round_ * TOP + TOP)) if need_voice else []
-    return sorted(top + [r for r in boundary_ranks(total, known, 0, round_) if r not in top][:BATCH - len(top)])
+def bracket_ranks(total, known, need_voice):
+    """Before a species AI exists: ranks to offer from a ranking (0 = most likely voice); `known` maps the ranks to
+    leave out to their label (None for sounds passed over). While "voice" is short, the top TOP free ranks;
+    the rest from `boundary_ranks` around where the voice stops."""
+    top = list(islice((r for r in range(total) if r not in known), TOP)) if need_voice else []
+    return sorted(top + [r for r in boundary_ranks(total, known, 0, 0) if r not in top][:BATCH - len(top)])
 
 
-def model_picks(scored, answered, round_):
-    """With a species AI: unanswered (segment, score) pairs, most near the 0.5 score where its answer flips,
-    ENDS from the highest and ENDS from the lowest scores. Each round takes the next ones not offered in earlier rounds.
+def model_picks(scored, leave_out):
+    """With a species AI: (segment, score) pairs not in `leave_out` (answered or passed over), most near the 0.5 score
+    where its answer flips, ENDS from the highest and ENDS from the lowest scores.
 
     A weak AI (few labels) packs many pieces just around 0.5, so the near picks are spread evenly, by segment id,
     over the NEAR_POOL times as many nearest pieces (and any equal to the last) instead of being the closest few, which may sit side by side.
     """
-    free = sorted(((segment, score) for segment, score in scored if segment not in answered), key=lambda p: (-p[1], p[0]))
+    free = sorted(((segment, score) for segment, score in scored if segment not in leave_out), key=lambda p: (-p[1], p[0]))
     near = sorted(free, key=lambda p: (abs(p[1] - default_threshold('custom')), p[0]))
-    offered = set()
-    for _ in range(round_ + 1):
-        batch = []
-        for order, count in ((near, BATCH - 2 * ENDS), (free, ENDS), (free[::-1], ENDS)):
-            candidates = (p for p in order if p not in offered and p not in batch)
-            pool = list(islice(candidates, count * (NEAR_POOL if order is near else 1)))
-            if order is near and len(pool) > count:
-                edge = abs(pool[-1][1] - default_threshold('custom'))
-                pool += takewhile(lambda p: abs(p[1] - default_threshold('custom')) == edge, candidates)  # a whole run of equal scores
-                # ponytail: segment ids follow import and recording order, a stand-in for time; use recording times if that drifts.
-                pool = sorted(pool)
-                pool = [pool[(2 * i + 1) * len(pool) // (2 * count)] for i in range(count)]
-            batch += pool
-        offered.update(batch)
+    batch = []
+    for order, count in ((near, BATCH - 2 * ENDS), (free, ENDS), (free[::-1], ENDS)):
+        candidates = (p for p in order if p not in batch)
+        pool = list(islice(candidates, count * (NEAR_POOL if order is near else 1)))
+        if order is near and len(pool) > count:
+            edge = abs(pool[-1][1] - default_threshold('custom'))
+            pool += takewhile(lambda p: abs(p[1] - default_threshold('custom')) == edge, candidates)  # a whole run of equal scores
+            # ponytail: segment ids follow import and recording order, a stand-in for time; use recording times if that drifts.
+            pool = sorted(pool)
+            pool = [pool[(2 * i + 1) * len(pool) // (2 * count)] for i in range(count)]
+        batch += pool
     return sorted(batch, key=lambda p: (-p[1], p[0]))
 
 
@@ -223,11 +222,12 @@ def _rows(db, scored):
     return [{**found[segment], 'score': score} for segment, score in scored if segment in found]
 
 
-def readiness(root, ctx, species_id, batch=None):
+def readiness(root, ctx, species_id, batch=False, skip=()):
     """Material counts, the species AI, and the labels given on its page (newest first).
 
-    With `batch` (a round number) also the next sounds to answer and where they were chosen from (`source`):
-    'custom' (species AI scores), 'search' (similarity), 'builtin' (the main AI's score) or None (nothing to rank by).
+    With `batch` also the next sounds to answer, never an answered one nor one in `skip` (shown and passed over),
+    and where they were chosen from (`source`): 'custom' (species AI scores), 'search' (similarity),
+    'builtin' (the main AI's score) or None (nothing to rank by).
     """
     models = list_models(root, ctx, species_id, every=True)
     model = models[0] if models else None
@@ -235,24 +235,25 @@ def readiness(root, ctx, species_id, batch=None):
     with connect(root) as db:
         run, labels = _materials(db, ctx, species_id)
         positive = sum(value['label'] == 'target' for value in labels.values())
-        if batch is not None:
+        leave = {**dict.fromkeys(skip), **{segment: value['label'] for segment, value in labels.items()}}
+        if batch:
             if model and model['applicable']:
                 source = 'custom'
-                picks = model_picks(((w['segment_id'], w['score']) for w in score_windows(root, model['id'])), labels, batch)
+                picks = model_picks(((w['segment_id'], w['score']) for w in score_windows(root, model['id'])), leave)
             elif run:
                 source = 'search'
                 total = db.execute('SELECT COUNT(*) FROM search_hits WHERE run_id=?', (run['id'],)).fetchone()[0]
-                known = {rank: labels[segment]['label'] for segment, rank in db.execute(
-                    f'SELECT segment_id,rank FROM ({RANKED}) WHERE segment_id IN (SELECT value FROM json_each(?))', (run['id'], json.dumps(list(labels))))}
-                ranks = bracket_ranks(total, known, batch, positive < MIN_CLASS_EXAMPLES)
+                known = {rank: leave[segment] for segment, rank in db.execute(
+                    f'SELECT segment_id,rank FROM ({RANKED}) WHERE segment_id IN (SELECT value FROM json_each(?))', (run['id'], json.dumps(list(leave))))}
+                ranks = bracket_ranks(total, known, positive < MIN_CLASS_EXAMPLES)
                 picks = [tuple(r) for r in db.execute(f'SELECT segment_id,similarity FROM ({RANKED}) WHERE rank IN (SELECT value FROM json_each(?)) ORDER BY rank',
                                                       (run['id'], json.dumps(ranks)))]
             else:
                 ranked = _ranked_builtin(root, db, ctx, species_id, [a['id'] for a in _main_analyses(db, ctx)])
                 if ranked:
                     source = 'builtin'
-                    known = {rank: labels[segment]['label'] for rank, (segment, _) in enumerate(ranked) if segment in labels}
-                    picks = [ranked[r] for r in bracket_ranks(len(ranked), known, batch, positive < MIN_CLASS_EXAMPLES)]
+                    known = {rank: leave[segment] for rank, (segment, _) in enumerate(ranked) if segment in leave}
+                    picks = [ranked[r] for r in bracket_ranks(len(ranked), known, positive < MIN_CLASS_EXAMPLES)]
         rows = [{**row, 'label': None} for row in _rows(db, picks)]
         answered = [{**row, 'label': labels[row['segment_id']]['label']}
                     for row in _rows(db, [(segment, None) for segment, value in labels.items() if value['origin'] == 'label'])]
@@ -260,14 +261,17 @@ def readiness(root, ctx, species_id, batch=None):
     for row in rows + answered:
         row['local_time'] = window_key(row, row['start_s'], zone)[1]
     negative = sum(value['label'] == 'other' for value in labels.values())
-    reasons = [reason for reason, missing in [('custom_positive_examples_needed', positive < MIN_CLASS_EXAMPLES),
+    short = max(0, MIN_CLASS_EXAMPLES - positive) + max(0, MIN_CLASS_EXAMPLES - negative)
+    needed = max(short, MIN_EXAMPLES - len(labels))
+    reasons = [reason for reason, missing in [('custom_more_answers_needed', len(labels) < MIN_EXAMPLES),
+                                              ('custom_positive_examples_needed', positive < MIN_CLASS_EXAMPLES),
                                               ('custom_negative_examples_needed', negative < MIN_CLASS_EXAMPLES)] if missing]
     return {'species': names_for_id(root, species_id), 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'model': model, 'source': source, 'engine': main_engine(root),
-            'batch': rows if batch is not None else None, 'answered': answered,
+            'batch': rows if batch else None, 'answered': answered, 'needed': needed,
             'examples': {'positive_5s': positive, 'negative_5s': negative,
                          'other_answers': sum(value['origin'] != 'label' for value in labels.values())},
-            'requirements': {'positive_5s': MIN_CLASS_EXAMPLES, 'negative_5s': MIN_CLASS_EXAMPLES},
+            'requirements': {'positive_5s': MIN_CLASS_EXAMPLES, 'negative_5s': MIN_CLASS_EXAMPLES, 'total_5s': MIN_EXAMPLES},
             'can_train': not reasons, 'reasons': reasons}
 
 
@@ -330,8 +334,9 @@ def create(root, ctx, species_id, cancel=None):
                 examples.append({**row, **labels[row['segment_id']]})
                 vectors.append(vector)
     y = np.array([row['label'] == 'target' for row in examples], dtype=np.float64)
-    if y.sum() < MIN_CLASS_EXAMPLES or len(y) - y.sum() < MIN_CLASS_EXAMPLES:
-        raise CatalogError('custom_positive_examples_needed' if y.sum() < MIN_CLASS_EXAMPLES else 'custom_negative_examples_needed')
+    if len(y) < MIN_EXAMPLES or y.sum() < MIN_CLASS_EXAMPLES or len(y) - y.sum() < MIN_CLASS_EXAMPLES:
+        raise CatalogError('custom_more_answers_needed' if len(y) < MIN_EXAMPLES else
+                           'custom_positive_examples_needed' if y.sum() < MIN_CLASS_EXAMPLES else 'custom_negative_examples_needed')
     weights, intercept = _fit(_normalise(np.stack(vectors)), y)
     for batch, matrix in _vector_batches(root, ids):
         if cancel and cancel.is_set():

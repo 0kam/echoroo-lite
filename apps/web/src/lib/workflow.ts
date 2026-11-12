@@ -35,8 +35,8 @@ export type LabelRow = {segment_id:number;start_s:number;end_s:number;recording_
   score:number|null;label:'target'|'other'|null};
 /** The species-AI page. `batch` and `source` come only when a round is asked for; source null = nothing to choose sounds by. */
 export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;source:'custom'|'search'|'builtin'|null;engine:string;
-  batch:LabelRow[]|null;answered:LabelRow[];examples:{positive_5s:number;negative_5s:number;other_answers:number};
-  requirements:{positive_5s:number;negative_5s:number};can_train:boolean;reasons:string[]};
+  batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number};
+  requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[]};
 export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
   threshold?:number|null;validation:Validation|null};
 export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;

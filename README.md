@@ -166,8 +166,9 @@ A **species model** ("AI for this species") is grown on one page reachable from 
 species page, with or without a search. Material is every 5-second piece answered **Voice /
 No voice** on that page, every "This is its call" mark, and every 5-second check answer
 ("Heard" = voice, "Not heard" = no voice); a label given on the page wins over the others.
-At least three of each are needed. The page offers 10 sounds at a time, deterministically and
-never one already answered: before a model exists, the top of the search's similarity ranking
+An AI can be made (or made again) once there are 20 answers in all, with at least three of each.
+The page offers 10 sounds at a time, deterministically, never one already answered nor one shown
+and passed over with "Show 10 other sounds" (until the AI is made again): before a model exists, the top of the search's similarity ranking
 (or, without a search, of the main AI's score for the species) while voice is short, plus
 sounds around where the voice stops between the deepest "voice" and the next "no voice"
 (`boundary_ranks`); once it exists, mostly pieces whose model score is nearest 0.5, plus two
