@@ -100,7 +100,9 @@
         {:else}<h3 class="group">{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3>{#if key==='missed'}<p class="muted">{t('wMissedHint')}</p>{/if}{@render table(rows)}{/if}
       {/if}{/each}
       {#if !result.species.length}<p>{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</p>{/if}
-    </section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
+    </section>
+    <section class="panel stack"><h2>{t('sFindMissing')}</h2><p>{t('sFindMissingHint')}</p>
+      <div><Button variant="primary" href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindByExample')}</Button></div></section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
     <!-- Off the main workflow: browsing sounds without the AI's species names. -->
     <section class="panel explore-entry"><Button href={resolve(`/datasets/${id}/explore`)}>{t('eEntry')} ›</Button><p class="muted">{t('eEntryHint')}</p></section>
   {:else if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}

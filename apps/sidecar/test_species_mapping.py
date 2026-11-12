@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from reports import read_classification_windows
-from species import decorate_candidates, initialize_species
+from species import decorate_candidates, initialize_species, save_species
 from storage import connect
 
 
@@ -51,6 +51,16 @@ class SpeciesMappingCheck(unittest.TestCase):
                 {'scores_path':str(path),'engine':'birdnet'}, 6, [label])
             self.assertEqual((labels.tolist(), starts.tolist(), scores.ravel().tolist()),
                              (['Parus cinereus'], [0, 3], [.2, .8]))
+
+    def test_saving_one_language_keeps_the_other(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            initialize_species(root)
+            save_species(root, 'Yezoterpnosia nigricosta', {'ja': 'エゾチッチゼミ', 'en': 'Ezo cicada'})
+            row = save_species(root, 'Yezoterpnosia nigricosta', {'ja': 'チッチゼミ'})
+            self.assertEqual(row['custom_names'], {'ja': 'チッチゼミ', 'en': 'Ezo cicada'})
+            # An empty name still removes that language's local name.
+            self.assertEqual(save_species(root, 'Yezoterpnosia nigricosta', {'en': ''})['custom_names'], {'ja': 'チッチゼミ'})
 
 
 if __name__ == '__main__':

@@ -109,8 +109,9 @@ class ModelBenchmarkRequest(BaseModel):
 class SpeciesRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     scientific_name: str = Field(min_length=1, max_length=200)
-    ja: str = Field(default="", max_length=200)
-    en: str = Field(default="", max_length=200)
+    # A missing language keeps its saved name; an empty one removes it.
+    ja: str | None = Field(default=None, max_length=200)
+    en: str | None = Field(default=None, max_length=200)
 
 
 class ReferenceRequest(BaseModel):
@@ -661,7 +662,7 @@ def create_app(root, models, token):
 
     @app.post("/species")
     def update_species(body: SpeciesRequest):
-        return save_species(root, body.scientific_name, {"ja": body.ja, "en": body.en})
+        return save_species(root, body.scientific_name, body.model_dump(include={"ja", "en"}, exclude_none=True))
 
     @app.get("/references")
     def references():

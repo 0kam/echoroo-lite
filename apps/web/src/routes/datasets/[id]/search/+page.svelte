@@ -71,13 +71,13 @@
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   <!-- Same numbered steps as adding recordings: species, example calls, search. -->
   <div class="steps">
-  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/>{#if source&&!species}<p class="info">{t('sPrefillHint')}</p>{/if}</section>
+  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/>{#if source&&!species}<p class="info">{fill('sPrefillHint',{n:clips.length+1})}</p>{/if}</section>
   {#if species}
     <section class="panel step-card"><h2>{t('wSource')}</h2>{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
       <Button active={!xc} pending={addReference.pending} disabled={search.pending} onclick={()=>{xc=false;if(!isTauri()&&!referencePath.trim())showMissing(true);else addReference.run();}}>{t('referenceFromFile')}</Button></div>
       {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending} aria-invalid={noPath||undefined} aria-describedby={noPath?'path-error':undefined}/></label>
         {#if noPath}<p class="field-error" id="path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
-      {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference}/></div>{/key}{/if}
+      {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference} added={clips.map(c=>c.source.attribution?.id)} onremove={xcId=>{clips=clips.filter(c=>c.source.attribution?.id!==xcId);saveDraft();}}/></div>{/key}{/if}
       {#if source}<Button disabled={search.pending} onclick={()=>source=null}>{t('uBackSounds')}</Button>{#key `${source.kind}:${source.id}`}<div class="reference-player" inert={search.pending} aria-disabled={search.pending}><p>{fileName(source.path)}</p>
         <AudioRegion {source} bind:start bind:end invalid={badPart?fill('uClipLength',{max:30}):''}/>
         {#if source.attribution}<p class="muted">XC{source.attribution.id} · {source.attribution.recordist} · {source.attribution.license}</p>{/if}</div>{/key}
