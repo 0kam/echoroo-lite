@@ -99,6 +99,12 @@ class PickedExportRequest(BaseModel):
     folder: str = Field(min_length=1)
 
 
+class PickedSearchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    dataset_id: int = Field(ge=1)
+    species: ScientificName
+
+
 class ModelSelection(BaseModel):
     main: str
     extra: list[str]
@@ -472,6 +478,11 @@ def create_app(root, models, token):
         if end_s <= start_s:
             raise HTTPException(422, 'invalid_input')
         return picked_result(delete, root, dataset, recording_id, start_s, end_s)
+
+    @app.post('/explore/picked/search')
+    def picked_search(body: PickedSearchRequest):
+        from picked import search_examples
+        return picked_result(search_examples, root, body.dataset_id, body.species)
 
     @app.post('/explore/picked/export')
     def picked_export(body: PickedExportRequest):

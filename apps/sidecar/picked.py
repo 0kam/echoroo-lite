@@ -101,6 +101,27 @@ def list_picked(root, dataset_id):
     return {'items': [_shape(row, species_ids) for row in rows]}
 
 
+def search_examples(root, dataset_id, scientific_name):
+    """One species' picked sounds as example calls for this site's search: the interval heard on the map,
+    not the export margin, as recording references so the search leaves out their own intervals."""
+    from search_runs import site_run
+    from species import names_for, save_species
+    with connect(root) as db:
+        site = _site(db, dataset_id)
+        # The search takes at most 20 example calls; the earliest are used.
+        rows = [row for row in _rows(db, dataset_id) if row['species'] == scientific_name][:20]
+        if not rows:
+            raise CatalogError('not_found')
+        taxon = db.execute('SELECT * FROM species WHERE lower(scientific_name)=lower(?)', (scientific_name,)).fetchone()
+    # A name missing from the species list is added like any other local species, once.
+    taxon = names_for(taxon) if taxon else save_species(root, scientific_name, {})
+    with connect(root) as db:
+        exists = site_run(db, site['id'], taxon['id']) is not None
+    return {'species': taxon, 'search_exists': exists, 'clips': [
+        {'source': {'id': row['recording_id'], 'kind': 'recording', 'path': row['path'], 'seconds': row['seconds']},
+         'start_s': row['start_s'], 'end_s': row['end_s']} for row in rows]}
+
+
 def put(root, body):
     with connect(root) as db:
         record = db.execute('SELECT * FROM site_recordings WHERE scope_id=? AND id=?',

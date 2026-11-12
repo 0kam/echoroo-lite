@@ -129,6 +129,31 @@ class PickedCheck(unittest.TestCase):
         self.assertEqual(self.client.delete('/explore/picked', params={
             'dataset': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5}).json(), {'deleted': False})
 
+    def test_search_examples_of_one_species(self):
+        for start, end, species in ((3, 8, 'Horornis diphone'), (0, 5, 'Horornis diphone'),
+                                    (5, 10, 'Testus novus'), (10, 12, None)):
+            self.assertEqual(self.put(start, end, species=species).status_code, 200)
+        search = lambda name: self.client.post('/explore/picked/search', json={'dataset_id': 1, 'species': name})
+        found = search('Horornis diphone').json()
+        with connect(self.root) as db:
+            known = db.execute("SELECT id FROM species WHERE scientific_name='Horornis diphone'").fetchone()[0]
+        self.assertEqual(found['species']['id'], known)
+        self.assertFalse(found['search_exists'])
+        # The interval heard on the map, not the exported margin, as a reference to the site's recording.
+        self.assertEqual([(c['source']['kind'], c['source']['id'], c['source']['seconds'], c['start_s'], c['end_s'])
+                          for c in found['clips']], [('recording', 1, 12, 0, 5), ('recording', 1, 12, 3, 8)])
+        # A name missing from the species list is added once, not again on the next visit.
+        added = search('Testus novus').json()['species']['id']
+        self.assertEqual(search(' Testus novus ').json()['species']['id'], added)
+        with connect(self.root) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM species WHERE scientific_name='Testus novus'").fetchone()[0], 1)
+            engine, model_sha = main_identity(self.root)
+            db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(1,?,?)',
+                       (known, json.dumps({'engine': engine, 'model_sha256': model_sha})))
+        self.assertTrue(search('Horornis diphone').json()['search_exists'])
+        self.assertEqual(search('Zosterops japonicus').status_code, 404)
+        self.assertEqual(self.client.post('/explore/picked/search', json={'dataset_id': 2, 'species': 'Testus novus'}).status_code, 404)
+
     def test_export_zip_metadata_audio_manifest_and_errors(self):
         output = Path(self.temporary.name) / 'output'; output.mkdir()
         empty = self.client.post('/explore/picked/export', json={'dataset_id': 1, 'folder': str(output)})

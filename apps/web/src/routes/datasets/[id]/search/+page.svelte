@@ -6,8 +6,8 @@
   import { isTauri } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
   import { api } from '$lib/api.svelte';
-  import { t,activeJob,datasetOf,dayRange,fileName,siteOf } from '$lib/app.svelte';
-  import { type Species } from '$lib/species';
+  import { app,t,activeJob,datasetOf,dayRange,fileName,siteOf } from '$lib/app.svelte';
+  import { commonName,type Species } from '$lib/species';
   import { fill,focusMissing,missingText,rangeQuery } from '$lib/workflow';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
   import SpeciesPicker from '$lib/SpeciesPicker.svelte';
@@ -22,12 +22,15 @@
   let species=$state<Species|null>(null),source=$state<Reference|null>(null),clips=$state<Clip[]>([]),clipsFor=$state('');
   let first=$state(query.get('start_date')||''),last=$state(query.get('end_date')||''),start=$state(0),end=$state(5),referencePath=$state(''),error=$state('');
   let ready=$state(false);
-  // Two ways here: a species the AI list lacks (from site results) or a species page.
-  const fromSpecies=query.get('species'),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','model_id'].includes(key)));
-  const back=fromSpecies?{href:`${resolve(`/datasets/${id}/species/${fromSpecies}`)}?${speciesState}`,label:'wBackSpecies'}
+  // Three ways here: a species the AI list lacks (from site results), a species page, or one species' sounds on the picked-sounds page (`picked`: its scientific name).
+  const fromSpecies=query.get('species'),fromPicked=query.get('picked'),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','model_id'].includes(key)));
+  const back=fromPicked?{href:resolve(`/datasets/${id}/explore/picked`),label:'sBackPicked'}
+    :fromSpecies?{href:`${resolve(`/datasets/${id}/species/${fromSpecies}`)}?${speciesState}`,label:'wBackSpecies'}
     :{href:`${resolve(`/datasets/${id}`)}${first&&last?`?${rangeQuery(first,last)}`:''}`,label:'uBackResults'};
   let alive=true;
   let xc=$state(true);
+  // What the picked-sounds page handed over, for the notice in the species step.
+  let handed=$state<{id:string;name:string;n:number;exists:boolean}|null>(null);
   onDestroy(()=>{alive=false;});
   $effect(()=>{const chosen=species?.id??'';untrack(()=>{if(ready&&chosen!==clipsFor){clips=[];clipsFor=chosen;if(!chosen)source=null;}});});
   $effect(()=>{if(ready)saveDraft();});
@@ -39,8 +42,9 @@
   const showMissing=(file=false)=>{if(file)triedFile=true;else triedClip=true;void focusMissing();};
   function chooseReference(row:Reference){source=row;start=0;end=Math.min(5,row.seconds);}
   function saveDraft(){localStorage.setItem(`echoroo-search-${id}`,JSON.stringify({clips,clipsFor,species,source,start,end,xc}));}
-  function addClip(){if(!source||!valid)return;
-    if(!clips.some(c=>c.source.id===source!.id&&c.source.kind===source!.kind&&c.start_s===start&&c.end_s===end)){if(clips.length>=20)throw Error('invalid_input');clips.push({source,start_s:start,end_s:end});}
+  const same=(a:Clip,b:Clip)=>a.source.id===b.source.id&&a.source.kind===b.source.kind&&a.start_s===b.start_s&&a.end_s===b.end_s;
+  function addClip(){if(!source||!valid)return;const clip={source,start_s:start,end_s:end};
+    if(!clips.some(c=>same(c,clip))){if(clips.length>=20)throw Error('invalid_input');clips.push(clip);}
     saveDraft();
   }
   const addReference=createTask(async()=>{if(isTauri()){const path=await open({multiple:false,filters:[{name:t('referenceAudio'),extensions:['wav','flac','mp3']}]});if(!path)return;referencePath=path;}
@@ -64,14 +68,21 @@
     if(!(await api<{configured:boolean}>('/xeno-canto/key').catch(()=>({configured:false}))).configured)xc=false;
     ready=true;
     if(query.get('species')){const chosen=await api<Species>(`/species/${encodeURIComponent(query.get('species')!)}`);if(chosen.id!==species?.id)species=chosen;}
+    // Picked sounds join the example calls already gathered for their species; another species' list starts anew, as choosing a species does.
+    if(fromPicked){const got=await api<{species:Species;search_exists:boolean;clips:Clip[]}>('/explore/picked/search',{dataset_id:id,species:fromPicked});
+      const kept=clipsFor===got.species.id?clips:[];
+      clips=[...kept,...got.clips.filter(c=>!kept.some(k=>same(k,c)))].slice(0,20);species=got.species;clipsFor=got.species.id;source=null;
+      handed={id:got.species.id,name:commonName(got.species,app.locale)||got.species.scientific_name,n:got.clips.length,exists:got.search_exists};}
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
 </script>
 <div class="page search-page"><div class="crumbs"><a href={back.href}>{t(back.label)}</a></div>
-  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t(fromSpecies?'sSearchTitle':'sFindMissing')}</h1><p>{t('wFindHint')}</p></div></div>
+  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t(fromSpecies||fromPicked?'sSearchTitle':'sFindMissing')}</h1><p>{t('wFindHint')}</p></div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   <!-- Same numbered steps as adding recordings: species, example calls, search. -->
   <div class="steps">
-  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/>{#if source&&!species}<p class="info">{fill('sPrefillHint',{n:clips.length+1})}</p>{/if}</section>
+  <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/>
+    {#if handed&&species?.id===handed.id}{#if handed.exists}<p class="notice">{t('sPickedExists')} <a href={resolve(`/datasets/${id}/species/${handed.id}`)}>{t('wOpenSpecies')}</a></p>
+      {:else}<p class="info">{fill('sPickedAdded',{species:handed.name,n:handed.n})}</p>{/if}{/if}</section>
   {#if species}
     <section class="panel step-card"><h2>{t('wSource')}</h2>{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
       <Button active={!xc} pending={addReference.pending} disabled={search.pending} onclick={()=>{xc=false;if(!isTauri()&&!referencePath.trim())showMissing(true);else addReference.run();}}>{t('referenceFromFile')}</Button></div>
