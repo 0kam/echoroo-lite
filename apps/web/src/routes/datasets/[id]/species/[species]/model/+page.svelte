@@ -29,8 +29,10 @@
   },{toast:true});
   // The period the server used for this page, so a link without dates still makes the AI for what is shown.
   const build=createTask(async()=>{await api('/custom-models',{dataset_id:id,species_id:speciesId,
-    start_date:info!.start_date,end_date:info!.end_date});skipped=[];await next.run();});
-  const another=()=>{skipped.push(...batch.filter(row=>!row.label).map(row=>row.segment_id));void next.run();};
+    start_date:info!.start_date,end_date:info!.end_date});skipped=[];await next.run();toTop();});
+  // A new batch is answered from its first sound, so bring the top of the list back into view.
+  const toTop=()=>document.getElementById('next-sounds')?.scrollIntoView({block:'start'});
+  const another=async()=>{skipped.push(...batch.filter(row=>!row.label).map(row=>row.segment_id));await next.run();toTop();};
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;skipped=[];await next.run();},{toast:true});
   const model=$derived(info?.model??null);
@@ -63,7 +65,7 @@
           <Button active={item.label===value} aria-pressed={item.label===value} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>{/snippet}
       </AudioRegion>
     </article>{/snippet}
-    <section class="panel"><h2>{t('mdNextTitle')}</h2>
+    <section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
       <!-- Nothing to rank by is a step still to do, not an error. -->
       {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
         <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
