@@ -18,7 +18,7 @@
   let result=$state<SpeciesResult|null>(null),engine=$state(initial.get('engine')||'auto'),modelId=$state(Number(initial.get('model_id'))||0),error=$state(''),loading=$state(true),liveUrl=$state('');
   let request=0,about=$state<{in_quiz:boolean}|null>(null),detected=$state<Overview['species'][number]['models']|null>(null);
   // Which deletion is waiting for confirmation: a check's model key, or 'search'.
-  let confirming=$state(''),preview=$state<{marks:number;labels:number;custom_models:number;checks:number}|null>(null);
+  let confirming=$state(''),preview=$state<{marks:number;custom_models:number;checks:number}|null>(null);
   // Each AI's payload for the current period, so switching chart tabs back and forth is instant.
   const cache=new Map<string,Promise<SpeciesResult>>();
   function urlFor(engine:string,modelId:number){const query=new URLSearchParams({engine});
@@ -63,11 +63,10 @@
   const ordered=$derived(result&&required?[required,...result.checks.filter(item=>item!==required)]:[]);
   const settled=$derived(result?activity(result.checks):'not_started');
   const remaining=$derived(remainingSounds(counted)),effort=$derived(workload(remaining));
-  // Every checked AI finished without a counting rule: a species-specific AI is the remaining route (B5).
+  // Every checked AI finished without a counting rule (B5).
   const missed=$derived(settled==='undecided');
   const listed=$derived(!!result?.checks.some(item=>item.engine!=='custom'));
   const showSearch=$derived(!!result&&(!listed||!!result.search||result.presence.status==='not_found'||missed));
-  const showModel=$derived(!!result&&(!listed||missed||result.checks.some(item=>item.engine==='custom')));
   const check=createTask(async(item:Check)=>{
     if(!result)return;
     const validation=item.validation?.applicable?item.validation:await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
@@ -110,7 +109,7 @@
           {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>{/if}
         </div>{:else}<p>{t('wNoModel')}</p>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
-        {#if showModel}{#if result.search}<div class="actions"><Button href={modelHref}>{t('customModelTitle')}</Button></div>{:else}<p class="muted">{t('sModelNeedsSearch')}</p>{/if}{/if}
+        <p class="muted">{t('mdGrowHint')}</p><div class="actions"><Button href={modelHref}>{t('customModelTitle')}</Button></div>
         <!-- Deleting is kept away from the listening buttons. -->
         {#if result.checks.some(item=>item.validation)}<details class="more"><summary>{t('sMore')}</summary>
           {#each result.checks.filter(item=>item.validation) as item (item.key)}<div class="stack">
@@ -135,12 +134,10 @@
         <div class="actions"><Button href={presenceHref('search')}>{t('sListenSearch')}</Button></div>
         <details class="more"><summary>{t('sMore')}</summary>
           <Button variant="danger" size="sm" pending={askSearchDelete.pending} onclick={()=>confirming==='search'?confirming='':askSearchDelete.run()}>{t('sSearchDelete')}</Button>
-        {#if confirming==='search'&&preview}<div class="confirm" role="group" aria-label={t('sSearchDelete')}><p>{t('sSearchDeleteConfirm')}</p>
-          {#if preview.marks||preview.labels||preview.custom_models}<ul>
-            {#if preview.marks}<li>{fill('sSearchDeleteMarks',{n:preview.marks})}</li>{/if}
-            {#if preview.labels}<li>{fill('sSearchDeleteLabels',{n:preview.labels})}</li>{/if}
-            {#if preview.custom_models}<li>{fill('sSearchDeleteModels',{n:preview.custom_models})}</li>{/if}</ul>
-          {:else}<p>{t('sSearchDeleteNothing')}</p>{/if}
+        {#if confirming==='search'&&preview}<div class="confirm" role="group" aria-label={t('sSearchDelete')}>
+          {#if preview.custom_models}<p class="notice"><strong>{t('sSearchDeleteModels')}</strong></p>{/if}
+          {#if preview.marks}<p>{t('sSearchDeleteConfirm')}</p><ul><li>{fill('sSearchDeleteMarks',{n:preview.marks})}</li></ul>
+          {:else if !preview.custom_models}<p>{t('sSearchDeleteNothing')}</p>{/if}
           <div class="actions"><Button onclick={()=>confirming=''}>{t('mCancel')}</Button><Button variant="danger" pending={removeSearch.pending} onclick={()=>removeSearch.run()}>{t('sSearchDelete')}</Button></div></div>{/if}
         </details>
       {:else}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('sSearchStart')}</Button>{/if}

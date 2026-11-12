@@ -176,12 +176,21 @@ Recordings are split into threshold-setting and checking halves by local day (by
 recording when there is only one day), reproducibly per site and hidden from users. See
 [the validation design](docs/validation-design.md) for sampling and uncertainty.
 
-A **species model** is built on its own page from the species' search: label 5-second
-search hits **Voice / No voice**; "Not heard" answers from steps ② and ③ add no-voice
-material (each 15-second window as three 5-second pieces). At least three of each are
-needed. The fixed Perch-embedding classifier is applied to the site's recordings, its
-15-second score is the maximum of three pieces, and it is checked like BirdNET and Perch
-(windows it learned from are left out of its check).
+A **species model** ("AI for this species") is grown on one page reachable from every
+species page, with or without a search. Material is every 5-second piece answered **Voice /
+No voice** on that page, every "This is its call" mark, and every 5-second check answer
+("Heard" = voice, "Not heard" = no voice); a label given on the page wins over the others.
+An AI can be made (or made again) once there are 20 answers in all, with at least three of each.
+The page offers 10 sounds at a time, deterministically, never one already answered nor one shown
+and passed over with "Show 10 other sounds" (until the AI is made again): before a model exists, the top of the search's similarity ranking
+(or, without a search, of the main AI's score for the species) while voice is short, plus
+sounds around where the voice stops between the deepest "voice" and the next "no voice"
+(`boundary_ranks`); once it exists, mostly pieces whose model score is nearest 0.5, plus two
+of the highest and two of the lowest. There is one model per site, species and period: making
+it again replaces its files in place (same id, round + 1), and its earlier checks become
+outdated ("custom_model_rebuilt"). The fixed main-AI-embedding classifier is applied to the
+site's 5-second pieces and checked like BirdNET and Perch (windows it learned from are left
+out of its check). Labels belong to the species (schema 7); 0.2.0 catalogues are migrated.
 
 Spectrograms use a 16 ms Hann window, 2 ms steps and 2× zero padding, with the
 Roseus palette and a linear frequency axis. The same display settings apply to
@@ -233,7 +242,8 @@ seconds at a time. Stereo references are averaged to mono. Each species has exac
 search per site; when it finishes, the app opens that species' **Is it here?** list of
 search results. To search again, delete the search on the species page first: the
 confirmation lists what goes with it — its "This is its call" marks, not-found records,
-voice/no-voice labels and any species model built from it (with that model's check).
+and any species model last made with it (with that model's checks). Voice/no-voice labels
+stay with the species.
 
 Search uses all embeddings, without species/region filtering, from the latest
 compatible Perch analysis per recording in the selected group. The reference interval

@@ -12,8 +12,8 @@ import sqlite_vec
 
 
 # Increment whenever the SQLite schema changes.
-SCHEMA_VERSION = 6
-MIGRATABLE_VERSIONS = (2, 3, 4, 5)
+SCHEMA_VERSION = 7
+MIGRATABLE_VERSIONS = (2, 3, 4, 5, 6)
 
 
 class CatalogError(Exception):
@@ -46,7 +46,7 @@ def initialize(root):
         if not supported:
             return False
         db.execute("PRAGMA journal_mode=WAL")
-        if version in MIGRATABLE_VERSIONS and version != 5:
+        if version in MIGRATABLE_VERSIONS and version < 5:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='explore_runs'").fetchone():
                 for row in db.execute('SELECT params FROM explore_runs'):
                     try:
@@ -63,6 +63,12 @@ def initialize(root):
                 DROP TABLE IF EXISTS explore_points;
                 DROP TABLE IF EXISTS explore_runs;
             ''')
+        # Schema 7: labels belong to a species instead of a search, and a species AI needs no search.
+        # The old tables are renamed, recreated below and copied back, so a 0.2.0 catalogue keeps its rows.
+        if 'run_id' in columns(db, 'model_labels'):
+            db.execute('ALTER TABLE model_labels RENAME TO model_labels_v6')
+        if columns(db, 'custom_models').get('run_id'):
+            db.execute('ALTER TABLE custom_models RENAME TO custom_models_v6')
         db.executescript("""
             CREATE TABLE IF NOT EXISTS sites (
                 id INTEGER PRIMARY KEY, name TEXT NOT NULL, timezone TEXT NOT NULL,
@@ -177,16 +183,17 @@ def initialize(root):
                 id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id INTEGER NOT NULL REFERENCES datasets,
                 species_id TEXT NOT NULL REFERENCES species, source TEXT NOT NULL CHECK(source IN ('ai','search')),
                 listened INTEGER NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            -- Custom-model material: voice / no voice on 5-second search hits.
+            -- Species-AI material: voice / no voice on 5-second pieces of the main AI analysis.
             CREATE TABLE IF NOT EXISTS model_labels (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL REFERENCES search_runs,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, species_id TEXT NOT NULL REFERENCES species,
                 segment_id INTEGER NOT NULL REFERENCES segments,
-                label TEXT NOT NULL CHECK(label IN ('target','other')), UNIQUE(run_id,segment_id));
+                label TEXT NOT NULL CHECK(label IN ('target','other')), UNIQUE(species_id,segment_id));
+            -- One species AI per site, species and period; run_id is the search it was last made with, if any.
             CREATE TABLE IF NOT EXISTS custom_models (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 dataset_id INTEGER NOT NULL REFERENCES datasets,
                 species_id TEXT NOT NULL REFERENCES species,
-                run_id INTEGER NOT NULL REFERENCES search_runs,
+                run_id INTEGER REFERENCES search_runs,
                 snapshot TEXT NOT NULL,
                 artifact_path TEXT NOT NULL,
                 artifact_sha256 TEXT NOT NULL,
@@ -219,6 +226,20 @@ def initialize(root):
             CREATE VIRTUAL TABLE IF NOT EXISTS vectors USING vec0(
                 embedding float[1536] distance_metric=cosine);
         """)
+        if columns(db, 'model_labels_v6'):
+            # A label given to the same piece in two searches keeps the newer answer.
+            db.execute('''INSERT OR REPLACE INTO model_labels(species_id,segment_id,label) SELECT r.species_id,l.segment_id,l.label
+                FROM model_labels_v6 l JOIN search_runs r ON r.id=l.run_id ORDER BY l.id''')
+            db.execute('DROP TABLE model_labels_v6')
+        if columns(db, 'custom_models_v6'):
+            fields = 'id,dataset_id,species_id,run_id,snapshot,artifact_path,artifact_sha256,scores_path,scores_sha256,created_at'
+            db.execute(f'INSERT OR IGNORE INTO custom_models({fields}) SELECT {fields} FROM custom_models_v6')
+            # Keep AUTOINCREMENT's high-water mark so a deleted model's number is never reused.
+            last = max(r[0] for r in db.execute('''SELECT COALESCE(MAX(seq),0) FROM sqlite_sequence WHERE name IN ('custom_models','custom_models_v6')
+                UNION ALL SELECT COALESCE(MAX(id),0) FROM custom_models'''))
+            db.execute("DELETE FROM sqlite_sequence WHERE name='custom_models'")
+            db.execute("INSERT INTO sqlite_sequence(name,seq) VALUES('custom_models',?)", (last,))
+            db.execute('DROP TABLE custom_models_v6')
         db.execute('CREATE TABLE IF NOT EXISTS changed_locations (site_id INTEGER PRIMARY KEY REFERENCES sites)')
         db.execute('CREATE TABLE IF NOT EXISTS result_revision (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)')
         db.execute('INSERT OR IGNORE INTO result_revision VALUES(1,0)')
@@ -235,6 +256,11 @@ def initialize(root):
         except OSError:
             pass
     return True
+
+
+def columns(db, table):
+    """Column name -> NOT NULL flag; empty when the table does not exist."""
+    return {row['name']: row['notnull'] for row in db.execute(f'PRAGMA table_info({table})')}
 
 
 def monotonic_ids(root):
