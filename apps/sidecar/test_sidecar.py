@@ -148,7 +148,7 @@ class SidecarCheck(unittest.TestCase):
                 perch = filtered
                 self.assertEqual(perch["candidates"][0]["raw_score"], 0.5)
                 self.assertAlmostEqual(perch["candidates"][0]["score"], math.exp(0.5) / (math.exp(0.5) + 2 * math.exp(0.4)))
-                reset = client.post("/species", json={"scientific_name": "Certhia familiaris"}).json()
+                reset = client.post("/species", json={"scientific_name": "Certhia familiaris", "ja": ""}).json()
                 self.assertEqual(reset["id"], original_id)
                 self.assertEqual(reset["common_names"]["ja"], "キバシリ")
                 self.assertEqual(reset["name_sources"]["ja"], "bundled")
