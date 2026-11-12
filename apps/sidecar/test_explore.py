@@ -556,6 +556,13 @@ class ExploreCheck(unittest.TestCase):
         self.assertIn(f'CatalogError: source_missing:1:{missing}', log)
         self.assertIn(str(self.root / 'recording-2.wav'), log)  # every missing path, not only the first
 
+    def test_refused_and_unknown_requests_leave_a_trace(self):
+        with self.assertLogs('server', 'WARNING') as logs:
+            self.assertEqual(self.client.post('/no/such/address', json={}).status_code, 404)
+            self.assertEqual(self.client.post('/explore', json={'dataset_id': 'x'}).json(), {'detail': 'invalid_input'})
+        self.assertIn('POST /no/such/address answered 404', logs.output[0])
+        self.assertIn('POST /explore refused: body.dataset_id', logs.output[1])
+
     def test_missing_windows_path_keeps_its_colon_in_the_error_code(self):
         self.add_analysis(8, 1)
         path = r'C:\Recordings that do not exist\site 1\a.wav'

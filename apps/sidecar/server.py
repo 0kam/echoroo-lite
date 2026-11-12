@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -352,7 +353,17 @@ def create_app(root, models, token):
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
+        # Where and why only: the values may be long, and the page shows just "check the input".
+        log.warning('Request %s %s refused: %s', request.method, request.url.path,
+                    '; '.join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in error.errors()))
         return JSONResponse({"detail": "invalid_input"}, status_code=422)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request, error):
+        # An unknown address or method means the page and the service are out of step; leave a trace of it.
+        if error.status_code in (404, 405):
+            log.warning('Request %s %s answered %s', request.method, request.url.path, error.status_code)
+        return JSONResponse({"detail": error.detail}, status_code=error.status_code, headers=error.headers)
 
     @app.exception_handler(Exception)
     async def unexpected_error(request, error):
