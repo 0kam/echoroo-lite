@@ -13,7 +13,7 @@
   const id=Number(page.params.id),speciesId=page.params.species!;
   const site=$derived(siteOf(datasetOf(id)));
   const range=new URLSearchParams([...new URL(page.url.hash.slice(1),page.url).searchParams].filter(([key])=>key.endsWith('_date')));
-  // `info` holds the counts and the AI; the two lists change only when a new batch is loaded, so rows do not move while answering.
+  // `info` holds the counts and the AI; the batch changes only when a new batch is loaded, so its rows do not move while answering.
   let info=$state<SpeciesAI|null>(null),batch=$state<LabelRow[]>([]),answered=$state<LabelRow[]>([]),source=$state<SpeciesAI['source']>(null);
   let error=$state(''),skipped:number[]=[],answeredShown=$state(10),confirming=$state(false);
   const fetchState=(query='')=>api<SpeciesAI>(`/datasets/${id}/species/${speciesId}/custom-model?${range}${query}`);
@@ -24,6 +24,8 @@
   const label=createTask(async(row:LabelRow,value:'target'|'other')=>{
     const saved=await api<{label:LabelRow['label']}>(`/datasets/${id}/species/${speciesId}/labels`,{segment_id:row.segment_id,label:row.label===value?null:value});
     row.label=saved.label;info=await fetchState();
+    // A sound answered in this batch joins the answered list at once, as the same row, so both show the same answer.
+    if(saved.label&&!answered.includes(row))answered.unshift(row);
   },{toast:true});
   // The period the server used for this page, so a link without dates still makes the AI for what is shown.
   const build=createTask(async()=>{await api('/custom-models',{dataset_id:id,species_id:speciesId,
@@ -84,7 +86,7 @@
         {#if next.error&&!error}<p class="error" role="alert">{t(next.error)}</p>{/if}
       </div>{/if}
     </section>
-    <!-- The count follows each answer and undo; the list itself is reordered only with a new batch. -->
+    <!-- The count follows each answer and undo; new answers are added on top, and the list is reordered only with a new batch. -->
     {#if answered.length}<details class="panel"><summary>{fill('mdAnswered',{n:info.answered.length})}</summary>
       <p class="muted">{t('mdUndo')}</p>
       {#each answered.slice(0,answeredShown) as item (item.segment_id)}{@render row(item)}{/each}

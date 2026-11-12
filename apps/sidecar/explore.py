@@ -774,7 +774,9 @@ def build(root, dataset_id, job_id=None, cancel=None):
                 _progress(root, job_id, 'explore_checking', done, len(analyses))
                 shown = time.monotonic()
         if missing:
-            # The first missing file and how many more, so the page and sidecar.log name what to put back.
+            # The first missing file and how many more, so the page names what to put back; sidecar.log gets every path.
+            import logging
+            logging.getLogger(__name__).warning('Sound map: %d recordings not found:\n%s', len(missing), '\n'.join(missing))
             raise CatalogError(f'source_missing:{len(missing) - 1}:{missing[0]}')
         _cleanup_staging(root, dataset['site_id'], engine)
         stage_seconds = {}

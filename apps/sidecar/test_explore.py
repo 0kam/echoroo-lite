@@ -513,13 +513,16 @@ class ExploreCheck(unittest.TestCase):
         self.addCleanup(close_log)
         keep_log(self.root)
         self.add_analysis(8, 1)
+        self.add_analysis(8, 2)
         (self.root / 'recording-1.wav').unlink()
+        (self.root / 'recording-2.wav').unlink()
         job = self.wait_job(self.client.post('/explore', json={'dataset_id': 1}).json()['id'])
         missing = self.root / 'recording-1.wav'
-        self.assertEqual((job['status'], job['error']), ('failed', f'source_missing:0:{missing}'))
+        self.assertEqual((job['status'], job['error']), ('failed', f'source_missing:1:{missing}'))
         log = (self.root / 'sidecar.log').read_text(encoding='utf-8')
         self.assertIn(f"Sound map build {job['id']} failed", log)
-        self.assertIn(f'CatalogError: source_missing:0:{missing}', log)
+        self.assertIn(f'CatalogError: source_missing:1:{missing}', log)
+        self.assertIn(str(self.root / 'recording-2.wav'), log)  # every missing path, not only the first
 
     def test_leaf_tree_and_landmark_layout_with_patched_thresholds(self):
         self.add_analysis(200, 4)

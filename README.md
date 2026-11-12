@@ -57,7 +57,7 @@
 
 AIが対応していない種や、AIが見つけなかった種は、お手本の声から探せます。種の名前を入力し、お手本の声（Xeno-Canto か、パソコンの中の音声ファイル）の鳴いている部分を選ぶと、この地点の録音から似た5秒の音を探します。見つかった音を聞いて、その種がいるかを確かめます。似ている度合いは、その種である確率を表すものではありません。
 
-検索結果の音に「声あり」「声なし」を付けると、それを材料に、その種だけを探すAIを作れます。作ったAIは、ほかのAIと同じく「AIの精度を確かめる」で確かめます。Xeno-Canto から選ぶには、自分の API キーが必要です。
+種のページの「この種用のAIを育てる」で、音に「声あり」「声なし」と答えると、それを材料に、その種だけを探すAIを育てられます。約20音に答えると最初のAIを作れ、答えを足して何度でも作り直せます。途中でやめて、あとから続けることもできます。内蔵のAIが見つけた種でも、精度が低いときは同じように育てられます。作ったAIは、ほかのAIと同じく「AIの精度を確かめる」で確かめます。Xeno-Canto から選ぶには、自分の API キーが必要です。
 
 ### 鳴き声クイズ
 
@@ -101,7 +101,8 @@ Echoroo Lite is a desktop app that finds bird calls in recordings with AI, lets 
 - **Steps**: add and analyse recordings → listen to the AI's top sounds to confirm presence → optionally check the AI's accuracy (up to 60 sounds) to set a score threshold → export a report.
 - **Output**: an HTML report (site and period, confirmed species, AI precision, date × time-of-day charts, evidence audio) plus CSV and audio files.
 - **Sound map (experimental)**: a map where similar sounds sit close together; listen, collect sounds of the same kind, name the species and export them as WAV clips (with 2.5 s of context on each side) plus a CSV table in one ZIP.
-- **Species the AIs do not cover**: search the site's recordings for 5-second sounds similar to a reference call (from Xeno-Canto with your own API key, or an audio file on your PC), listen to confirm the species, and optionally build an AI for that species from sounds you label **Voice** / **No voice**. Similarity is not an identification probability.
+- **Species the AIs do not cover**: search the site's recordings for 5-second sounds similar to a reference call (from Xeno-Canto with your own API key, or an audio file on your PC), listen to confirm the species. Similarity is not an identification probability.
+- **Grow an AI for a species**: answer **Voice** / **No voice** for about 20 sounds to make an AI that looks only for that species; add answers and make it again as often as you like, or continue later. This also works for species the built-in AIs found, when their accuracy is low.
 - **Bird-call quiz**: practise telling calls apart with calls you add from Xeno-Canto or your own recordings. No bird recordings are bundled.
 - **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models distilled from Perch 2.0 for 317 Japanese bird species, by the author of this app), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
 - **Requirements**: Windows 10/11 x64; macOS 12+ on Apple silicon; Linux x86_64 (Ubuntu 22.04+ or similar). 8 GB RAM recommended; about 2 GB of disk for the app plus tens of MB per recorded hour for results. Installers are unsigned.

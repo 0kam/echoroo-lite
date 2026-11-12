@@ -102,7 +102,7 @@
       <section class="panel card" aria-labelledby="activity-title">
         <h2 id="activity-title">{t('sActivityTitle')}</h2>
         {#if result.checks.length}<p class="status"><strong>{activityText(result.checks)}</strong></p>{/if}
-        <p class="muted">{t(result.checks.length>1?'sActivityHint':'sActivityHintOne')}</p>
+        <p class="muted">{t(result.checks.length>1?'sActivityHint':result.checks.length?'sActivityHintOne':'sActivityHintNone')}</p>
         {#if remaining&&result.checks.some(item=>!undetected(item))}<p class="muted">{fill('sWorkload',{n:remaining,time:effort.time})}</p>{/if}
         {#each ordered as item (item.key)}<div class="check-row">
           <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation)}</span></div>

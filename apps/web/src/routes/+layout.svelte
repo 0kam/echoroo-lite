@@ -6,6 +6,7 @@
   import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession } from '$lib/app.svelte';
   import ModelChoice from '$lib/ModelChoice.svelte';
   import UpdateControl from '$lib/UpdateControl.svelte';
+  import { fill } from '$lib/workflow';
   import { checkForUpdate, update } from '$lib/update.svelte';
   import ActivityBar from '$lib/ui/ActivityBar.svelte';
   import Toasts from '$lib/ui/Toasts.svelte';
@@ -56,7 +57,7 @@
     {#if job}
       {@const target = datasetOf(job.dataset_id)}
       {@const explore = job.stage.startsWith('explore_')}
-      <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{t(explore ? 'eMaking' : 'analysisInProgress')}: {siteOf(target)?.name ?? ''}{#if !explore && job.total} · {job.done} / {job.total}{/if}</a>
+      <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{fill('jobLine', { status: t(explore ? 'eMaking' : 'analysisInProgress'), progress: siteOf(target)?.name ?? '' })}{#if !explore && job.total} · {job.done} / {job.total}{/if}</a>
     {/if}
     <select aria-label={t('language')} value={app.locale} onchange={e => setLocale(e.currentTarget.value as 'ja' | 'en')}>
       <option value="ja">日本語</option><option value="en">English</option>

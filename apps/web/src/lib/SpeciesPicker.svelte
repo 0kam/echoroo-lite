@@ -69,7 +69,7 @@
     </div>
     {#if !rows.length}<details><summary>{t('wAddUnlisted')}</summary><form class="stack" novalidate onsubmit={e=>{e.preventDefault();if(scientific.trim())void add();else{tried=true;void focusMissing(e.currentTarget);}}}><label>{t('scientificName')}<input bind:value={scientific} required maxlength="200" disabled={adding} aria-invalid={noScientific||undefined} aria-describedby={noScientific?`${invalidId}-scientific`:undefined}/></label>
       {#if noScientific}<p class="field-error" id={`${invalidId}-scientific`}>{t('uEnterScientific')}</p>{/if}
-      {#if shownExisting}{@const found = shownExisting}<p class="info" role="status">{t('spExists')} {#if commonName(found, app.locale)}<strong>{commonName(found, app.locale)}</strong> {/if}<i>{found.scientific_name}</i></p>
+      {#if shownExisting}{@const found = shownExisting}<p class="info" role="status">{t('spExists')} {#if commonName(found, app.locale)}<strong>{commonName(found, app.locale)}</strong>{/if} <i>{found.scientific_name}</i></p>
         <Button variant="primary" onclick={() => { choose(found); naming = !found.common_names[app.locale]; newName = common; }}>{t('spChooseExisting')}</Button>{/if}<label>{t('wCommonName')}<input bind:value={common} placeholder={query} maxlength="200" disabled={adding}/></label><Button type="submit" variant={shownExisting ? 'default' : 'primary'} pending={adding} {disabled}>{t('addSpecies')}</Button>
       {#if !scientific.trim()}<p class={tried?'field-error':'muted'}>{missingText(['scientificName'])}</p>{/if}</form></details>{/if}
   {/if}
