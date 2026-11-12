@@ -1,5 +1,6 @@
 """Hierarchical sound-map cache, build, migration, and API checks."""
 import json
+import logging
 import struct
 import tempfile
 import threading
@@ -36,7 +37,14 @@ class ExploreCheck(unittest.TestCase):
 
     def tearDown(self):
         self.client.__exit__(None, None, None)
+        # Windows cannot delete a file a log handler still holds open: a test must close what it opened.
+        root_logger = logging.getLogger()
+        left_open = [handler for handler in root_logger.handlers
+                     if Path(getattr(handler, 'baseFilename', '/')).is_relative_to(self.temporary.name)]
+        for handler in left_open:
+            root_logger.removeHandler(handler); handler.close()
         self.temporary.cleanup()
+        self.assertEqual(left_open, [])
 
     def add_analysis(self, count, seed):
         engine, model_sha = main_identity(self.root)
@@ -525,24 +533,41 @@ class ExploreCheck(unittest.TestCase):
         self.assertEqual(self.client.get('/explore', params={'dataset': 1}).json()['last_error'], 'explore_interrupted')
 
     def test_failed_build_is_written_to_the_log_file(self):
-        import logging
         from server import keep_log
-        def close_log():
-            for handler in logging.getLogger().handlers[:]:
-                logging.getLogger().removeHandler(handler); handler.close()
-        self.addCleanup(close_log)
-        keep_log(self.root)
         self.add_analysis(8, 1)
         self.add_analysis(8, 2)
         (self.root / 'recording-1.wav').unlink()
         (self.root / 'recording-2.wav').unlink()
-        job = self.wait_job(self.client.post('/explore', json={'dataset_id': 1}).json()['id'])
+        keep_log(self.root)
+        try:
+            job = self.wait_job(self.client.post('/explore', json={'dataset_id': 1}).json()['id'])
+            # The worker logs after build has marked the job failed.
+            deadline = time.monotonic() + 10
+            while 'Sound map build' not in (log := (self.root / 'sidecar.log').read_text(encoding='utf-8')) \
+                    and time.monotonic() < deadline:
+                time.sleep(.02)
+        finally:
+            # tearDown runs before addCleanup callbacks and deletes the folder: close the file first.
+            for handler in logging.getLogger().handlers[:]:
+                logging.getLogger().removeHandler(handler); handler.close()
         missing = self.root / 'recording-1.wav'
         self.assertEqual((job['status'], job['error']), ('failed', f'source_missing:1:{missing}'))
-        log = (self.root / 'sidecar.log').read_text(encoding='utf-8')
         self.assertIn(f"Sound map build {job['id']} failed", log)
         self.assertIn(f'CatalogError: source_missing:1:{missing}', log)
         self.assertIn(str(self.root / 'recording-2.wav'), log)  # every missing path, not only the first
+
+    def test_missing_windows_path_keeps_its_colon_in_the_error_code(self):
+        self.add_analysis(8, 1)
+        path = r'C:\Recordings that do not exist\site 1\a.wav'
+        with connect(self.root) as db:
+            db.execute('UPDATE recordings SET path=?', (path,))
+        with self.assertRaises(CatalogError) as raised:
+            explore.build(self.root, 1)
+        code = str(raised.exception)
+        self.assertEqual(code, f'source_missing:0:{path}')
+        # Readers split at most twice (the page: split(':').slice(2).join(':')), so the drive colon stays.
+        self.assertEqual(code.split(':', 2), ['source_missing', '0', path])
+        self.assertEqual(':'.join(code.split(':')[2:]), path)
 
     def test_leaf_tree_and_landmark_layout_with_patched_thresholds(self):
         self.add_analysis(200, 4)
