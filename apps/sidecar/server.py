@@ -1,12 +1,12 @@
 """Loopback-only desktop sidecar. Run with --data and --models."""
 import argparse
 import json
+import logging
 import multiprocessing
 import secrets
 import socket
 import sys
 import threading
-import traceback
 from datetime import date
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -23,6 +24,8 @@ from storage import SCHEMA_VERSION, CatalogError, checked_source, connect, initi
 from species import decorate_candidates, initialize_species, list_species, save_species
 import models as model_registry
 from models import Engine, SpeciesEngine, ValidationEngine
+
+log = logging.getLogger(__name__)
 
 
 class SiteEdit(BaseModel):
@@ -97,6 +100,12 @@ class PickedExportRequest(BaseModel):
     folder: str = Field(min_length=1)
 
 
+class PickedSearchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    dataset_id: int = Field(ge=1)
+    species: ScientificName
+
+
 class ModelSelection(BaseModel):
     main: str
     extra: list[str]
@@ -109,8 +118,9 @@ class ModelBenchmarkRequest(BaseModel):
 class SpeciesRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     scientific_name: str = Field(min_length=1, max_length=200)
-    ja: str = Field(default="", max_length=200)
-    en: str = Field(default="", max_length=200)
+    # A missing language keeps its saved name; an empty one removes it.
+    ja: str | None = Field(default=None, max_length=200)
+    en: str | None = Field(default=None, max_length=200)
 
 
 class ReferenceRequest(BaseModel):
@@ -343,11 +353,21 @@ def create_app(root, models, token):
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
+        # Where and why only: the values may be long, and the page shows just "check the input".
+        log.warning('Request %s %s refused: %s', request.method, request.url.path,
+                    '; '.join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in error.errors()))
         return JSONResponse({"detail": "invalid_input"}, status_code=422)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request, error):
+        # An unknown address or method means the page and the service are out of step; leave a trace of it.
+        if error.status_code in (404, 405):
+            log.warning('Request %s %s answered %s', request.method, request.url.path, error.status_code)
+        return JSONResponse({"detail": error.detail}, status_code=error.status_code, headers=error.headers)
 
     @app.exception_handler(Exception)
     async def unexpected_error(request, error):
-        traceback.print_exception(error)
+        log.error('Request %s failed', request.url.path, exc_info=error)
         return JSONResponse({"detail": "unknown_error"}, status_code=500)
 
     @app.get("/health")
@@ -390,18 +410,18 @@ def create_app(root, models, token):
             if worker and worker.is_alive():
                 raise HTTPException(409, 'job_busy')
             from explore import _context, build
-            _context(root, body.dataset_id)
+            analyses = _context(root, body.dataset_id)[3]
             with connect(root) as db:
-                job = db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(?,'queued',5,'explore_queued')",
-                                 (body.dataset_id,)).lastrowid
+                job = db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(?,'queued',?,'explore_checking')",
+                                 (body.dataset_id, len(analyses))).lastrowid
             operation_cancel.clear()
             def work():
                 try:
                     build(root, body.dataset_id, job, operation_cancel)
-                except CatalogError:
-                    pass  # build records the translated failure or cancellation on the job.
-                except Exception:
-                    traceback.print_exc()
+                except Exception as error:
+                    # build records the translated failure or cancellation on the job; the log keeps why.
+                    if not (isinstance(error, CatalogError) and str(error) == 'cancelled'):
+                        log.exception('Sound map build %s failed', job)
             worker = threading.Thread(target=work)
             worker.start()
         return {'id': job}
@@ -470,6 +490,11 @@ def create_app(root, models, token):
             raise HTTPException(422, 'invalid_input')
         return picked_result(delete, root, dataset, recording_id, start_s, end_s)
 
+    @app.post('/explore/picked/search')
+    def picked_search(body: PickedSearchRequest):
+        from picked import search_examples
+        return picked_result(search_examples, root, body.dataset_id, body.species)
+
     @app.post('/explore/picked/export')
     def picked_export(body: PickedExportRequest):
         from picked import export
@@ -530,16 +555,16 @@ def create_app(root, models, token):
 
     @app.get('/datasets/{dataset_id}/species/{species_id}/custom-model')
     def custom_model_readiness(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,
-                               limit: int = Query(default=30, ge=0, le=200), offset: int = Query(default=0, ge=0)):
+                               batch: bool = False, skip: list[int] = Query(default=[], max_length=2000)):
         from custom_models import readiness
         from results_workflow import context
         ctx = context(root, dataset_id, start_date.isoformat() if start_date else None, end_date.isoformat() if end_date else None)
-        return readiness(root, ctx, species_id, limit, offset)
+        return readiness(root, ctx, species_id, batch, skip)
 
-    @app.post('/search-runs/{run_id}/labels')
-    def custom_model_label(run_id: int, body: ModelLabel):
+    @app.post('/datasets/{dataset_id}/species/{species_id}/labels')
+    def custom_model_label(dataset_id: int, species_id: str, body: ModelLabel):
         from custom_models import set_label
-        return set_label(root, run_id, body.segment_id, body.label)
+        return set_label(root, dataset_id, species_id, body.segment_id, body.label)
 
     @app.post('/custom-models')
     def custom_model_create(body: ScopeRequest):
@@ -661,7 +686,7 @@ def create_app(root, models, token):
 
     @app.post("/species")
     def update_species(body: SpeciesRequest):
-        return save_species(root, body.scientific_name, {"ja": body.ja, "en": body.en})
+        return save_species(root, body.scientific_name, body.model_dump(include={"ja", "en"}, exclude_none=True))
 
     @app.get("/references")
     def references():
@@ -940,8 +965,7 @@ def create_app(root, models, token):
                     from analysis import run
                     run(root, models, job, records, dict(site), cancel, pending)
                 except Exception:
-                    import traceback
-                    traceback.print_exc()
+                    log.exception('Analysis job %s failed', job)
                     with connect(root) as db:
                         db.execute("UPDATE jobs SET status='failed',error='analysis_failed' WHERE id=?", (job,))
             worker = threading.Thread(target=work)
@@ -958,6 +982,14 @@ def create_app(root, models, token):
                           allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 
 
+def keep_log(root):
+    """Errors also go to a small rotating file in the data folder: a packaged app's stderr is not visible."""
+    from logging.handlers import RotatingFileHandler
+    handler = RotatingFileHandler(Path(root) / 'sidecar.log', maxBytes=1_000_000, backupCount=1, encoding='utf-8')
+    logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(levelname)s %(message)s',
+                        handlers=[handler, logging.StreamHandler()], force=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
@@ -971,6 +1003,7 @@ def main():
     from filelock import FileLock
     args.data.mkdir(parents=True, exist_ok=True)
     with FileLock(args.data / ".lock", timeout=0):
+        keep_log(args.data)
         token = secrets.token_urlsafe(32)
         app = create_app(args.data.resolve(), args.models.resolve(), token)
         with socket.socket() as sock:

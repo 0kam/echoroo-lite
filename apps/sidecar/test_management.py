@@ -59,7 +59,7 @@ class ManagementCheck(unittest.TestCase):
                     snap=json.dumps({'recording_ids':[rid],'analysis_ids':[aid]})
                     run=db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',(dataset,species,snap)).lastrowid
                     db.execute('INSERT INTO search_hits VALUES(?,?,.8,0,0)',(run,segment))
-                    db.execute("INSERT INTO model_labels(run_id,segment_id,label) VALUES(?,?,'target')",(run,segment))
+                    db.execute("INSERT INTO model_labels(species_id,segment_id,label) VALUES(?,?,'target')",(species,segment))
                     db.execute('INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,run_id) VALUES(?,?,?,0,5,?)',(dataset,species,rid,run))
                     validation=db.execute("INSERT INTO validation_sessions(dataset_id,species_id,model,fingerprint,snapshot) VALUES(?,?,'birdnet','test',?)",(dataset,species,snap)).lastrowid
                     db.execute("INSERT INTO validation_items(session_id,phase,position,recording_id,start_s,end_s,stratum,scores) VALUES(?,'sample',0,?,0,3,'0','{}')",(validation,rid))

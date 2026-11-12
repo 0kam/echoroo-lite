@@ -17,7 +17,7 @@ export type Validation = { id:number; dataset_id:number; species:Species; stage:
   question:{id:number;position:number;verdict:string|null;version:number;source:AudioSource;start_s:number;end_s:number;review_position:number;review_total:number}|null;
   history:{id:number;position:number;verdict:string}[]; can_extend:boolean; extended:boolean; model_reason?:string|null;
   start_date:string; end_date:string; window_s:number; population:number; applicable:boolean; created_at:string };
-export type Check = {key:string;engine:string;model_id:number|null;created_at?:string;validation:Validation|null};
+export type Check = {key:string;engine:string;model_id:number|null;created_at?:string;round?:number;validation:Validation|null};
 export type Evidence = {recording_id:number;start_s:number;end_s:number;origin:'mark'|'check';source_path:string;seconds:number;local_time:string};
 export type Presence = {status:'confirmed'|'not_found'|'unchecked';evidence:Evidence[];miss:{listened:number;source:'ai'|'search';created_at:string}|null};
 export type SearchRef = {id:number;created_at:string};
@@ -27,14 +27,17 @@ export type PresenceRow = {recording_id:number;start_s:number;end_s:number;score
 export type Region = 'usual'|'unusual'|null;
 export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|null;rows:PresenceRow[];has_ai:boolean;start_date:string;end_date:string;
   site:{id:number;name:string;timezone:string};presence:Presence;region?:Region};
-export type CustomModel = {id:number;created_at:string;dataset_id:number;run_id:number;species:Species;
+export type CustomModel = {id:number;round:number;created_at:string;dataset_id:number;run_id:number|null;species:Species;
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
-  training:{positive_5s:number;negative_5s:number;negative_from_checks:number};inference:{scored_5s:number};applicable:boolean;reason:string|null};
-export type SearchHit = {segment_id:number;similarity:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;label:'target'|'other'|null};
-export type CustomModelReadiness = {run_id:number;species:Species;hits:SearchHit[];hit_count:number;
-  examples:{positive_5s:number;negative_5s:number;negative_from_checks:number};requirements:{positive_5s:number;negative_5s:number};
-  can_train:boolean;reasons:string[];models:CustomModel[]};
-export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
+  training:{positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null};
+/** A 5-second sound to answer on the species-AI page; `score` is null in the list of answered sounds. */
+export type LabelRow = {segment_id:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;
+  score:number|null;label:'target'|'other'|null};
+/** The species-AI page. `batch` and `source` come only when a round is asked for; source null = nothing to choose sounds by. */
+export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;source:'custom'|'search'|'builtin'|null;engine:string;
+  batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number};
+  requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[]};
+export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;round?:number;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
   threshold?:number|null;validation:Validation|null};
 export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;
   start_date:string;end_date:string;records:number;recorded_seconds:number;analysed_recordings:number;pending_analysis:Work[];
@@ -52,11 +55,11 @@ export async function focusMissing(root:ParentNode=document) {
   const section=field?.closest('details');if(section)section.open=true;
   field?.scrollIntoView({block:'center'});field?.focus({preventScroll:true});
 }
-export const customName = (model:{created_at?:string}) => fill('customModelNumber',{date:new Intl.DateTimeFormat(app.locale,{month:'numeric',day:'numeric'}).format(new Date(`${model.created_at?.replace(' ','T')}Z`))});
+export const customName = (model:{created_at?:string;round?:number}) => fill('customModelNumber',{n:model.round??1,date:new Intl.DateTimeFormat(app.locale,{month:'numeric',day:'numeric'}).format(new Date(`${model.created_at?.replace(' ','T')}Z`))});
 const modelOf = (engine:string) => app.ai.models.find(model=>model.id===engine);
 /** Display name from GET /models; 'custom' is an AI made for one species. */
 export const modelName = (engine:string) => engine==='custom'?t('customModel'):modelOf(engine)?.name??engine;
-export const checkName = (check:{engine:string;created_at?:string}) => check.engine==='custom'?customName(check):modelName(check.engine);
+export const checkName = (check:{engine:string;created_at?:string;round?:number}) => check.engine==='custom'?customName(check):modelName(check.engine);
 /** Window length of a model's intervals from GET /models (BirdNET 3 s); species models are 5 s. */
 /** Analysis one AI still has to do: how many recordings and their total length in seconds. */
 export type Work = {engine:string;recordings:number;seconds:number};
@@ -78,7 +81,8 @@ export const windowSeconds = (engine:string) => modelOf(engine)?.window_s??5;
 export function checkText(value:Validation|null) {
   if(!value)return t('cNotStarted');
   if(value.status==='in_progress')return fill('cInProgress',{answered:value.counts.answered,total:value.counts.total});
-  return t(value.status==='stale'?'wStale':value.status==='decided'?'cDecided':'cUndecided');
+  if(value.status==='stale')return t(value.model_reason==='custom_model_rebuilt'?'custom_model_rebuilt':'wStale');
+  return t(value.status==='decided'?'cDecided':'cUndecided');
 }
 /** The one button into a check: start, continue (answered/total), or see the result. */
 export function listenLabel(value:Validation|null) {
@@ -105,7 +109,7 @@ export function speciesGroup(row:Overview['species'][number],recordedSeconds:num
   const touched=row.search||row.models.some(model=>model.validation);
   return !touched&&most<fewBelow(recordedSeconds)?'few':'check';
 }
-type Checked = {engine:string;created_at?:string;validation:Validation|null};
+type Checked = {engine:string;created_at?:string;round?:number;validation:Validation|null};
 export const share = (value:number|null) => value==null?'—':new Intl.NumberFormat(app.locale,{style:'percent',maximumSignificantDigits:2}).format(value);
 /** Models whose counting rule was decided by checking, each with its share of correct detections when known. */
 export const decidedModels = (models:Checked[]) =>

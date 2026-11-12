@@ -141,6 +141,15 @@ with ExitStack() as stack:
             assert linear['height'] == 385 and linear['frequency_scale'] == 'linear'
             print(f"Frozen reference registration, spectrogram and real similarity search passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
+            build = api('/explore', {'dataset_id': imported['dataset_id']})
+            while (job := next(j for j in api('/catalog')['jobs'] if j['id'] == build['id']))['status'] in {'queued', 'running'}:
+                assert time.perf_counter() - started < 120, job
+                time.sleep(1)
+            assert job['status'] == 'complete', (job, (Path(temp) / 'sidecar.log').read_text(errors='replace'))
+            sound_map = api(f"/explore?dataset={imported['dataset_id']}")
+            assert sound_map['status'] == 'ready' and sound_map['segment_count'] > 1, sound_map
+            print(f"Frozen sound map build passed in {time.perf_counter() - started:.2f}s.")
+            started = time.perf_counter()
             run = api('/search-runs', {'dataset_id': imported['dataset_id'], 'species_id': target['id'], 'clips': [
                 {'source_kind': 'reference', 'source_id': reference['id'], 'start_s': 0, 'end_s': 3},
                 {'source_kind': 'reference', 'source_id': reference['id'], 'start_s': 5, 'end_s': 8}]})

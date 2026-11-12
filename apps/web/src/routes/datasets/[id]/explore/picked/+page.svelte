@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { untrack } from 'svelte';
   import { isTauri } from '@tauri-apps/api/core';
@@ -19,6 +20,10 @@
   void picks.reload();
   const items=$derived(Object.values(picks.state.items));
   const missing=$derived(blanks(items)),recent=$derived(recentSpecies(items));
+  // Sounds with a species name, one entry per species, to hand to that species' search (which takes at most 20 example calls).
+  const named=$derived(items.flatMap(i=>i.species?[i.species]:[]));
+  const groups=$derived([...new Map(named.map(s=>[s.scientific_name,s])).values()]
+    .map(s=>({s,n:Math.min(20,named.filter(o=>o.scientific_name===s.scientific_name).length)})));
   let folder=$state(''),saved=$state<{path:string;count:number}|null>(null);
   // A change that fails may be far down the list, so its error is shown as a toast; a list that cannot load says so in place.
   // `untrack`: the toast list itself must not re-run this, or one failure would raise toasts forever.
@@ -33,6 +38,8 @@
   const where=(i:Item)=>`${when(i)} · ${fill('pkWhere',{file:fileName(i.path),start:+i.start_s.toFixed(1),end:+i.end_s.toFixed(1)})}`;
   // One sound at a time: starting a player pauses every other one on the page.
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
+  // A label typed just before pressing is saved first, so the search page receives it.
+  async function searchWith(s:Named){await picks.idle();await goto(`${resolve(`/datasets/${id}/search`)}?picked=${encodeURIComponent(s.scientific_name)}`);}
   const exportZip=createTask(async()=>{
     if(isTauri()){const path=await chooseDirectory();if(!path)return;folder=path;}
     saved=null;
@@ -48,6 +55,10 @@
   <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('pkTitle')}</h1><p>{t('pkLead')}</p></div></div>
   {#if picks.state.error&&!picks.state.loaded}<p class="error" role="alert">{t(picks.state.error)}</p>{/if}
   {#if picks.state.loaded}
+    {#if groups.length}<section class="panel stack">
+      <h2>{t('pkSearchHeading')}</h2>
+      {#each groups as {s,n} (s.scientific_name)}<div class="species-row"><strong>{speciesName(s)}</strong><Button size="sm" onclick={()=>searchWith(s)}>{fill('pkSearchButton',{n})}</Button></div>{/each}
+    </section>{/if}
     <section class="panel stack">
       <h2>{fill('pkListHeading',{n:items.length})}</h2>
       {#if items.length}<p>{t('pkMargin')}</p>{/if}
@@ -87,6 +98,7 @@
   /* The date, file and seconds wrap instead of being cut (English runs past one line). */
   .where{white-space:normal;overflow-wrap:anywhere}
   .saved{white-space:nowrap}
+  .species-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
   .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}
   @media(max-width:600px){.labels{padding-left:0}}
 </style>

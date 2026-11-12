@@ -8,6 +8,7 @@
   import { page } from '$app/state';
   import { api } from './api.svelte';
   import { app, t } from './app.svelte';
+  import { openExternal } from './files';
   import { commonName, type Species } from './species';
   import type { AudioSource } from './AudioRegion.svelte';
   import Button from './ui/Button.svelte';
@@ -15,7 +16,9 @@
   export type Attribution = { id: number; scientific_name: string; common_name: string; recordist: string;
     country: string; location: string; quality: string; length: string; type: string; date: string; license: string; url: string };
   // `onmissing`: called when search is pressed before a species is chosen, so the page can point to its species field.
-  let { species, onselect, onmissing }: { species: Species | null; onselect: (source: AudioSource & { attribution?: Attribution }) => void; onmissing?: () => void } = $props();
+  // `added`: recordings the page already holds, shown as added with a remove action (`onremove`) instead of the import action.
+  let { species, onselect, onmissing, added = [], onremove }: { species: Species | null; onselect: (source: AudioSource & { attribution?: Attribution }) => void; onmissing?: () => void;
+    added?: (number | undefined)[]; onremove?: (id: number) => void } = $props();
   let tried = $state(false);
   let configured = $state<boolean | null>(null), country = $state(''), countryFilter = $state(false), quality = $state('A');
   let results = $state<{ recordings: Attribution[]; total_recordings: number; total_pages: number; page: number } | null>(null);
@@ -54,10 +57,12 @@
       {#each results.recordings as row (row.id)}
         <article>
           <div class="section-heading"><strong>XC{row.id} · {row.quality} · {row.length}</strong>
-            <Button size="sm" pending={importing === row.id} disabled={pick.pending} onclick={() => pick.run(row)}>{t('xcSelect')}</Button></div>
+            {#if added.includes(row.id)}<span class="actions"><span class="added">✓ {t('xcAdded')}</span><Button size="sm" aria-label={`${t('removeReference')}: XC${row.id}`} onclick={() => onremove?.(row.id)}>{t('removeReference')}</Button></span>
+            {:else}<Button size="sm" variant="primary" pending={importing === row.id} disabled={pick.pending} onclick={() => pick.run(row)}>{t('xcSelect')}</Button>{/if}</div>
           <p>{species?.scientific_name === row.scientific_name ? commonName(species, app.locale) : app.locale === 'en' ? row.common_name : t('commonNameMissing')} · <i>{row.scientific_name}</i></p>
           <p class="muted">{row.recordist} · {row.country} / {row.location} · {row.type}</p>
-          <p class="muted"><a href={row.license} target="_blank" rel="noreferrer">{licenseName(row.license)}</a> · <a href={row.url} target="_blank" rel="noreferrer">XC{row.id}</a></p>
+          <!-- Licence as plain text first; links open in the system browser, never inside the app. -->
+          <p class="muted">{licenseName(row.license)} · <a href={row.url} onclick={e => { e.preventDefault(); void openExternal(row.url); }}>XC{row.id}</a> · <a class="terms" href={row.license} onclick={e => { e.preventDefault(); void openExternal(row.license); }}>{t('xcLicenseTerms')}</a></p>
         </article>
       {:else}<p class="empty">{t('xcNoResults')}</p>{/each}
     </div>
@@ -79,4 +84,6 @@
   article:last-child { border-bottom: 0; }
   article p { margin-top: 2px; }
   a { overflow-wrap: anywhere; }
+  .terms { font-size: 14px; color: inherit; }
+  .added { font-weight: 600; color: rgb(var(--primary-700)); }
 </style>

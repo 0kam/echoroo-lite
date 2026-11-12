@@ -51,6 +51,18 @@
 
 地点の結果の一番下にある「音の地図」では、似た音ほど近くに並ぶ地図から、録音の中の音を聞いて探せます。同じ種類の音を集めて種名を付け、音声（前後 2.5 秒つきの WAV）と一覧（CSV）を 1 つの ZIP に書き出せます。AI が種名を出さなかった音や、一覧にない生き物の声を探すための機能で、まだ実験的なものです。
 
+![音の地図：似た音が近くに並ぶ地図と、近い音の一覧](docs/images/08-sound-map.jpg)
+
+### AIが対応していない種を探す
+
+AIが対応していない種や、AIが見つけなかった種は、お手本の声から探せます。種の名前を入力し、お手本の声（Xeno-Canto か、パソコンの中の音声ファイル）の鳴いている部分を選ぶと、この地点の録音から似た5秒の音を探します。見つかった音を聞いて、その種がいるかを確かめます。似ている度合いは、その種である確率を表すものではありません。
+
+種のページの「この種用のAIを育てる」で、音に「声あり」「声なし」と答えると、それを材料に、その種だけを探すAIを育てられます。約20音に答えると最初のAIを作れ、答えを足して何度でも作り直せます。途中でやめて、あとから続けることもできます。内蔵のAIが見つけた種でも、精度が低いときは同じように育てられます。作ったAIは、ほかのAIと同じく「AIの精度を確かめる」で確かめます。Xeno-Canto から選ぶには、自分の API キーが必要です。
+
+### 鳴き声クイズ
+
+声を聞いて、どの鳥か当てる練習です。覚えたい鳥の鳴き声を、Xeno-Canto（鳥の声の共有サイト）や自分の録音から2種以上追加すると始められます。アプリに鳥の録音は入っていません。クイズは聞き分けの練習で、この成績だけで実際の録音での正確さは判断できません。
+
 ## 使えるAI
 
 | AI | 内容 |
@@ -89,6 +101,9 @@ Echoroo Lite is a desktop app that finds bird calls in recordings with AI, lets 
 - **Steps**: add and analyse recordings → listen to the AI's top sounds to confirm presence → optionally check the AI's accuracy (up to 60 sounds) to set a score threshold → export a report.
 - **Output**: an HTML report (site and period, confirmed species, AI precision, date × time-of-day charts, evidence audio) plus CSV and audio files.
 - **Sound map (experimental)**: a map where similar sounds sit close together; listen, collect sounds of the same kind, name the species and export them as WAV clips (with 2.5 s of context on each side) plus a CSV table in one ZIP.
+- **Species the AIs do not cover**: search the site's recordings for 5-second sounds similar to a reference call (from Xeno-Canto with your own API key, or an audio file on your PC), listen to confirm the species. Similarity is not an identification probability.
+- **Grow an AI for a species**: answer **Voice** / **No voice** for about 20 sounds to make an AI that looks only for that species; add answers and make it again as often as you like, or continue later. This also works for species the built-in AIs found, when their accuracy is low.
+- **Bird-call quiz**: practise telling calls apart with calls you add from Xeno-Canto or your own recordings. No bird recordings are bundled.
 - **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models distilled from Perch 2.0 for 317 Japanese bird species, by the author of this app), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
 - **Requirements**: Windows 10/11 x64; macOS 12+ on Apple silicon; Linux x86_64 (Ubuntu 22.04+ or similar). 8 GB RAM recommended; about 2 GB of disk for the app plus tens of MB per recorded hour for results. Installers are unsigned.
 - **Internet**: used to show the map, to fetch quiz reference audio from Xeno-Canto, and to check for a new version when the app starts. A new version is downloaded only when you press **Update**. Nothing about you or your recordings is sent.
@@ -162,12 +177,21 @@ Recordings are split into threshold-setting and checking halves by local day (by
 recording when there is only one day), reproducibly per site and hidden from users. See
 [the validation design](docs/validation-design.md) for sampling and uncertainty.
 
-A **species model** is built on its own page from the species' search: label 5-second
-search hits **Voice / No voice**; "Not heard" answers from steps ② and ③ add no-voice
-material (each 15-second window as three 5-second pieces). At least three of each are
-needed. The fixed Perch-embedding classifier is applied to the site's recordings, its
-15-second score is the maximum of three pieces, and it is checked like BirdNET and Perch
-(windows it learned from are left out of its check).
+A **species model** ("AI for this species") is grown on one page reachable from every
+species page, with or without a search. Material is every 5-second piece answered **Voice /
+No voice** on that page, every "This is its call" mark, and every 5-second check answer
+("Heard" = voice, "Not heard" = no voice); a label given on the page wins over the others.
+An AI can be made (or made again) once there are 20 answers in all, with at least three of each.
+The page offers 10 sounds at a time, deterministically, never one already answered nor one shown
+and passed over with "Show 10 other sounds" (until the AI is made again): before a model exists, the top of the search's similarity ranking
+(or, without a search, of the main AI's score for the species) while voice is short, plus
+sounds around where the voice stops between the deepest "voice" and the next "no voice"
+(`boundary_ranks`); once it exists, mostly pieces whose model score is nearest 0.5, plus two
+of the highest and two of the lowest. There is one model per site, species and period: making
+it again replaces its files in place (same id, round + 1), and its earlier checks become
+outdated ("custom_model_rebuilt"). The fixed main-AI-embedding classifier is applied to the
+site's 5-second pieces and checked like BirdNET and Perch (windows it learned from are left
+out of its check). Labels belong to the species (schema 7); 0.2.0 catalogues are migrated.
 
 Spectrograms use a 16 ms Hann window, 2 ms steps and 2× zero padding, with the
 Roseus palette and a linear frequency axis. The same display settings apply to
@@ -219,7 +243,8 @@ seconds at a time. Stereo references are averaged to mono. Each species has exac
 search per site; when it finishes, the app opens that species' **Is it here?** list of
 search results. To search again, delete the search on the species page first: the
 confirmation lists what goes with it — its "This is its call" marks, not-found records,
-voice/no-voice labels and any species model built from it (with that model's check).
+and any species model last made with it (with that model's checks). Voice/no-voice labels
+stay with the species.
 
 Search uses all embeddings, without species/region filtering, from the latest
 compatible Perch analysis per recording in the selected group. The reference interval

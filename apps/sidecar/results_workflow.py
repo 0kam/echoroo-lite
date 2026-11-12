@@ -74,6 +74,8 @@ def context(root, dataset_id, first=None, last=None):
         revision=[tuple(db.execute(f'SELECT COALESCE(MAX(id),0),COUNT(*) FROM {table}').fetchone()) for table in
                   ('search_runs','window_answers','validation_sessions','presence_marks','presence_misses','model_labels','custom_models')]
         revision.append([tuple(r) for r in db.execute("SELECT id,json_extract(snapshot,'$.stage'),json_extract(snapshot,'$.method') FROM validation_sessions ORDER BY id")])
+        # A species AI made again keeps its id; its files' digest tells the versions apart.
+        revision.append([tuple(r) for r in db.execute('SELECT id,artifact_sha256 FROM custom_models ORDER BY id')])
         revision.append([tuple(r) for r in db.execute('SELECT id,names FROM species ORDER BY id')])
     result['names_revision']=hashlib.sha256(json.dumps(revision[-1]).encode()).hexdigest()
     with connect(root) as db:
@@ -222,7 +224,7 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    result = cached(root, ['overview-v19', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
+    result = cached(root, ['overview-v20', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
                          enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx))
     from analysis import pending_pairs
@@ -287,7 +289,7 @@ def build_overview(root, dataset_id, ctx):
                 'threshold': threshold_for(validation, model), 'validation': validation,
                 'validation_status': validation['status'] if validation else 'not_started'})
     for model in list_models(root, ctx):
-        entry = {'engine': 'custom', 'key': f"custom:{model['id']}", 'model_id': model['id'], 'created_at': model['created_at'],
+        entry = {'engine': 'custom', 'key': f"custom:{model['id']}", 'model_id': model['id'], 'created_at': model['created_at'], 'round': model['round'],
                  'applicable': model['applicable'], 'reason': model['reason'],
                  'validation': quality.get((model['species']['id'], f"custom:{model['id']}"))}
         entry['validation_status']=entry['validation']['status'] if entry['validation'] else 'not_started'
@@ -328,7 +330,7 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
     checks = [{'engine': m['engine'], 'key': m['engine'], 'model_id': None, 'model_sha256': m['model_sha256'],
                'validation': quality.get((species_id, m['engine']))} for m in listed]
     checks += [{'engine': 'custom', 'key': f"custom:{m['id']}", 'model_id': m['id'], 'model_sha256': m['artifact_sha256'],
-                'created_at': m['created_at'], 'validation': quality.get((species_id, f"custom:{m['id']}"))} for m in custom]
+                'created_at': m['created_at'], 'round': m['round'], 'validation': quality.get((species_id, f"custom:{m['id']}"))} for m in custom]
     for check in checks:
         check['status']=check['validation']['status'] if check['validation'] else 'not_started'
     overall_status = counting_status(check.get('validation') for check in checks)

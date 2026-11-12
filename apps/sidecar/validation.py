@@ -293,7 +293,8 @@ def start_session(root, body):
     with connect(root) as db:
         for row in session_rows(db, ctx['site']['id'], body.species_id, key):
             snap = json.loads(row['snapshot'])
-            if row['fingerprint'] == ctx['fingerprint'] and (snap['start_date'], snap['end_date']) == (ctx['start_date'], ctx['end_date']):
+            if row['fingerprint'] == ctx['fingerprint'] and (snap['start_date'], snap['end_date']) == (ctx['start_date'], ctx['end_date']) \
+                    and custom_model_status(root, snap)[0]:
                 return view_session(root, row['id'], ctx=ctx)
     windows, models, analyses = model_windows(root, ctx, body.species_id, engine, body.model_id)
     if engine == 'custom':
@@ -373,6 +374,8 @@ def custom_model_status(root, snapshot):
     from custom_models import get_model
     try: model = get_model(root, snapshot['model_id'])
     except CatalogError: return False, 'custom_model_files_missing'
+    if model['applicable'] and snapshot['models'].get('custom') != model['artifact_sha256']:
+        return False, 'custom_model_rebuilt'  # the species AI was made again after this check started
     return model['applicable'], model['reason']
 
 

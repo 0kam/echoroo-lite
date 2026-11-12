@@ -20,7 +20,7 @@
   type Segment={segment_id:number;recording_id:number;path:string;start_s:number;end_s:number;recorded_at:string;timezone:string;candidates:(Named&{score:number})[]};
   // Points come in tree order, so the sounds of every group are the positions lo..hi-1 of the point arrays.
   type Group={node:number;name:string;size:number;lo:number;hi:number;child_count:number;rep:{start_s:number;end_s:number};hint_rate:number;top_species:(Named&{share:number})[]};
-  type Status={status:'none'|'building'|'ready'|'stale';stale_reason?:'data'|'method';created_at:string|null;engine:string;segment_count:number;node?:Group;path?:{node:number;name:string}[];children?:Group[]};
+  type Status={status:'none'|'building'|'ready'|'stale';stale_reason?:'data'|'method';created_at:string|null;engine:string;segment_count:number;last_error?:string;node?:Group;path?:{node:number;name:string}[];children?:Group[]};
   type Page={total:number;segments:Segment[]};
   // `anchor`: the position the sounds are sorted around, or -1 for the group's centre.
   type List=Page&{pending:boolean;error:string;anchor:number};
@@ -58,6 +58,11 @@
   const job=$derived(activeJob());
   const building=$derived(job?.stage.startsWith('explore_')&&datasetOf(job.dataset_id)?.site_id===datasetOf(id)?.site_id?job:null);
   const ended=$derived(app.jobs.find(j=>j.id===watched&&(j.status==='failed'||j.status==='cancelled')));
+  // Why a build stopped; a full drive is reported as `explore_disk_space:<needed bytes>:<free bytes>`,
+  // missing recordings as `source_missing:<how many more>:<first missing path>` (the path may contain ':').
+  const why=(code:string)=>{const [key,need,free]=code.split(':'),size=(bytes:string)=>new Intl.NumberFormat(app.locale,{style:'unit',unit:'gigabyte',maximumFractionDigits:1}).format(Number(bytes)/1e9);
+    if(key==='source_missing'&&need)return fill('source_missing_path',{path:code.split(':').slice(2).join(':'),more:Number(need)?fill('sourceMissingMore',{n:need}):''});
+    return key==='explore_disk_space'?fill(key,{need:size(need),free:size(free)}):t(code);};
   const signature=$derived(app.jobs.map(j=>`${j.id}:${j.status}`).join(','));
   $effect(()=>{if(building)watched=building.id;});
   // The catalogue poll refreshes jobs every 2 s; any job change or a move to another group reloads the map state.
@@ -304,17 +309,18 @@
   <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('eTitle')}</h1>
     <ol class="flow">{#each [1,2,3] as n (n)}<li><span class="num" aria-hidden="true">{n}</span><strong>{t(`eStep${n}`)}</strong><p class="muted">{t(`eStep${n}Text`)}</p></li>{/each}</ol></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
-  {#if ended}<p class={ended.status==='failed'?'error':'notice'} role="status">{t(ended.status==='cancelled'?'cancelled':ended.error??'explore_failed')}</p>{/if}
+  {#if ended}<p class={ended.status==='failed'?'error':'notice'} role="status">{ended.status==='cancelled'?t('cancelled'):why(ended.error??'explore_failed')}</p>
+  {:else if data?.last_error&&!building}<p class="error" role="alert">{why(data.last_error)}</p>{/if}
   {#if data}
     {#if data.status==='building'||building}<section class="status-box" role="status">
       {#if building}<JobStatus job={building}/>{:else}<p><Spinner/> {t('eBuilding')}</p>{/if}
-      <p class="muted">{t('eTakesMinutes')}</p></section>
+      <p class="muted">{t('eTakesTime')}</p></section>
     {:else if data.status==='stale'}<section class="notice stack" role="status">
       <p>{t(data.stale_reason==='method'?'eStaleMethod':'eStale')}</p>
-      <div class="actions"><Button pending={build.pending} disabled={!!job} onclick={()=>build.run()}>{t('eRebuild')}</Button><span>{t(job&&!build.pending?'job_busy':'eTakesMinutes')}</span></div>
+      <div class="actions"><Button pending={build.pending} disabled={!!job} onclick={()=>build.run()}>{t('eRebuild')}</Button><span>{t(job&&!build.pending?'job_busy':'eTakesTime')}</span></div>
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}</section>
     {:else if !node}<section class="panel empty">
-      <p>{t('eEmpty')}</p><p>{t('eTakesMinutes')}</p>
+      <p>{t('eEmpty')}</p><p>{t('eTakesTime')}</p>
       <Button variant="primary" pending={build.pending} disabled={!!job} onclick={()=>build.run()}>{t('eBuild')}</Button>
       {#if job&&!build.pending}<p>{t('job_busy')}</p>{/if}
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}

@@ -2,6 +2,7 @@
 import csv
 import hashlib
 import json
+import logging
 import math
 import os
 import threading
@@ -19,6 +20,8 @@ from models import REGISTRY, available, default_threshold, enabled_engines, main
 from species import birdnet_species_mapping
 from storage import CatalogError, checked_source, connect
 
+log = logging.getLogger(__name__)
+
 
 _warmup_thread = None
 _warmup_lock = threading.Lock()
@@ -34,8 +37,7 @@ def warm_imports():
         signal.resample(np.zeros(32, dtype=np.float32), 48)
         special.softmax(np.zeros((1, 2), dtype=np.float32), axis=1)
     except Exception:
-        import traceback
-        traceback.print_exc()
+        log.exception('Preloading the analysis libraries failed')
 
 
 def start_warmup():
@@ -445,8 +447,7 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None):
             with connect(root) as db:
                 db.execute("UPDATE jobs SET status='cancelled',stage='finished' WHERE id=?", (job,))
             return
-        import traceback
-        traceback.print_exc()
+        log.exception('Analysis job %s failed', job)
         with connect(root) as db:
             db.execute("UPDATE jobs SET status='failed',error=? WHERE id=?",
                        (str(error) if isinstance(error, CatalogError) else "analysis_failed", job))

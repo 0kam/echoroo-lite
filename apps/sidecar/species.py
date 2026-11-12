@@ -75,8 +75,9 @@ def list_species(root, query):
 
 def save_species(root, scientific_name, names):
     with connect(root) as db:
-        # Empty fields remove local overrides and restore the bundled name.
-        custom = {lang: name for lang, name in names.items() if name}
+        # Only the given languages change; an empty name removes that local override and restores the bundled name.
+        row = db.execute("SELECT names FROM species WHERE scientific_name=?", (scientific_name,)).fetchone()
+        custom = {lang: name for lang, name in {**(json.loads(row["names"]) if row else {}), **names}.items() if name}
         db.execute("""INSERT INTO species(id,scientific_name,names) VALUES(?,?,?)
             ON CONFLICT(scientific_name) DO UPDATE SET names=excluded.names""",
                    (str(uuid4()), scientific_name, json.dumps(custom, ensure_ascii=False)))

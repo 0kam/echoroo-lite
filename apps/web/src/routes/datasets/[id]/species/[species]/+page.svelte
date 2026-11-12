@@ -18,7 +18,7 @@
   let result=$state<SpeciesResult|null>(null),engine=$state(initial.get('engine')||'auto'),modelId=$state(Number(initial.get('model_id'))||0),error=$state(''),loading=$state(true),liveUrl=$state('');
   let request=0,about=$state<{in_quiz:boolean}|null>(null),detected=$state<Overview['species'][number]['models']|null>(null);
   // Which deletion is waiting for confirmation: a check's model key, or 'search'.
-  let confirming=$state(''),preview=$state<{marks:number;labels:number;custom_models:number;checks:number}|null>(null);
+  let confirming=$state(''),preview=$state<{marks:number;custom_models:number;checks:number}|null>(null);
   // Each AI's payload for the current period, so switching chart tabs back and forth is instant.
   const cache=new Map<string,Promise<SpeciesResult>>();
   function urlFor(engine:string,modelId:number){const query=new URLSearchParams({engine});
@@ -63,11 +63,10 @@
   const ordered=$derived(result&&required?[required,...result.checks.filter(item=>item!==required)]:[]);
   const settled=$derived(result?activity(result.checks):'not_started');
   const remaining=$derived(remainingSounds(counted)),effort=$derived(workload(remaining));
-  // Every checked AI finished without a counting rule: a species-specific AI is the remaining route (B5).
+  // Every checked AI finished without a counting rule (B5).
   const missed=$derived(settled==='undecided');
   const listed=$derived(!!result?.checks.some(item=>item.engine!=='custom'));
   const showSearch=$derived(!!result&&(!listed||!!result.search||result.presence.status==='not_found'||missed));
-  const showModel=$derived(!!result&&(!listed||missed||result.checks.some(item=>item.engine==='custom')));
   const check=createTask(async(item:Check)=>{
     if(!result)return;
     const validation=item.validation?.applicable?item.validation:await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
@@ -103,14 +102,13 @@
       <section class="panel card" aria-labelledby="activity-title">
         <h2 id="activity-title">{t('sActivityTitle')}</h2>
         {#if result.checks.length}<p class="status"><strong>{activityText(result.checks)}</strong></p>{/if}
-        <p class="muted">{t(result.checks.length>1?'sActivityHint':'sActivityHintOne')}</p>
+        <p class="muted">{t(result.checks.length>1?'sActivityHint':result.checks.length?'sActivityHintOne':'sActivityHintNone')}</p>
         {#if remaining&&result.checks.some(item=>!undetected(item))}<p class="muted">{fill('sWorkload',{n:remaining,time:effort.time})}</p>{/if}
         {#each ordered as item (item.key)}<div class="check-row">
           <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation)}</span></div>
           {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>{/if}
         </div>{:else}<p>{t('wNoModel')}</p>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
-        {#if showModel}{#if result.search}<div class="actions"><Button href={modelHref}>{t('customModelTitle')}</Button></div>{:else}<p class="muted">{t('sModelNeedsSearch')}</p>{/if}{/if}
         <!-- Deleting is kept away from the listening buttons. -->
         {#if result.checks.some(item=>item.validation)}<details class="more"><summary>{t('sMore')}</summary>
           {#each result.checks.filter(item=>item.validation) as item (item.key)}<div class="stack">
@@ -120,6 +118,8 @@
           </div>{/each}</details>{/if}
       </section>
     </div>
+    <!-- Its own row: inside the right-hand card it made that card much taller than "Is it here?". -->
+    <section class="panel grow"><p>{t(result.checks.length?'mdGrowHint':'mdGrowHintNoAI')}</p><Button href={modelHref}>{t('customModelTitle')}</Button></section>
     {#if result.checks.length}<section class="panel">
       <h2>{t('sTimeTitle')}</h2>
       <div class="actions model-tabs">{#each result.checks as item (item.key)}<Button active={result.selected===item.key} aria-pressed={result.selected===item.key}
@@ -135,20 +135,20 @@
         <div class="actions"><Button href={presenceHref('search')}>{t('sListenSearch')}</Button></div>
         <details class="more"><summary>{t('sMore')}</summary>
           <Button variant="danger" size="sm" pending={askSearchDelete.pending} onclick={()=>confirming==='search'?confirming='':askSearchDelete.run()}>{t('sSearchDelete')}</Button>
-        {#if confirming==='search'&&preview}<div class="confirm" role="group" aria-label={t('sSearchDelete')}><p>{t('sSearchDeleteConfirm')}</p>
-          {#if preview.marks||preview.labels||preview.custom_models}<ul>
-            {#if preview.marks}<li>{fill('sSearchDeleteMarks',{n:preview.marks})}</li>{/if}
-            {#if preview.labels}<li>{fill('sSearchDeleteLabels',{n:preview.labels})}</li>{/if}
-            {#if preview.custom_models}<li>{fill('sSearchDeleteModels',{n:preview.custom_models})}</li>{/if}</ul>
-          {:else}<p>{t('sSearchDeleteNothing')}</p>{/if}
+        {#if confirming==='search'&&preview}<div class="confirm" role="group" aria-label={t('sSearchDelete')}>
+          {#if preview.custom_models}<p class="notice"><strong>{t('sSearchDeleteModels')}</strong></p>{/if}
+          {#if preview.marks}<p>{t('sSearchDeleteConfirm')}</p><ul><li>{fill('sSearchDeleteMarks',{n:preview.marks})}</li></ul><p>{t('sSearchDeletePresence')}</p>
+          {:else if !preview.custom_models}<p>{t('sSearchDeleteNothing')}</p>{/if}
+          {#if preview.marks||preview.custom_models}<p class="muted">{t('sSearchDeleteKept')}</p>{/if}
           <div class="actions"><Button onclick={()=>confirming=''}>{t('mCancel')}</Button><Button variant="danger" pending={removeSearch.pending} onclick={()=>removeSearch.run()}>{t('sSearchDelete')}</Button></div></div>{/if}
         </details>
       {:else}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('sSearchStart')}</Button>{/if}
     </section>{/if}
   {:else if loading}<p role="status"><Spinner/> {t('sPreparing')}</p>{/if}
 </div>
-<style>.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px;align-items:start}.card{display:flex;flex-direction:column;gap:12px}
+<style>.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px}.card{display:flex;flex-direction:column;gap:12px}
   .check-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid rgb(var(--stone-300))}
   .check-name{display:flex;flex-direction:column}.confirm{padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}.confirm p,.confirm ul{margin:0 0 12px}
   .more{margin-top:8px}.more summary{min-height:44px;padding:10px 0}.more .stack{margin-top:8px}
+  .grow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}.grow p{margin:0;flex:1 1 320px}
   .model-tabs{margin:12px 0 4px}section p{margin:8px 0}</style>

@@ -165,7 +165,7 @@ jobs:
           test "$update_files" -eq "$expected_update_files"
       - uses: actions/upload-artifact@v4
         with:
-          name: Echoroo-Lite-0.2.0-${{ matrix.artifact }}
+          name: Echoroo-Lite-0.2.1-${{ matrix.artifact }}
           path: release-assets/
           if-no-files-found: error
 
