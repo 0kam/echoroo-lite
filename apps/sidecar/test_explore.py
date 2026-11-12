@@ -405,6 +405,111 @@ class ExploreCheck(unittest.TestCase):
         self.assert_tree(32)
         self.assertEqual(list(folder.glob('.stage-*')), [])
 
+    def cache_files(self):
+        folder = self.root / 'explore'
+        return [next(folder.glob(f'embeddings-*{suffix}')).read_bytes() for suffix in ('.f32', '.i64')]
+
+    def expected_cache(self):
+        with connect(self.root) as db:
+            rows = db.execute('''SELECT s.id,v.embedding FROM segments s JOIN vectors v ON v.rowid=s.id
+                ORDER BY s.analysis_id,s.start_s,s.id''').fetchall()
+        return [b''.join(row['embedding'] for row in rows),
+                np.array([row['id'] for row in rows], dtype='<i8').tobytes()]
+
+    def test_cache_bytes_are_the_vectors_in_row_order_when_written_and_extended(self):
+        engine, model_sha = main_identity(self.root)
+        def cache():
+            analyses = explore._context(self.root, 1)[3]
+            matrix, segment_ids, index, _ = explore.embedding_cache(self.root, 1, engine, model_sha, analyses)
+            self.assertEqual((matrix.shape, segment_ids.shape), ((index['rows'], 1536), (index['rows'],)))
+            del matrix, segment_ids
+        self.add_analysis(7, 1); self.add_analysis(5, 2)
+        with patch.object(explore, 'VECTOR_BATCH', 4):  # several appends per analysis
+            cache()
+            self.assertEqual(self.cache_files(), self.expected_cache())
+            self.add_analysis(6, 3)
+            cache()
+        self.assertEqual(self.cache_files(), self.expected_cache())
+        self.assertEqual(len(self.cache_files()[0]), 18 * 1536 * 4)
+
+    def test_first_stage_reports_progress_and_stops_when_cancelled(self):
+        self.add_analysis(10, 1); self.add_analysis(22, 2)
+        with connect(self.root) as db:
+            job = db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(1,'queued',2,'explore_checking')").lastrowid
+        calls = []
+        original = explore._progress
+        def traced(root, job_id, stage, done, total=5, **kwargs):
+            calls.append((stage, done, total))
+            original(root, job_id, stage, done, total, **kwargs)
+        with patch.object(explore, '_progress', traced), patch.object(explore, 'VECTOR_BATCH', 10):
+            explore.build(self.root, 1, job)
+        self.assertEqual(calls[:6], [('explore_checking', 0, 2), ('explore_cache', 0, 0), ('explore_cache', 0, 32),
+                                     ('explore_cache', 10, 32), ('explore_cache', 20, 32), ('explore_cache', 30, 32)])
+        self.assertEqual(calls[6:8], [('explore_cache', 32, 32), ('explore_pca', 1, 5)])
+
+        stop = threading.Event()
+        checked = []
+        def check_then_stop(row):
+            checked.append(row['analysis_id']); stop.set()
+        for path in (self.root / 'explore').glob('*'):  # the next builds start from no files
+            path.unlink()
+        with patch.object(explore, 'checked_source', check_then_stop), \
+                self.assertRaisesRegex(CatalogError, 'cancelled'):
+            explore.build(self.root, 1, job, stop)
+        self.assertEqual(len(checked), 1)
+        with connect(self.root) as db:
+            row = db.execute('SELECT status,stage,error FROM jobs WHERE id=?', (job,)).fetchone()
+        self.assertEqual(tuple(row), ('cancelled', 'explore_checking', None))
+
+        stop.clear()
+        def stop_after_first_batch(root, job_id, stage, done, total=5, **kwargs):
+            if stage == 'explore_cache' and done:
+                stop.set()
+            original(root, job_id, stage, done, total, **kwargs)
+        with patch.object(explore, '_progress', stop_after_first_batch), patch.object(explore, 'VECTOR_BATCH', 10), \
+                self.assertRaisesRegex(CatalogError, 'cancelled'):
+            explore.build(self.root, 1, job, stop)
+        self.assertEqual(list((self.root / 'explore').iterdir()), [])
+
+    def test_low_disk_refusal_and_last_failure_until_the_next_build(self):
+        self.add_analysis(32, 1)
+        Usage = type(explore.shutil.disk_usage(self.root))
+        with patch('explore.shutil.disk_usage', return_value=Usage(10**9, 10**9 - 1000, 1000)):
+            job = self.wait_job(self.client.post('/explore', json={'dataset_id': 1}).json()['id'])
+        need = 32 * explore.CACHE_ROW_BYTES + 32 * 1024 + 256 * 2**20
+        self.assertEqual((job['status'], job['error']), ('failed', f'explore_disk_space:{need}:1000'))
+        self.assertEqual(list((self.root / 'explore').iterdir()), [])
+        summary = self.client.get('/explore', params={'dataset': 1}).json()
+        self.assertEqual((summary['status'], summary['last_error']), ('none', job['error']))
+        with connect(self.root) as db:  # an unrelated analysis job afterwards does not hide it
+            db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(1,'complete',1,'finished')")
+        self.assertEqual(self.client.get('/explore', params={'dataset': 1}).json()['last_error'], job['error'])
+
+        job = self.wait_job(self.client.post('/explore', json={'dataset_id': 1}).json()['id'])
+        self.assertEqual(job['status'], 'complete')
+        summary = self.client.get('/explore', params={'dataset': 1}).json()
+        self.assertEqual(summary['status'], 'ready')
+        self.assertNotIn('last_error', summary)
+        with connect(self.root) as db:  # the app closed during a later build
+            db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(1,'interrupted',5,'explore_pca')")
+        self.assertEqual(self.client.get('/explore', params={'dataset': 1}).json()['last_error'], 'explore_interrupted')
+
+    def test_failed_build_is_written_to_the_log_file(self):
+        import logging
+        from server import keep_log
+        def close_log():
+            for handler in logging.getLogger().handlers[:]:
+                logging.getLogger().removeHandler(handler); handler.close()
+        self.addCleanup(close_log)
+        keep_log(self.root)
+        self.add_analysis(8, 1)
+        (self.root / 'recording-1.wav').unlink()
+        job = self.wait_job(self.client.post('/explore', json={'dataset_id': 1}).json()['id'])
+        self.assertEqual((job['status'], job['error']), ('failed', 'source_missing'))
+        log = (self.root / 'sidecar.log').read_text(encoding='utf-8')
+        self.assertIn(f"Sound map build {job['id']} failed", log)
+        self.assertIn('CatalogError: source_missing', log)
+
     def test_leaf_tree_and_landmark_layout_with_patched_thresholds(self):
         self.add_analysis(200, 4)
         with patch.object(explore, 'EXACT_MAX', 50), patch.object(explore, 'LEAF_COUNT', 8), \

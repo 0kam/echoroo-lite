@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { t } from '$lib/app.svelte';
+  import { app,t } from '$lib/app.svelte';
   import { appHref,fill,returnPath } from '$lib/workflow';
   import UpdateControl from '$lib/UpdateControl.svelte';
   import { checkForUpdate, update } from '$lib/update.svelte';
@@ -36,6 +36,11 @@
       {/if}
     </section>
   {/if}
+  <section class="panel" aria-labelledby="log-title">
+    <h2 id="log-title">{t('logTitle')}</h2>
+    <p>{t('logHint')}</p>
+    <p>{t('dataFolderPath')} <code>{app.dataFolder}</code></p>
+  </section>
   <section class="panel" aria-labelledby="licenses-title">
     <h2 id="licenses-title">{t('licenses')}</h2>
     <p class="notice"><strong>{t('licenseNonCommercial')}</strong></p>
