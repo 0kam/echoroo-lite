@@ -14,8 +14,10 @@
   const active = $derived(job.status === 'queued' || job.status === 'running');
   // Building the sound map counts steps, not recordings, and stops through the shared operation cancel.
   const explore = $derived(job.stage.startsWith('explore_'));
-  // Its first two steps count recording files and intervals instead; 0 of 0 while they are still being counted.
-  const unit = $derived(job.stage === 'explore_checking' ? 'eJobFiles' : job.stage === 'explore_cache' ? 'eJobRows' : explore ? 'eJobProgress' : 'jobProgress');
+  // Its six steps in order; the first two also count recording files and intervals (0 of 0 while still being counted).
+  const step = $derived(['explore_checking', 'explore_cache', 'explore_pca', 'explore_layout', 'explore_tree', 'explore_summarizing'].indexOf(job.stage));
+  const unit = $derived(job.stage === 'explore_checking' ? 'eJobFiles' : job.stage === 'explore_cache' ? 'eJobRows' : explore ? '' : 'jobProgress');
+  const counted = $derived(unit && job.total ? fill(unit, { done: job.done.toLocaleString(app.locale), total: job.total.toLocaleString(app.locale) }) : '');
   // Remaining time from the observed rate, re-estimated when a pair finishes and counted down in between;
   // shown once 10 s of progress have been seen, hidden while results are prepared.
   // The sound map's steps take very different times, so it shows no estimate.
@@ -35,10 +37,13 @@
 <div class="job">
   <div class="section-heading">
     <!-- The job counts recordings × AIs; only the AIs a recording still lacks run, so the total is not a recording count. -->
-    <strong>{job.total ? fill('jobLine', { status: t(job.status), progress: fill(unit, { done: job.done.toLocaleString(app.locale), total: job.total.toLocaleString(app.locale) }) }) : t(job.status)}</strong>
+    <!-- A map build is named as such, with its current step, from the moment it is queued. -->
+    <strong>{explore && active ? fill('jobLine', { status: t('eMaking'), progress: fill('eJobStep', { n: step + 1, total: 6 }) })
+      : counted ? fill('jobLine', { status: t(job.status), progress: counted }) : t(job.status)}</strong>
     {#if active}<Button size="sm" pending={cancel.pending} onclick={() => cancel.run()}>{t(explore ? 'operationCancel' : 'cancel')}</Button>{/if}
   </div>
-  {#if active}<p class="muted">{t(job.stage)}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p><progress value={job.done} max={job.total || 1}></progress>{/if}
+  {#if active}<p class="muted">{t(job.stage)}{#if explore && counted}{' · '}{counted}{/if}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p>
+    <progress value={explore ? step + (counted ? job.done / job.total : 0) : job.done} max={explore ? 6 : job.total || 1}></progress>{/if}
   {#if job.error}<p class="error">{t(job.error)}</p>{/if}
 </div>
 

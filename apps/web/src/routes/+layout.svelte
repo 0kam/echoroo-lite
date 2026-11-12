@@ -55,7 +55,8 @@
     <span class="spacer"></span>
     {#if job}
       {@const target = datasetOf(job.dataset_id)}
-      <a class="jobchip" href={resolve('/datasets')}><span class="dot-pulse"></span>{t('analysisInProgress')}: {siteOf(target)?.name ?? ''} · {job.done} / {job.total}</a>
+      {@const explore = job.stage.startsWith('explore_')}
+      <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{t(explore ? 'eMaking' : 'analysisInProgress')}: {siteOf(target)?.name ?? ''}{#if !explore && job.total} · {job.done} / {job.total}{/if}</a>
     {/if}
     <select aria-label={t('language')} value={app.locale} onchange={e => setLocale(e.currentTarget.value as 'ja' | 'en')}>
       <option value="ja">日本語</option><option value="en">English</option>

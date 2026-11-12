@@ -58,8 +58,10 @@
   const job=$derived(activeJob());
   const building=$derived(job?.stage.startsWith('explore_')&&datasetOf(job.dataset_id)?.site_id===datasetOf(id)?.site_id?job:null);
   const ended=$derived(app.jobs.find(j=>j.id===watched&&(j.status==='failed'||j.status==='cancelled')));
-  // Why a build stopped; a full drive is reported as `explore_disk_space:<needed bytes>:<free bytes>`.
+  // Why a build stopped; a full drive is reported as `explore_disk_space:<needed bytes>:<free bytes>`,
+  // missing recordings as `source_missing:<how many more>:<first missing path>` (the path may contain ':').
   const why=(code:string)=>{const [key,need,free]=code.split(':'),size=(bytes:string)=>new Intl.NumberFormat(app.locale,{style:'unit',unit:'gigabyte',maximumFractionDigits:1}).format(Number(bytes)/1e9);
+    if(key==='source_missing'&&need)return fill('source_missing_path',{path:code.split(':').slice(2).join(':'),more:Number(need)?fill('sourceMissingMore',{n:need}):''});
     return key==='explore_disk_space'?fill(key,{need:size(need),free:size(free)}):t(code);};
   const signature=$derived(app.jobs.map(j=>`${j.id}:${j.status}`).join(','));
   $effect(()=>{if(building)watched=building.id;});

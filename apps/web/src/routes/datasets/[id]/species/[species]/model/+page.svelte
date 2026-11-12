@@ -32,6 +32,8 @@
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;skipped=[];await next.run();},{toast:true});
   const model=$derived(info?.model??null);
+  // Nothing to rank by and nothing to make an AI from yet: the page only points to the search.
+  const searchFirst=$derived(!!info&&!source&&!info.can_train&&!model);
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
   const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium'}).format(new Date(row.local_time));
   const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
@@ -45,13 +47,13 @@
   {#if info}
     <p class="species">{commonName(info.species,app.locale)} <i class="sci">{info.species.scientific_name}</i></p>
     {#snippet counts()}<p><strong>{fill('mdCounts',{positive:info!.examples.positive_5s,negative:info!.examples.negative_5s})}</strong>
-      {#if !info!.can_train}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>{/snippet}
-    <section class="panel">
+      {#if info!.needed}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>{/snippet}
+    {#if !searchFirst}<section class="panel">
       {@render counts()}
       {#if info.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info.examples.other_answers})}</p>{/if}
       <p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>
       {#if model&&!model.applicable}<p class="info">{t(model.reason??'custom_model_scope_changed')}</p>{/if}
-    </section>
+    </section>{/if}
     {#snippet row(item:LabelRow)}<article class="row">
       <div class="row-head"><span>{time(item)}</span>{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
       <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}>
@@ -64,12 +66,12 @@
       {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
         <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
       {:else}
-        {#if !model}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
+        {#if !model&&info.needed}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
         <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelName(info.engine)})}</p>
         <p class="muted">{t('mdUndo')}</p>
         {#each batch as item (item.segment_id)}{@render row(item)}{:else}<p>{t('mdNoneLeft')}</p>{/each}
       {/if}
-      <div class="footer">
+      {#if !searchFirst}<div class="footer">
         {@render counts()}
         {#each info.reasons.filter(reason=>reason!=='custom_more_answers_needed') as reason}<p class="info">{t(reason)}</p>{/each}
         <div class="actions">
@@ -80,9 +82,10 @@
         {#if build.pending}<p role="status"><Spinner/> {t('customModelPreparing')}</p><Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
         {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
         {#if next.error&&!error}<p class="error" role="alert">{t(next.error)}</p>{/if}
-      </div>
+      </div>{/if}
     </section>
-    {#if answered.length}<details class="panel"><summary>{fill('mdAnswered',{n:answered.length})}</summary>
+    <!-- The count follows each answer and undo; the list itself is reordered only with a new batch. -->
+    {#if answered.length}<details class="panel"><summary>{fill('mdAnswered',{n:info.answered.length})}</summary>
       <p class="muted">{t('mdUndo')}</p>
       {#each answered.slice(0,answeredShown) as item (item.segment_id)}{@render row(item)}{/each}
       {#if answeredShown<answered.length}<Button onclick={()=>answeredShown+=10}>{t('pMore')}</Button>{/if}

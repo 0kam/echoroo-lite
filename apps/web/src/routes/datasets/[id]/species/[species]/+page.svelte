@@ -109,7 +109,7 @@
           {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>{/if}
         </div>{:else}<p>{t('wNoModel')}</p>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
-        <p class="muted">{t('mdGrowHint')}</p><div class="actions"><Button href={modelHref}>{t('customModelTitle')}</Button></div>
+        <p class="muted">{t(result.checks.length?'mdGrowHint':'mdGrowHintNoAI')}</p><div class="actions"><Button href={modelHref}>{t('customModelTitle')}</Button></div>
         <!-- Deleting is kept away from the listening buttons. -->
         {#if result.checks.some(item=>item.validation)}<details class="more"><summary>{t('sMore')}</summary>
           {#each result.checks.filter(item=>item.validation) as item (item.key)}<div class="stack">
@@ -136,8 +136,9 @@
           <Button variant="danger" size="sm" pending={askSearchDelete.pending} onclick={()=>confirming==='search'?confirming='':askSearchDelete.run()}>{t('sSearchDelete')}</Button>
         {#if confirming==='search'&&preview}<div class="confirm" role="group" aria-label={t('sSearchDelete')}>
           {#if preview.custom_models}<p class="notice"><strong>{t('sSearchDeleteModels')}</strong></p>{/if}
-          {#if preview.marks}<p>{t('sSearchDeleteConfirm')}</p><ul><li>{fill('sSearchDeleteMarks',{n:preview.marks})}</li></ul>
+          {#if preview.marks}<p>{t('sSearchDeleteConfirm')}</p><ul><li>{fill('sSearchDeleteMarks',{n:preview.marks})}</li></ul><p>{t('sSearchDeletePresence')}</p>
           {:else if !preview.custom_models}<p>{t('sSearchDeleteNothing')}</p>{/if}
+          {#if preview.marks||preview.custom_models}<p class="muted">{t('sSearchDeleteKept')}</p>{/if}
           <div class="actions"><Button onclick={()=>confirming=''}>{t('mCancel')}</Button><Button variant="danger" pending={removeSearch.pending} onclick={()=>removeSearch.run()}>{t('sSearchDelete')}</Button></div></div>{/if}
         </details>
       {:else}<Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${view}`}>{t('sSearchStart')}</Button>{/if}

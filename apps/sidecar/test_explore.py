@@ -471,6 +471,16 @@ class ExploreCheck(unittest.TestCase):
             explore.build(self.root, 1, job, stop)
         self.assertEqual(list((self.root / 'explore').iterdir()), [])
 
+    def test_missing_recordings_are_named(self):
+        for seed in (1, 2, 3):
+            self.add_analysis(8, seed)
+        for seed in (2, 3):
+            (self.root / f'recording-{seed}.wav').unlink()
+        job = self.wait_job(self.client.post('/explore', json={'dataset_id': 1}).json()['id'])
+        code = f"source_missing:1:{self.root / 'recording-2.wav'}"  # the first missing file and how many more
+        self.assertEqual((job['status'], job['error']), ('failed', code))
+        self.assertEqual(self.client.get('/explore', params={'dataset': 1}).json()['last_error'], code)
+
     def test_low_disk_refusal_and_last_failure_until_the_next_build(self):
         self.add_analysis(32, 1)
         Usage = type(explore.shutil.disk_usage(self.root))
@@ -505,10 +515,11 @@ class ExploreCheck(unittest.TestCase):
         self.add_analysis(8, 1)
         (self.root / 'recording-1.wav').unlink()
         job = self.wait_job(self.client.post('/explore', json={'dataset_id': 1}).json()['id'])
-        self.assertEqual((job['status'], job['error']), ('failed', 'source_missing'))
+        missing = self.root / 'recording-1.wav'
+        self.assertEqual((job['status'], job['error']), ('failed', f'source_missing:0:{missing}'))
         log = (self.root / 'sidecar.log').read_text(encoding='utf-8')
         self.assertIn(f"Sound map build {job['id']} failed", log)
-        self.assertIn('CatalogError: source_missing', log)
+        self.assertIn(f'CatalogError: source_missing:0:{missing}', log)
 
     def test_leaf_tree_and_landmark_layout_with_patched_thresholds(self):
         self.add_analysis(200, 4)

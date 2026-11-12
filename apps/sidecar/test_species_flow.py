@@ -302,6 +302,11 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             self.assertEqual(model.status_code, 200, model.text)
             model = model.json()
             self.assertEqual((model['run_id'], model['round'], model['training']['positive_from_presence']), (None, 1, 1))
+            # Nothing new since it was made: making it again is refused, so its round and check stay.
+            ready = client.get(url, params=dates).json()
+            self.assertEqual((ready['can_train'], ready['reasons'], ready['needed']), (False, ['custom_no_new_answers'], 0))
+            self.assertEqual(client.post('/custom-models', json=scope).json()['detail'], 'custom_no_new_answers')
+            self.assertEqual(client.get(f"/custom-models/{model['id']}").json()['round'], 1)
             # With a species AI: its scores rank the batch; rounds never repeat and answered sounds never return.
             rounds = [client.get(url, params={**dates, 'batch': True}).json()]
             rounds.append(client.get(url, params={**dates, 'batch': True, 'skip': [row['segment_id'] for row in rounds[0]['batch']]}).json())
@@ -322,7 +327,9 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             with patch('search_runs.load_perch', return_value=(Session(), 'perch-sha')):
                 run = client.post('/search-runs', json={'dataset_id': 1, 'species_id': sid,
                     'clips': [{'source_kind': 'recording', 'source_id': 1, 'start_s': 0, 'end_s': 5}]}).json()
-            self.assertEqual(client.get(f"/search-runs/{run['id']}/delete-preview").json()['custom_models'], 0)
+            # Nor about marks: the "this is its call" mark above was not made on this search's results.
+            preview = client.get(f"/search-runs/{run['id']}/delete-preview").json()
+            self.assertEqual((preview['custom_models'], preview['marks']), (0, 0))
             self.assertEqual(client.post(f"/search-runs/{run['id']}/delete").status_code, 200)
             self.assertTrue(client.get(f"/custom-models/{model['id']}").json()['applicable'])
             self.assertEqual(len(client.get(url, params=dates).json()['answered']), 1)
@@ -372,33 +379,45 @@ class GrowWithoutSearchCheck(unittest.TestCase):
 
 class BatchChoiceCheck(unittest.TestCase):
     def test_species_ai_batch(self):
-        from custom_models import model_picks
+        from custom_models import boundary_score, model_picks
         from scipy.special import expit
-        # Realistic, untied scores: 5,000 pieces, a few hundred likely voice.
-        scores = expit(np.random.default_rng(0).normal(-1.5, 2, 5000))
+        # Bunched scores as measured on real data (max about 0.75, median about 0.28): 0.5 is not the boundary.
+        rng = np.random.default_rng(0)
+        scores = np.clip(expit(rng.normal(-1, .35, 5000)), 0, .76)
         scored = [(segment, float(score)) for segment, score in enumerate(scores)]
         by_score = sorted(scored, key=lambda p: -p[1])
-        answered = {by_score[0][0], by_score[-1][0], min(scored, key=lambda p: abs(p[1] - .5))[0]}
-        picks = model_picks(scored, answered)
-        self.assertEqual(picks, model_picks(reversed(scored), answered))
+        # Answers: "voice" on sounds ranked about 100-150, "no voice" below rank 300, and one mislabelled each way.
+        known = {**{by_score[r][0]: 'target' for r in range(100, 150, 5)}, **{by_score[r][0]: 'other' for r in range(300, 4000, 300)},
+                 by_score[3000][0]: 'target', by_score[20][0]: 'other', by_score[5][0]: None}
+        cut = boundary_score([(dict(scored)[s], label) for s, label in known.items() if label])
+        self.assertTrue(by_score[300][1] < cut < by_score[145][1] < .5)  # in the gap, ignoring the two wrong answers
+        picks = model_picks(scored, known)
+        self.assertEqual(picks, model_picks(reversed(scored), known))
         chosen = {segment for segment, _ in picks}
         self.assertEqual(len(chosen), 10)
-        self.assertFalse(chosen & answered)
+        self.assertFalse(chosen & set(known))
         self.assertEqual([score for _, score in picks], sorted((score for _, score in picks), reverse=True))
-        free = [p for p in by_score if p[0] not in answered]
+        free = [p for p in by_score if p[0] not in known]
         # The two highest and two lowest unanswered really are the extremes.
         self.assertEqual(set(picks[:2]), set(free[:2]))
         self.assertEqual(set(picks[-2:]), set(free[-2:]))
-        # Six from the 24 nearest 0.5, spread out rather than the 6 closest side by side.
-        nearest = sorted(free, key=lambda p: (abs(p[1] - .5), p[0]))
+        # Six from the 24 ranks centred on the boundary rank, spread out rather than side by side.
+        rank = sum(score >= cut for _, score in free[2:-2])
         middle = sorted(picks[2:-2])
-        self.assertTrue(set(middle) <= set(nearest[:24]))
+        self.assertTrue(set(middle) <= set(free[2:-2][rank - 12:rank + 12]))
         self.assertGreater(middle[-1][0] - middle[0][0], 2500)
         # The next round repeats nothing; a plateau of equal scores is still spread, deterministically.
-        self.assertFalse(chosen & {segment for segment, _ in model_picks(scored, answered | chosen)})
+        self.assertFalse(chosen & {segment for segment, _ in model_picks(scored, {**known, **dict.fromkeys(chosen)})})
         flat = [(segment, .5) for segment in range(1000)]
-        self.assertEqual([segment for segment, _ in model_picks(flat, set())], [0, 1, 83, 250, 416, 583, 750, 916, 998, 999])
-        self.assertEqual(model_picks(scored[:4], set()), sorted(scored[:4], key=lambda p: -p[1]))
+        self.assertEqual([segment for segment, _ in model_picks(flat, {})], [0, 1, 85, 251, 417, 583, 749, 915, 998, 999])
+        self.assertEqual(model_picks(scored[:4], {}), sorted(scored[:4], key=lambda p: -p[1]))
+
+    def test_boundary_score(self):
+        from custom_models import boundary_score
+        self.assertAlmostEqual(boundary_score([(.6, 'target'), (.7, 'target'), (.2, 'other'), (.3, 'other')]), .45)  # the gap
+        self.assertIsNone(boundary_score([(.6, 'target'), (.7, 'target')]))
+        # One wrong "no voice" among high scores does not move it; balanced over the kinds.
+        self.assertAlmostEqual(boundary_score([(.6, 'target'), (.62, 'target'), (.64, 'target'), (.63, 'other'), (.3, 'other'), (.31, 'other')]), .455)
 
     def test_batch_before_species_ai(self):
         from custom_models import bracket_ranks
@@ -412,6 +431,17 @@ class BatchChoiceCheck(unittest.TestCase):
         # Sounds shown and passed over are left out like answered ones.
         self.assertFalse(set(enough) & set(bracket_ranks(1000, {**known, **dict.fromkeys(enough)}, False)))
         self.assertEqual(bracket_ranks(1000, {0: 'target', 1: None, 2: None, 3: None}, True)[:3], [4, 5, 6])
+
+    def test_builtin_batch_skips_scores_of_zero(self):
+        """With built-in scores most sounds score 0.00; the first batch is chosen among the scored ones."""
+        from custom_models import bracket_ranks, scored_span
+        scores = [.9 - i * .004 for i in range(200)] + [0.0] * 8000
+        span = scored_span(scores)
+        self.assertEqual(span, 210)
+        first = bracket_ranks(span, {}, True)
+        self.assertEqual(first[:3], [0, 1, 2])
+        self.assertGreaterEqual(sum(scores[r] > 0 for r in first), 9)
+        self.assertEqual(scored_span([.5] * 30), 30)
 
     def test_first_twenty_answers_reach_both_kinds(self):
         """Two sets of 10 before the first AI: a rare species still gets 3 "voice", a common one 3 "no voice"."""

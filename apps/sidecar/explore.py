@@ -761,13 +761,21 @@ def build(root, dataset_id, job_id=None, cancel=None):
         dataset, engine, model_sha, analyses = _context(root, dataset_id)
         # Checking and reading count files and intervals in done/total; later stages count steps.
         _progress(root, job_id, 'explore_checking', 0, len(analyses))
-        shown = time.monotonic()
+        shown, missing = time.monotonic(), []
         for done, analysis in enumerate(analyses, 1):
             _check_cancel(cancel)
-            checked_source(analysis)
+            try:
+                checked_source(analysis)
+            except CatalogError as error:
+                if str(error) != 'source_missing':
+                    raise
+                missing.append(analysis['path'])
             if time.monotonic() - shown >= 1:
                 _progress(root, job_id, 'explore_checking', done, len(analyses))
                 shown = time.monotonic()
+        if missing:
+            # The first missing file and how many more, so the page and sidecar.log name what to put back.
+            raise CatalogError(f'source_missing:{len(missing) - 1}:{missing[0]}')
         _cleanup_staging(root, dataset['site_id'], engine)
         stage_seconds = {}
         _progress(root, job_id, 'explore_cache', 0, 0)  # 0 of 0: rows still being counted
