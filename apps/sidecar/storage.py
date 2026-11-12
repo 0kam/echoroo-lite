@@ -25,6 +25,9 @@ def connect(root):
     db = sqlite3.connect(Path(root) / "echoroo.sqlite", timeout=30)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
+    # Each vector read walks its 6 MiB vec0 chunk page by page; a 2 MiB default cache rereads it
+    # from the OS every time. Pages are only allocated when read and freed on close.
+    db.execute("PRAGMA cache_size=-65536")
     db.enable_load_extension(True)
     sqlite_vec.load(db)
     db.enable_load_extension(False)

@@ -103,13 +103,12 @@ def _load_cache_index(index_path):
 
 
 def _analysis_counts(root, analysis_ids):
+    # A missing vector is caught by _stream_vectors' row count; joining vectors here read every one twice.
     encoded = json.dumps(analysis_ids)
     with connect(root) as db:
         segments = dict(db.execute('''SELECT analysis_id,COUNT(*) FROM segments
             WHERE analysis_id IN (SELECT value FROM json_each(?)) GROUP BY analysis_id''', (encoded,)))
-        vectors = dict(db.execute('''SELECT s.analysis_id,COUNT(*) FROM segments s JOIN vectors v ON v.rowid=s.id
-            WHERE s.analysis_id IN (SELECT value FROM json_each(?)) GROUP BY s.analysis_id''', (encoded,)))
-    if any(segments.get(aid, 0) == 0 or segments.get(aid) != vectors.get(aid) for aid in analysis_ids):
+    if any(segments.get(aid, 0) == 0 for aid in analysis_ids):
         raise CatalogError('invalid_vectors')
     return {aid: segments[aid] for aid in analysis_ids}
 

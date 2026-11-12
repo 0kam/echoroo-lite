@@ -432,6 +432,26 @@ class ExploreCheck(unittest.TestCase):
         self.assertEqual(self.cache_files(), self.expected_cache())
         self.assertEqual(len(self.cache_files()[0]), 18 * 1536 * 4)
 
+    def test_missing_vector_is_refused_when_written_and_extended(self):
+        engine, model_sha = main_identity(self.root)
+        def cache():
+            explore.embedding_cache(self.root, 1, engine, model_sha, explore._context(self.root, 1)[3])
+        def drop_vector(analysis):
+            with connect(self.root) as db:
+                db.execute('DELETE FROM vectors WHERE rowid=(SELECT MIN(id) FROM segments WHERE analysis_id=?)',
+                           (analysis,))
+        drop_vector(self.add_analysis(4, 1))
+        with self.assertRaisesRegex(CatalogError, '^invalid_vectors$'):
+            cache()
+        with connect(self.root) as db:
+            db.execute('DELETE FROM segments WHERE id NOT IN (SELECT rowid FROM vectors)')
+        cache()
+        written = self.cache_files()
+        drop_vector(self.add_analysis(5, 2))
+        with self.assertRaisesRegex(CatalogError, '^invalid_vectors$'):
+            cache()
+        self.assertEqual(self.cache_files(), written)
+
     def test_first_stage_reports_progress_and_stops_when_cancelled(self):
         self.add_analysis(10, 1); self.add_analysis(22, 2)
         with connect(self.root) as db:
