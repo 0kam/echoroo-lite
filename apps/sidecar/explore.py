@@ -21,6 +21,7 @@ from storage import CatalogError, checked_source, connect
 
 
 EMBEDDING_DIMS = 1536
+CACHE_ROW_BYTES = EMBEDDING_DIMS * 4 + 8  # one float32 vector and its int64 segment ID
 PCA_DIMS = 50
 VECTOR_BATCH = 4096
 PCA_BATCH = 4096
@@ -113,11 +114,11 @@ def _analysis_counts(root, analysis_ids):
     return {aid: segments[aid] for aid in analysis_ids}
 
 
-def _stream_vectors(root, analyses, matrix, segment_ids, start, cancel):
-    """Read every requested analysis' vector blob once, in contiguous row order."""
+def _stream_vectors(root, analyses, matrix, segment_ids, cancel, report):
+    """Append every requested analysis' vector blob once, in contiguous row order, to open files."""
     analysis_ids = [row['analysis_id'] for row in analyses]
     encoded = json.dumps(analysis_ids)
-    position = start
+    written = 0
     with connect(root) as db:
         cursor = db.execute('''SELECT s.id,s.analysis_id,v.embedding FROM segments s
             JOIN vectors v ON v.rowid=s.id
@@ -126,15 +127,28 @@ def _stream_vectors(root, analyses, matrix, segment_ids, start, cancel):
         while rows := cursor.fetchmany(VECTOR_BATCH):
             _check_cancel(cancel)
             batch = np.empty((len(rows), EMBEDDING_DIMS), dtype='<f4')
+            ids = np.empty(len(rows), dtype='<i8')
             for offset, row in enumerate(rows):
                 vector = np.frombuffer(row['embedding'], dtype='<f4')
                 if len(vector) != EMBEDDING_DIMS or not np.isfinite(vector).all():
                     raise CatalogError('invalid_vectors')
                 batch[offset] = vector
-                segment_ids[position + offset] = row['id']
-            matrix[position:position + len(rows)] = batch
-            position += len(rows)
-    return position
+                ids[offset] = row['id']
+            matrix.write(batch)
+            segment_ids.write(ids)
+            written += len(rows)
+            report(written)
+    return written
+
+
+def _require_space(folder, written_rows, total_rows):
+    """Refuse a build that would fill the data folder's drive before it starts writing."""
+    # New cache rows, then per map row the staged PCA source, ordered PCA and points (416 B)
+    # plus the catalog's point rows and their journal, rounded up to 1 KiB; 256 MiB to spare.
+    need = written_rows * CACHE_ROW_BYTES + total_rows * 1024 + 256 * 2**20
+    free = shutil.disk_usage(folder).free
+    if free < need:
+        raise CatalogError(f'explore_disk_space:{need}:{free}')
 
 
 def _cache_index(site_id, engine, model_sha, analyses, counts, start=0, previous=None):
@@ -149,8 +163,13 @@ def _cache_index(site_id, engine, model_sha, analyses, counts, start=0, previous
             'rows': position, 'analyses': entries}
 
 
-def embedding_cache(root, site_id, engine, model_sha, analyses, cancel=None):
-    """Return the append-only vector cache and its segment IDs."""
+def embedding_cache(root, site_id, engine, model_sha, analyses, cancel=None, progress=None):
+    """Return the append-only vector cache and its segment IDs.
+
+    The cache is written with plain sequential writes: pre-sizing a mapped file makes NTFS
+    zero-fill all of it first, which on large data is minutes of disk work with no progress.
+    `progress(done, total)` is called with the rows written so far.
+    """
     folder = Path(root) / 'explore'
     folder.mkdir(parents=True, exist_ok=True)
     matrix_path, ids_path, index_path = _cache_paths(folder, site_id, engine, model_sha)
@@ -161,59 +180,42 @@ def embedding_cache(root, site_id, engine, model_sha, analyses, cancel=None):
     cached_ids = set(map(int, index['analyses'])) if reuse else set()
     pending = [row for row in analyses if row['analysis_id'] not in cached_ids]
     counts = _analysis_counts(root, [row['analysis_id'] for row in pending]) if pending else {}
+    old_rows = index['rows'] if reuse else 0
+    index = _cache_index(site_id, engine, model_sha, pending, counts, old_rows, index if reuse else None)
+    adding = index['rows'] - old_rows
+    _require_space(folder, adding, index['rows'])
+    report = (lambda done: progress(done, adding)) if progress else (lambda done: None)
 
-    if reuse:
-        old_rows = index['rows']
-        new_index = _cache_index(site_id, engine, model_sha, pending, counts, old_rows, index)
-        total = new_index['rows']
-        matrix_bytes = total * EMBEDDING_DIMS * np.dtype('<f4').itemsize
-        ids_bytes = total * np.dtype('<i8').itemsize
-        with matrix_path.open('r+b') as stream:
-            stream.truncate(matrix_bytes)
-        with ids_path.open('r+b') as stream:
-            stream.truncate(ids_bytes)
-        matrix = np.memmap(matrix_path, mode='r+', dtype='<f4', shape=(total, EMBEDDING_DIMS))
-        segment_ids = np.memmap(ids_path, mode='r+', dtype='<i8', shape=(total,))
+    if reuse and pending:
+        report(0)
         try:
-            if pending and _stream_vectors(root, pending, matrix, segment_ids, old_rows, cancel) != total:
-                raise CatalogError('invalid_vectors')
-            matrix.flush()
-            segment_ids.flush()
-            _write_json(index_path, new_index)
-        except Exception as error:
-            # Windows cannot shrink or delete a mapped file, and the frames of the failed calls
-            # (kept by the traceback) still hold these arrays.
-            traceback.clear_frames(error.__traceback__)
-            del matrix, segment_ids
-            with matrix_path.open('r+b') as stream:
-                stream.truncate(old_rows * EMBEDDING_DIMS * np.dtype('<f4').itemsize)
-            with ids_path.open('r+b') as stream:
-                stream.truncate(old_rows * np.dtype('<i8').itemsize)
+            with matrix_path.open('r+b') as matrix, ids_path.open('r+b') as segment_ids:
+                # Rows past the indexed ones are left over from an older failed append.
+                matrix.truncate(old_rows * EMBEDDING_DIMS * 4); matrix.seek(0, 2)
+                segment_ids.truncate(old_rows * 8); segment_ids.seek(0, 2)
+                if _stream_vectors(root, pending, matrix, segment_ids, cancel, report) != adding:
+                    raise CatalogError('invalid_vectors')
+            _write_json(index_path, index)
+        except BaseException:
+            with matrix_path.open('r+b') as matrix, ids_path.open('r+b') as segment_ids:
+                matrix.truncate(old_rows * EMBEDDING_DIMS * 4)
+                segment_ids.truncate(old_rows * 8)
             raise
-        del matrix, segment_ids
-        index = new_index
-    else:
-        counts = _analysis_counts(root, [row['analysis_id'] for row in analyses])
-        index = _cache_index(site_id, engine, model_sha, analyses, counts)
+    elif not reuse:
+        report(0)
         token = uuid4().hex
         temporary_matrix = matrix_path.with_name(matrix_path.name + '.' + token + '.tmp')
         temporary_ids = ids_path.with_name(ids_path.name + '.' + token + '.tmp')
-        matrix = np.memmap(temporary_matrix, mode='w+', dtype='<f4', shape=(index['rows'], EMBEDDING_DIMS))
-        segment_ids = np.memmap(temporary_ids, mode='w+', dtype='<i8', shape=(index['rows'],))
         try:
-            if _stream_vectors(root, analyses, matrix, segment_ids, 0, cancel) != index['rows']:
-                raise CatalogError('invalid_vectors')
-            matrix.flush()
-            segment_ids.flush()
-            del matrix, segment_ids
+            with temporary_matrix.open('wb') as matrix, temporary_ids.open('wb') as segment_ids:
+                if _stream_vectors(root, analyses, matrix, segment_ids, cancel, report) != adding:
+                    raise CatalogError('invalid_vectors')
+            # Without its index a half-replaced cache is never mistaken for a valid one.
+            index_path.unlink(missing_ok=True)
             temporary_matrix.replace(matrix_path)
             temporary_ids.replace(ids_path)
             _write_json(index_path, index)
-        except BaseException as error:
-            traceback.clear_frames(error.__traceback__)
-            raise
         finally:
-            matrix = segment_ids = None
             temporary_matrix.unlink(missing_ok=True)
             temporary_ids.unlink(missing_ok=True)
     matrix = np.memmap(matrix_path, mode='r', dtype='<f4', shape=(index['rows'], EMBEDDING_DIMS))
@@ -757,14 +759,22 @@ def build(root, dataset_id, job_id=None, cancel=None):
     published = False
     try:
         dataset, engine, model_sha, analyses = _context(root, dataset_id)
-        for analysis in analyses:
+        # Checking and reading count files and intervals in done/total; later stages count steps.
+        _progress(root, job_id, 'explore_checking', 0, len(analyses))
+        shown = time.monotonic()
+        for done, analysis in enumerate(analyses, 1):
+            _check_cancel(cancel)
             checked_source(analysis)
+            if time.monotonic() - shown >= 1:
+                _progress(root, job_id, 'explore_checking', done, len(analyses))
+                shown = time.monotonic()
         _cleanup_staging(root, dataset['site_id'], engine)
         stage_seconds = {}
-        _progress(root, job_id, 'explore_cache', 0)
+        _progress(root, job_id, 'explore_cache', 0, 0)  # 0 of 0: rows still being counted
         started = time.perf_counter()
         matrix, segment_ids, index, index_path = embedding_cache(
-            root, dataset['site_id'], engine, model_sha, analyses, cancel)
+            root, dataset['site_id'], engine, model_sha, analyses, cancel,
+            lambda done, total: _progress(root, job_id, 'explore_cache', done, total))
         stage_seconds['cache'] = time.perf_counter() - started
         _check_cancel(cancel)
         folder = Path(root) / 'explore'
@@ -851,7 +861,7 @@ def build(root, dataset_id, job_id=None, cancel=None):
             published = True
             if old:
                 _remove_run_files(root, json.loads(old['params']))
-        _progress(root, job_id, 'finished', 5, status='complete')
+        _progress(root, job_id, 'explore_done', 5, status='complete')
         return {'id': staged_id}
     except Exception as error:
         if staged_id is not None and not published:
@@ -860,11 +870,13 @@ def build(root, dataset_id, job_id=None, cancel=None):
         if not published:
             for path in final_files:
                 path.unlink(missing_ok=True)
-        if isinstance(error, CatalogError) and str(error) == 'cancelled':
-            _progress(root, job_id, 'finished', 0, status='cancelled')
-        else:
-            code = str(error) if isinstance(error, CatalogError) else 'explore_failed'
-            _progress(root, job_id, 'finished', 0, status='failed', error=code)
+        if job_id is not None:
+            cancelled = isinstance(error, CatalogError) and str(error) == 'cancelled'
+            code = None if cancelled else str(error) if isinstance(error, CatalogError) else 'explore_failed'
+            # The explore_* stage stays, so status() can still find the last map build and its error.
+            with connect(root) as db:
+                db.execute('UPDATE jobs SET status=?,error=? WHERE id=?',
+                           ('cancelled' if cancelled else 'failed', code, job_id))
         raise
 
 
@@ -912,12 +924,19 @@ def _node_shape(row, species_ids, child_count=0):
 def status(root, dataset_id, node=0):
     site_id, engine, model_sha, run = _current_run(root, dataset_id)
     with connect(root) as db:
-        building = db.execute("""SELECT 1 FROM jobs j JOIN datasets d ON d.id=j.dataset_id
-            WHERE d.site_id=? AND j.status IN ('queued','running') AND j.stage LIKE 'explore_%' LIMIT 1""",
-                              (site_id,)).fetchone() is not None
+        # Jobs run one at a time, so the site's newest map build is the running one, if any.
+        last = db.execute("""SELECT j.status,j.error FROM jobs j JOIN datasets d ON d.id=j.dataset_id
+            WHERE d.site_id=? AND j.stage LIKE 'explore_%' ORDER BY j.id DESC LIMIT 1""", (site_id,)).fetchone()
+        building = last is not None and last['status'] in ('queued', 'running')
+        # Why the newest build stopped stays shown until the next build starts.
+        last_error = (None if last is None else 'explore_interrupted' if last['status'] == 'interrupted'
+                      else last['error'] if last['status'] == 'failed' else None)
         if run is None:
-            return {'status': 'building' if building else 'none', 'created_at': None, 'engine': engine,
-                    'segment_count': 0}
+            result = {'status': 'building' if building else 'none', 'created_at': None, 'engine': engine,
+                      'segment_count': 0}
+            if last_error:
+                result['last_error'] = last_error
+            return result
         params = json.loads(run['params'])
         current = sorted(row['analysis_id'] for row in compatible_analyses(db, dataset_id, model_sha, engine))
         stale_reason = ('data' if current != params.get('analysis_ids') else
@@ -927,6 +946,8 @@ def status(root, dataset_id, node=0):
                   'segment_count': params['segment_count']}
         if state == 'stale':
             result['stale_reason'] = stale_reason
+        if last_error:
+            result['last_error'] = last_error
         # A stale map, or the one being replaced, stays browsable until the new one is published.
         selected = _node_row(db, run['id'], node)
         if selected is None:

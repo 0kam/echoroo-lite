@@ -1,12 +1,12 @@
 """Loopback-only desktop sidecar. Run with --data and --models."""
 import argparse
 import json
+import logging
 import multiprocessing
 import secrets
 import socket
 import sys
 import threading
-import traceback
 from datetime import date
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
@@ -23,6 +23,8 @@ from storage import SCHEMA_VERSION, CatalogError, checked_source, connect, initi
 from species import decorate_candidates, initialize_species, list_species, save_species
 import models as model_registry
 from models import Engine, SpeciesEngine, ValidationEngine
+
+log = logging.getLogger(__name__)
 
 
 class SiteEdit(BaseModel):
@@ -348,7 +350,7 @@ def create_app(root, models, token):
 
     @app.exception_handler(Exception)
     async def unexpected_error(request, error):
-        traceback.print_exception(error)
+        log.error('Request %s failed', request.url.path, exc_info=error)
         return JSONResponse({"detail": "unknown_error"}, status_code=500)
 
     @app.get("/health")
@@ -391,18 +393,18 @@ def create_app(root, models, token):
             if worker and worker.is_alive():
                 raise HTTPException(409, 'job_busy')
             from explore import _context, build
-            _context(root, body.dataset_id)
+            analyses = _context(root, body.dataset_id)[3]
             with connect(root) as db:
-                job = db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(?,'queued',5,'explore_queued')",
-                                 (body.dataset_id,)).lastrowid
+                job = db.execute("INSERT INTO jobs(dataset_id,status,total,stage) VALUES(?,'queued',?,'explore_checking')",
+                                 (body.dataset_id, len(analyses))).lastrowid
             operation_cancel.clear()
             def work():
                 try:
                     build(root, body.dataset_id, job, operation_cancel)
-                except CatalogError:
-                    pass  # build records the translated failure or cancellation on the job.
-                except Exception:
-                    traceback.print_exc()
+                except Exception as error:
+                    # build records the translated failure or cancellation on the job; the log keeps why.
+                    if not (isinstance(error, CatalogError) and str(error) == 'cancelled'):
+                        log.exception('Sound map build %s failed', job)
             worker = threading.Thread(target=work)
             worker.start()
         return {'id': job}
@@ -941,8 +943,7 @@ def create_app(root, models, token):
                     from analysis import run
                     run(root, models, job, records, dict(site), cancel, pending)
                 except Exception:
-                    import traceback
-                    traceback.print_exc()
+                    log.exception('Analysis job %s failed', job)
                     with connect(root) as db:
                         db.execute("UPDATE jobs SET status='failed',error='analysis_failed' WHERE id=?", (job,))
             worker = threading.Thread(target=work)
@@ -959,6 +960,14 @@ def create_app(root, models, token):
                           allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 
 
+def keep_log(root):
+    """Errors also go to a small rotating file in the data folder: a packaged app's stderr is not visible."""
+    from logging.handlers import RotatingFileHandler
+    handler = RotatingFileHandler(Path(root) / 'sidecar.log', maxBytes=1_000_000, backupCount=1, encoding='utf-8')
+    logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(levelname)s %(message)s',
+                        handlers=[handler, logging.StreamHandler()], force=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
@@ -972,6 +981,7 @@ def main():
     from filelock import FileLock
     args.data.mkdir(parents=True, exist_ok=True)
     with FileLock(args.data / ".lock", timeout=0):
+        keep_log(args.data)
         token = secrets.token_urlsafe(32)
         app = create_app(args.data.resolve(), args.models.resolve(), token)
         with socket.socket() as sock:

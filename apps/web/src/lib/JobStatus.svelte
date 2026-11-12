@@ -5,7 +5,7 @@
 
 <script lang="ts">
   import { api } from './api.svelte';
-  import { t, type Job } from './app.svelte';
+  import { app, t, type Job } from './app.svelte';
   import { fill, roughTime } from './workflow';
   import Button from './ui/Button.svelte';
   import { createTask } from './ui/task.svelte';
@@ -14,6 +14,8 @@
   const active = $derived(job.status === 'queued' || job.status === 'running');
   // Building the sound map counts steps, not recordings, and stops through the shared operation cancel.
   const explore = $derived(job.stage.startsWith('explore_'));
+  // Its first two steps count recording files and intervals instead; 0 of 0 while they are still being counted.
+  const unit = $derived(job.stage === 'explore_checking' ? 'eJobFiles' : job.stage === 'explore_cache' ? 'eJobRows' : explore ? 'eJobProgress' : 'jobProgress');
   // Remaining time from the observed rate, re-estimated when a pair finishes and counted down in between;
   // shown once 10 s of progress have been seen, hidden while results are prepared.
   // The sound map's steps take very different times, so it shows no estimate.
@@ -33,10 +35,10 @@
 <div class="job">
   <div class="section-heading">
     <!-- The job counts recordings × AIs; only the AIs a recording still lacks run, so the total is not a recording count. -->
-    <strong>{fill('jobLine', { status: t(job.status), progress: fill(explore ? 'eJobProgress' : 'jobProgress', { done: job.done, total: job.total }) })}</strong>
+    <strong>{job.total ? fill('jobLine', { status: t(job.status), progress: fill(unit, { done: job.done.toLocaleString(app.locale), total: job.total.toLocaleString(app.locale) }) }) : t(job.status)}</strong>
     {#if active}<Button size="sm" pending={cancel.pending} onclick={() => cancel.run()}>{t(explore ? 'operationCancel' : 'cancel')}</Button>{/if}
   </div>
-  {#if active}<p class="muted">{t(job.stage)}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p><progress value={job.done} max={job.total}></progress>{/if}
+  {#if active}<p class="muted">{t(job.stage)}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p><progress value={job.done} max={job.total || 1}></progress>{/if}
   {#if job.error}<p class="error">{t(job.error)}</p>{/if}
 </div>
 
