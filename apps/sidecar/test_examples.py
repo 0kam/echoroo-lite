@@ -139,11 +139,15 @@ class ExamplesCheck(unittest.TestCase):
             db.execute('INSERT INTO xc_recordings(id,metadata,reference_id) VALUES(77,?,?)', (json.dumps(
                 {'id': 77, 'scientific_name': 'Horornis diphone', 'country': 'France', 'quality': 'B'}), reference['id']))
             source = {**reference, 'attribution': {'recordist': '', 'license': '', 'url': ''}}
-            snapshot = {'references': [{'source': source, 'query': {'start_s': 16, 'end_s': 19}}]}
+            # A sound-map pick searches from a site recording; its typed name is not a checked one.
+            picked = {**dict(db.execute("SELECT * FROM site_recordings WHERE scope_id=1 AND id=1").fetchone()), 'kind': 'recording'}
+            snapshot = {'references': [{'source': source, 'query': {'start_s': 16, 'end_s': 19}},
+                                       {'source': picked, 'query': {'start_s': 30, 'end_s': 33}}]}
             db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(1,?,?)', (warbler['id'], json.dumps(snapshot)))
         result = self.examples(warbler)['examples']
-        chosen = next(row for row in result if row['source']['id'] == reference['id'])
-        self.assertEqual((chosen['label']['origin'], chosen['start_s'], chosen['end_s']), ('search-reference', 16, 19))
+        chosen = next(row for row in result if row['source']['id'] == reference['id'] and row['source']['kind'] == 'reference')
+        self.assertEqual((chosen['kind'], chosen['label']['origin'], chosen['start_s'], chosen['end_s']), ('named', 'search-reference', 16, 19))
+        self.assertIn(('unverified', 30), [(row['kind'], row['start_s']) for row in result if row['source']['kind'] == 'recording'])
         self.assertNotIn('xeno-canto', [row['label']['origin'] for row in result if row['source']['id'] == reference['id']])
 
 

@@ -1,6 +1,6 @@
 <script lang="ts" module>
   /** What a reviewer could listen to when answering; saved with the answer. */
-  export type ExampleRef = { kind: 'named' | 'confirmed'; origin: string; id: number | string };
+  export type ExampleRef = { kind: 'named' | 'confirmed' | 'unverified'; origin: string; id: number | string };
 </script>
 
 <script lang="ts">
@@ -39,7 +39,7 @@
       .catch(e => { if (version === request) error = e.message; });
   });
   const prepare = createTask(async () => { show(await api<Payload>(`/species/${speciesId}/examples/xeno-canto`, scope)); fetched = true; });
-  const credit = (e: Example) => e.kind === 'confirmed' ? [t('refConfirmed'), e.label.local_time?.slice(0, 16).replace('T', ' ')]
+  const credit = (e: Example) => e.kind !== 'named' ? [t(e.kind === 'confirmed' ? 'refConfirmed' : 'refUnverified'), e.label.local_time?.slice(0, 16).replace('T', ' ')]
     : [t('refNamed'), e.label.origin === 'quiz' ? t('refQuiz') : e.label.origin === 'xeno-canto' ? `XC${e.label.id}` : t('refSearchReference'),
       e.label.origin === 'xeno-canto' && e.label.country ? t(e.label.country === 'Japan' ? 'refJapan' : 'refOutsideJapan') : '',
       e.label.quality ? t('refQuality').replace('{quality}',e.label.quality) : '', e.label.recordist, e.label.license && licenseName(e.label.license)];

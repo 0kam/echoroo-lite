@@ -107,7 +107,7 @@
         {#each ordered as item (item.key)}<div class="check-row">
           <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation)}</span></div>
           {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>{/if}
-        </div>{:else}<p>{t('wNoModel')}</p>{/each}
+        </div>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
         <!-- Deleting is kept away from the listening buttons. -->
         {#if result.checks.some(item=>item.validation)}<details class="more"><summary>{t('sMore')}</summary>

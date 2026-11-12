@@ -154,7 +154,7 @@ class SearchRunRequest(BaseModel):
 
 
 class ExampleRef(BaseModel):
-    kind: Literal['named', 'confirmed']
+    kind: Literal['named', 'confirmed', 'unverified']
     origin: Literal['quiz', 'xeno-canto', 'search-reference', 'presence', 'validation']
     id: int | Annotated[str, Field(max_length=100)]
 
