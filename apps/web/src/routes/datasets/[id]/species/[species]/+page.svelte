@@ -109,7 +109,6 @@
           {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>{/if}
         </div>{:else}<p>{t('wNoModel')}</p>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
-        <p class="muted">{t(result.checks.length?'mdGrowHint':'mdGrowHintNoAI')}</p><div class="actions"><Button href={modelHref}>{t('customModelTitle')}</Button></div>
         <!-- Deleting is kept away from the listening buttons. -->
         {#if result.checks.some(item=>item.validation)}<details class="more"><summary>{t('sMore')}</summary>
           {#each result.checks.filter(item=>item.validation) as item (item.key)}<div class="stack">
@@ -119,6 +118,8 @@
           </div>{/each}</details>{/if}
       </section>
     </div>
+    <!-- Its own row: inside the right-hand card it made that card much taller than "Is it here?". -->
+    <section class="panel grow"><p>{t(result.checks.length?'mdGrowHint':'mdGrowHintNoAI')}</p><Button href={modelHref}>{t('customModelTitle')}</Button></section>
     {#if result.checks.length}<section class="panel">
       <h2>{t('sTimeTitle')}</h2>
       <div class="actions model-tabs">{#each result.checks as item (item.key)}<Button active={result.selected===item.key} aria-pressed={result.selected===item.key}
@@ -145,8 +146,9 @@
     </section>{/if}
   {:else if loading}<p role="status"><Spinner/> {t('sPreparing')}</p>{/if}
 </div>
-<style>.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px;align-items:start}.card{display:flex;flex-direction:column;gap:12px}
+<style>.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px}.card{display:flex;flex-direction:column;gap:12px}
   .check-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid rgb(var(--stone-300))}
   .check-name{display:flex;flex-direction:column}.confirm{padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}.confirm p,.confirm ul{margin:0 0 12px}
   .more{margin-top:8px}.more summary{min-height:44px;padding:10px 0}.more .stack{margin-top:8px}
+  .grow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}.grow p{margin:0;flex:1 1 320px}
   .model-tabs{margin:12px 0 4px}section p{margin:8px 0}</style>
