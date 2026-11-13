@@ -63,7 +63,9 @@ def examples(root, species_id, dataset_id, validation_id=None):
                          'license': credit.get('license', ''), 'url': credit.get('url', '')}
                 if row['kind'] == 'recording' and row['id'] in records:
                     label['local_time'] = local(records[row['id']], ref['query']['start_s'])
-                search_named.append(_example('named', row, row['kind'], ref['query']['start_s'], ref['query']['end_s'], label))
+                # A site-recording reference came from the sound map, where the name was typed, not checked by listening.
+                kind = 'unverified' if row['kind'] == 'recording' else 'named'
+                search_named.append(_example(kind, row, row['kind'], ref['query']['start_s'], ref['query']['end_s'], label))
         for row in db.execute('''SELECT id,created_at,recording_id,start_s,end_s FROM presence_marks
                 WHERE species_id=? AND dataset_id IN (SELECT id FROM datasets WHERE site_id=?)''', (species_id, site['id'])):
             if record := records.get(row['recording_id']):
