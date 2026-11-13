@@ -11,18 +11,18 @@
 
 ## 使い方の動画
 
-機能ごとの短い動画です（日本語の字幕つき、版 0.2.1 の画面、録音は例のデータ）。リンクを押すと MP4 ファイルがダウンロードされます。
+機能ごとの短い動画です（日本語の字幕つき、版 0.2.1 の画面、録音は例のデータ）。リンクを押すと YouTube で再生されます。[8 本をまとめた再生リスト](https://www.youtube.com/playlist?list=PLbwxQUBHV7pg)もあります。MP4 ファイルは [v0.2.1 のリリース](https://github.com/0kam/echoroo-lite/releases/tag/v0.2.1)からダウンロードできます。
 
 | 動画 | 長さ |
 |---|---|
-| [① 録音を追加して解析する](https://github.com/0kam/echoroo-lite/releases/download/v0.2.1/01-add-recordings.mp4) | 約2分 |
-| [② AIが見つけた種を聞いて確かめる](https://github.com/0kam/echoroo-lite/releases/download/v0.2.1/02-listen-and-confirm.mp4) | 約2分 |
-| [③ いつ鳴いたかを見る・AIの精度を確かめる](https://github.com/0kam/echoroo-lite/releases/download/v0.2.1/03-when-and-accuracy.mp4) | 約2分半 |
-| [④ レポートを書き出す](https://github.com/0kam/echoroo-lite/releases/download/v0.2.1/04-export-report.mp4) | 約2分 |
-| [⑤-1 AIが対応していない種を探す](https://github.com/0kam/echoroo-lite/releases/download/v0.2.1/05-1-find-other-species.mp4) | 約2分半 |
-| [⑤-2 探した種のAIを育てる](https://github.com/0kam/echoroo-lite/releases/download/v0.2.1/05-2-make-species-ai.mp4) | 約3分半 |
-| [⑥ 音の地図で探す（実験的）](https://github.com/0kam/echoroo-lite/releases/download/v0.2.1/06-sound-map.mp4) | 約3分 |
-| [⑦ 鳴き声クイズ](https://github.com/0kam/echoroo-lite/releases/download/v0.2.1/07-bird-call-quiz.mp4) | 約2分半 |
+| [① 録音を追加して解析する](https://youtu.be/sEFyyu5g3ZI) | 約2分 |
+| [② AIが見つけた種を聞いて確かめる](https://youtu.be/YLRrWf2ztx0) | 約2分 |
+| [③ いつ鳴いたかを見る・AIの精度を確かめる](https://youtu.be/-BLj4wnpTeI) | 約2分半 |
+| [④ レポートを書き出す](https://youtu.be/JO7wxgvA9Mo) | 約2分 |
+| [⑤-1 AIが対応していない種を探す](https://youtu.be/E0T2C1z_Pg0) | 約2分半 |
+| [⑤-2 探した種のAIを育てる](https://youtu.be/z4iChibER1E) | 約3分半 |
+| [⑥ 音の地図で探す（実験的）](https://youtu.be/WToubtWpu4g) | 約3分 |
+| [⑦ 鳴き声クイズ](https://youtu.be/LZ9RBRJbfv4) | 約2分半 |
 
 ## 何を入れて、何をして、何が得られるか
 
