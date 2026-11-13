@@ -4,7 +4,7 @@
 自然共生サイトなどで、音によるモニタリングと報告書づくりに使うことを考えて作っています。
 解析はインターネットにつながず、パソコンの中だけで行います。
 
-**[ダウンロード](https://github.com/0kam/echoroo-lite/releases/latest)** · [インストールの手順](docs/install-guide.md) · [使い方の動画（8本）](https://www.youtube.com/playlist?list=PLbwxQUBHV7pg) · [English](#english)
+**[ダウンロード](https://github.com/0kam/echoroo-lite/releases/latest)** · [インストールの手順](docs/install-guide.md) · [使い方の動画（9本）](https://www.youtube.com/playlist?list=PLbwxQUBHV7pg) · [English](#english)
 
 > [!IMPORTANT]
 > - **日本国内の録音にだけ使えます。** 種の一覧と種名を、日本の鳥に合わせて作っているためです。
@@ -49,7 +49,7 @@
 ## ほかにできること
 
 - **AI が対応していない種を探す**（▶ [動画・約2分半](https://youtu.be/E0T2C1z_Pg0)）\
-  セミやカエル、AI が見つけなかった鳥も、お手本の声（パソコンの中の音声か Xeno-Canto の録音）に似た音を録音から探せます。似ている度合いは、その種である確率ではありません。見つかった音は聞いて確かめます。Xeno-Canto を使うには、自分の API キーが要ります。
+  セミやカエル、AI が見つけなかった鳥も、お手本の声（パソコンの中の音声か Xeno-Canto の録音）に似た音を録音から探せます。似ている度合いは、その種である確率ではありません。見つかった音は聞いて確かめます。Xeno-Canto を使うには、自分の API キー（無料）が要ります（▶ [キーの取り方の動画・約1分](https://youtu.be/PoX7dhAR1yY)）。
 - **その種用の AI を育てる**（▶ [動画・約3分半](https://youtu.be/z4iChibER1E)）\
   約 20 の音に「声あり」「声なし」と答えると、その種だけを探す AI を作れます。答えを足して何度でも作り直せ、途中でやめて続きからもできます。内蔵の AI の精度が低い種にも使えます。
 - **音の地図で探す（実験的）**（▶ [動画・約3分](https://youtu.be/WToubtWpu4g)）\
