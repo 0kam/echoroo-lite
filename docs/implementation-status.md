@@ -1,5 +1,14 @@
 # 実装状況（2026-09-10）
 
+## 2026-11-13：手元の試験データの片付け
+
+ユーザーの指示（同日）で、開発用の Mac の git 管理外のデータを片付けた（ゴミ箱に移した。合わせて約 60 GB）。
+
+- 消したもの：古い worktree 6 個と、main に入っている手元のブランチ 12 本（GitHub 上のブランチはそのまま）。`.local-data/videos/work`（撮影の作業フォルダー。`states` から作り直せる）。`.local-data` のそのほかの試験データと記録すべて（9〜11 月の分）。
+- 残したもの：`.local-data` の `verify`、`videos`（作業フォルダー以外）、`bench-explore`、`cluster-bench-20261101`、`release-0.2.0`、`release-0.2.1`、`jpbirdlist8ed_ver1.xlsx`。
+- このため、この日より前の文書に書いた `.local-data/` の場所は、上で残したもの以外はもうない（例：`protocol-year-17520`、`performance`、`windows-preview-*`、`ux-20261111`）。文書に書いた結果と数値はそのまま残る。
+- 影響：注釈の試作の表示（`docs/prototypes/annotation.js`、`scripts/preview_annotations.mjs`）は読むデータ（`annotation-design`）がなくなり、作り直すための元のデータ（`ui-redesign-review/native-data`）もない。実音源での確認（`test_sidecar.py --real-recording`）の `m0-smoke` は、次に実行したときに作り直される。
+
 ## 2026-11-12：0.2.1 のリリース準備
 
 ユーザーの指示（同日）で、`integration/0.2.1` を 0.2.1 として出す準備をした。0.2.0 と同じ所の版番号を 0.2.1 に上げた（`Cargo.toml`・`Cargo.lock`・`tauri.conf.json`・`package.json` 2 つ・`package-lock.json`・workflow 2 つの成果物名・[インストールの手順](install-guide.md)・`windows-preview.md`）。README の「AIが対応していない種を探す」と英語の要約を、AIを「育てる」流れに合わせた。インストールの手順に「0.2.1 で開いたデータは 0.2.0 以前では開けない。古い版の案内が出てもデータは削除しない」と「0.2.0 からはアプリの中で更新できる」を書いた。
