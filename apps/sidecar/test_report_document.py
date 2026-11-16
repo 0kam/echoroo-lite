@@ -1,7 +1,7 @@
 import unittest
 from copy import deepcopy
 
-from report_document import blocks, messages, status
+from report_document import blocks, criterion, messages, status, status_text
 from workflow_export import quality_export
 
 
@@ -9,12 +9,12 @@ def snapshot(state='decided', rare=False):
     metric={'value':.5,'low':.3,'high':.7}
     result={'status':state,'threshold':.4 if state=='decided' else None,'density':metric,'count':{'value':50,'low':30,'high':70},
         'precision':metric if state=='decided' else None,'recall':None if rare else metric,'recall_status':'not_estimable_rare' if rare else 'estimated',
-        'auprc':metric,'answers_per_bin':[],'unknown':2,'disagreement':True}
+        'auprc':metric,'answers_per_bin':[],'unknown':2,'disagreement':True,'reason':'target_unreachable' if state=='undecided' else None}
     validation={'id':7,'applicable':True,'stage':'complete','method':'stratified_quantile6_v1','status':state,
         'thresholds':{'birdnet':{'threshold':result['threshold'],'reason':'target_unreachable' if state=='undecided' else None}},
         'results':{'birdnet':result},'counts':{'total':60,'answered':60,'unknown':2,'bins':[]}}
     species={'id':'sp','scientific_name':'Example bird','common_names':{'ja':'例鳥','en':'Example bird'}}
-    return {'kind':'detection','engine':'birdnet','model_sha256':'model','threshold':result['threshold'] or .1,'window_s':3,
+    return {'kind':'detection','engine':'birdnet','model_sha256':'model','threshold':result['threshold'],'window_s':3,
         'species':species,'summaries':[{'species':species,'candidate_windows':4,'eligible_windows':100,'candidate_rate':.04,'candidate_days':2}],
         'validation':validation,'figure_id':'F001'}
 
@@ -33,6 +33,25 @@ class ReportDocumentTest(unittest.TestCase):
         undecided=snapshot('undecided');self.assertEqual(status(undecided),'undecided')
         undecided['validation']['stage']='sample';self.assertEqual(status(undecided),'in_progress')
         undecided['validation']['applicable']=False;self.assertEqual(status(undecided),'stale')
+
+    def test_undecided_check_is_not_counted_and_names_its_reason(self):
+        for locale in ('ja','en'):
+            t=messages(locale);snap=snapshot('undecided')
+            snap['summaries'][0].update(candidate_windows=None,candidate_rate=None,candidate_days=None)
+            self.assertEqual(status_text(snap,t),t['undecided'])
+            self.assertEqual(criterion(snap,t),t['figure_undecided'])
+            report=manifest(snap,locale);report['presence'][0]['counting_status']='undecided'
+            rendered=str(blocks(report,[snap],{'per_species':[]}))
+            for text in (t['ai_flagged_sentence'].format(detected=0),t['uncounted_sentence'].format(eligible=100),
+                         t['uncounted'].format(eligible=100),t['figure_undecided'],t['undecided']):
+                self.assertIn(text,rendered)
+            self.assertNotIn(t['undecided_no_target'],rendered)
+            self.assertNotIn(t['default'],rendered)
+            snap['validation']['results']['birdnet']['reason']='no_target'
+            self.assertEqual(status_text(snap,t),t['undecided_no_target'])
+            rendered=str(blocks(report,[snap],{'per_species':[]}))
+            self.assertIn(t['undecided_no_target'],rendered)
+            self.assertNotIn(t['undecided'],rendered)
 
     def test_report_uses_90_percent_results_and_rare_message(self):
         snap=snapshot(rare=True)

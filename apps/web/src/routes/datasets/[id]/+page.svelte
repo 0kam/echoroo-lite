@@ -60,7 +60,7 @@
 {#snippet table(rows:Row[])}<div class="table-wrap"><table><colgroup><col class="name"/><col/><col class="state"/>{#if anyActivity}<col class="state"/>{/if}</colgroup>
   <thead><tr><th>{t('species')}</th><th>{t('wDetection')}</th><th>{t('wPresence')}</th>{#if anyActivity}<th>{t('wActivity')}</th>{/if}</tr></thead><tbody>
   {#each rows as row (row.species.id)}<tr><td><a href={speciesHref(row)}><strong>{commonName(row.species,app.locale)}</strong>{#if row.region==='unusual'} <span class="rare">{t('wUnusual')}</span>{/if}<i class="scientific-name">{row.species.scientific_name}</i></a></td>
-    <td>{#each row.models as model}<div>{checkName(model)}: {model.candidate_windows==null?'—':fill('wDetectionCount',{n:model.candidate_windows.toLocaleString(app.locale),days:model.candidate_days??0})}</div>{:else}—{/each}</td>
+    <td>{#each row.models as model}<div>{checkName(model)}: {model.threshold===null?t('wNotCounted'):model.candidate_windows==null?'—':fill('wDetectionCount',{n:model.candidate_windows.toLocaleString(app.locale),days:model.candidate_days??0})}</div>{:else}—{/each}</td>
     <td>{presenceText(row.presence)}</td>
     {#if anyActivity}<td>{activityText(row.models)}</td>{/if}</tr>{/each}
 </tbody></table></div>{/snippet}

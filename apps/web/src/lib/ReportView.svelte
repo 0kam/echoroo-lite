@@ -22,7 +22,9 @@
   }
 </script>
 {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
-{#if report.species}
+<!-- No threshold (the check ended undecided): nothing is counted, so there is no chart or detected sound to show. -->
+{#if report.threshold==null}<p class="empty">{t('uNotCounted')}</p>
+{:else if report.species}
   <div class="result-listen">
     <div><h2>{t('wSeason')}</h2><p>{t('uEvidenceHint')}</p>
       {#if report.cells.length}<SpiralPlot {report} compact onselect={select}/>{/if}
