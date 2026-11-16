@@ -80,14 +80,15 @@
   // Sounds a person confirmed, in recording order; times are the site's, not the PC's.
   const heard=$derived(result?[...result.presence.evidence].sort((a,b)=>Date.parse(a.local_time)-Date.parse(b.local_time)):[]);
   let allHeard=$state(false);
-  const heardTime=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:result?.site.timezone}).format(new Date(value));
-  const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:result?.site.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
+  const heardTime=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:result?.site.timezone}).format(new Date(value));
+  const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:result?.site.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
 </script>
 <div class="page">
   <div class="crumbs"><a href={`${resolve(`/datasets/${id}`)}?${range}`}>{t('uBackResults')}</a></div>
   <div class="page-header"><div>
     {#if site}<div class="site-name">{site.name}</div>{/if}
-    <h1>{result?commonName(result.species,app.locale):t('species')}{#if result?.region==='unusual'} <span class="rare">{t('wUnusual')}</span>{/if} <i class="sci">{result?.species.scientific_name}</i></h1></div>
+    <!-- No placeholder name while loading: the heading appears with the species. -->
+    {#if result}<h1>{commonName(result.species,app.locale)}{#if result.region==='unusual'} <span class="rare">{t('wUnusual')}</span>{/if} <i class="sci">{result.species.scientific_name}</i></h1>{/if}</div>
   </div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}

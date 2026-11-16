@@ -17,7 +17,9 @@
   let stopRestore=()=>{},restoring=false;
   // A page that changes only its query while its scroll is still being restored (the sound map reopening its last group) keeps that restore.
   const redirect=(from:{url:URL}|null,to:{url:URL}|null)=>restoring&&!!from&&scrollKey(from.url)===scrollKey(to?.url);
-  beforeNavigate(({from,to})=>{if(redirect(from,to))return;stopRestore();scrollPositions.set(scrollKey(),document.querySelector('main')?.scrollTop??0);});
+  // A page left by finishing its task (a programmatic goto elsewhere, e.g. after adding recordings) opens at the top next time.
+  beforeNavigate(({from,to,type})=>{if(redirect(from,to))return;stopRestore();
+    if(type==='goto'&&scrollKey(to?.url)!==scrollKey())scrollPositions.delete(scrollKey());else scrollPositions.set(scrollKey(),document.querySelector('main')?.scrollTop??0);});
   afterNavigate(async({from,to})=>{
     if(redirect(from,to))return;
     await tick();const main=document.querySelector('main');if(!main)return;
@@ -58,7 +60,7 @@
     {#if job}
       {@const target = datasetOf(job.dataset_id)}
       {@const explore = job.stage.startsWith('explore_')}
-      <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{fill('jobLine', { status: t(explore ? 'eMaking' : 'analysisInProgress'), progress: siteOf(target)?.name ?? '' })}{#if !explore && job.total} · {job.done} / {job.total}{/if}</a>
+      <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{fill('jobLine', { status: t(explore ? 'eMaking' : 'analysisInProgress'), progress: siteOf(target)?.name ?? '' })}</a>
     {/if}
     <select aria-label={t('language')} value={app.locale} onchange={e => setLocale(e.currentTarget.value as 'ja' | 'en')}>
       <option value="ja">日本語</option><option value="en">English</option>

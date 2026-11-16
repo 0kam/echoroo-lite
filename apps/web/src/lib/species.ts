@@ -13,7 +13,8 @@ export type NamedCandidate = {
 };
 
 export function commonName(species: { common_names: Record<string, string> }, locale: string) {
-  return species.common_names[locale] || species.common_names.en || '';
+  // A species added with a name in one language only keeps that name in the other language.
+  return species.common_names[locale] || species.common_names.en || Object.values(species.common_names).find(Boolean) || '';
 }
 
 /** eBird species page when the code is known, otherwise Wikipedia in the UI language when possible. */

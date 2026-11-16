@@ -21,10 +21,11 @@
   // `dense` (with `compact` and `fixedRange`): the play button sits left of the figure and `meta` and `actions` share one line above it, with no time axis, for long lists.
   // `invalid`: a note shown under the From/To fields when the chosen part cannot be used.
   // `marked`: a part of a fixed range to set off with two lines, as [from, to] in seconds of the source.
+  // `secondary`: the play button is never the page's main button (e.g. an example beside the sound being checked).
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta, invalid='', marked }:
+    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta, invalid='', marked, secondary=false }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet;invalid?:string;marked?:[number,number] } = $props();
+      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet;invalid?:string;marked?:[number,number];secondary?:boolean } = $props();
   const invalidId=$props.id();
   const choosing = $derived(!fixedRange && selectable);
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
@@ -138,7 +139,7 @@
 
 {#snippet playbackButton()}
   <!-- In a list of sounds (compact) every row has one, so none is the main button (A7). -->
-  <Button variant={compact?'default':'primary'} aria-busy={status === 'loading'} aria-label={dense ? t(status === 'idle' ? 'uListen' : 'pause') : undefined}
+  <Button variant={compact||secondary?'default':'primary'} aria-busy={status === 'loading'} aria-label={dense ? t(status === 'idle' ? 'uListen' : 'pause') : undefined}
     onclick={() => zoomable ? toggle() : status !== 'idle' ? stop() : fixedRange || choosing ? play() : playFromHead()}>
     {#if dense}{status === 'idle' ? '▶' : '❚❚'}
     {:else}{status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(choosing?'playRange':'uListen')}{/if}

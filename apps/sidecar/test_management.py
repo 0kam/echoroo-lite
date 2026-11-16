@@ -128,6 +128,16 @@ class ManagementCheck(unittest.TestCase):
                 self.assertEqual(client.get('/sites/2/management').json()['detail'],'not_found')
             self.assertTrue(all(p.read_bytes()==content for p,content in originals.items()))
 
+    def test_site_states_count_analysed_recordings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                self.populate(root,client)
+                self.assertEqual(client.get('/sites/states').json(),[{'site_id':1,'records':2,'analysed':2},{'site_id':2,'records':2,'analysed':2}])
+                with connect(root) as db:
+                    db.execute("DELETE FROM analyses WHERE recording_id=4 AND engine='birdnet'")
+                self.assertEqual(client.get('/sites/states').json()[1],{'site_id':2,'records':2,'analysed':1})
+
     def test_edit_reanalysis_and_busy_guard(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

@@ -19,7 +19,7 @@
   const sessionId = $derived(Number(page.params.session));
   let session = $state<QuizSession | null>(null), loadError = $state('');
   let reviewPosition = $state<number | null>(null), questionPlayer = $state<{play:()=>Promise<void>;stop:()=>void}>();
-  let feedbackElement = $state<HTMLDivElement>(), questionHeading = $state<HTMLHeadingElement>();
+  let feedbackElement = $state<HTMLDivElement>(), questionHeading = $state<HTMLHeadingElement>(), titleHeading = $state<HTMLHeadingElement>();
   let answering = $state<string | null>(null);
   async function load() { session = await api<QuizSession>(`/quiz/sessions/${sessionId}`); }
   const answer = createTask(async (speciesId: string | null) => {
@@ -33,7 +33,7 @@
     } finally { answering = null; }
   }, { toast: true });
   const advance = createTask(async () => {
-    questionPlayer?.stop(); await load(); await tick(); questionHeading?.focus();
+    questionPlayer?.stop(); await load(); await tick(); (session?.question ? questionHeading : titleHeading)?.focus();
   }, { toast: true });
   const replay = createTask(async (position: number) => {
     questionPlayer?.stop(); reviewPosition = position; await tick();
@@ -43,8 +43,8 @@
 </script>
 
 <div class="page">
-  <div class="crumbs"><a href={quizUrl}>{t('backToQuiz')}</a></div>
-  <h1>{session?.question?fill('quizTitleProgress',{n:session.question.position+1,total:session.count}):t('quiz')}</h1>
+  <div class="crumbs">{#if context.back}<a href={context.back}>{t(context.backLabel)}</a>{:else}<a href={quizUrl}>{t('backToQuiz')}</a>{/if}</div>
+  <h1 tabindex="-1" bind:this={titleHeading}>{session?.question?fill('quizTitleProgress',{n:session.question.position+1,total:session.count}):session?t('quizResultTitle'):t('quiz')}</h1>
   {#if loadError}<div class="panel empty"><p class="error">{t(loadError === 'not_found' ? 'sessionNotFound' : loadError)}</p></div>
   {:else if !session}<p class="muted"><Spinner /> {t('loading')}</p>
   {:else}
@@ -83,7 +83,6 @@
           <Button class="next" variant="primary" pending={advance.pending} onclick={() => advance.run()}>{t(session.complete ? 'quizShowResults' : 'quizNext')}</Button>
         {/if}
       {:else}
-        <h2 class="question" tabindex="-1" bind:this={questionHeading}>{t('quizResults')}</h2>
         <p class="result-score">{session.correct} / {session.answered} · {(session.correct / session.answered * 100).toFixed(1)}%</p>
         <p>{t('quiz_incorrect')}: {session.answered - session.correct - session.unknown} · {t('quizUnknown')}: {session.unknown}</p>
         <p class="muted">{t('quizResultHint')}</p>

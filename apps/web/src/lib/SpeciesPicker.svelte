@@ -67,11 +67,13 @@
       {#each rows as row (row.id)}<button type="button" {disabled} onclick={() => choose(row)}>{commonName(row, app.locale) || t('commonNameMissing')} <i>{row.scientific_name}</i></button>
       {:else}<p class="muted pad">{t('noSpeciesMatch')}</p>{/each}
     </div>
-    {#if !rows.length}<details><summary>{t('wAddUnlisted')}</summary><form class="stack" novalidate onsubmit={e=>{e.preventDefault();if(scientific.trim())void add();else{tried=true;void focusMissing(e.currentTarget);}}}><label>{t('scientificName')}<input bind:value={scientific} required maxlength="200" disabled={adding} aria-invalid={noScientific||undefined} aria-describedby={noScientific?`${invalidId}-scientific`:undefined}/></label>
+    <!-- Open at once: when nothing matches, adding the species is the next step. -->
+    {#if !rows.length}<div class="add-unlisted"><h3>{t('wAddUnlisted')}</h3><form class="stack" novalidate onsubmit={e=>{e.preventDefault();if(scientific.trim())void add();else{tried=true;void focusMissing(e.currentTarget);}}}><label>{t('scientificName')}<input bind:value={scientific} required maxlength="200" disabled={adding} aria-invalid={noScientific||undefined} aria-describedby={noScientific?`${invalidId}-scientific`:`${invalidId}-hint`}/></label>
+      <p class="muted" id={`${invalidId}-hint`}>{t('spScientificHint')}</p>
       {#if noScientific}<p class="field-error" id={`${invalidId}-scientific`}>{t('uEnterScientific')}</p>{/if}
       {#if shownExisting}{@const found = shownExisting}<p class="info" role="status">{t('spExists')} {#if commonName(found, app.locale)}<strong>{commonName(found, app.locale)}</strong>{/if} <i>{found.scientific_name}</i></p>
         <Button variant="primary" onclick={() => { choose(found); naming = !found.common_names[app.locale]; newName = common; }}>{t('spChooseExisting')}</Button>{/if}<label>{t('wCommonName')}<input bind:value={common} placeholder={query} maxlength="200" disabled={adding}/></label><Button type="submit" variant={shownExisting ? 'default' : 'primary'} pending={adding} {disabled}>{t('addSpecies')}</Button>
-      {#if !scientific.trim()}<p class={tried?'field-error':'muted'}>{missingText(['scientificName'])}</p>{/if}</form></details>{/if}
+      {#if !scientific.trim()}<p class={tried?'field-error':'muted'}>{missingText(['scientificName'])}</p>{/if}</form></div>{/if}
   {/if}
 {/if}
 {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
@@ -81,4 +83,6 @@
   :global(.dark) .picked { background: rgb(var(--stone-200)); border-color: rgb(var(--stone-300)); }
   .state { margin-top: 6px; }
   .pad { padding: 8px 12px; }
+  .add-unlisted { margin-top: 16px; }
+  .add-unlisted h3 { margin: 0 0 8px; font-size: 16px; }
 </style>

@@ -34,7 +34,7 @@
     api<Species>(`/species/${encodeURIComponent(sid)}`).then(row=>{names[sid]=row;},()=>{/* The scientific name stays as the fallback. */});}});
   const speciesName=(s:Named)=>{const row=s.id?names[s.id]:undefined;return (row&&commonName(row,app.locale))||s.scientific_name;};
   // Recording times are shown in the site's timezone, whatever the PC's.
-  const when=(i:Item)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:i.timezone}).format(new Date(Date.parse(i.recorded_at)+i.start_s*1000));
+  const when=(i:Item)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:i.timezone}).format(new Date(Date.parse(i.recorded_at)+i.start_s*1000));
   const where=(i:Item)=>`${when(i)} · ${fill('pkWhere',{file:fileName(i.path),start:+i.start_s.toFixed(1),end:+i.end_s.toFixed(1)})}`;
   // One sound at a time: starting a player pauses every other one on the page.
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}

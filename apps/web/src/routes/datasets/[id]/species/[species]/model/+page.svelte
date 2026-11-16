@@ -2,10 +2,11 @@
   import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,share,type LabelRow,type SpeciesAI } from '$lib/workflow';
+  import { fill,modelName,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -36,34 +37,36 @@
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;skipped=[];await next.run();},{toast:true});
   const model=$derived(info?.model??null);
+  // Opens this AI's accuracy check at once (an unfinished one with the same AI and period is reused).
+  const startCheck=createTask(async()=>{const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
+    start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(resolve(`/datasets/${id}/validation/${validation.id}`));},{toast:true});
   // Nothing to rank by and nothing to make an AI from yet: the page only points to the search.
   const searchFirst=$derived(!!info&&!source&&!info.can_train&&!model);
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
-  const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium'}).format(new Date(row.local_time));
-  const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
+  const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23'}).format(new Date(row.local_time));
+  const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
   const score=(value:number)=>{const text=value.toFixed(2);
     return source==='custom'?fill('mdScoreCustom',{value:text}):source==='search'?fill('pSimilarity',{value:text}):fill('mdScoreBuiltin',{model:modelName(info!.engine),value:text});};
 </script>
 <div class="page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
-  <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('customModelTitle')}</h1></div>
+  <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{info?fill('customModelTitleFor',{name:commonName(info.species,app.locale)||info.species.scientific_name}):t('customModelTitle')}</h1></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if info}
-    <p class="species">{commonName(info.species,app.locale)} <i class="sci">{info.species.scientific_name}</i></p>
     {#snippet counts()}<p><strong>{fill('mdCounts',{positive:info!.examples.positive_5s,negative:info!.examples.negative_5s})}</strong>
-      {#if info!.needed}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>{/snippet}
+      {#if info!.needed}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>
+      {#if info!.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info!.examples.other_answers})}</p>{/if}{/snippet}
     {#if !searchFirst}<section class="panel">
       {@render counts()}
-      {#if info.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info.examples.other_answers})}</p>{/if}
       <p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>
       {#if model&&!model.applicable}<p class="info">{t(model.reason??'custom_model_scope_changed')}</p>{/if}
       <!-- Shown from the first time the AI is made again: before that there is nothing to compare it with. -->
       {#if model?.growth.rounds.length}{@const grown=model.growth.state}<h2>{t('mdGrowth')}</h2>
         <ul class="rounds">{#each model.growth.rounds as item (item.round)}<li>{item.overlap==null?fill('mdGrowthRoundNone',{n:item.round}):fill('mdGrowthRound',{n:item.round,p:share(item.overlap)})}</li>{/each}</ul>
         <div class="status-box" role="status"><strong>{t(`mdGrow_${grown}`)}</strong><p>{fill(`mdGrowText_${grown}`,{n:info.examples.positive_5s})}</p></div>
-        <!-- Both lead to the species page, where the check starts; the sounds below can still be answered in every state. -->
+        <!-- The check opens directly; finishing returns to the species page. The sounds below can still be answered in every state. -->
         {#if grown!=='growing'}<div class="actions">
-          {#if grown!=='no_voice'}<Button variant="primary" href={back}>{t('cStart')}</Button>{/if}
+          {#if grown!=='no_voice'&&model.applicable}<Button variant="primary" pending={startCheck.pending} onclick={()=>startCheck.run()}>{t('cStart')}</Button>{/if}
           {#if grown!=='settled'}<Button href={back}>{t('mdFinish')}</Button>{/if}
         </div>{/if}
       {/if}
@@ -112,6 +115,6 @@
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
 <style>section p{margin:12px 0}.rounds{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;padding:0;list-style:none}
-  .rounds li{padding:4px 10px;border:1px solid rgb(var(--stone-300));border-radius:8px;font-size:14px}.status-box{margin-bottom:12px}.species{margin:0}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
+  .rounds li{padding:4px 10px;border:1px solid rgb(var(--stone-300));border-radius:8px;font-size:14px}.status-box{margin-bottom:12px}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
   .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.footer{border-top:1px solid rgb(var(--stone-300));padding-top:4px}
   details summary{min-height:44px;padding:10px 0;cursor:pointer}.confirm{margin-top:8px;padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}</style>

@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,presenceText,rangeQuery,type PresenceList,type PresenceRow } from '$lib/workflow';
+  import { fill,presenceText,rangeQuery,type PresenceList,type PresenceRow } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import ReferencePanel from '$lib/ReferencePanel.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -46,8 +46,7 @@
     await api('/presence/misses',{dataset_id:id,species_id:speciesId,start_date:list.start_date,end_date:list.end_date,source,listened});
     saved=listened;await load();
   },{toast:true});
-  const flagged=(row:PresenceRow)=>row.models.map(model=>fill('pRank',{model:modelName(model.engine),rank:model.rank})).join(app.locale==='ja'?'・':', ');
-  const time=(row:PresenceRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:list?.site.timezone}).format(new Date(row.local_time));
+  const time=(row:PresenceRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:list?.site.timezone}).format(new Date(row.local_time));
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}/presence?${range}&source=${source}`)}`);
 </script>
 <div class="page wide presence-page">
@@ -62,7 +61,7 @@
       <p class="status" role="status"><strong>{presenceText(list.presence)}</strong></p>
       {#each list.rows.slice(0,shown) as row,index (key(row))}<article class="row" class:marked={row.marked}>
         <div class="row-head"><span class="rank">{index+1}</span><span>{time(row)}</span>
-          <span class="muted">{source==='search'?fill('pSimilarity',{value:(row.score??0).toFixed(2)}):flagged(row)}</span></div>
+          {#if source==='search'}<span class="muted">{fill('pSimilarity',{value:(row.score??0).toFixed(2)})}</span>{/if}</div>
         <AudioRegion source={row.source} fixedRange compact start={row.start_s} end={row.end_s} onplaying={()=>{if(!played.includes(key(row)))played=[...played,key(row)];}}>
           <!-- A4: a sound can be marked only after it was played; undoing is always possible. -->
           {#snippet actions()}<Button active={row.marked} aria-pressed={row.marked} pending={mark.pending} disabled={!row.marked&&!played.includes(key(row))}

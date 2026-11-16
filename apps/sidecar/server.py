@@ -520,7 +520,8 @@ def create_app(root, models, token):
                 if not all(model_registry.result_visible(root, r) for r in snap['results']):
                     continue
                 result.append({'id':row['id'],'path':row['path'],'created_at':row['created_at'],'results':snap['results'],
-                    'format':snap.get('format'),'folder_path':snap.get('folder_path')})
+                    'format':snap.get('format'),'folder_path':snap.get('folder_path'),
+                    'species':snap.get('selected_species',[]),'start_date':snap.get('start_date'),'end_date':snap.get('end_date')})
             return result
 
     @app.post('/workflow-exports')
@@ -626,6 +627,11 @@ def create_app(root, models, token):
             return {"sites": [dict(r) for r in db.execute("SELECT * FROM sites")],
                     "datasets": [dict(r) for r in db.execute("SELECT * FROM datasets ORDER BY id DESC")],
                     "jobs": [dict(r) for r in db.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT 20")]}
+
+    @app.get('/sites/states')
+    def sites_states():
+        from management import site_states
+        return site_states(root)
 
     @app.get('/sites/{site_id}/management')
     def site_management(site_id: int):

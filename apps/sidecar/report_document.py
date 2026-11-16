@@ -5,7 +5,7 @@ from html import escape
 from math import ceil
 from zoneinfo import ZoneInfo
 
-from report_figures import DATA
+from report_figures import DATA,common_name
 
 
 def messages(locale):
@@ -13,8 +13,7 @@ def messages(locale):
 
 
 def names(species,locale):
-    common=species['common_names'].get(locale) or species['common_names'].get('en') or ''
-    return (common if common!=species['scientific_name'] else ''),species['scientific_name']
+    return common_name(species,locale),species['scientific_name']
 
 
 def name(species,locale):
@@ -32,10 +31,6 @@ def percent(value,empty='—'):
 
 def share(value):
     return '—' if value is None else '<1%' if 0<value<.01 else f'{value:.0%}'
-
-
-def hours(seconds):
-    return f'{seconds/3600:,.2f}'.rstrip('0').rstrip('.')
 
 
 def day_text(t,value):
@@ -57,9 +52,15 @@ def clock(value,seconds=False):
 
 
 def duration_text(seconds,t):
+    """40 min, 12 h or 1 h 30 min, rounded to the minute."""
     if seconds<60:return t['seconds'].format(s=round(seconds))
-    minutes=round(seconds/60);h,m=divmod(minutes,60)
-    return t['hours_minutes'].format(h=h,m=m) if h else t['minutes'].format(m=m)
+    h,m=divmod(round(seconds/60),60)
+    return t['minutes'].format(m=m) if not h else t['hours'].format(h=f'{h:,}') if not m else t['hours_minutes'].format(h=f'{h:,}',m=m)
+
+
+def joined(items,t):
+    items=list(items)
+    return items[0] if len(items)==1 else t['list_sep'].join(items[:-1])+t['list_and']+items[-1]
 
 
 def quality_result(snap):
@@ -180,31 +181,48 @@ def blocks(manifest,snapshots,quiz,evidence=()):
         for snap in snaps:
             state=ai_state(snap);prefix=method(snap,t)+t['colon'] if len(snaps)>1 else ''
             if ai:ai.append(['br'])
-            ai.append(['badge-'+state,t['badge_'+state]])
             if state=='unused':
                 reason=(quality_result(snap) or {}).get('reason')
-                ai.append(['small',prefix+t['table_unused_no_target' if reason=='no_target' else 'table_unused_other']])
+                ai+=[['text',prefix],['badge-'+state,t['badge_'+state]],['small',t['table_unused_no_target' if reason=='no_target' else 'table_unused_other']]]
                 continue
             s=snap['summaries'][0] if snap['summaries'] else {}
-            ai.append(['text',' '+t['windows_count'].format(count=number(s.get('candidate_windows')))])
             p=(quality_result(snap) or {}).get('precision') or {}
-            ai.append(['small',prefix+(t['table_precision'].format(value=f"{p['value']:.0%}") if state=='checked' and p.get('value') is not None
-                                       else t['table_reference'])])
+            ai+=[['text',prefix+t['windows_count'].format(count=number(s.get('candidate_windows')))+' '],['badge-'+state,t['badge_'+state]],
+                 ['small',t['table_precision'].format(value=f"{p['value']:.0%}") if state=='checked' and p.get('value') is not None else t['table_reference']]]
         rows.append([[['a','#sp-'+taxon['id'],common or scientific],['small',scientific if common else '']],heard,ai or [['badge-no',t['badge_no_ai']]]])
-    summary=[para(t['scope_line'].format(site=site['name'],period=period_text(t,manifest),hours=hours(scope['recorded_seconds']),
+    heard=[name(s,locale) for s in taxa if presence[s['id']]['status']=='confirmed']
+    checked={s['id']:next(snap for snap in per_species[s['id']] if ai_state(snap)=='checked') for s in taxa
+             if any(ai_state(snap)=='checked' for snap in per_species[s['id']])}
+    open_checks=[name(s,locale) for s in taxa if s['id'] not in checked and any(status(snap)=='in_progress' for snap in per_species[s['id']])]
+    def checked_item(taxon):
+        p=(quality_result(checked[taxon['id']]) or {}).get('precision') or {}
+        return name(taxon,locale)+(t['sure_precision'].format(value=f"{p['value']:.0%}") if p.get('value') is not None else '')
+    # The plain answer to "how sure is this report?", the sentence a reader copies.
+    sure=[t['sure_heard'].format(names=joined(heard,t)) if heard else t['sure_heard_none'],
+          t['sure_checked'].format(names=joined([checked_item(s) for s in taxa if s['id'] in checked],t)) if checked else t['sure_checked_none']]
+    if open_checks:sure.append(t['sure_in_progress'].format(names=joined(open_checks,t)))
+    others=[s for s in taxa if presence[s['id']]['status']!='confirmed' and s['id'] not in checked]
+    if others:sure.append(t['sure_all_candidates' if len(others)==len(taxa) else 'sure_others'])
+    summary=[para(t['scope_line'].format(site=site['name'],period=period_text(t,manifest),hours=duration_text(scope['recorded_seconds'],t),
                                           files=number(len(scope['recording_ids']))),cls='scope'),
-        {'type':'tiles','items':[[t['tile_value'].format(count=sum(r['status']=='confirmed' for r in manifest['presence'])),t['tile_heard']],
-            [t['tile_value'].format(count=sum(any(ai_state(s)=='checked' for s in snaps) for snaps in per_species.values())),t['tile_counted']],
+        {'type':'tiles','items':[[t['tile_value'].format(count=len(heard)),t['tile_heard']],
+            [t['tile_value'].format(count=len(checked)),t['tile_counted']],
             [t['tile_value'].format(count=len(taxa)),t['tile_selected']]]},
-        {'type':'table','headers':[t['col_species'],t['col_heard'],t['col_ai']],'rows':rows},
-        para(t['absence_note'],muted=True)]
+        para(t['sentence_sep'].join(sure),cls='sure'),
+        {'type':'table','headers':[t['col_species'],t['col_heard'],t['col_ai']],'rows':rows}]
+    if manifest.get('other_species'):summary.append(para(t['other_species'].format(count=number(manifest['other_species']))))
+    summary.append(para(t['absence_note'],muted=True))
     output=[{'type':'section','id':'summary','title':t['title'],'level':1,'body':summary}]
 
     # Species: how to read AI detections once, then one section per species.
+    # Name only the interval lengths of the AIs in this report.
+    windows={model_group(snap,t):snap['window_s'] for snap in snapshots}
+    reading=t['reading_windows'].format(windows=t['list_sep'].join(t['reading_window'].format(model=k,s=f'{v:g}') for k,v in windows.items()))
+    if len(windows)>1:reading+=t['reading_no_sum']
     output.append({'type':'section','id':'species','title':t['nav_species'],'body':[
-        {'type':'heading','text':t['reading_title']},para(t['reading_windows']),para(t['reading_figure']),
+        {'type':'heading','text':t['reading_title']},para(reading),para(t['reading_figure']),
         {'type':'legend','items':[['#a24f4f',t['legend_red']],['#ffffff',t['legend_white']],['#f1f0f2',t['legend_gray']]]},
-        para(t['legend_note'],muted=True)]})
+        para(t['legend_note'],muted=True)] if snapshots else []})
     origin=lambda row:t['origin_'+row.get('origin','check')]
     for taxon in taxa:
         common,scientific=names(taxon,locale);label=common or scientific;row=presence[taxon['id']];snaps=per_species[taxon['id']]
@@ -246,13 +264,13 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     # Recordings: what was examined, and when recording happened (not detections).
     facts=[[t['rec_site'],site['name']],[t['rec_coordinates'],f"{site['latitude']:.6f}, {site['longitude']:.6f}"],[t['rec_timezone'],site['timezone']],
         [t['rec_period'],t['rec_period_text'].format(period=period_text(t,manifest),days=number(recording_days))],
-        [t['rec_recordings'],t['rec_recordings_text'].format(files=number(len(scope['recording_ids'])),hours=hours(scope['recorded_seconds']))],
-        [t['rec_analysed'],'\n'.join(t['rec_analysed_text'].format(model=key,hours=hours(value)) for key,value in scope['analysed_seconds'].items()) or '—']]
+        [t['rec_recordings'],t['rec_recordings_text'].format(files=number(len(scope['recording_ids'])),hours=duration_text(scope['recorded_seconds'],t))],
+        [t['rec_analysed'],'\n'.join(t['rec_analysed_text'].format(model=key,hours=duration_text(value,t)) for key,value in scope['analysed_seconds'].items()) or '—']]
     recordings=[{'type':'facts','items':facts}]
     if any(value+1<scope['recorded_seconds'] for value in scope['analysed_seconds'].values()):recordings.append(para(t['partial_coverage']))
     recordings+=[{'type':'heading','text':t['schedule_title']},
-        {'type':'schedule','label':t['schedule_label'].format(period=period_text(t,manifest),days=number(recording_days),hours=hours(scope['recorded_seconds'])),
-         'text':t['schedule_text'].format(share=share(scope['recorded_seconds']/(days*86400)),hours=hours(scope['recorded_seconds']/days))},
+        {'type':'schedule','label':t['schedule_label'].format(period=period_text(t,manifest),days=number(recording_days),hours=duration_text(scope['recorded_seconds'],t)),
+         'text':t['schedule_text'].format(share=share(scope['recorded_seconds']/(days*86400)),hours=duration_text(scope['recorded_seconds']/days,t))},
         {'type':'heading','text':t['limits_title']},para(t['limits_text'])]
     output.append({'type':'section','id':'recordings','title':t['nav_recordings'],'body':recordings})
 
@@ -277,6 +295,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
         counts=answer_counts(validation)
         items.append([t['detail_answered'],t['answered_text'].format(answered=validation['counts']['answered'],**counts)])
         body=[{'type':'heading','id':'q-'+snap['figure_id'],'text':f"{label}{t['dot']}{method(snap,t)}"},{'type':'facts','items':items}]
+        if result.get('precision') and snap['threshold'] is not None:body.append(para(t['precision_basis'].format(score=f"{snap['threshold']:.2f}"),muted=True))
         if result.get('disagreement'):body.append(para(t['disagreement']))
         body.append(para(t['detail_files_note'],muted=True))
         answered=[r for r in evidence if r.get('audio_role')=='validation' and str(r.get('validation_id'))==str(validation['id'])]
@@ -320,7 +339,8 @@ def blocks(manifest,snapshots,quiz,evidence=()):
             {'type':'table','headers':[t[k] for k in ('col_species','quiz_score','quiz_unknown','quiz_date','quiz_set')],'rows':quiz_rows}]})
     details.append({'type':'details','summary':t['detail_files'],'body':[para(t['files_note']),
         {'type':'table','headers':[t['file'],t['contents']],'rows':manifest['file_guide']},
-        para(f"{t['saved']}: {saved_time(manifest)}\nID: {manifest['package_id']}\nSchema: {manifest['schema']}")]})
+        para(f"{t['saved']}: {saved_time(manifest)}"),para(t['reproduce_note'],muted=True),
+        {'type':'facts','items':[[t['package_id'],manifest['package_id']],[t['schema'],manifest['schema']]]}]})
     output.append({'type':'section','id':'details','title':t['nav_details'],'body':details})
     return output
 
@@ -394,7 +414,7 @@ def create_html(folder,manifest,snapshots,evidence,quiz,records=()):
             body=''.join(render(b) for b in block['body'])
             if 'figures' in block:
                 figures=''.join(f'<figure id="{e(f["id"])}"><a class="figure-link" href="{e(f["path"],quote=True)}" aria-label="{e(t["save_figure"],quote=True)}">'
-                    f'<img loading="lazy" width="1920" height="2240" src="{e(f["path"],quote=True)}" alt="{e(f["alt"],quote=True)}"></a>'
+                    f'<img loading="lazy" width="1920" height="2500" src="{e(f["path"],quote=True)}" alt="{e(f["alt"],quote=True)}"></a>'
                     +(f'<figcaption>{e(f["caption"])}</figcaption>' if f['caption'] else '')
                     +f'<p class="back" data-nocopy><a href="{e(f["path"],quote=True)}" download>{e(t["save_figure"])}</a></p></figure>' for f in block['figures'])
                 body=f'<div class="species"><div>{figures or "<p class=nofig>"+e(block["nofigure"])+"</p>"}</div><div>{body}</div></div>'
@@ -462,7 +482,7 @@ def create_html(folder,manifest,snapshots,evidence,quiz,records=()):
     html=f'''<!doctype html><html lang="{manifest['locale']}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; media-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>{e(t['title'])} · {e(manifest['site']['name'])}</title><style>{css}</style></head><body>
-<header><img src="figures/echoroo.png" width="32" height="32" alt=""><b>echoroo</b><nav aria-label="{e(t['nav_label'],quote=True)}">{nav}</nav><span class="stamp">{e(manifest['package_id'])}</span></header>
+<header><img src="figures/echoroo.png" width="32" height="32" alt=""><b>echoroo</b><nav aria-label="{e(t['nav_label'],quote=True)}">{nav}</nav><span class="stamp">{e(manifest['site']['name'])}{e(t['dot'])}{e(period_text(t,manifest))}</span></header>
 <div class="tools"><button id="copy" type="button" data-success="{e(t['copied'],quote=True)}" data-failure="{e(t['copy_failed'],quote=True)}">{e(t['copy'])}</button><p id="copy-status" role="status"></p><p>{e(t['copy_hint'])}</p></div>
 <main>{main}</main><textarea hidden id="plain-text">{e(chr(10).join(plain))}</textarea><footer>{e(saved_time(manifest))}</footer><script>{script}</script></body></html>'''
     (folder/'index.html').write_text(html,encoding='utf-8')

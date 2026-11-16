@@ -65,10 +65,10 @@
   const blocked=$derived(scanning?'uScanWait':scanError?'uScanRetry':!preview?.count?'uNothingToAdd':'');
   // Every AI in use analyses every new recording; nothing is shown until each has a speed measurement.
   const estimate=$derived(preview?.count?analysisSeconds(app.ai.models.filter(m=>m.enabled&&m.available).map(m=>({engine:m.id,recordings:preview!.count,seconds:preview!.seconds}))):null);
-  const localTime=(iso:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:scanZone}).format(new Date(iso));
+  const localTime=(iso:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:scanZone}).format(new Date(iso));
 </script>
 <div class="page narrow">
-  <div class="crumbs">{#if origin}<a href={appHref(origin)}>{t(origin.startsWith('/sites/')?'mBackManage':'uBackResults')}</a>{:else}<a href={resolve('/datasets')}>{t('uBackSites')}</a>{/if}</div>
+  <div class="crumbs">{#if origin}<a href={appHref(origin)}>{origin.startsWith('/sites/')?t('mBackManage'):fill('uBackSite',{site:selected?.name??''})}</a>{:else}<a href={resolve('/datasets')}>{t('uBackSites')}</a>{/if}</div>
   <h1>{adding?fill('uAddRecordingsTo',{site:selected?.name??''}):t('uNewSite')}</h1>
   <div class="steps">
     {#if adding}<section class="panel step-card"><h2>{fill('uSiteSame',{site:selected?.name??''})}</h2></section>

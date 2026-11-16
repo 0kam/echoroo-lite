@@ -159,7 +159,7 @@
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
   // A fixed range only plays start–end, so the clip end stands in for the recording length.
   const sourceOf=(s:Segment)=>({id:s.recording_id,kind:'recording' as const,path:s.path,seconds:s.end_s});
-  const when=(s:Segment)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
+  const when=(s:Segment)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
   const pct=(share:number,digits=0)=>new Intl.NumberFormat(app.locale,{style:'percent',maximumFractionDigits:digits}).format(share);
   const groupName=(g:{node:number;name:string})=>g.name?fill('eGroup',{n:g.name}):t('eWhole');
   // Common names in the UI language are fetched once per species; the scientific name is shown until then or when there is none.
@@ -431,7 +431,7 @@
   .labels{grid-column:1/-1}
   /* English labels wrap at the space; Japanese stays one word. */
   .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;line-height:1.2;text-align:center;word-break:keep-all;cursor:pointer}
-  .check input{width:22px;height:22px;accent-color:rgb(var(--primary-700))}
+  .check input{width:24px;height:24px}
   /* The date and AI suggestions of a listed sound wrap instead of being cut: English needs three lines or more for two or three suggestions. */
   .member .about{white-space:normal}
   /* Outlined, so the mark stays visible on a ticked row's tint; the word, not the colour, carries the meaning. */

@@ -121,6 +121,10 @@ def export(root,body,cancel=None):
             if model['species']['id']==sid and model['applicable']:
                 snapshots.append(custom_snapshot(root,ctx,model))
     if not snapshots and not any(p['evidence'] for p in presence.values()):raise CatalogError('no_report_analyses')
+    # Species the export page offered with AI detections or confirmed calls but not chosen; the overview is cached.
+    from results_workflow import overview
+    other_species=sum(row['species']['id'] not in presence and bool(row['presence']['evidence'] or any((m.get('candidate_windows') or 0)>0 for m in row['models']))
+                      for row in overview(root,body.dataset_id,ctx['start_date'],ctx['end_date'])['species'])
     token=uuid4().hex[:10];package_id=f'echoroo-{body.dataset_id}-{token}'
     destination=parent/package_id;zip_path=parent/(package_id+'.zip')
     zone=ZoneInfo(ctx['site']['timezone']);index=[];species_rows=[];hourly=[];evidence=[];quality_rows=[];presence_rows=[]
@@ -220,7 +224,7 @@ def export(root,body,cancel=None):
                         'voice_on_ai_page':sum(e['origin']=='label' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),
                         'not_found_list':miss.get('source'),'not_found_recorded_at':miss.get('created_at')})
                 manifest={**ctx,'schema':'echoroo_recording_report_v2','package_id':package_id,'saved_at':datetime.now(timezone.utc).isoformat(),
-                    'format':'html','locale':body.locale,'scope':scope,'results':index,'selected_species':[taxa[sid] for sid in wanted if sid in taxa],
+                    'format':'html','locale':body.locale,'other_species':other_species,'scope':scope,'results':index,'selected_species':[taxa[sid] for sid in wanted if sid in taxa],
                     'presence':[{**row,'species':taxa[row['species_id']]} for row in presence_rows],
                     'report_file':'index.html','folder_path':str(destination),
                     'file_guide':[['presence.csv',t['presence_files']],['species.csv',t['file_species']],['hourly.csv',t['file_hourly']],['quality.csv',t['file_quality']],['scores/',t['all_scores']],

@@ -33,7 +33,7 @@
       {#if filter}<p>{day(filter.date)} · {filter.hour}:00 <Button onclick={()=>select(null)}>{t('uAllSounds')}</Button></p>{/if}
       {#if loading}<p role="status">{t('loading')}</p>
       {:else if hit}
-        <p>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:report.site.timezone}).format(new Date(hit.local_time))} · {index+1} / {visible.evidence.length}</p>
+        <p>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:report.site.timezone}).format(new Date(hit.local_time))} · {index+1} / {visible.evidence.length}</p>
         {#key `${hit.recording_id}:${hit.start_s}`}<AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange start={hit.start_s} end={hit.end_s}/>{/key}
         <div class="actions"><Button disabled={index===0} onclick={()=>index--}>‹ {t('uPreviousSound')}</Button><Button disabled={index>=visible.evidence.length-1} onclick={()=>index++}>{t('uNextSound')} ›</Button></div>
       {:else}<p class="empty">{t(filter?emptyHour(filter):'uNoDetection')}</p>{/if}

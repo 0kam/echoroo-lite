@@ -54,7 +54,7 @@
         <label>{t('longitude')}<input type="number" step="any" min="-180" max="180" bind:value={longitude} disabled={save.pending} required/></label></div>
         <p class="notice">{t('mLocationEffect')}</p>
       {:else}<p class="muted">{t('latitude')} {latitude?.toFixed(6)} · {t('longitude')} {longitude?.toFixed(6)}</p>{/if}
-      <p class="muted">{t('uTimeZone')}: {details.site.timezone}</p>
+      <p class="muted">{fill('mTimeZoneShown',{zone:details.site.timezone})}</p>
       <div class="actions"><Button type="submit" variant="primary" pending={save.pending} disabled={!dirty||renameId!==null}>{t('mSave')}</Button>
         {#if (dirty||changingPlace)&&renameId===null}<Button disabled={save.pending} onclick={()=>receive(details!)}>{t('mCancel')}</Button>{/if}</div>
       {#if renameId!==null}<p class="muted">{t('mSaveFirst')}</p>{:else if !dirty}<p class="muted">{t('mNoChanges')}</p>{/if}

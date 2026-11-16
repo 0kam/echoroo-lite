@@ -55,12 +55,13 @@
       <label class="checkbox"><input type="checkbox" checked={extra.includes(model.id)} onchange={e => toggle(model.id, e.currentTarget.checked)} />{@render about(model)}</label>
     {/each}
   </fieldset>
-  <p class="muted">{t('modelsHidden')}</p>
+  {#if !firstRun}<p class="muted">{t('modelsHidden')}</p>{/if}
   {#if measure.pending}<p class="muted" role="status">{fill('modelsMeasuring', { name: measuring })}</p>{/if}
   {#if measure.error}<p class="error" role="alert">{t(measure.error)}</p>{/if}
   {#if save.error}<p class="error" role="alert">{t(save.error)}</p>{/if}
   {#if firstRun}
-    <Button variant="primary" size="lg" pending={save.pending} onclick={() => save.run()}>{t('firstRunStart')}</Button>
+    <!-- Sticky so the start button is reachable without scrolling past every AI. -->
+    <div class="start"><Button variant="primary" size="lg" pending={save.pending} onclick={() => save.run()}>{t('firstRunStart')}</Button></div>
   {:else}
     {#if save.pending}<p class="muted" role="status">{t('modelsSaving')}</p>{:else if added}<p class="info" role="status">{t('modelsChanged')}</p>{/if}
     <Button size="sm" pending={measure.pending} onclick={() => measure.run()}>{t('modelsMeasure')}</Button>
@@ -69,4 +70,6 @@
 
 <style>
   .checkbox { align-items: flex-start; margin-top: 12px; }
+  /* -48px: sticky stops at the scroll container's padding; this reaches past .main's 48px bottom padding to the window edge. */
+  .start { position: sticky; bottom: -48px; padding: 12px 0; background: rgb(var(--color-card-bg)); border-top: 1px solid rgb(var(--color-card-border)); }
 </style>

@@ -89,7 +89,7 @@
       {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending} aria-invalid={noPath||undefined} aria-describedby={noPath?'path-error':undefined}/></label>
         {#if noPath}<p class="field-error" id="path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
       {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference} added={clips.map(c=>c.source.attribution?.id)} onremove={xcId=>{clips=clips.filter(c=>c.source.attribution?.id!==xcId);saveDraft();}}/></div>{/key}{/if}
-      {#if source}<Button disabled={search.pending} onclick={()=>source=null}>{t('uBackSounds')}</Button>{#key `${source.kind}:${source.id}`}<div class="reference-player" inert={search.pending} aria-disabled={search.pending}><p>{fileName(source.path)}</p>
+      {#if source}{#if xc}<Button disabled={search.pending} onclick={()=>source=null}>{t('uBackSounds')}</Button>{/if}{#key `${source.kind}:${source.id}`}<div class="reference-player" inert={search.pending} aria-disabled={search.pending}><p>{fileName(source.path)}</p>
         <AudioRegion {source} bind:start bind:end invalid={badPart?fill('uClipLength',{max:30}):''}/>
         {#if source.attribution}<p class="muted">XC{source.attribution.id} · {source.attribution.recordist} · {source.attribution.license}</p>{/if}</div>{/key}
         <Button disabled={search.pending||clips.length>=20} onclick={()=>{if(!valid)showMissing();else{addClip();source=null;}}}>{t('addQueryClip')}</Button>

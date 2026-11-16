@@ -1,3 +1,4 @@
+import { resolve } from '$app/paths';
 import type { AudioSource } from './AudioRegion.svelte';
 import type { Species } from './species';
 export type QuizClip = { id: number; reference_id: number; species_id: string; species: Species; seconds: number;
@@ -20,5 +21,8 @@ export function quizContext(url: URL) {
   const query = new URLSearchParams();
   if (returnPath) query.set('return', returnPath);
   if (species) query.set('species', species);
-  return { returnPath, species, query: query.toString() };
+  // One link straight back to the work the quiz was opened from, named after it.
+  const back = returnPath ? `${resolve('/datasets')}${returnPath.slice('/datasets'.length)}` : '';
+  const backLabel = returnPath.includes('/validation/') ? 'qBackCheck' : returnPath.includes('/presence') ? 'qBackListen' : 'wBackSpecies';
+  return { returnPath, species, query: query.toString(), back, backLabel };
 }

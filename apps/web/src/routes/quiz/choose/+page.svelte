@@ -13,7 +13,6 @@
   import { notify } from '$lib/ui/toast.svelte';
   import { fill, focusMissing, missingText } from '$lib/workflow';
   const context = quizContext(page.url);
-  const returnUrl = context.returnPath ? `${resolve('/datasets')}${context.returnPath.slice('/datasets'.length)}` : '';
   const continuation = context.query ? `?${context.query}` : '';
   let library = $state<QuizLibrary | null>(null), selected = $state<number[]>([]), setId = $state(''), setName = $state('');
   const draftKey=`echoroo-quiz-selection-${context.species||'all'}`;
@@ -57,7 +56,7 @@
     restored=true;
   })(); });
 </script>
-<div class="page narrow"><div class="crumbs"><a href={`${resolve('/quiz')}${continuation}`}>{t('uBackQuiz')}</a></div>
+<div class="page narrow"><div class="crumbs">{#if context.back}<a href={context.back}>{t(context.backLabel)}</a>{:else}<a href={`${resolve('/quiz')}${continuation}`}>{t('uBackQuiz')}</a>{/if}</div>
   <h1>{t('uQuizChoose')}</h1>
   {#if loadError}<p class="error">{t(loadError)}</p>{:else if library}
     <section class="panel"><label>{t('uQuizSaved')}<select bind:value={setId} onchange={chooseSet}><option value="">{t('quizAllClips')}</option>{#each library.sets.filter(set=>set.clip_ids.some(id=>library?.clips.some(c=>c.id===id&&c.enabled))) as set}<option value={String(set.id)}>{set.name}</option>{/each}</select></label>

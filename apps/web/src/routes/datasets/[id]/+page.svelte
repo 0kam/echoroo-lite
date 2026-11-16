@@ -107,4 +107,4 @@
     <section class="panel explore-entry"><Button href={resolve(`/datasets/${id}/explore`)}>{t('eEntry')} ›</Button><p class="muted">{t('eEntryHint')}</p></section>
   {:else if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
 </div>
-<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none;color:inherit}td a:hover strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}table{table-layout:fixed}col.name{width:28%}col.state{width:22%}td{overflow-wrap:break-word}.explore-entry p{margin-top:8px}</style>
+<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none}td a strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}table{table-layout:fixed}col.name{width:28%}col.state{width:22%}td{overflow-wrap:break-word}.explore-entry p{margin-top:8px}</style>

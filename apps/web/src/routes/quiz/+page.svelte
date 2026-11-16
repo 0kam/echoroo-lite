@@ -11,8 +11,8 @@
   import type { QuizLibrary, QuizSession } from '$lib/quiz';
   import Button from '$lib/ui/Button.svelte';
   import { createTask } from '$lib/ui/task.svelte';
+  import { fill } from '$lib/workflow';
   const context = quizContext(page.url);
-  const returnUrl = context.returnPath ? `${resolve('/datasets')}${context.returnPath.slice('/datasets'.length)}` : '';
   const continuation = context.query ? `?${context.query}` : '';
   let library = $state<QuizLibrary | null>(null), selected = $state<number[]>([]);
   const enabled = $derived((library?.clips ?? []).filter(clip => clip.enabled));
@@ -36,7 +36,7 @@
   })(); });
 </script>
 <div class="page narrow quiz-home">
-  {#if returnUrl}<div class="crumbs"><a href={returnUrl}>{t('wReturn')}</a></div>{/if}
+  {#if context.back}<div class="crumbs"><a href={context.back}>{t(context.backLabel)}</a></div>{/if}
   <div class="page-header"><div><h1>{t('quiz')}</h1><p>{t('uQuizHint')}</p></div></div>
   {#if loadError}<p class="error" role="alert">{t(loadError)}</p>
   {:else if !library}<p role="status">{t('loading')}</p>
@@ -48,7 +48,8 @@
         {#if start.error}<p class="error" role="alert">{t(start.error)}</p>{/if}
       </section>
     {:else}
-      <section class="panel"><p>{t('uQuizEmptyHint')}</p>
+      {@const birds=new Set(enabled.map(clip=>clip.species_id)).size}
+      <section class="panel"><p>{birds?fill('uQuizNeedBirds',{n:2-birds}):t('uQuizEmptyHint')}</p>
         <Button variant="primary" size="lg" href={`${resolve('/quiz/add')}${continuation}`}>{t('uQuizAdd')}</Button>
       </section>
     {/if}

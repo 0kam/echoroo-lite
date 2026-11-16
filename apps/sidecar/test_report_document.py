@@ -1,7 +1,7 @@
 import unittest
 from copy import deepcopy
 
-from report_document import ai_state, blocks, messages, schedule_svg, status, status_text
+from report_document import ai_state, blocks, duration_text, messages, schedule_svg, status, status_text
 from workflow_export import quality_export
 
 
@@ -87,6 +87,20 @@ class ReportDocumentTest(unittest.TestCase):
         self.assertIn(t['rule_checked'].format(score='0.40'),rendered)
         self.assertIn('4 intervals (4.0% of the 100 intervals examined). Days with detections: 2',rendered)
 
+    def test_summary_states_how_sure_and_durations_read_as_words(self):
+        snap=snapshot();t=messages('ja');report=manifest(snap);report['other_species']=18
+        report['scope']['recorded_seconds']=2400
+        summary=str(sections(blocks(report,[snap],{'per_species':[]}))['summary'])
+        self.assertIn('人が聞いて声を確かめたのは、例鳥です。AI の精度まで確かめたのは、例鳥（正しかったのは約 50%）です。',summary)
+        self.assertIn('録音 40 分',summary);self.assertIn(t['other_species'].format(count=18),summary)
+        reading=str(sections(blocks(report,[snap],{'per_species':[]}))['species'])
+        self.assertIn('BirdNET 2.4 は 3 秒',reading);self.assertNotIn('5 秒',reading)
+        self.assertEqual([duration_text(s,t) for s in (5400,43200,1200)],['1 時間 30 分','12 時間','20 分'])
+        self.assertEqual(duration_text(5400,messages('en')),'1 h 30 min')
+        snap['validation']['stage']='sample';snap['species']['common_names']={};snap['species']['custom_names']={'ja':'自作名'}
+        summary=str(sections(blocks(manifest(snap,'en'),[snap],{'per_species':[]}))['summary'])
+        self.assertIn('The AI accuracy check for 自作名 is not finished',summary);self.assertNotIn('other species',summary)
+
     def test_quality_csv_has_new_metrics_without_old_goal_fields(self):
         snap=snapshot();result=snap['validation']['results']['birdnet']
         result['multiplier']={'value':123,'low':100,'high':150}
@@ -139,10 +153,10 @@ class ReportDocumentTest(unittest.TestCase):
         crossing={'recorded_at':'2023-12-31T14:50:00+00:00','seconds':1200}
         svg=schedule_svg([crossing],report,t,'label')
         # Only the part inside the period is drawn; the label keeps the recording's own start.
-        self.assertEqual(svg.count('data-label="12月31日 23:50〜0:10（20分）"'),1)
+        self.assertEqual(svg.count('data-label="12月31日 23:50〜0:10（20 分）"'),1)
         crossing['recorded_at']='2024-01-01T14:50:00+00:00'
         svg=schedule_svg([crossing],report,t,'label')
-        self.assertEqual(svg.count('data-label="1月1日 23:50〜0:10（20分）"'),2)
+        self.assertEqual(svg.count('data-label="1月1日 23:50〜0:10（20 分）"'),2)
         year={**report,'end_date':'2024-12-30'}
         svg=schedule_svg([{'recorded_at':f'2024-{m:02d}-01T00:00:00+09:00','seconds':300} for m in range(1,13)],year,t,'label')
         self.assertEqual(svg.count('class="day"'),365);self.assertEqual(svg.count('data-label'),12)

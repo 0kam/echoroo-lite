@@ -51,7 +51,7 @@
   {:else if !data}<p role="status"><Spinner /> {t('loading')}</p>
   {:else}
     {#if example}
-      {#key `${example.source.kind}:${example.source.id}:${example.start_s}`}<AudioRegion source={example.source} start={example.start_s} end={example.end_s} fixedRange />{/key}
+      {#key `${example.source.kind}:${example.source.id}:${example.start_s}`}<AudioRegion source={example.source} start={example.start_s} end={example.end_s} fixedRange secondary />{/key}
       <p class="muted credit">{credit(example).filter(Boolean).join(' · ')}{#if example.label.url} · <a href={example.label.url} onclick={e => { e.preventDefault(); void openExternal(example.label.url!); }}>{example.label.url.replace(/^(https?:)?\/\//, '').split('/')[0]}</a>{/if}</p>
       {#if data.examples.length > 1}<div class="actions between">
         <Button size="sm" disabled={index === 0} onclick={() => index--}>‹ {t('refPrevious')}</Button><span>{index + 1} / {data.examples.length}</span>

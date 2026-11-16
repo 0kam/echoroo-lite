@@ -11,7 +11,7 @@
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string;results?:{report_id:number;start_date?:string;end_date?:string}[]};
+  type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string;results?:{report_id:number;start_date?:string;end_date?:string}[];species?:Species[];start_date?:string|null;end_date?:string|null};
   type Snapshot = {id:number;created_at:string;species:Species|null;start_date:string|null;end_date:string|null};
   const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
   const site=$derived(siteOf(datasetOf(id)));
@@ -42,7 +42,7 @@
   const noSpecies=$derived(tried&&!selected.length),noFolder=$derived(tried&&!isTauri()&&!folder);
   const missing=$derived(missingText([!selected.length&&'wIncludeSpecies',!isTauri()&&!folder&&'exportFolder']));
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
-  const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:overview?.site.timezone}).format(new Date(value.replace(' ','T')+'Z'));
+  const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:overview?.site.timezone}).format(new Date(value.replace(' ','T')+'Z'));
   const openReport=createTask(async(exportId:number,kind:'document'|'folder')=>{
     await api(`/workflow-exports/${exportId}/open?kind=${kind}`,{});
   });
@@ -81,10 +81,11 @@
       <Button variant={output?'default':'primary'} pending={exportFiles.pending} aria-describedby="export-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else exportFiles.run();}}>{t('rCreate')}</Button>
       <p class={tried&&missing?'field-error':'muted'} id="export-reason">{missing}</p>
     </section>
-    {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="history">
+    {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}{@const from=item.start_date??item.results?.[0]?.start_date}{@const to=item.end_date??item.results?.[0]?.end_date}<div class="history">
       <div><p>{when(item.created_at)}</p>
-        <!-- The period of the report, from its first result; exports without results carry none. -->
-        {#if item.results?.[0]?.start_date&&item.results[0].end_date}<p>{dayRange(item.results[0].start_date,item.results[0].end_date)}</p>{/if}
+        <!-- What the saved report covers: its period and the species chosen for it. -->
+        {#if from&&to}<p>{dayRange(from,to)}</p>{/if}
+        {#if item.species?.length}<p>{new Intl.ListFormat(app.locale).format(item.species.map(s=>commonName(s,app.locale)||s.scientific_name))}</p>{/if}
         <small class="path">{item.folder_path??item.path}</small></div>
       {#if item.folder_path}<Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{/if}
     </div>{/each}</section>{/if}
@@ -92,5 +93,5 @@
   {:else if !error}<p role="status"><Spinner/> {t('rLoading')}</p>{/if}
 </div>
 <style>h2{margin-bottom:12px}section>p,section>label{margin:16px 0}.busy{display:flex;align-items:center;gap:8px}
-  .export-species{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300));font-size:16px;font-weight:400}details{margin:8px 0}summary{padding:12px 0}section summary{font-size:18px;font-weight:600}h3{margin:24px 0 0}.export-species .muted{display:block}
-  .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}.history{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.history p{margin:0 0 8px}</style>
+  .export-species{display:flex;align-items:center;gap:12px;min-height:44px;padding:16px 0;cursor:pointer;border-bottom:1px solid rgb(var(--stone-300));font-size:16px;font-weight:400}details{margin:8px 0}summary{padding:12px 0}section summary{font-size:18px;font-weight:600}h3{margin:24px 0 0}.export-species .muted{display:block}
+  .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}.history{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.history p{margin:0 0 8px}.history>:global(.button){flex:none}</style>

@@ -16,7 +16,7 @@
   const explore = $derived(job.stage.startsWith('explore_'));
   // Its six steps in order; the first two also count recording files and intervals (0 of 0 while still being counted).
   const step = $derived(['explore_checking', 'explore_cache', 'explore_pca', 'explore_layout', 'explore_tree', 'explore_summarizing'].indexOf(job.stage));
-  const unit = $derived(job.stage === 'explore_checking' ? 'eJobFiles' : job.stage === 'explore_cache' ? 'eJobRows' : explore ? '' : 'jobProgress');
+  const unit = $derived(job.stage === 'explore_checking' ? 'eJobFiles' : job.stage === 'explore_cache' ? 'eJobRows' : '');
   const counted = $derived(unit && job.total ? fill(unit, { done: job.done.toLocaleString(app.locale), total: job.total.toLocaleString(app.locale) }) : '');
   // Remaining time from the observed rate, re-estimated when a pair finishes and counted down in between;
   // shown once 10 s of progress have been seen, hidden while results are prepared.
@@ -36,7 +36,7 @@
 
 <div class="job">
   <div class="section-heading">
-    <!-- The job counts recordings × AIs; only the AIs a recording still lacks run, so the total is not a recording count. -->
+    <!-- An analysis job counts recordings × AIs, which is not a recording count; the page shows analysed recordings, this box only the bar and time left. -->
     <!-- A map build is named as such, with its current step, from the moment it is queued. -->
     <strong>{explore && active ? fill('jobLine', { status: t('eMaking'), progress: fill('eJobStep', { n: step + 1, total: 6 }) })
       : counted ? fill('jobLine', { status: t(job.status), progress: counted }) : t(job.status)}</strong>
