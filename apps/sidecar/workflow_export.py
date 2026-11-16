@@ -17,8 +17,8 @@ from contextlib import ExitStack
 from reports import csv_bytes,save_report,scope_records,effort,window_key,window_in_scope,classification_batches
 from storage import CatalogError,checked_source,connect
 from results_workflow import attach_validation,context,counting_status,current_validations,detection_snapshot,custom_snapshot,region_statuses,threshold_for
-from report_document import create_html,messages,quality_result,status,status_text,criterion,method
-from report_figures import DATA,spiral,recording_schedule
+from report_document import create_html,messages,quality_result,status,status_text,method
+from report_figures import DATA,spiral
 from models import REGISTRY,window_s
 
 
@@ -223,19 +223,19 @@ def export(root,body,cancel=None):
                     'format':'html','locale':body.locale,'scope':scope,'results':index,'selected_species':[taxa[sid] for sid in wanted if sid in taxa],
                     'presence':[{**row,'species':taxa[row['species_id']]} for row in presence_rows],
                     'report_file':'index.html','folder_path':str(destination),
-                    'file_guide':[['presence.csv',t['presence_files']],['species.csv',t['species_list']],['hourly.csv',t['details']],['quality.csv',t['quality_title']],['scores/',t['all_scores']],
-                        ['evidence.csv / audio/',t['evidence_files']],['validation/',t['validation_files']],['quiz-results.json',t['quiz_title']],
-                        ['manifest.json / results/',t['methods_title']]]}
+                    'file_guide':[['presence.csv',t['presence_files']],['species.csv',t['file_species']],['hourly.csv',t['file_hourly']],['quality.csv',t['file_quality']],['scores/',t['all_scores']],
+                        ['evidence.csv / audio/',t['evidence_files']],['validation/',t['validation_files']],['quiz-results.json',t['file_quiz']],
+                        ['manifest.json / results/',t['file_manifest']]]}
                 if any(s['engine']=='custom' for s in snapshots):
                     manifest['file_guide'].append(['models/',t['custom_model_files']])
-                (folder/'figures'/'recording-schedule.png').write_bytes(recording_schedule(scope))
                 for filename,rows in [('presence',presence_rows),('species',species_rows),('hourly',hourly),('evidence',evidence),('quality',quality_rows)]:
                     fields=list(dict.fromkeys(k for row in rows for k in row))
                     values=[{k:json.dumps(v,ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in row.items()} for row in rows]
                     (folder/(filename+'.csv')).write_bytes(csv_bytes(values,fields or ['report_id']))
                 write_json(folder/'recordings.json',list(records.values()));write_json(folder/'quiz-results.json',quiz)
-                create_html(folder,manifest,snapshots,evidence,quiz)
-                (folder/'README.txt').write_text(t['files_note']+'\n\n'+t['evidence_note'],encoding='utf-8')
+                create_html(folder,manifest,snapshots,evidence,quiz,list(records.values()))
+                (folder/'README.txt').write_text('\n\n'.join([t['files_note'],t['evidence_note'],t['readme_methods_title'],t['methods_note'],
+                    t['precision_note'],t['validation_scope'],t['region_source'],t['human_reference']]),encoding='utf-8')
                 shutil.copyfile(DATA/'echoroo.png',folder/'figures'/'echoroo.png')
                 shutil.copyfile(DATA/'fonts'/'OFL.txt',folder/'font-license.txt')
                 manifest['files']={p.relative_to(folder).as_posix():{'sha256':digest(p),'bytes':p.stat().st_size} for p in sorted(folder.rglob('*')) if p.is_file()}

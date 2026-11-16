@@ -1,7 +1,8 @@
-"""Readable HTML reports with native tables and audio."""
+"""Readable HTML reports: a summary, one place per species, the recordings, then folded evidence and methods."""
 import json
-from datetime import date,datetime
+from datetime import date,datetime,time,timedelta,timezone
 from html import escape
+from math import ceil
 from zoneinfo import ZoneInfo
 
 from report_figures import DATA
@@ -11,9 +12,14 @@ def messages(locale):
     return json.loads((DATA/'messages.json').read_text(encoding='utf-8')).get(locale) or messages('en')
 
 
+def names(species,locale):
+    common=species['common_names'].get(locale) or species['common_names'].get('en') or ''
+    return (common if common!=species['scientific_name'] else ''),species['scientific_name']
+
+
 def name(species,locale):
-    common=species['common_names'].get(locale) or species['common_names'].get('en')
-    return (common+'\n' if common and common!=species['scientific_name'] else '')+species['scientific_name']
+    common,scientific=names(species,locale)
+    return common or scientific
 
 
 def number(value,empty='—'):
@@ -22,6 +28,38 @@ def number(value,empty='—'):
 
 def percent(value,empty='—'):
     return empty if value is None else f'{100*value:.1f}%'
+
+
+def share(value):
+    return '—' if value is None else '<1%' if 0<value<.01 else f'{value:.0%}'
+
+
+def hours(seconds):
+    return f'{seconds/3600:,.2f}'.rstrip('0').rstrip('.')
+
+
+def day_text(t,value):
+    return t['day'].format(month=value.month,day=value.day,mon=t['months'][value.month-1])
+
+
+def date_text(t,value):
+    value=date.fromisoformat(value) if isinstance(value,str) else value
+    return t['date'].format(year=value.year,month=value.month,day=value.day,mon=t['months'][value.month-1])
+
+
+def period_text(t,manifest):
+    start,end=date_text(t,manifest['start_date']),date_text(t,manifest['end_date'])
+    return start if start==end else t['period_range'].format(start=start,end=end)
+
+
+def clock(value,seconds=False):
+    return f'{value.hour}:{value.minute:02d}'+(f':{value.second:02d}' if seconds else '')
+
+
+def duration_text(seconds,t):
+    if seconds<60:return t['seconds'].format(s=round(seconds))
+    minutes=round(seconds/60);h,m=divmod(minutes,60)
+    return t['hours_minutes'].format(h=h,m=m) if h else t['minutes'].format(m=m)
 
 
 def quality_result(snap):
@@ -39,15 +77,12 @@ def status(snap):
     return result.get('status','undecided') if result else 'undecided'
 
 
-def undecided_text(snaps,t):
-    """Why no threshold was decided; "no sound answered Heard" only when that holds for every undecided check."""
-    reasons=[(quality_result(snap) or {}).get('reason') for snap in snaps if status(snap)=='undecided']
-    return t['undecided_no_target' if reasons and all(reason=='no_target' for reason in reasons) else 'undecided']
-
-
 def status_text(snap,t):
+    """The short state drawn into each spiral figure's caption."""
     value=status(snap)
-    if value=='undecided':return undecided_text([snap],t)
+    if value=='undecided':
+        reason=(quality_result(snap) or {}).get('reason')
+        return t['undecided_no_target' if reason=='no_target' else 'undecided']
     if value!='decided':return t[value]
     score=f"{snap['threshold']:.2f}";p=quality_result(snap).get('precision') or {}
     if None in (p.get('value'),p.get('low'),p.get('high')):return t['decided_score'].format(score=score)
@@ -55,11 +90,10 @@ def status_text(snap,t):
                                          answered=snap['validation']['counts']['answered'])
 
 
-def criterion(snap,t):
-    if snap['threshold'] is None:return t['figure_undecided']
-    validation=snap.get('validation')
-    adjusted=validation and validation['applicable'] and (validation.get('thresholds',{}).get(snap['engine']) or {}).get('adjusted')
-    return t['criterion_value'].format(score=f"{snap['threshold']:.2f}")+'\n'+t['adjusted' if adjusted else 'default']
+def ai_state(snap):
+    """The report's three states: checked, reference (default threshold) or unused (no threshold)."""
+    if snap['threshold'] is None:return 'unused'
+    return 'checked' if status(snap)=='decided' else 'reference'
 
 
 def method(snap,t):
@@ -75,157 +109,219 @@ def model_group(snap,t):
     return t['custom_model'] if snap['engine']=='custom' else method(snap,t)
 
 
-def metric(value,t):
+def about(value,t):
     """A 90% interval in plain words; wider than 30 points also says it is wide."""
-    if not value:return t['unavailable']
-    if value.get('low') is None or value.get('high') is None:return percent(value.get('value'),t['unavailable'])
-    span=t['range_wide' if value['high']-value['low']>.3 else 'range'].format(low=percent(value['low']),high=percent(value['high']))
-    return span if value.get('value') is None else t['about'].format(value=percent(value['value']),range=span)
+    if not value or value.get('value') is None:return t['unavailable']
+    low,high=value.get('low'),value.get('high')
+    if low is None or high is None:return t['about_only'].format(value=f"{value['value']:.0%}")
+    text=t['about'].format(value=f"{value['value']:.0%}",low=f'{low:.0%}',high=f'{high:.0%}')
+    return text+t['range_wide'] if high-low>.3 else text
 
 
-def numeric_metric(value,t,digits=2):
-    if not value:return t['unavailable']
-    show=lambda v: t['unavailable'] if v is None else f'{v:,.{digits}f}'
-    if value.get('low') is None or value.get('high') is None:return show(value.get('value'))
-    return f"{show(value.get('value'))} ({show(value['low'])}–{show(value['high'])})"
+def rule_text(snap,t):
+    return t['rule_checked' if ai_state(snap)=='checked' else 'rule_default'].format(score=f"{snap['threshold']:.2f}")
 
 
-def presence_text(row,t):
-    if row['status']=='confirmed':
-        text=t['presence_confirmed'].format(count=row['evidence_count'])
-        return text+'\n'+t['region_unusual_note'] if row.get('region')=='unusual' else text
-    if row['status']=='not_found':return t['presence_not_found'].format(count=row['listened_without_confirming'])
-    return t['presence_unchecked']
+def count_text(snap,t):
+    s=snap['summaries'][0] if snap['summaries'] else {}
+    return t['count_text'].format(count=number(s.get('candidate_windows')),eligible=number(s.get('eligible_windows')),
+                                  rate=percent(s.get('candidate_rate')),days=number(s.get('candidate_days')))
 
 
-def activity_text(row,reliable,t,snaps):
-    state=row.get('counting_status','not_started')
-    if state=='decided':
-        return t['activity_decided'].format(models='\n'.join(reliable)).rstrip()
-    if state=='undecided':return undecided_text(snaps,t)
-    return t['activity_'+state]
+def precision_text(snap,t):
+    state=ai_state(snap)
+    if state=='checked':
+        p=quality_result(snap).get('precision') or {}
+        if None in (p.get('value'),p.get('low'),p.get('high')):return t['precision_missing']
+        return t['precision_text'].format(value=f"{p['value']:.0%}",low=f"{p['low']:.0%}",high=f"{p['high']:.0%}",
+                                          answered=snap['validation']['counts']['answered'])
+    return t['precision_'+{'in_progress':'in_progress','stale':'stale'}.get(status(snap),'unknown')]
 
 
-def blocks(manifest,snapshots,quiz):
-    t=messages(manifest['locale']);locale=manifest['locale'];scope=manifest['scope'];site=manifest['site'];output=[]
-    def heading(title):output.append({'type':'heading','text':title})
-    def para(key,**values):output.append({'type':'paragraph','text':t[key].format(**values)})
-    def table(headers,rows,widths,tabs=None):output.append({'type':'table','headers':headers,'rows':rows,'widths':widths,'tabs':tabs})
-    def section(title):output.append({'type':'break'});heading(t[title])
-    output.append({'type':'title','text':t['title']});para('intro');heading(t['scope'])
-    table([t['scope'],t['summary']],[[t['site'],site['name']],
-        [t['period'],f"{manifest['start_date']} — {manifest['end_date']}"],
-        [t['coordinates'],f"{site['latitude']:.6f}, {site['longitude']:.6f}"],
-        [t['timezone'],site['timezone']],
-        [t['recordings'],number(len(scope['recording_ids']))],
-        [t['recording_hours'],f"{scope['recorded_seconds']/3600:.2f} {t['hours']}"],
-        [t['recording_days'],number(sum(d['seconds']>0 for d in scope['daily']))]], [1,2.6])
-    para('scope_note')
-    heading(t['coverage'])
-    table([t['method'],t['analysed_hours']],[[key,f'{value/3600:.2f} {t["hours"]}'] for key,value in scope['analysed_seconds'].items()],[1,1])
-    if any(value+1<scope['recorded_seconds'] for value in scope['analysed_seconds'].values()):para('partial_coverage')
-    para('coverage_note')
-    flagged={s['species']['id'] for s in snapshots if s['threshold'] is not None and any(r.get('candidate_windows') for r in s['summaries'])}
-    reliable={}
-    for snap in snapshots:
-        if status(snap)=='decided':reliable.setdefault(snap['species']['id'],[]).append(t['model_result'].format(model=method(snap,t),result=status_text(snap,t)))
-    para('ai_flagged_sentence',detected=len(flagged))
-    para('presence_sentence',present=sum(r['status']=='confirmed' for r in manifest['presence']))
-    para('reliable_sentence',met=len(reliable))
-    para('selected_note')
-    output.append({'type':'image','path':'figures/recording-schedule.png','caption':t['effort'],'width':1600,'height':max(450,140+len(scope.get('schedule',scope['daily']))*30)})
-    section('reading');para('presence_explanation');para('threshold_explanation');para('quality_explanation');para('unit_explanation')
-    heading(t['limits']);para('limits_text')
-    section('presence_title');para('presence_note')
+def unused_text(snap,t,label):
+    reason=(quality_result(snap) or {}).get('reason')
+    return t['unused_no_target' if reason=='no_target' else 'unused_other'].format(name=label)
+
+
+def local(row):
+    return datetime.fromisoformat(row['local_time']) if row.get('local_time') else None
+
+
+def sounds(rows,t,note):
+    items=[]
+    for row in sorted(rows,key=lambda r:r.get('local_time') or ''):
+        moment=local(row);text=f"{day_text(t,moment)} {clock(moment,True)}" if moment else f"{row['start_s']:g}–{row['end_s']:g} s"
+        items.append({'text':text,'note':note(row),'audio':row.get('audio_file') or None,'label':t['play_label'].format(time=text)})
+    return {'type':'sounds','items':items}
+
+
+def answer_counts(validation):
+    bins=validation['counts'].get('bins') or []
+    return {key:sum(b.get(key,0) for b in bins) for key in ('heard','not_heard','unknown')}
+
+
+def blocks(manifest,snapshots,quiz,evidence=()):
+    """Report content shared by index.html, report.txt and report-content.json."""
+    t=messages(manifest['locale']);locale=manifest['locale'];scope=manifest['scope'];site=manifest['site']
     presence={row['species_id']:row for row in manifest['presence']}
-    def overall_state(species_id):
-        if presence[species_id].get('counting_status'):return presence[species_id]['counting_status']
-        states=[status(snap) for snap in snapshots if snap['species']['id']==species_id]
-        if 'decided' in states:return 'decided'
-        if 'in_progress' in states:return 'in_progress'
-        if states and all(state=='undecided' for state in states):return 'undecided'
-        return 'not_started'
-    for state,title in (('confirmed','presence_group_confirmed'),('not_found','presence_group_not_found'),('unchecked','presence_group_unchecked')):
-        taxa=[taxon for taxon in manifest['selected_species'] if presence[taxon['id']]['status']==state]
-        if not taxa:continue
-        heading(t[title])
-        table([t['species_name'],t['presence_column'],t['activity_column']],
-            [[name(taxon,locale),presence_text(presence[taxon['id']],t),
-              activity_text({**presence[taxon['id']],'counting_status':overall_state(taxon['id'])},reliable.get(taxon['id'],[]),t,
-                            [snap for snap in snapshots if snap['species']['id']==taxon['id']])]
-             for taxon in taxa],[2.4,2.4,2.4])
+    taxa=sorted(manifest['selected_species'],key=lambda s:presence[s['id']]['status']!='confirmed')
+    per_species={s['id']:[snap for snap in snapshots if snap['species']['id']==s['id']] for s in taxa}
     days=(date.fromisoformat(manifest['end_date'])-date.fromisoformat(manifest['start_date'])).days+1
-    practice={q['species_id']:q for q in quiz['per_species']}
-    def cards_for(selected):
-        cards=[]
-        for snap in selected:
-            summary=snap['summaries'][0] if snap['summaries'] else {};q=practice.get(snap['species']['id'])
-            text=[f"{snap['figure_id']} · {name(snap['species'],locale)}",method(snap,t),
-                (t['count_sentence'].format(positive=number(summary.get('candidate_windows')),eligible=number(summary.get('eligible_windows')),
-                    rate=percent(summary.get('candidate_rate')),days=number(summary.get('candidate_days')),window=snap['window_s']) if snap['threshold'] is not None else t['uncounted_sentence'].format(eligible=number(summary.get('eligible_windows'))))]
-            if q:text.append(t['quiz_short'].format(**q))
-            cards.append({'text':text,'path':f"figures/{snap['figure_id']}.png",'id':snap['figure_id'],'species_id':snap['species']['id']})
-        return cards
-    confirmed=[snap for snap in snapshots if presence[snap['species']['id']]['status']=='confirmed']
-    section('details')
-    if confirmed:
-        para('legend_detection');para('legend_missing')
-        output.append({'type':'cards','cards':cards_for(confirmed),'columns':2 if days<=93 else 1})
-    else:para('no_confirmed_figures')
-    section('appendix_title');para('appendix_note')
-    unconfirmed=[snap for snap in snapshots if presence[snap['species']['id']]['status']!='confirmed']
-    if unconfirmed:
-        heading(t['appendix_figures']);para('legend_detection');para('legend_missing')
-        output.append({'type':'cards','cards':cards_for(unconfirmed),'columns':2 if days<=93 else 1})
-    heading(t['species_list']);para('unit_explanation')
-    groups={}
-    for snap in snapshots:
-        summary=snap['summaries'][0] if snap['summaries'] else {}
-        counted=snap['threshold'] is not None
-        row=[name(snap['species'],locale),method(snap,t),criterion(snap,t),
-            (f"{number(summary.get('candidate_windows'))} / {number(summary.get('eligible_windows'))}\n{percent(summary.get('candidate_rate'))}" if counted else t['uncounted'].format(eligible=number(summary.get('eligible_windows')))),
-            number(summary.get('candidate_days')),status_text(snap,t),snap['figure_id']]
-        groups.setdefault(model_group(snap,t),[]).append(row)
-    if groups:table([t[k] for k in ('species_name','method','criterion','count','days','quality','figure')],[r for rows in groups.values() for r in rows],[2.6,1.1,1.3,1.6,.6,1.6,.6],groups)
-    heading(t['quality_title']);para('precision_note');para('validation_scope');para('human_reference')
-    groups={}
+    recording_days=sum(d['seconds']>0 for d in scope['daily'])
+    para=lambda text,**extra:{'type':'paragraph','text':text,**extra}
+
+    # Summary: the conclusion on the first screen.
+    rows=[]
+    for taxon in taxa:
+        common,scientific=names(taxon,locale);row=presence[taxon['id']];snaps=per_species[taxon['id']]
+        heard={'confirmed':[['badge-yes',t['badge_heard']],['text',' '+t['sounds_count'].format(count=row['evidence_count'])]],
+               'not_found':[['badge-no',t['badge_not_found']]],'unchecked':[['badge-no',t['badge_unchecked']]]}[row['status']]
+        ai=[]
+        for snap in snaps:
+            state=ai_state(snap);prefix=method(snap,t)+t['colon'] if len(snaps)>1 else ''
+            if ai:ai.append(['br'])
+            ai.append(['badge-'+state,t['badge_'+state]])
+            if state=='unused':
+                reason=(quality_result(snap) or {}).get('reason')
+                ai.append(['small',prefix+t['table_unused_no_target' if reason=='no_target' else 'table_unused_other']])
+                continue
+            s=snap['summaries'][0] if snap['summaries'] else {}
+            ai.append(['text',' '+t['windows_count'].format(count=number(s.get('candidate_windows')))])
+            p=(quality_result(snap) or {}).get('precision') or {}
+            ai.append(['small',prefix+(t['table_precision'].format(value=f"{p['value']:.0%}") if state=='checked' and p.get('value') is not None
+                                       else t['table_reference'])])
+        rows.append([[['a','#sp-'+taxon['id'],common or scientific],['small',scientific if common else '']],heard,ai or [['badge-no',t['badge_no_ai']]]])
+    summary=[para(t['scope_line'].format(site=site['name'],period=period_text(t,manifest),hours=hours(scope['recorded_seconds']),
+                                          files=number(len(scope['recording_ids']))),cls='scope'),
+        {'type':'tiles','items':[[t['tile_value'].format(count=sum(r['status']=='confirmed' for r in manifest['presence'])),t['tile_heard']],
+            [t['tile_value'].format(count=sum(any(ai_state(s)=='checked' for s in snaps) for snaps in per_species.values())),t['tile_counted']],
+            [t['tile_value'].format(count=len(taxa)),t['tile_selected']]]},
+        {'type':'table','headers':[t['col_species'],t['col_heard'],t['col_ai']],'rows':rows},
+        para(t['absence_note'],muted=True)]
+    output=[{'type':'section','id':'summary','title':t['title'],'level':1,'body':summary}]
+
+    # Species: how to read AI detections once, then one section per species.
+    output.append({'type':'section','id':'species','title':t['nav_species'],'body':[
+        {'type':'heading','text':t['reading_title']},para(t['reading_windows']),para(t['reading_figure']),
+        {'type':'legend','items':[['#a24f4f',t['legend_red']],['#ffffff',t['legend_white']],['#f1f0f2',t['legend_gray']]]},
+        para(t['legend_note'],muted=True)]})
+    origin=lambda row:t['origin_'+row.get('origin','check')]
+    for taxon in taxa:
+        common,scientific=names(taxon,locale);label=common or scientific;row=presence[taxon['id']];snaps=per_species[taxon['id']]
+        body=[]
+        if row['status']=='confirmed':
+            heard=[r for r in evidence if r.get('audio_role')=='presence' and r['species_id']==taxon['id']]
+            listed=sounds(heard,t,origin)
+            body+=[{'type':'heading','text':t['heard_title'],'badge':['yes',t['badge_heard']],'after':' '+t['sounds_count'].format(count=row['evidence_count'])},
+                   para(t['heard_note'].format(name=label),muted=True)]
+            if listed['items']:body.append({**listed,'items':listed['items'][:5]})
+            if len(listed['items'])>5:
+                body.append({'type':'details','summary':t['heard_more'].format(count=len(listed['items'])-5),'body':[{**listed,'items':listed['items'][5:]}]})
+        else:
+            body.append({'type':'heading','text':t['heard_title'],'badge':['no',t['badge_'+row['status']]]})
+            if row['status']=='not_found':body.append(para(t['not_found_text'].format(count=number(row.get('listened_without_confirming')))))
+        if row.get('region')=='unusual':body.append(para(t['region_unusual_note'],muted=True))
+        if not snaps:
+            body+=[{'type':'heading','text':t['ai_title'],'badge':['no',t['badge_no_ai']]},para(t['ai_none'])]
+        for snap in snaps:
+            state=ai_state(snap);model=method(snap,t)
+            body.append({'type':'heading','text':t['ai_title'],'badge':[state,t['badge_'+state]]})
+            if state=='unused':
+                body+=[para(unused_text(snap,t,label)),{'type':'facts','items':[[t['fact_ai'],model]]}]
+            else:
+                body.append({'type':'facts','items':[[t['fact_ai'],model],[t['fact_rule'],rule_text(snap,t)],
+                                                     [t['fact_count'],count_text(snap,t)],[t['fact_precision'],precision_text(snap,t)]]})
+            if state=='reference':
+                examples=[r for r in evidence if r.get('audio_role')=='ai_example' and r.get('figure_id')==snap['figure_id']]
+                if examples:
+                    body.append({'type':'details','summary':t['examples_title'].format(count=len(examples)),
+                                 'body':[para(t['examples_note'],muted=True),sounds(examples,t,lambda r:t['score_note'].format(score=f"{float(r['score']):.2f}") if r.get('score') not in (None,'') else '')]})
+        links=[['#q-'+snap['figure_id'],t['link_detail']] for snap in snaps if snap.get('validation')][:1]
+        body.append({'type':'links','items':links+[['#summary',t['link_summary']]]})
+        figures=[{'path':f"figures/{snap['figure_id']}.png",'id':snap['figure_id'],'alt':t['figure_alt'].format(name=label,model=method(snap,t)),
+                  'caption':method(snap,t) if len(snaps)>1 else ''} for snap in snaps if snap['threshold'] is not None]
+        output.append({'type':'section','id':'sp-'+taxon['id'],'title':common or scientific,'subtitle':scientific if common else '',
+                       'figures':figures,'nofigure':t['no_figure'],'body':body})
+
+    # Recordings: what was examined, and when recording happened (not detections).
+    facts=[[t['rec_site'],site['name']],[t['rec_coordinates'],f"{site['latitude']:.6f}, {site['longitude']:.6f}"],[t['rec_timezone'],site['timezone']],
+        [t['rec_period'],t['rec_period_text'].format(period=period_text(t,manifest),days=number(recording_days))],
+        [t['rec_recordings'],t['rec_recordings_text'].format(files=number(len(scope['recording_ids'])),hours=hours(scope['recorded_seconds']))],
+        [t['rec_analysed'],'\n'.join(t['rec_analysed_text'].format(model=key,hours=hours(value)) for key,value in scope['analysed_seconds'].items()) or '—']]
+    recordings=[{'type':'facts','items':facts}]
+    if any(value+1<scope['recorded_seconds'] for value in scope['analysed_seconds'].values()):recordings.append(para(t['partial_coverage']))
+    recordings+=[{'type':'heading','text':t['schedule_title']},
+        {'type':'schedule','label':t['schedule_label'].format(period=period_text(t,manifest),days=number(recording_days),hours=hours(scope['recorded_seconds'])),
+         'text':t['schedule_text'].format(share=share(scope['recorded_seconds']/(days*86400)),hours=hours(scope['recorded_seconds']/days))},
+        {'type':'heading','text':t['limits_title']},para(t['limits_text'])]
+    output.append({'type':'section','id':'recordings','title':t['nav_recordings'],'body':recordings})
+
+    # Details: evidence and methods, each folded.
+    checks=[]
     for snap in snapshots:
         validation=snap.get('validation')
         if not validation:continue
-        result=quality_result(snap)
-        density=metric(result.get('density') if result else None,t)
-        count=numeric_metric(result.get('count') if result else None,t,0)
-        precision=metric(result.get('precision') if result else None,t)
-        recall=t['rare_recall'] if result and result.get('recall_status')=='not_estimable_rare' else metric(result.get('recall') if result else None,t)
-        extra='AUPRC '+numeric_metric(result.get('auprc') if result else None,t)
-        samples=t['sample_bins'].format(total=validation['counts']['answered'],unknown=validation['counts']['unknown'])
+        result=quality_result(snap) or {};label=name(snap['species'],locale);state=status(snap)
+        source=t['source_none'] if snap['threshold'] is None else t['source_checked' if ai_state(snap)=='checked' else 'source_default']
+        items=[[t['detail_threshold'],(f"{snap['threshold']:.2f}" if snap['threshold'] is not None else '—')+t['paren'].format(text=source)]]
+        if state in ('in_progress','stale'):items.append([t['detail_state'],t['precision_'+state]])
+        elif state=='undecided':items.append([t['detail_state'],unused_text(snap,t,label)])
+        if result.get('precision'):items.append([t['detail_precision'],about(result['precision'],t)])
         if result:
-            samples+='\n'+' / '.join(t['sample_bin'].format(group=b['bin']+1,heard=b['heard'],not_heard=b['not_heard'],unknown=b['unknown'])
-                                   for b in result.get('answers_per_bin',[]))
-        if result and result.get('disagreement'):samples+='\n'+t['disagreement']
-        groups.setdefault(model_group(snap,t),[]).append([name(snap['species'],locale)+'\n'+method(snap,t),criterion(snap,t),density+'\n'+count,precision,recall,extra,samples,status_text(snap,t)])
-    if groups:table([t[k] for k in ('species_name','criterion','density','precision','recall','metrics','samples','quality')],[r for rows in groups.values() for r in rows],[2,1,1.5,1.4,1.6,1.5,1.4,1.2],groups)
-    else:para('validation_none')
+            items.append([t['detail_recall'],t['rare_recall'] if result.get('recall_status')=='not_estimable_rare' else
+                          t['recall_text'].format(about=about(result.get('recall'),t))])
+            c=result.get('count') or {}
+            if c.get('value') is not None:
+                items.append([t['detail_estimated'],t['estimated_text'].format(value=number(round(c['value'])),low=number(round(c['low'])) if c.get('low') is not None else '—',
+                                                                               high=number(round(c['high'])) if c.get('high') is not None else '—')])
+        counts=answer_counts(validation)
+        items.append([t['detail_answered'],t['answered_text'].format(answered=validation['counts']['answered'],**counts)])
+        body=[{'type':'heading','id':'q-'+snap['figure_id'],'text':f"{label}{t['dot']}{method(snap,t)}"},{'type':'facts','items':items}]
+        if result.get('disagreement'):body.append(para(t['disagreement']))
+        body.append(para(t['detail_files_note'],muted=True))
+        answered=[r for r in evidence if r.get('audio_role')=='validation' and str(r.get('validation_id'))==str(validation['id'])]
+        if answered:
+            body.append({'type':'details','summary':t['detail_play_all'].format(count=len(answered)),
+                         'body':[sounds(answered,t,lambda r:t['verdict_'+r['verdict']] if r.get('verdict') else '')]})
+        checks+=body
+    details=[para(t['details_note'],muted=True),
+        {'type':'details','id':'checks','summary':t['detail_checks'],'body':checks or [para(t['checks_none'])]}]
+    groups={}
+    for snap in snapshots:
+        s=snap['summaries'][0] if snap['summaries'] else {}
+        counted=(f"{number(s.get('candidate_windows'))} / {number(s.get('eligible_windows'))}（{percent(s.get('candidate_rate'))}）" if locale=='ja'
+                 else f"{number(s.get('candidate_windows'))} / {number(s.get('eligible_windows'))} ({percent(s.get('candidate_rate'))})")
+        source=t['source_none'] if snap['threshold'] is None else t['source_checked' if ai_state(snap)=='checked' else 'source_default']
+        groups.setdefault(model_group(snap,t),[]).append([name(snap['species'],locale),method(snap,t),
+            (f"{snap['threshold']:.2f}" if snap['threshold'] is not None else '—')+t['paren'].format(text=source),
+            counted if snap['threshold'] is not None else t['uncounted'],number(s.get('candidate_days')) if snap['threshold'] is not None else '—',
+            t['badge_'+ai_state(snap)]])
+    if groups:
+        details.append({'type':'details','summary':t['detail_table'],'body':[{'type':'table',
+            'headers':[t[k] for k in ('col_species','col_model','col_rule','col_counted','col_days','col_state')],
+            'rows':[r for rows in groups.values() for r in rows],'tabs':groups if len(groups)>1 else None}]})
+    methods=[para(t['method_text']),para(t['method_scope'])]
     custom=[s for s in snapshots if s['engine']=='custom']
     if custom:
-        heading(t['custom_training_title']);para('custom_models_note')
-        table([t['species_name'],t['custom_training_material']],[[name(snap['species'],locale)+'\n'+method(snap,t),
-            t['custom_training_count'].format(positive=number(snap['custom_model']['training'].get('positive_5s')),negative=number(snap['custom_model']['training'].get('negative_5s')))]
-            for snap in custom],[2,3])
-    heading(t['methods_title']);para('methods_note');para('region_source');para('human_reference')
-    section('quiz_title');para('quiz_note')
-    taxa={s['id']:s for s in manifest['selected_species']}
-    rows=[]
+        methods+=[para(t['custom_models_note']),{'type':'table','headers':[t['col_species'],t['custom_training_material']],
+            'rows':[[name(snap['species'],locale)+'\n'+method(snap,t),t['custom_training_count'].format(
+                positive=number(snap['custom_model']['training'].get('positive_5s')),negative=number(snap['custom_model']['training'].get('negative_5s')))]
+                for snap in custom]}]
+    details.append({'type':'details','summary':t['detail_method'],'body':methods})
+    names_by_id={s['id']:s for s in manifest['selected_species']}
+    quiz_rows=[]
     for q in quiz['per_species']:
+        if q['species_id'] not in names_by_id:continue
         moment=datetime.fromisoformat(q['answered_at']).astimezone(ZoneInfo(site['timezone'])).strftime('%Y-%m-%d %H:%M')
-        rows.append([name(taxa[q['species_id']],locale),f"{q['correct']} / {q['total']}",str(q['unknown']),moment,
-            f"Q{q['session_id']} · {t['practice']}"+('' if q['complete'] else f" ({t['partial_quiz']})")+f"\n{q['set_sha256'][:12]}"])
-    if rows:table([t[k] for k in ('species_name','quiz_score','quiz_unknown','quiz_date','quiz_set')],rows,[2.4,1,1,1.6,2])
-    else:para('quiz_none')
-    para('quiz_link_note');output.append({'type':'paragraph','text':site['timezone']})
-    section('files');para('files_note');para('evidence_note')
-    table([t['file'],t['contents']],manifest['file_guide'],[1.3,3])
-    output.append({'type':'paragraph','text':f"{t['saved']}: {saved_time(manifest)}\nID: {manifest['package_id']}\nSchema: {manifest['schema']}"})
+        quiz_rows.append([name(names_by_id[q['species_id']],locale),f"{q['correct']} / {q['total']}",str(q['unknown']),moment,
+            f"Q{q['session_id']}"+('' if q['complete'] else t['paren'].format(text=t['partial_quiz']))])
+    if quiz_rows:
+        details.append({'type':'details','summary':t['detail_quiz'],'body':[para(t['quiz_note']),
+            {'type':'table','headers':[t[k] for k in ('col_species','quiz_score','quiz_unknown','quiz_date','quiz_set')],'rows':quiz_rows}]})
+    details.append({'type':'details','summary':t['detail_files'],'body':[para(t['files_note']),
+        {'type':'table','headers':[t['file'],t['contents']],'rows':manifest['file_guide']},
+        para(f"{t['saved']}: {saved_time(manifest)}\nID: {manifest['package_id']}\nSchema: {manifest['schema']}")]})
+    output.append({'type':'section','id':'details','title':t['nav_details'],'body':details})
     return output
 
 
@@ -233,105 +329,142 @@ def saved_time(manifest):
     return datetime.fromisoformat(manifest['saved_at']).astimezone(ZoneInfo(manifest['site']['timezone'])).strftime('%Y-%m-%d %H:%M')+' · '+manifest['site']['timezone']
 
 
-def create_html(folder,manifest,snapshots,evidence,quiz):
+def schedule_svg(records,manifest,t,label):
+    """One line per recording at its true local start and length, split at local midnight; one hover band per day."""
+    zone=ZoneInfo(manifest['site']['timezone']);first=date.fromisoformat(manifest['start_date'])
+    days=(date.fromisoformat(manifest['end_date'])-first).days+1;rows=[[] for _ in range(days)]
+    for record in records:
+        start=datetime.fromisoformat(record['recorded_at']).astimezone(timezone.utc);end=start+timedelta(seconds=record['seconds'])
+        begin=start.astimezone(zone)
+        text=t['schedule_line'].format(day=day_text(t,begin),start=clock(begin),end=clock(end.astimezone(zone)),duration=duration_text(record['seconds'],t))
+        piece=start
+        while piece<end:
+            here=piece.astimezone(zone)
+            midnight=datetime.combine(here.date()+timedelta(days=1),time(),zone).astimezone(timezone.utc);stop=min(end,midnight)
+            index=(here.date()-first).days
+            if 0<=index<days:
+                a=here.hour*60+here.minute+here.second/60;b=stop.astimezone(zone)
+                rows[index].append((a,1440 if stop==midnight else max(a,b.hour*60+b.minute+b.second/60),text))
+            piece=stop
+    left,right,top=70,630,22;row=30 if days<=14 else max(3,min(30,420/days));every=ceil(16/row)
+    height=top+days*row+4;e=escape
+    out=[f'<svg viewBox="0 0 660 {height:.0f}" width="100%" role="img" aria-label="{e(label,quote=True)}"><g font-size="12" fill="#6e6a86">']
+    for hour in (0,6,12,18,24):
+        x=left+(right-left)*hour/24
+        out.append(f'<text x="{x:.1f}" y="14" text-anchor="middle">{e(t["hour_label"].format(hour=hour))}</text>'
+                   f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{top}" y2="{height-4:.1f}" stroke="#e6ddd3"/>')
+    for index in range(0,days,every):
+        out.append(f'<text x="0" y="{top+index*row+min(row,30)/2+4:.1f}">{e(day_text(t,first+timedelta(days=index)))}</text>')
+    out.append('</g><g fill="#4f6d8a">')
+    # Tall rows leave a gap between days; short rows (long periods) use the whole row so lines stay continuous.
+    line_y,line_h=(row*.2,row*.6) if row>=10 else (0,row)
+    for index,lines in enumerate(rows):
+        y=top+index*row
+        out.append(f'<g class="day"><rect class="band" x="{left-8}" y="{y:.1f}" width="{right-left+16}" height="{row:.1f}"/>')
+        out.extend(f'<rect x="{left+(right-left)*a/1440:.1f}" y="{y+line_y:.1f}" width="{max(1,(right-left)*(b-a)/1440):.2f}" height="{line_h:.1f}" data-label="{e(text,quote=True)}"/>'
+                   for a,b,text in lines)
+        out.append('</g>')
+    out.append('</g></svg>')
+    return ''.join(out)
+
+
+def create_html(folder,manifest,snapshots,evidence,quiz,records=()):
     """A portable file:// report: no network, fetch, framework or embedded audio blobs."""
-    content=blocks(manifest,snapshots,quiz)
-    t=messages(manifest['locale']);e=escape;parts=[];plain=[];section=None;section_number=0
-    title_ids={t['reading']:'reading',t['presence_title']:'presence',t['details']:'figures',
-        t['appendix_title']:'appendix',t['quiz_title']:'quiz',t['files']:'files'}
-    seen_titles=set();figure_ids={s['figure_id'] for s in snapshots}
-    def player(path,label):
-        return f'<button class="play" type="button" data-nocopy data-audio="{e(path,quote=True)}" data-play="{e(t["audio"],quote=True)}" data-pause="{e(t["pause"],quote=True)}" aria-label="{e(label,quote=True)}" aria-pressed="false">{e(t["audio"])}</button>'
-    def paragraph(text):return '<p>'+e(str(text)).replace('\n','<br>')+'</p>'
-    def close_section():
-        nonlocal section
-        if section:parts.append('</details>' if section=='details' else '</section>')
-        section=None
-    for block in content:
+    content=blocks(manifest,snapshots,quiz,evidence)
+    t=messages(manifest['locale']);e=escape;plain=[];table_number=0
+    def lines(text):return e(str(text)).replace('\n','<br>')
+    def parts(cell):
+        if not isinstance(cell,list):return lines(cell),str(cell).replace('\n',' ')
+        html=[];text=[]
+        for part in cell:
+            kind=part[0]
+            if kind=='br':html.append('<br>');continue
+            value=part[-1];text.append(value)
+            if kind=='a':html.append(f'<a href="{e(part[1],quote=True)}">{e(value)}</a>')
+            elif kind=='small':html.append(f'<small>{e(value)}</small>' if value else '')
+            elif kind.startswith('badge-'):html.append(f'<span class="badge {kind[6:]}">{e(value)}</span>')
+            else:html.append(e(value))
+        return ''.join(html),' '.join(v.strip() for v in text if v)
+    def render(block):
+        nonlocal table_number
         kind=block['type']
-        if kind=='break':continue
-        if kind=='title':parts.append('<h1>'+e(block['text'])+'</h1>');plain.append(block['text'])
-        elif kind=='heading':
-            text=block['text'];key=title_ids.get(text)
-            if key:
-                if text in seen_titles:continue
-                close_section();seen_titles.add(text)
-                section='details' if key=='reading' else 'section'
-                parts.append(f'<{section} id="{key}" class="report-section">')
-                parts.append(('<summary>' if section=='details' else '<h2>')+e(text)+('</summary>' if section=='details' else '</h2>'))
-            else:parts.append('<h2>'+e(text)+'</h2>')
-            plain.append(text)
-        elif kind=='paragraph':parts.append(paragraph(block['text']));plain.append(block['text'])
-        elif kind=='table':
-            section_number+=1
-            def render_table(rows,table_id,hidden=False,labelledby=None):
-                tab_attrs=(f' tab-panel" role="tabpanel" aria-labelledby="{labelledby}" tabindex="0"' if labelledby else
-                    f'" role="region" aria-label="{e(t["title"],quote=True)}" tabindex="0"')
-                parts.append(f'<div class="table-scroll{tab_attrs} id="{table_id}"{" hidden" if hidden else ""}><table style="border-collapse:collapse">')
-                for index,row in enumerate([block['headers'],*rows]):
-                    parts.append('<thead><tr>' if index==0 else '<tr>')
-                    for value in row:
-                        tag='th' if index==0 else 'td';attrs=' scope="col"' if index==0 else ''
-                        html=e(str(value)).replace('\n','<br>')
-                        if index and str(value) in figure_ids:html=f'<a href="#{e(str(value))}">{html}</a>'
-                        parts.append(f'<{tag}{attrs} style="border:1px solid #dfdad9;padding:10px;text-align:left;vertical-align:top">{html}</{tag}>')
-                    parts.append('</tr></thead><tbody>' if index==0 else '</tr>')
-                    plain.append('\t'.join(str(v).replace('\n',' ') for v in row))
-                parts.append('</tbody></table></div>')
+        if kind=='section':
+            tag='h1' if block.get('level')==1 else 'h2';plain.append(block['title']+(' '+block['subtitle'] if block.get('subtitle') else ''))
+            head=f'<{tag}>{e(block["title"])}'+(f' <span class="muted">{e(block["subtitle"])}</span>' if block.get('subtitle') else '')+f'</{tag}>'
+            body=''.join(render(b) for b in block['body'])
+            if 'figures' in block:
+                figures=''.join(f'<figure id="{e(f["id"])}"><a class="figure-link" href="{e(f["path"],quote=True)}" aria-label="{e(t["save_figure"],quote=True)}">'
+                    f'<img loading="lazy" width="1920" height="2240" src="{e(f["path"],quote=True)}" alt="{e(f["alt"],quote=True)}"></a>'
+                    +(f'<figcaption>{e(f["caption"])}</figcaption>' if f['caption'] else '')
+                    +f'<p class="back" data-nocopy><a href="{e(f["path"],quote=True)}" download>{e(t["save_figure"])}</a></p></figure>' for f in block['figures'])
+                body=f'<div class="species"><div>{figures or "<p class=nofig>"+e(block["nofigure"])+"</p>"}</div><div>{body}</div></div>'
+                if not block['figures']:plain.append(block['nofigure'])
+            return f'<section class="block" id="{e(block["id"])}">{head}{body}</section>'
+        if kind=='heading':
+            text=block['text']+(block['badge'][1] if block.get('badge') else '')+block.get('after','');plain.append(text)
+            badge=f'<span class="badge {block["badge"][0]}">{e(block["badge"][1])}</span>' if block.get('badge') else ''
+            ident=f' id="{e(block["id"])}"' if block.get('id') else ''
+            return f'<h3{ident}>{e(block["text"])}{badge}{e(block.get("after",""))}</h3>'
+        if kind=='paragraph':
+            plain.append(block['text']);cls=' '.join(c for c in (block.get('cls'),'muted' if block.get('muted') else '') if c)
+            return (f'<p class="{cls}">' if cls else '<p>')+lines(block['text'])+'</p>'
+        if kind=='tiles':
+            plain.append('\n'.join(f'{value} {label}' for value,label in block['items']))
+            return '<div class="tiles">'+''.join(f'<div class="tile"><b>{e(value)}</b>{e(label)}</div>' for value,label in block['items'])+'</div>'
+        if kind=='facts':
+            plain.append('\n'.join(f'{k}: {v}'.replace('\n',' / ') for k,v in block['items']))
+            return '<dl>'+''.join(f'<dt>{e(k)}</dt><dd>{lines(v)}</dd>' for k,v in block['items'])+'</dl>'
+        if kind=='legend':
+            plain.append('\n'.join(text for _,text in block['items']))
+            return '<p class="legend">'+''.join(f'<span><i class="swatch" style="background:{color}"></i>{e(text)}</span>' for color,text in block['items'])+'</p>'
+        if kind=='sounds':
+            # One native player is created on demand by report.js, even for thousands of saved answers.
+            items=[]
+            for item in block['items']:
+                control=(f'<button class="play" type="button" data-audio="{e(item["audio"],quote=True)}" data-play="{e(t["play"],quote=True)}" data-pause="{e(t["pause"],quote=True)}" '
+                         f'aria-label="{e(item["label"],quote=True)}" aria-pressed="false">{e(t["play"])}</button>' if item['audio'] else f'<span class="muted">{e(t["audio_unavailable"])}</span>')
+                items.append(f'<li>{control}<span>{e(item["text"])}</span><span class="muted">{e(item["note"])}</span></li>')
+            return '<ul class="sounds" data-nocopy>'+''.join(items)+'</ul>'
+        if kind=='details':
+            plain.append(block['summary']);ident=f' id="{e(block["id"])}"' if block.get('id') else ''
+            return f'<details{ident}><summary>{e(block["summary"])}</summary>'+''.join(render(b) for b in block['body'])+'</details>'
+        if kind=='links':
+            return '<p class="back" data-nocopy>'+t['link_separator'].join(f'<a href="{e(href,quote=True)}">{e(text)}</a>' for href,text in block['items'])+'</p>'
+        if kind=='schedule':
+            plain.append(block['text'])
+            return f'<div class="schedule">{schedule_svg(records,manifest,t,block["label"])}<div class="tip" role="status" hidden></div></div><p>{lines(block["text"])}</p>'
+        if kind=='table':
+            table_number+=1
+            def table(rows,ident,hidden=False,labelledby=None):
+                attrs=(f' tab-panel" role="tabpanel" aria-labelledby="{labelledby}" tabindex="0"' if labelledby else '" role="region" tabindex="0"'
+                       f' aria-label="{e(block["headers"][0],quote=True)}"')
+                html=[f'<div class="table-scroll{attrs} id="{ident}"{" hidden" if hidden else ""}><table><thead><tr>',
+                      ''.join(f'<th scope="col">{e(h)}</th>' for h in block['headers']),'</tr></thead><tbody>']
+                plain.append('\t'.join(block['headers']))
+                for row in rows:
+                    cells=[parts(cell) for cell in row];plain.append('\t'.join(text for _,text in cells))
+                    html.append('<tr>'+''.join(f'<td>{cell}</td>' for cell,_ in cells)+'</tr>')
+                return ''.join(html)+'</tbody></table></div>'
             tabs=block.get('tabs')
-            if tabs and len(tabs)>1:
-                parts.append(f'<div class="tabs" role="tablist" aria-label="{e(t["method"],quote=True)}">')
-                for index,label in enumerate(tabs):
-                    tab_id=f'tab-{section_number}-{index}';panel_id=f'table-{section_number}-{index}'
-                    parts.append(f'<button type="button" role="tab" id="{tab_id}" aria-controls="{panel_id}" aria-selected="{str(index==0).lower()}" tabindex="{0 if index==0 else -1}">{e(label)}</button>')
-                parts.append('</div>')
-                for index,rows in enumerate(tabs.values()):render_table(rows,f'table-{section_number}-{index}',index>0,f'tab-{section_number}-{index}')
-            else:render_table(block['rows'],f'table-{section_number}')
-        elif kind=='image':
-            parts.append(f'<figure><img loading="lazy" width="{block["width"]}" height="{block["height"]}" src="{e(block["path"],quote=True)}" alt="{e(block["caption"],quote=True)}"><figcaption>{e(block["caption"])}</figcaption></figure>')
-            plain.append(block['caption'])
-        elif kind=='cards':
-            parts.append(f'<div class="cards{" wide" if block["columns"]==1 else ""}">')
-            for card in block['cards']:
-                parts.append(f'<article class="card" id="{e(card["id"])}"><h3>'+e(card['text'][0]).replace('\n','<br>')+'</h3>')
-                parts.append(f'<a class="figure-link" href="{e(card["path"],quote=True)}" aria-label="{e(t["save_figure"],quote=True)}"><img loading="lazy" width="1920" height="2240" src="{e(card["path"],quote=True)}" alt="{e(card["text"][0],quote=True)}"></a>')
-                for text in card['text'][1:]:
-                    if text:parts.append(paragraph(text))
-                parts.append(f'<nav data-nocopy><a href="{e(card["path"],quote=True)}" download>{e(t["save_figure"])}</a><a href="#audio-{e(card["species_id"])}">{e(t["audio"])}</a><a href="#presence">{e(t["back_summary"])}</a></nav></article>')
-                plain.extend(card['text'])
-            parts.append('</div>')
-    close_section()
-    parts.append('<section class="report-section" id="audio"><h2>'+e(t['audio'])+'</h2>'+paragraph(t['audio_note']))
-    for taxon in manifest['selected_species']:
-        rows=[row for row in evidence if row['species_id']==taxon['id'] and row.get('audio_role')]
-        parts.append(f'<details id="audio-{e(taxon["id"])}"><summary>{e(name(taxon,manifest["locale"]))}</summary>')
-        if not rows:parts.append(paragraph(t['no_saved_audio']))
-        for role,title in [('presence','presence_audio'),('validation','validation_audio'),('ai_example','ai_audio')]:
-            values=[row for row in rows if row['audio_role']==role]
-            if not values:continue
-            parts.append('<h3>'+e(t[title])+'</h3>')
-            # One native player is created on demand, even for thousands of saved answers.
-            for row in values:
-                moment=datetime.fromisoformat(row['local_time']).strftime('%Y-%m-%d %H:%M:%S') if row.get('local_time') else ''
-                description=f"{moment} · {row['start_s']:g}–{row['end_s']:g} s"
-                if role=='validation':description+=' · '+t['verdict_'+row['verdict']]+f" · V{row['validation_id']}"
-                elif role=='presence':description+=' · '+t['presence_origin_'+row['origin']]
-                else:description+=' · '+row['figure_id']
-                parts.append('<div class="sound">'+paragraph(description))
-                parts.append(player(row['audio_file'],description) if row.get('audio_file') else paragraph(t['audio_unavailable']))
-                parts.append('</div>')
-        parts.append('</details>')
-    parts.append('</section>')
+            if not tabs:return table(block['rows'],f'table-{table_number}')
+            html=[f'<div class="tabs" role="tablist" aria-label="{e(t["col_model"],quote=True)}">']
+            for index,label in enumerate(tabs):
+                html.append(f'<button type="button" role="tab" id="tab-{table_number}-{index}" aria-controls="table-{table_number}-{index}" '
+                            f'aria-selected="{str(index==0).lower()}" tabindex="{0 if index==0 else -1}">{e(label)}</button>')
+            html.append('</div>')
+            html+=[table(rows,f'table-{table_number}-{index}',index>0,f'tab-{table_number}-{index}') for index,rows in enumerate(tabs.values())]
+            return ''.join(html)
+        raise ValueError(kind)
+    main=''.join(render(block) for block in content)
     css=(DATA/'report.css').read_text(encoding='utf-8')
     script=(DATA/'report.js').read_text(encoding='utf-8')
-    nav=''.join(f'<a href="#{key}">{e(t[label])}</a>' for key,label in [('presence','presence_title'),('figures','details'),
-        ('appendix','appendix_title'),('quiz','quiz_title'),('audio','audio')])
+    nav=''.join(f'<a href="#{key}">{e(t["nav_"+key])}</a>' for key in ('summary','species','recordings','details'))
     html=f'''<!doctype html><html lang="{manifest['locale']}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; media-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>{e(t['title'])} · {e(manifest['site']['name'])}</title><style>{css}</style></head><body>
-<header><img src="figures/echoroo.png" width="32" height="32" alt=""><span>echoroo</span><span class="stamp">{e(manifest['package_id'])}</span></header>
-<div class="tools"><nav>{nav}</nav><button id="copy" type="button" data-success="{e(t['copied'],quote=True)}" data-failure="{e(t['copy_failed'],quote=True)}">{e(t['copy'])}</button><p id="copy-status" role="status"></p><p>{e(t['copy_hint'])}</p></div>
-<main>{''.join(parts)}</main><textarea hidden id="plain-text">{e(chr(10).join(plain))}</textarea><footer>{e(saved_time(manifest))}</footer><script>{script}</script></body></html>'''
+<header><img src="figures/echoroo.png" width="32" height="32" alt=""><b>echoroo</b><nav aria-label="{e(t['nav_label'],quote=True)}">{nav}</nav><span class="stamp">{e(manifest['package_id'])}</span></header>
+<div class="tools"><button id="copy" type="button" data-success="{e(t['copied'],quote=True)}" data-failure="{e(t['copy_failed'],quote=True)}">{e(t['copy'])}</button><p id="copy-status" role="status"></p><p>{e(t['copy_hint'])}</p></div>
+<main>{main}</main><textarea hidden id="plain-text">{e(chr(10).join(plain))}</textarea><footer>{e(saved_time(manifest))}</footer><script>{script}</script></body></html>'''
     (folder/'index.html').write_text(html,encoding='utf-8')
     (folder/'report.txt').write_text('\n\n'.join(plain),encoding='utf-8')
     (folder/'report-content.json').write_text(json.dumps(content,ensure_ascii=False,indent=2),encoding='utf-8')

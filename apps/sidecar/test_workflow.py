@@ -212,9 +212,9 @@ class WorkflowCheck(unittest.TestCase):
                     self.assertEqual({r['candidate_windows'] for r in rows('hourly.csv')},{''})
                     self.assertEqual({r['audio_role'] for r in rows('evidence.csv')},{'validation'})
                     text=archive.read('report.txt').decode()
-                    for wanted in (t['ai_flagged_sentence'].format(detected=0),t['uncounted_sentence'].format(eligible=100),t['undecided_no_target']):
+                    for wanted in (t['badge_unused'],t['uncounted'],t['unused_no_target'].split('{name}')[0]):
                         self.assertIn(wanted,text)
-                    self.assertNotIn(t['undecided'],text)
+                    self.assertNotIn(t['unused_other'].split('{name}')[0],text)
                     figure=archive.read('figures/F001.svg').decode()
                     self.assertIn(t['figure_undecided'],figure);self.assertNotIn('<polygon',figure)
 

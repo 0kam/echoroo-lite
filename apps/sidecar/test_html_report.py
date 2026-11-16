@@ -73,8 +73,16 @@ class HtmlReportCheck(unittest.TestCase):
                     html=archive.read('index.html').decode();self.assertIn('&lt;script&gt;unexpected()',html)
                     self.assertNotIn('<script>unexpected()',html);self.assertNotIn('<audio ',html)
                     self.assertIn('width="1920" height="2240"',html)
-                    self.assertIn('聞いて確認した（根拠の音 2）',html);self.assertIn('既定のスコアの閾値（人の確認で決めていない）',html)
+                    self.assertIn('人が聞いて確かめた：<span class="badge yes">声あり</span> 2 音',html);self.assertIn('はじめから決まっている値',html)
                     self.assertIn('0.08 時間',html);self.assertNotIn('基準',html)
+                    # Practice exists for this species, so its record is shown; the old wording is gone.
+                    self.assertIn('聞き分けクイズの記録',html)
+                    for old in ('いつ・どれくらいか','品質','検証','AUPRC'):self.assertNotIn(old,html)
+                    # Each presence evidence sound plays from the saved suite; recording time is an inline figure, not a PNG.
+                    self.assertGreaterEqual(html.count('data-audio="audio/'),2)
+                    self.assertIn('data-label="8月8日 6:00〜6:05（5分）"',html)
+                    self.assertNotIn('figures/recording-schedule.png',archive.namelist())
+                    self.assertIn('ベータ分布',archive.read('README.txt').decode())
                     manifest=json.loads(archive.read('manifest.json'))
                     self.assertEqual(manifest['format'],'html');self.assertEqual(manifest['scope']['recording_ids'],[1])
                     self.assertEqual(manifest['scope']['recorded_seconds'],300)
@@ -98,7 +106,7 @@ class HtmlReportCheck(unittest.TestCase):
                 self.assertEqual(english.status_code,200,english.text)
                 with zipfile.ZipFile(english.json()['path']) as archive:
                     self.assertIn('lang="en"',archive.read('index.html').decode())
-                    self.assertIn('Confirmed by listening (2 evidence sounds)',archive.read('index.html').decode())
+                    self.assertIn('Confirmed by listening: <span class="badge yes">Heard</span> 2 sounds',archive.read('index.html').decode())
                 self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),saved_hash)
                 count=len(list(output.iterdir()))
                 with patch('workflow_export.create_html',side_effect=OSError('disk full')):

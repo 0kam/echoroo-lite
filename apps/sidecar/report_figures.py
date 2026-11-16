@@ -94,22 +94,3 @@ def spiral(report,locale,counting_status_text):
     svg.append('</svg>')
     return png_bytes(image),''.join(svg)
 
-
-def recording_schedule(scope):
-    schedule=scope.get('schedule') or [{'date':row['date'],'hours':[row['seconds'] if hour==0 else 0 for hour in range(24)]} for row in scope['daily']]
-    row_height=30;height=max(450,140+len(schedule)*row_height)
-    image=Image.new('RGB',(1600,height),'white');draw=ImageDraw.Draw(image)
-    left,right,top=220,1540,70
-    for hour in range(0,25,3):
-        x=left+(right-left)*hour/24
-        draw.line((x,top-10,x,top+len(schedule)*row_height),fill='#dfdad9',width=1)
-        draw.text((x,25),str(hour),font=font(24),anchor='mm',fill='#373450')
-    for index,row in enumerate(schedule):
-        y=top+index*row_height
-        draw.text((left-12,y+row_height/2),row['date'].replace('-','/'),font=font(24),anchor='rm',fill='#373450')
-        for hour,seconds in enumerate(row['hours']):
-            if seconds>0:
-                x0=left+(right-left)*hour/24;x1=left+(right-left)*(hour+1)/24
-                draw.rectangle((x0,y,x1,y+row_height-1),fill='#a0504c')
-    draw.text(((left+right)/2,height-28),'0–24 h',font=font(24),anchor='mm',fill='#373450')
-    return png_bytes(image)
