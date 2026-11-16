@@ -211,6 +211,11 @@ class ValidationSessionTest(unittest.TestCase):
                             request = ValidationRequest(dataset_id=1, species_id=species_id, start_date=date(2024, 1, 1),
                                                         end_date=date(2024, 1, 1), model=engine, model_id=1 if engine=='custom' else None)
                             with patch('validation.model_windows', return_value=(windows, {engine: 'model'}, [1])):
+                                if not detections:
+                                    # No top group: nothing decides a threshold, so the check does not start.
+                                    with self.assertRaisesRegex(CatalogError, 'validation_no_top_group'):
+                                        start_session(root, request)
+                                    continue
                                 check = start_session(root, request)
                             population = _load_population(root, check['id'])
                             np.testing.assert_array_equal(population['bin'] == 5, scores >= threshold)
@@ -218,11 +223,91 @@ class ValidationSessionTest(unittest.TestCase):
                                 snap = json.loads(db.execute('SELECT snapshot FROM validation_sessions WHERE id=?', (check['id'],)).fetchone()[0])
                             self.assertEqual(snap['method'], METHOD)
                             self.assertEqual(snap['detection_threshold'], threshold)
-                            self.assertEqual(snap['x0'], logit_scores([threshold + .01 if detections else threshold])[0])
+                            self.assertEqual(snap['x0'], logit_scores([threshold + .01])[0])
                             self.assertEqual(check['counts']['bins'][5]['total'], detections)
-                            self.assertEqual(check['bin_bounds'][5]['low_x'], snap['x0'] if detections else None)
+                            self.assertEqual(check['bin_bounds'][5]['low_x'], snap['x0'])
                             self.assertFalse(check['can_extend'])
                             delete_check(root, check['id'])
+
+    def test_first_block_order_early_stop_resume_and_v1_sessions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            initialize(root); initialize_species(root)
+            source = root / 'source.wav'; source.write_bytes(b'audio')
+            stat = source.stat()
+            with connect(root) as db:
+                db.execute("INSERT INTO sites VALUES(1,'Site','Asia/Tokyo',35,138)")
+                db.execute("INSERT INTO datasets VALUES(1,1,'Data',?)", (str(root),))
+                db.execute('INSERT INTO recordings VALUES(1,1,?,?,?,?,?,?,?,?)',
+                           (str(source), '2024-01-01T00:00:00', 'Asia/Tokyo', '2023-12-31T15:00:00+00:00',
+                            1600, 1, stat.st_size, stat.st_mtime_ns))
+                species_id = db.execute("SELECT id FROM species WHERE scientific_name='Horornis diphone'").fetchone()[0]
+            ctx = {'dataset': {'id': 1}, 'site': {'id': 1, 'timezone': 'Asia/Tokyo'},
+                   'start_date': '2024-01-01', 'end_date': '2024-01-01', 'fingerprint': 'scope'}
+            scores = np.linspace(.001, .999, 320)
+            windows = [{'recording_id': 1, 'start_s': float(i*5), 'end_s': float(i*5+5), 'score': float(score)}
+                       for i, score in enumerate(scores)]
+            request = ValidationRequest(dataset_id=1, species_id=species_id, start_date=date(2024, 1, 1),
+                                        end_date=date(2024, 1, 1), model='perch')
+
+            def strata(sid):
+                with connect(root) as db:
+                    return [r['stratum'] for r in answered_items(db, sid)]
+
+            def answer_next(check, count, verdict):
+                for _ in range(count):
+                    check = answer(root, check['id'], check['question']['id'], verdict)
+                return check
+
+            with patch('results_workflow.context', return_value=ctx), patch('validation.require_visible'), \
+                 patch('validation.model_windows', return_value=(windows, {'perch': 'model'}, [1])):
+                # A v1 check asks every sound, even when the first 20 have no voice.
+                with patch('validation.METHOD', 'detection_top_bin_v1'):
+                    old = start_session(root, request)
+                old = answer_next(old, 20, 'other')
+                self.assertEqual((old['method'], old['stage'], old['early_stop'], old['counts']['total'], old['counts']['answered']),
+                                 ('detection_top_bin_v1', 'sample', False, 60, 20))
+                old = answer_next(old, 40, 'other')
+                self.assertEqual((old['stage'], old['status'], old['results']['perch']['reason']), ('complete', 'undecided', 'no_target'))
+                self.assertIsNotNone(old['results']['perch']['density'])
+                delete_check(root, old['id'])
+
+                check = start_session(root, request)
+                order = strata(check['id'])
+                self.assertEqual((check['method'], len(order)), (METHOD, 60))
+                self.assertEqual(sorted(order[:20]), ['bin-4'] * 10 + ['bin-5'] * 10)
+                self.assertNotEqual(order[:20], sorted(order[:20]))  # the two top bins are mixed
+                self.assertFalse({'bin-4', 'bin-5'} & set(order[20:]))
+
+                # "Cannot tell" is not "Heard": the check ends after the first block and decides nothing.
+                check = answer_next(answer_next(check, 19, 'other'), 1, 'unknown')
+                result = check['results']['perch']
+                self.assertEqual((check['stage'], check['status'], check['early_stop'], check['question']), ('complete', 'undecided', True, None))
+                self.assertEqual((check['counts']['total'], check['counts']['answered'], len(check['history'])), (20, 20, 20))
+                self.assertEqual((result['threshold'], result['reason'], result['density'], result['count']), (None, 'no_target', None, None))
+                self.assertEqual(check['thresholds']['perch'], {'threshold': None, 'adjusted': False, 'reason': 'no_target'})
+
+                # Correcting a first-block answer to "Heard" resumes the check with the remaining sounds.
+                first = check['history'][0]['id']
+                check = answer(root, check['id'], first, 'target')
+                self.assertEqual((check['stage'], check['status'], check['early_stop'], check['results'], check['thresholds']),
+                                 ('sample', 'in_progress', False, {}, {}))
+                self.assertEqual((check['counts']['total'], check['counts']['answered'], check['question']['position']), (60, 20, 20))
+                check = answer_next(check, 40, 'other')
+                with connect(root) as db:
+                    snap = json.loads(db.execute('SELECT snapshot FROM validation_sessions WHERE id=?', (check['id'],)).fetchone()[0])
+                    rows = answered_items(db, check['id'])
+                population = _load_population(root, check['id'])
+                expected = estimate(scores, population['bin'], [int(r['start_s'] / 5) for r in rows], [r['verdict'] for r in rows],
+                                    snap['x0'], int(snap['draw_seed']))
+                expected.update(model_sha256='model', status='decided' if expected['threshold'] is not None else 'undecided')
+                self.assertEqual((check['stage'], check['early_stop'], check['results']['perch']), ('complete', False, expected))
+
+                # With every sound answered, taking the only "Heard" back is an ordinary undecided result.
+                check = answer(root, check['id'], first, 'other')
+                self.assertEqual((check['stage'], check['early_stop'], check['counts']['total'], check['results']['perch']['reason']),
+                                 ('complete', False, 60, 'no_target'))
+                self.assertIsNotNone(check['results']['perch']['density'])
 
 
 if __name__ == '__main__':

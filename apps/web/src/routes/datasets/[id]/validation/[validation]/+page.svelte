@@ -37,6 +37,12 @@
   });
   const busy=$derived(answer.pending||navigate.pending||extend.pending);
   const done=$derived(validation?.stage==='complete'&&!validation.question);
+  // New checks ask the two highest-scoring groups first; with a voice among them, a notice leads on to the remaining sounds.
+  const first=$derived(validation?.method==='detection_top_bin_v2'?validation.counts.bins.slice(4):null);
+  const firstTotal=$derived(first?.reduce((sum,bin)=>sum+bin.total,0)??0),firstHeard=$derived(first?.reduce((sum,bin)=>sum+bin.heard,0)??0);
+  let continued=$state(false);
+  const found=$derived(!!first&&started&&!continued&&firstHeard>0&&validation?.question?.verdict===null&&validation.question.position===firstTotal);
+  const asking=$derived(started&&!done&&!!validation?.question&&!found);
   // The species results tab this check belongs to, so pages opened from here return to it.
   const range=$derived(validation?rangeQuery(validation.start_date,validation.end_date):'');
   const view=$derived(validation?`${range}&engine=${validation.engine}${validation.model_id?`&model_id=${validation.model_id}`:''}`:'');
@@ -44,29 +50,36 @@
   const practice=$derived(validation?`${resolve('/quiz')}?species=${validation.species.id}&return=${encodeURIComponent(`/datasets/${id}/validation/${sid}`)}`:'');
 </script>
 {#snippet examples()}{#if validation}<div class="examples-column"><ReferencePanel species={validation.species} datasetId={id} validationId={sid} {practice} onexamples={list=>heard=list}/></div>{/if}{/snippet}
-<div class="page wide validation-page" style:padding-bottom={started&&!done&&validation?.question?`${barHeight+24}px`:undefined} style:--answer-bar={started&&!done&&validation?.question?`${barHeight}px`:'0px'}><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
+<div class="page wide validation-page" style:padding-bottom={asking?`${barHeight+24}px`:undefined} style:--answer-bar={asking?`${barHeight}px`:'0px'}><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if validation}
     {#if done||!started||validation.question}<div class="page-header"><div>
       <!-- While answering, the one heading is the question and the model is its subtitle. Progress lives in the answer bar. -->
       {#if site}<div class="site-name">{site.name}</div>{/if}
-      {#if done||!started}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
+      {#if done||!started||found}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
       {:else}<h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>{/if}
       <p>{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p></div></div>{/if}
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
-    {#if done}<section class="panel"><h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>
+    {#if done}<section class="panel">{#if validation.early_stop}<h2>{t('vEarlyStopTitle')}</h2><p>{t('vEarlyStopText')}</p><p>{t('vEarlyStopUse')}</p>
+      {:else}<h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>{/if}
       {#if validation.can_extend}<p><strong>{t('vExtendWhy')}</strong></p>{/if}
-      <div class="actions">{#if validation.can_extend}<Button variant="primary" href={back}>{t('vFinishHere')}</Button><Button pending={extend.pending} disabled={busy||!validation.applicable} onclick={()=>extend.run()}>{t('vExtend')}</Button>
+      <div class="actions">{#if validation.early_stop}{@const custom=validation.engine==='custom'}
+        {#if custom}<Button variant="primary" href={`${resolve(`/datasets/${id}/species/${validation.species.id}/model`)}?${range}`}>{t('vRebuildWithAnswers')}</Button>{/if}
+        <Button variant={custom?'default':'primary'} href={back}>{t('vFinishSpecies')}</Button>
+        {:else if validation.can_extend}<Button variant="primary" href={back}>{t('vFinishHere')}</Button><Button pending={extend.pending} disabled={busy||!validation.applicable} onclick={()=>extend.run()}>{t('vExtend')}</Button>
         {:else}<Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{/if}
         {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
-    {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill('wValidationPlan',{total:validation.counts.total,time:effort.time})}</p>
+    {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill(first?'wValidationPlanFirst':'wValidationPlan',{first:firstTotal,total:validation.counts.total,time:effort.time})}</p>
       <p><strong>{t('refListenFirst')}</strong></p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
+    {:else if found}<div class="with-examples"><section class="panel stack" role="status"><h2>{fill('vFoundTitle',{n:remaining})}</h2>
+      <p>{fill('vFoundText',{m:firstTotal,k:firstHeard})}</p><p class="muted">{fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</p>
+      <div class="actions"><Button variant="primary" onclick={()=>continued=true}>{t('vContinue')}</Button><Button href={back}>{t('vContinueLater')}</Button></div></section>{@render examples()}</div>
     {:else}
       <div class="with-examples"><section class="panel">
         {#if validation.question}
           {@const question=validation.question}
-          <p class="muted">{t('vMixedNote')}</p>
+          <p class="muted">{t(first?'vOrderNote':'vMixedNote')}</p>
           {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`}/>{/key}
           <div class="actions answers" bind:offsetHeight={barHeight}>
             <div class="progress-row"><progress id="validation-progress" value={answered?question.review_position:validation.counts.answered} max={answered?question.review_total:validation.counts.total}></progress>

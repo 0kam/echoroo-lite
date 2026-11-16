@@ -61,6 +61,64 @@ def _fit(x, y):
     return result.x[:-1].astype(np.float32), float(result.x[-1])
 
 
+def _platt(f, y):
+    """(A, B) with P(voice) = expit(A f + B), fitted to decision values `f` as libsvm does: targets pulled in from 1 and 0."""
+    voice, silent = y.sum(), len(y) - y.sum()
+    target = np.where(y == 1, (voice + 1) / (voice + 2), 1 / (silent + 2))
+
+    def objective(value):
+        logits = value[0] * f + value[1]
+        return float((np.logaddexp(0, logits) - target * logits).sum())
+
+    def gradient(value):
+        residual = expit(value[0] * f + value[1]) - target
+        return np.array([residual @ f, residual.sum()])
+    return minimize(objective, [0.0, np.log((voice + 1) / (silent + 1))], jac=gradient, method='BFGS').x
+
+
+def _calibrated_fit(x, y):
+    """`_fit`, then its scores turned into probabilities so that 0.5 can be relied on -> weights, intercept, calibrated.
+
+    Platt scaling on held-out scores: 5 folds, fewer when the smaller class is under 5; the i-th example of a class goes
+    to fold i mod k, so the same answers always give the same AI. The sigmoid is folded into the weights and the
+    intercept, so scoring stays one matrix product. Left uncalibrated when a class is under 3 or the slope is not
+    positive (which would turn the ranking upside down).
+    """
+    weights, intercept = _fit(x, y)
+    k = int(min(5, y.sum(), len(y) - y.sum()))
+    if k < 3:
+        return weights, intercept, False
+    fold, held = np.empty(len(y), int), np.empty(len(y))
+    for label in (0, 1):
+        fold[y == label] = np.arange((y == label).sum()) % k
+    try:
+        for i in range(k):
+            w, b = _fit(x[fold != i], y[fold != i])
+            held[fold == i] = x[fold == i] @ w + b
+    except CatalogError:
+        return weights, intercept, False
+    slope, shift = _platt(held, y)
+    if not (slope > 0 and np.isfinite(shift)):
+        return weights, intercept, False
+    return (weights * slope).astype(np.float32), float(intercept * slope + shift), True
+
+
+def growth_state(rounds, voice):
+    """How far a species AI has grown, from its per-round records (`create`) and its number of "voice" answers.
+
+    Checked in this order: 'no_voice' (the last two rounds found no voice among the highest-scoring answers),
+    'settled' (the last two rounds hardly changed its judgements and both highest-scoring answers were voice),
+    'unsettled' (made again 8 times without either), else 'growing'.
+    The numbers (2 rounds, 0.9, 8 rounds) come from simulations and are to be reviewed with test users' data.
+    """
+    last = rounds[-2:]
+    if len(last) == 2 and voice >= MIN_CLASS_EXAMPLES and all(r['top_voice'] == 0 for r in last):
+        return 'no_voice'
+    if len(last) == 2 and all(r['overlap'] is not None and r['overlap'] >= .9 and r['top_voice'] == 2 for r in last):
+        return 'settled'
+    return 'unsettled' if len(rounds) >= 8 else 'growing'
+
+
 def _vector_batches(root, analysis_ids, size=256):
     if not analysis_ids:
         return
@@ -359,6 +417,9 @@ def create(root, ctx, species_id, cancel=None):
         run, labels = _materials(db, ctx, species_id)
         analyses = _main_analyses(db, ctx)
         records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (ctx['dataset']['id'],))}
+        old = json.loads(db.execute('SELECT snapshot FROM custom_models WHERE id=?', (previous['id'],)).fetchone()[0]) if previous else None
+    # The AI about to be replaced: its scores tell how much this round changes.
+    before = {w['segment_id']: w['score'] for w in score_windows(root, previous['id'])} if previous and previous['applicable'] else {}
     expected = {analysis_metadata(a['metadata'])['model_sha256'] for a in analyses}
     if len(expected) != 1:
         raise CatalogError('custom_perch_mixed' if expected else 'custom_perch_missing')
@@ -377,7 +438,7 @@ def create(root, ctx, species_id, cancel=None):
     if len(y) < MIN_EXAMPLES or y.sum() < MIN_CLASS_EXAMPLES or len(y) - y.sum() < MIN_CLASS_EXAMPLES:
         raise CatalogError('custom_more_answers_needed' if len(y) < MIN_EXAMPLES else
                            'custom_positive_examples_needed' if y.sum() < MIN_CLASS_EXAMPLES else 'custom_negative_examples_needed')
-    weights, intercept = _fit(_normalise(np.stack(vectors)), y)
+    weights, intercept, calibrated = _calibrated_fit(_normalise(np.stack(vectors)), y)
     for batch, matrix in _vector_batches(root, ids):
         if cancel and cancel.is_set():
             raise CatalogError('cancelled')
@@ -387,11 +448,22 @@ def create(root, ctx, species_id, cancel=None):
                 rows.append(row)
                 scored.append(float(score))
     run_id = run['id'] if run else None
+    history = []
+    if previous:
+        # This round's record: how many of the sounds scored 0.5 or more stayed the same (shared / in either; None when
+        # either AI has none), and how many of the previous AI's two highest-scoring sounds answered since it was made
+        # were voice (None when fewer than two were answered).
+        was, now = {s for s, v in before.items() if v >= .5}, {r['segment_id'] for r, v in zip(rows, scored) if v >= .5}
+        seen = {e['segment_id'] for e in old['training']['examples']}
+        top = sorted((-before[e['segment_id']], e['segment_id'], e['label'] == 'target') for e in examples
+                     if e['origin'] == 'label' and e['segment_id'] not in seen and e['segment_id'] in before)[:ENDS]
+        history = old.get('rounds', []) + [{'round': previous['round'] + 1, 'overlap': len(was & now) / len(was | now) if was and now else None,
+                                            'top_voice': sum(voice for *_, voice in top) if len(top) == ENDS else None}]
     snapshot = {'schema': 'custom_model_v2', 'species_id': species_id, 'run_id': run_id, 'source_fingerprint': ctx['fingerprint'],
-        'round': previous['round'] + 1 if previous else 1,
+        'round': previous['round'] + 1 if previous else 1, 'rounds': history,
         'scope': {'site_id': ctx['site']['id'], 'start_date': ctx['start_date'], 'end_date': ctx['end_date'], 'recording_ids': sorted(records)},
         'feature': {'engine': engine, 'model_sha256': expected.pop(), 'spec': spec, 'window_s': 5},
-        'training': {'positive_5s': int(y.sum()), 'negative_5s': int(len(y) - y.sum()), 'l2': L2,
+        'training': {'positive_5s': int(y.sum()), 'negative_5s': int(len(y) - y.sum()), 'l2': L2, 'calibrated': calibrated,
                      'negative_from_checks': sum(e['origin'] == 'check' and e['label'] == 'other' for e in examples),
                      'positive_from_checks': sum(e['origin'] == 'check' and e['label'] == 'target' for e in examples),
                      'positive_from_presence': sum(e['origin'] == 'presence' and e['label'] == 'target' for e in examples),
@@ -450,6 +522,8 @@ def _public(root, row, current_fingerprint=None):
     files_ok = file_ok(row['artifact_path'], row['artifact_sha256']) and file_ok(row['scores_path'], row['scores_sha256'])
     scope_ok = (current_fingerprint or snap['source_fingerprint']) == snap['source_fingerprint']
     return {'id': row['id'], 'created_at': row['created_at'], 'dataset_id': row['dataset_id'], 'run_id': row['run_id'], 'round': snap.get('round', 1),
+        # AIs saved before the per-round records have no history: they count as growing until made again.
+        'growth': {'rounds': snap.get('rounds', []), 'state': growth_state(snap.get('rounds', []), snap['training']['positive_5s'])},
         'species': names_for_id(root, row['species_id']), 'scope': snap['scope'], 'feature': snap['feature'],
         'training': {k: v for k, v in snap['training'].items() if k != 'examples'}, 'inference': snap['inference'],
         'analysis_ids': snap['analysis_ids'], 'applicable': scope_ok and files_ok and feature_ok,

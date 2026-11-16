@@ -227,7 +227,7 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    result = cached(root, ['overview-v21', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
+    result = cached(root, ['overview-v22', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
                          enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx))
     from analysis import pending_pairs
@@ -333,7 +333,8 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
     checks = [{'engine': m['engine'], 'key': m['engine'], 'model_id': None, 'model_sha256': m['model_sha256'],
                'validation': quality.get((species_id, m['engine']))} for m in listed]
     checks += [{'engine': 'custom', 'key': f"custom:{m['id']}", 'model_id': m['id'], 'model_sha256': m['artifact_sha256'],
-                'created_at': m['created_at'], 'round': m['round'], 'validation': quality.get((species_id, f"custom:{m['id']}"))} for m in custom]
+                'created_at': m['created_at'], 'round': m['round'], 'growth': m['growth']['state'],
+                'validation': quality.get((species_id, f"custom:{m['id']}"))} for m in custom]
     for check in checks:
         check['status']=check['validation']['status'] if check['validation'] else 'not_started'
     overall_status = counting_status(check.get('validation') for check in checks)

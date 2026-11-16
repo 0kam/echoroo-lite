@@ -115,7 +115,7 @@
     "custom_training_count": "声あり {positive}区間／声なし {negative}区間",
     "presence_sentence": "聞いて、その種の声だと確かめた種は{present}種でした。",
     "reliable_sentence": "AIの精度を確かめ、スコアの閾値が1つ以上のAIで決まった種は{met}種でした。",
-    "presence_explanation": "「声はあったか」は、人が音を聞いて1回でもその種の声だと確かめたかどうかです。根拠には、候補の一覧で確認した音と、AIの精度の確認で「聞こえる」と答えたすべての音を含めます。見つからなかったときは、聞いた音の数を記録します。",
+    "presence_explanation": "「声はあったか」は、人が音を聞いて1回でもその種の声だと確かめたかどうかです。根拠には、候補の一覧で確認した音と、AIの精度の確認で「聞こえる」と答えたすべての音と、この種用のAIを育てる画面で「声あり」と答えたすべての音を含めます。見つからなかったときは、聞いた音の数を記録します。",
     "presence_title": "種ごとのまとめ",
     "presence_note": "「声はあったか」は人が聞いて確かめた記録です。「いつ・どれくらいか」は、いずれか1つのAIで閾値が決まれば「精度を確かめ、スコアの閾値が決まった」とします。",
     "presence_group_confirmed": "人が聞いて確認した種",
@@ -142,6 +142,7 @@
     "presence_audio": "聞いて確かめた音",
     "presence_origin_mark": "候補の一覧で確認",
     "presence_origin_check": "AIの精度の確認で「聞こえる」",
+    "presence_origin_label": "この種用のAIを育てる画面で「声あり」",
     "presence_files": "種ごとの「声はあったか」の記録（根拠の音の数、確認できなかった記録）",
     "decided_precision": "スコアの閾値{score}以上の検出のうち、正しかったのは約{value}（90%の範囲：{low}〜{high}、{answered}音を確認）",
     "model_result": "{model}：{result}"
@@ -262,7 +263,7 @@
     "custom_training_count": "{positive} with voice / {negative} without voice",
     "presence_sentence": "{present} species were confirmed by listening to their calls.",
     "reliable_sentence": "A score threshold was decided by checking for at least one AI for {met} species.",
-    "presence_explanation": "Present means a person listened and confirmed the species' call at least once. Evidence includes candidate-list confirmations and every Heard answer in an AI accuracy check. When nothing was found, the number of sounds listened to is recorded.",
+    "presence_explanation": "Present means a person listened and confirmed the species' call at least once. Evidence includes candidate-list confirmations, every Heard answer in an AI accuracy check, and every Voice answer given while growing an AI for the species. When nothing was found, the number of sounds listened to is recorded.",
     "presence_title": "Summary by species",
     "presence_note": "\"Present\" is the listening record. \"When and how much\" counts as decided as soon as a score threshold is decided for any one AI.",
     "presence_group_confirmed": "Species confirmed by a person",
@@ -289,6 +290,7 @@
     "presence_audio": "Sounds confirmed by listening",
     "presence_origin_mark": "confirmed in the candidate list",
     "presence_origin_check": "Heard in the AI accuracy check",
+    "presence_origin_label": "Voice while growing the species AI",
     "presence_files": "Presence record per species (evidence counts, not-found records)",
     "decided_precision": "Of detections scoring {score} or higher, about {value} were correct (90% range {low}–{high}, {answered} sounds checked)",
     "model_result": "{model}: {result}"

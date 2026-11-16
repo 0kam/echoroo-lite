@@ -249,7 +249,7 @@ class WorkflowCheck(unittest.TestCase):
                 self.assertIn(check['status'],('decided','undecided'))
                 with connect(root) as db:self.assertTrue(db.execute("SELECT 1 FROM workflow_cache WHERE cache_key='keep-after-answer'").fetchone())
                 self.assertEqual(sum(b['answered'] for b in check['counts']['bins']),43)
-                self.assertEqual(check['method'],'detection_top_bin_v1')
+                self.assertEqual(check['method'],'detection_top_bin_v2')
                 self.assertFalse(check['can_extend'])
                 self.assertFalse(check['extended'])
                 self.assertNotIn('multiplier',check['results']['birdnet'])

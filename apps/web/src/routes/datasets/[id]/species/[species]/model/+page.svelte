@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,type LabelRow,type SpeciesAI } from '$lib/workflow';
+  import { fill,modelName,share,type LabelRow,type SpeciesAI } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -57,6 +57,16 @@
       {#if info.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info.examples.other_answers})}</p>{/if}
       <p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>
       {#if model&&!model.applicable}<p class="info">{t(model.reason??'custom_model_scope_changed')}</p>{/if}
+      <!-- Shown from the first time the AI is made again: before that there is nothing to compare it with. -->
+      {#if model?.growth.rounds.length}{@const grown=model.growth.state}<h2>{t('mdGrowth')}</h2>
+        <ul class="rounds">{#each model.growth.rounds as item (item.round)}<li>{item.overlap==null?fill('mdGrowthRoundNone',{n:item.round}):fill('mdGrowthRound',{n:item.round,p:share(item.overlap)})}</li>{/each}</ul>
+        <div class="status-box" role="status"><strong>{t(`mdGrow_${grown}`)}</strong><p>{fill(`mdGrowText_${grown}`,{n:info.examples.positive_5s})}</p></div>
+        <!-- Both lead to the species page, where the check starts; the sounds below can still be answered in every state. -->
+        {#if grown!=='growing'}<div class="actions">
+          {#if grown!=='no_voice'}<Button variant="primary" href={back}>{t('cStart')}</Button>{/if}
+          {#if grown!=='settled'}<Button href={back}>{t('mdFinish')}</Button>{/if}
+        </div>{/if}
+      {/if}
     </section>{/if}
     {#snippet row(item:LabelRow)}<article class="row">
       <div class="row-head"><span>{time(item)}</span>{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
@@ -101,6 +111,7 @@
     </details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>section p{margin:12px 0}.species{margin:0}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
+<style>section p{margin:12px 0}.rounds{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;padding:0;list-style:none}
+  .rounds li{padding:4px 10px;border:1px solid rgb(var(--stone-300));border-radius:8px;font-size:14px}.status-box{margin-bottom:12px}.species{margin:0}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
   .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.footer{border-top:1px solid rgb(var(--stone-300));padding-top:4px}
   details summary{min-height:44px;padding:10px 0;cursor:pointer}.confirm{margin-top:8px;padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}</style>

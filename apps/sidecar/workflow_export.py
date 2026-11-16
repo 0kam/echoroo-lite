@@ -216,7 +216,8 @@ def export(root,body,cancel=None):
                         'region':regions[taxa[sid]['scientific_name']],
                         'counting_status':counting_status(snap.get('validation') for snap in species_snapshots),
                         'evidence_count':len(item['evidence']),'marked':sum(e['origin']=='mark' for e in item['evidence']),
-                        'heard_in_checks':sum(e['origin']=='check' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),
+                        'heard_in_checks':sum(e['origin']=='check' for e in item['evidence']),
+                        'voice_on_ai_page':sum(e['origin']=='label' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),
                         'not_found_list':miss.get('source'),'not_found_recorded_at':miss.get('created_at')})
                 manifest={**ctx,'schema':'echoroo_recording_report_v2','package_id':package_id,'saved_at':datetime.now(timezone.utc).isoformat(),
                     'format':'html','locale':body.locale,'scope':scope,'results':index,'selected_species':[taxa[sid] for sid in wanted if sid in taxa],

@@ -1,21 +1,22 @@
 <script lang="ts">
   import { app,t,day } from './app.svelte';
-  import { checkText,fill,share,type Metric,type Validation } from './workflow';
+  import { checkText,fill,share,staleReason,type Growth,type Metric,type Validation } from './workflow';
   /** One model's check in plain words. Numbers appear only after every sound is answered. */
   // `status` false when the page already states the check's status nearby.
-  let {validation,status=true}:{validation:Validation|null;status?:boolean}=$props();
+  let {validation,status=true,growth}:{validation:Validation|null;status?:boolean;growth?:Growth['state']}=$props();
   const result=$derived(validation?.applicable&&validation.stage==='complete'?validation.results[validation.engine]:undefined);
   const about=(value:number|null)=>value==null?'—':new Intl.NumberFormat(app.locale,{maximumSignificantDigits:2}).format(value);
   const shares=(metric:Metric)=>({p:share(metric.value),low:share(metric.low),high:share(metric.high)});
   const sum=(key:'heard'|'not_heard'|'unknown')=>result?.answers_per_bin.reduce((total,bin)=>total+bin[key],0)??0;
 </script>
 {#if status}<p><strong>{checkText(validation)}</strong></p>{/if}
-{#if validation&&!validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
+{#if validation&&!validation.applicable}<p class="notice">{t(staleReason(validation,growth)??'wScopeChanged')}</p>{/if}
 {#if validation&&result}
   <!-- When the status line is shown above, it already says that no sound was answered "Heard". -->
   {#if result.status==='undecided'}<p>{fill('rUndecided',{reason:status&&result.reason==='no_target'?'':t(`reason_${result.reason}`)})}</p>{/if}
   <ul>
-    <li>{fill('rDensity',{...shares(result.density),n:about(Math.round(result.count.value??0)),nlow:about(Math.round(result.count.low??0)),nhigh:about(Math.round(result.count.high??0))})}</li>
+    <!-- A check that ended after its first sounds has no share for all intervals. -->
+    {#if result.density&&result.count}<li>{fill('rDensity',{...shares(result.density),n:about(Math.round(result.count.value??0)),nlow:about(Math.round(result.count.low??0)),nhigh:about(Math.round(result.count.high??0))})}</li>{/if}
     {#if result.threshold!=null}<li>{fill('rThreshold',{threshold:+result.threshold.toPrecision(2),window:validation.window_s})}</li>{/if}
     {#if result.precision&&result.threshold!=null}<li>{fill('rPrecision',{...shares(result.precision),threshold:+result.threshold.toPrecision(2),n:validation.counts.answered})}</li>{/if}
     {#if result.recall_status==='not_estimable_rare'}<li>{t('rRecallRare')}</li>{:else if result.recall}<li>{fill('rRecall',shares(result.recall))}</li>{/if}

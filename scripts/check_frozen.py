@@ -178,16 +178,28 @@ with ExitStack() as stack:
                 assert any(name.endswith('.wav') for name in archive.namelist()) or not report['evidence']
             print(f"Frozen detection reports and CSV/audio export passed in {time.perf_counter() - started:.2f}s.")
             started = time.perf_counter()
+            check = None
             if len(records) > 1:
                 for engine in sorted(engines):
-                    check=api('/validations',{**dates,'dataset_id':imported['dataset_id'],'species_id':target['id'],'model':engine})
+                    try:
+                        started_check=api('/validations',{**dates,'dataset_id':imported['dataset_id'],'species_id':target['id'],'model':engine})
+                    except urllib.error.HTTPError as error:
+                        # A model with no score in the top group is refused by design; the short supplied audio can hit this.
+                        assert json.load(error) == {'detail': 'validation_no_top_group'}
+                        print(f"Per-model check for {engine} refused: no detection in the top group.")
+                        continue
+                    check=started_check
                     question=check['question']
                     assert check['counts']['total']>0 and check['window_s']==(3 if engine=='birdnet' else 5) and 'scores' not in question
+            if len(records) > 1 and check is None:
+                print("Per-model check smoke check skipped: no model had a detection in the top group.")
+            elif check:
                 a=question['start_s']
                 detail=api(f"/sources/recording/{question['source']['id']}/spectrogram?start_s={a}&end_s={question['end_s']}&detail=true")
                 assert detail['width']>1000
                 answered=api(f"/validations/{check['id']}/answers",{'item_id':question['id'],'verdict':'unknown','version':question['version']})
-                assert answered['counts']['answered']==1 and answered['status']=='in_progress'
+                # With a one-sound first block, a non-"Heard" answer ends the v2 check early by design.
+                assert answered['counts']['answered']==1 and answered['status'] in ('in_progress', 'undecided'), answered['status']
                 print(f"Frozen per-model check, high-resolution spectrogram and saved answer passed in {time.perf_counter()-started:.2f}s.")
             started = time.perf_counter()
             overview = api(f"/datasets/{imported['dataset_id']}/overview")

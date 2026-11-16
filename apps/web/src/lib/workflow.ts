@@ -6,19 +6,22 @@ import type { AudioSource } from './AudioRegion.svelte';
 import { app,t,duration } from './app.svelte';
 export type Metric = { value: number | null; low: number | null; high: number | null };
 export type CheckStatus = 'not_started'|'in_progress'|'decided'|'undecided'|'stale';
-/** One check's estimates with 90% ranges; present only after every sound is answered. */
-export type QualityResult = { status:'decided'|'undecided'; threshold:number|null; reason:string|null; density:Metric; count:Metric;
+/** One check's estimates with 90% ranges; present once every sound is answered, or when the first block found no call (`early_stop`, without density or count). */
+export type QualityResult = { status:'decided'|'undecided'; threshold:number|null; reason:string|null; density:Metric|null; count:Metric|null;
   precision:Metric|null; recall:Metric|null; recall_status:'estimated'|'not_estimable'|'not_estimable_rare'; auprc:Metric|null;
   unknown:number; disagreement:boolean; answers_per_bin:{heard:number;not_heard:number;unknown:number}[] };
-/** One model's check for one species: 60 mixed sounds, and 18 more when the result is too uncertain. */
+/** One model's check for one species: up to 60 sounds, the two top score groups first (v2); older checks mixed them and could add 18 more. */
 export type Validation = { id:number; dataset_id:number; species:Species; stage:'sample'|'extension'|'complete'; status:CheckStatus;
   model:string; engine:string; model_id:number|null; results:Record<string,QualityResult>;
-  counts:{total:number;answered:number;unknown:number};
+  counts:{total:number;answered:number;unknown:number;bins:{total:number;heard:number}[]}; method:string; early_stop:boolean;
   question:{id:number;position:number;verdict:string|null;version:number;source:AudioSource;start_s:number;end_s:number;review_position:number;review_total:number}|null;
   history:{id:number;position:number;verdict:string}[]; can_extend:boolean; extended:boolean; model_reason?:string|null;
   start_date:string; end_date:string; window_s:number; population:number; applicable:boolean; created_at:string };
-export type Check = {key:string;engine:string;model_id:number|null;created_at?:string;round?:number;validation:Validation|null};
-export type Evidence = {recording_id:number;start_s:number;end_s:number;origin:'mark'|'check';source_path:string;seconds:number;local_time:string};
+/** How far a species AI has grown, and one record per time it was made again: `overlap` is the share of sounds scored 0.5 or more that
+ * stayed the same (null when either AI had none); `top_voice` counts voice among the two highest-scoring new answers (null under two). */
+export type Growth = {state:'growing'|'settled'|'no_voice'|'unsettled';rounds:{round:number;overlap:number|null;top_voice:number|null}[]};
+export type Check = {key:string;engine:string;model_id:number|null;created_at?:string;round?:number;growth?:Growth['state'];validation:Validation|null};
+export type Evidence = {recording_id:number;start_s:number;end_s:number;origin:'mark'|'check'|'label';source_path:string;seconds:number;local_time:string};
 export type Presence = {status:'confirmed'|'not_found'|'unchecked';evidence:Evidence[];miss:{listened:number;source:'ai'|'search';created_at:string}|null};
 export type SearchRef = {id:number;created_at:string};
 export type PresenceRow = {recording_id:number;start_s:number;end_s:number;score:number|null;models:{engine:string;rank:number;score:number}[];
@@ -29,7 +32,7 @@ export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|n
   site:{id:number;name:string;timezone:string};presence:Presence;region?:Region};
 export type CustomModel = {id:number;round:number;created_at:string;dataset_id:number;run_id:number|null;species:Species;
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
-  training:{positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null};
+  training:{positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null;growth:Growth};
 /** A 5-second sound to answer on the species-AI page; `score` is null in the list of answered sounds. */
 export type LabelRow = {segment_id:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;
   score:number|null;label:'target'|'other'|null};
@@ -80,11 +83,13 @@ export const roughTime = (seconds:number) => seconds<60?fill('timeSeconds',{n:Ma
 export const windowSeconds = (engine:string) => modelOf(engine)?.window_s??5;
 /** Why no threshold was decided: "no sound answered Heard" only when that holds for every given check. */
 const undecidedText = (checks:Validation[]) => t(checks.every(value=>value.results[value.engine]?.reason==='no_target')?'cUndecidedNoTarget':'cUndecided');
+/** Why a check no longer applies. After the species AI was made again, the words follow how far it has grown (`growth`, where known). */
+export const staleReason = (value:Validation,growth?:Growth['state']) => value.model_reason==='custom_model_rebuilt'&&growth?`sGrow_${growth}`:value.model_reason;
 /** Plain status of one model's check. */
-export function checkText(value:Validation|null) {
+export function checkText(value:Validation|null,growth?:Growth['state']) {
   if(!value)return t('cNotStarted');
   if(value.status==='in_progress')return fill('cInProgress',{answered:value.counts.answered,total:value.counts.total});
-  if(value.status==='stale')return t(value.model_reason==='custom_model_rebuilt'?'custom_model_rebuilt':'wStale');
+  if(value.status==='stale')return t(value.model_reason==='custom_model_rebuilt'?staleReason(value,growth)!:'wStale');
   return value.status==='decided'?t('cDecided'):undecidedText([value]);
 }
 /** The one button into a check: start, continue (answered/total), or see the result. */

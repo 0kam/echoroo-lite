@@ -7,6 +7,7 @@
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { activity,activityText,checkName,checkText,defaultModel,fill,listenLabel,presenceText,rangeQuery,remainingSounds,windowSeconds,workload,type Check,type Overview,type SpeciesResult,type Validation } from '$lib/workflow';
+  import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReportView from '$lib/ReportView.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -76,6 +77,10 @@
   const removeCheck=createTask(async(item:Check)=>{await api(`/validations/${item.validation!.id}/delete`,{});confirming='';cache.clear();await load();},{toast:true});
   const askSearchDelete=createTask(async()=>{preview=await api(`/search-runs/${result!.search!.id}/delete-preview`);confirming='search';},{toast:true});
   const removeSearch=createTask(async()=>{await api(`/search-runs/${result!.search!.id}/delete`,{});confirming='';preview=null;cache.clear();engine='auto';modelId=0;await load();},{toast:true});
+  // Sounds a person confirmed, in recording order; times are the site's, not the PC's.
+  const heard=$derived(result?[...result.presence.evidence].sort((a,b)=>Date.parse(a.local_time)-Date.parse(b.local_time)):[]);
+  let allHeard=$state(false);
+  const heardTime=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:result?.site.timezone}).format(new Date(value));
   const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:result?.site.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
 </script>
 <div class="page">
@@ -98,15 +103,24 @@
           {#if about?.in_quiz}<Button href={practice}>{t('wPractice')}</Button>{/if}
         </div>
         <p class="muted">{t('pEvidenceNote')}</p>
+        {#if heard.length}<h3>{fill('sHeardTitle',{n:heard.length})}</h3><p class="muted">{t('sHeardNote')}</p>
+          {#each allHeard?heard:heard.slice(0,10) as item (`${item.recording_id}:${item.start_s}:${item.end_s}`)}<article class="heard">
+            <span>{heardTime(item.local_time)}</span>
+            <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.source_path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}/>
+          </article>{/each}
+          {#if !allHeard&&heard.length>10}<Button onclick={()=>allHeard=true}>{t('sHeardAll')}</Button>{/if}{/if}
       </section>
       <section class="panel card" aria-labelledby="activity-title">
         <h2 id="activity-title">{t('sActivityTitle')}</h2>
         {#if result.checks.length}<p class="status"><strong>{activityText(result.checks)}</strong></p>{/if}
         <p class="muted">{t(result.checks.length>1?'sActivityHint':result.checks.length?'sActivityHintOne':'sActivityHintNone')}</p>
         {#if remaining&&result.checks.some(item=>!undetected(item))}<p class="muted">{fill('sWorkload',{n:remaining,time:effort.time})}</p>{/if}
-        {#each ordered as item (item.key)}<div class="check-row">
-          <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation)}</span></div>
-          {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>{/if}
+        {#each ordered as item (item.key)}{@const grown=item.validation?.model_reason==='custom_model_rebuilt'?item.growth:undefined}<div class="check-row">
+          <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation,item.growth)}</span></div>
+          <!-- After the species AI was made again, the next step follows how far it has grown, not "check again" every time. -->
+          <!-- The check stays available in every state; while the AI is still growing, going on growing it comes first. -->
+          {#if grown==='growing'}<Button variant="primary" href={modelHref}>{t('sToGrow')}</Button>{/if}
+          {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining&&grown!=='growing'?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation&&!grown?listenLabel(item.validation):t('cStart')}</Button>{/if}
         </div>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
         <!-- Deleting is kept away from the listening buttons. -->
@@ -125,7 +139,7 @@
       <div class="actions model-tabs">{#each result.checks as item (item.key)}<Button active={result.selected===item.key} aria-pressed={result.selected===item.key}
         onclick={()=>{engine=item.engine;modelId=item.model_id??0;load();}}>{checkName(item)}</Button>{/each}
         {#if loading}<span role="status"><Spinner/> {t('loading')}</span>{/if}</div>
-      {#if selected}<QualityPanel validation={selected.validation} status={false}/>{/if}
+      {#if selected}<QualityPanel validation={selected.validation} growth={selected.growth} status={false}/>{/if}
       {#if result.report}{#key liveUrl}<ReportView report={result.report} {liveUrl}/>{/key}
       {:else}<p class="empty">{t('wNoModel')}</p>{/if}
     </section>{/if}
@@ -151,4 +165,5 @@
   .check-name{display:flex;flex-direction:column}.confirm{padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}.confirm p,.confirm ul{margin:0 0 12px}
   .more{margin-top:8px}.more summary{min-height:44px;padding:10px 0}.more .stack{margin-top:8px}
   .grow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}.grow p{margin:0;flex:1 1 320px}
+.heard{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}h3{margin:0}
   .model-tabs{margin:12px 0 4px}section p{margin:8px 0}</style>
