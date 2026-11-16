@@ -29,7 +29,8 @@
       <Button href={`${resolve('/datasets/new')}?site=${site.id}`}>{t('uAddRecordings')}</Button>
       {#if datasets.length}
         {#if needsAnalysis}<Button variant="primary" pending={analyze.pending} disabled={!!job} onclick={()=>analyze.run(datasets[0].id)}>{t('analyzeAll')}</Button>{/if}
-        <Button variant={needsAnalysis?'default':'primary'} href={resolve(`/datasets/${datasets[0].id}`)}>{t('uSeeResults')}</Button>{/if}
+        <!-- Nothing analysed yet: there are no results to see, so analysing is the only next step. -->
+        {#if !state||state.analysed>0||running}<Button variant={needsAnalysis?'default':'primary'} href={resolve(`/datasets/${datasets[0].id}`)}>{t('uSeeResults')}</Button>{/if}{/if}
       <Button variant="ghost" href={resolve(`/sites/${site.id}/manage`)}>{t('mManage')}</Button>
     </div></section>
   {/each}

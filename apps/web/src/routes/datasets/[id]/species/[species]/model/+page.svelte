@@ -20,6 +20,9 @@
   let error=$state(''),skipped:number[]=[],answeredShown=$state(10),confirming=$state(false);
   // A sound is answered only after it was played, as on the other answer pages; `more` opens the sounds again once growing has settled.
   let played=$state<number[]>([]),more=$state(false);
+  // Sounds answered "Not sure": left without an answer, so they are never material for the AI and the next batch skips them.
+  let unsure=$state<number[]>([]);
+  const notSure=async(row:LabelRow)=>{if(row.label)await label.run(row,row.label);if(!row.label)unsure=unsure.includes(row.segment_id)?unsure.filter(id=>id!==row.segment_id):[...unsure,row.segment_id];};
   const fetchState=(query='')=>api<SpeciesAI>(`/datasets/${id}/species/${speciesId}/custom-model?${range}${query}`);
   // Sounds shown and passed over are not offered again until the AI is made again.
   const next=createTask(async()=>{const value=await fetchState(`&batch=true${skipped.map(segment=>`&skip=${segment}`).join('')}`);
@@ -27,7 +30,7 @@
   onMount(async()=>{await next.run();if(next.error)error=next.error;});
   const label=createTask(async(row:LabelRow,value:'target'|'other')=>{
     const saved=await api<{label:LabelRow['label']}>(`/datasets/${id}/species/${speciesId}/labels`,{segment_id:row.segment_id,label:row.label===value?null:value});
-    row.label=saved.label;info=await fetchState();
+    row.label=saved.label;if(saved.label)unsure=unsure.filter(id=>id!==row.segment_id);info=await fetchState();
     // A sound answered in this batch joins the answered list at once, as the same row, so both show the same answer.
     if(saved.label&&!answered.includes(row))answered.unshift(row);
   },{toast:true});
@@ -70,6 +73,7 @@
       <!-- Shown from the first time the AI is made again: before that there is nothing to compare it with. -->
       {#if model?.growth.rounds.length}{@const grown=model.growth.state}<h2>{t('mdGrowth')}</h2>
         <ul class="rounds">{#each model.growth.rounds as item (item.round)}<li>{item.overlap==null?fill('mdGrowthRoundNone',{n:item.round}):fill('mdGrowthRound',{n:item.round,p:share(item.overlap)})}</li>{/each}</ul>
+        {#if model.growth.rounds.some(item=>item.overlap!=null)}<p class="muted">{t('mdGrowthNote')}</p>{/if}
         <div class="status-box" role="status"><strong>{t(`mdGrow_${growText}`)}</strong><p>{fill(`mdGrowText_${growText}`,{n:info.examples.positive_5s})}</p></div>
         <!-- The check opens directly; finishing returns to the species page. Once settled, the sounds below wait behind "Grow it a little more". -->
         {#if grown!=='growing'}<div class="actions">
@@ -84,6 +88,7 @@
         onplaying={()=>{if(!played.includes(item.segment_id))played=[...played,item.segment_id];}}>
         {#snippet actions()}<div class="actions" role="group" aria-label={time(item)}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
           <Button active={item.label===value} aria-pressed={item.label===value} pending={label.pending} disabled={next.pending||build.pending||(!item.label&&!played.includes(item.segment_id))} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}</Button>{/each}
+          <Button active={unsure.includes(item.segment_id)} aria-pressed={unsure.includes(item.segment_id)} pending={label.pending} disabled={next.pending||build.pending||(!item.label&&!played.includes(item.segment_id))} onclick={()=>notSure(item)}>{unsure.includes(item.segment_id)?'✓ ':''}{t('mdUnsure')}</Button>
           {#if !item.label&&!played.includes(item.segment_id)}<span class="muted">{t('pPlayFirst')}</span>{/if}</div>{/snippet}
       </AudioRegion>
     </article>{/snippet}
@@ -94,7 +99,7 @@
       {:else}
         {#if !model&&info.needed}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
         <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelName(info.engine)})}</p>
-        <p class="muted">{t('mdUndo')}</p>
+        <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p>
         {#each batch as item (item.segment_id)}{@render row(item)}{:else}<p>{t('mdNoneLeft')}</p>{/each}
       {/if}
       {#if !searchFirst}<div class="footer">

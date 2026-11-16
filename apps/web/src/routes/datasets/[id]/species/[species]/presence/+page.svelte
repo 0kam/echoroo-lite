@@ -46,6 +46,8 @@
     await api('/presence/misses',{dataset_id:id,species_id:speciesId,start_date:list.start_date,end_date:list.end_date,source,listened});
     saved=listened;await load();
   },{toast:true});
+  // How the list is ordered, in the words of the recorded result (AI score or likeness to the example).
+  const order=$derived(t(source==='search'?'pOrderSearch':'pOrderAi'));
   const time=(row:PresenceRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:list?.site.timezone}).format(new Date(row.local_time));
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}/presence?${range}&source=${source}`)}`);
 </script>
@@ -70,12 +72,13 @@
         </AudioRegion>
         {#if caution===key(row)&&!row.marked}<div class="notice caution" role="alert">{#if unusual}<p>{t('pUnusual')}</p>{/if}{#if named===false}<p>{t('pNoExamples')}</p>{/if}
           <div class="actions"><Button onclick={()=>caution=''}>{t('mCancel')}</Button><Button pending={mark.pending} onclick={()=>mark.run(row)}>{t(named===false?'pMarkAnyway':'pMarkCompared')}</Button></div></div>{/if}
-      </article>{:else}<p>{t('pNoRows')}</p>{/each}
+      </article>{:else}<p>{t(source==='ai'&&list.run_id&&list.ai_covers===false?'pNoAiForSpecies':'pNoRows')}</p>{/each}
       {#if shown<list.rows.length}<Button onclick={()=>shown+=10}>{t('pMore')}</Button>{/if}
       {#if !anyMarked&&list.rows.length}<div class="miss">
-        <p>{listened?fill('pListened',{n:listened}):t('pListenedNone')}</p>
-        {#if saved}<p role="status">✓ {fill('pMissSaved',{n:saved})}</p>
-        {:else}<Button disabled={!listened} pending={recordMiss.pending} onclick={()=>recordMiss.run()}>{t('pRecordMiss')}</Button>{/if}</div>{/if}
+        <p>{listened?fill('pListened',{n:listened,order}):t('pListenedNone')}</p>
+        {#if saved}<p role="status">✓ {fill('pMissSaved',{n:saved,order})}</p>
+        {:else if listened}<Button pending={recordMiss.pending} onclick={()=>recordMiss.run()}>{fill('pRecordMiss',{n:listened,order})}</Button>
+          <p class="muted">{t('pMissKeep')}</p>{/if}</div>{/if}
       <p class="muted">{t('pEvidenceNote')}</p>
       <div class="actions"><Button variant="primary" href={back}>{t('wBackSpecies')}</Button></div>
     </section>

@@ -71,7 +71,7 @@
     </div></details>
     <p class="muted">{t('quizLabelHint')}</p>
     <Button variant="primary" pending={save.pending} aria-describedby="quiz-save-reason" onclick={() => missing ? showMissing() : save.run()}>{t('quizSaveClip')}</Button>
-    <p class={tried && missing ? 'field-error' : 'muted'} id="quiz-save-reason">{missing}</p>
+    {#if tried && missing}<p class="field-error" id="quiz-save-reason">{missing}</p>{/if}
   {/if}
   {#if addReference.error || save.error}<p class="error" role="alert">{t(addReference.error || save.error)}</p>{/if}
 </section>

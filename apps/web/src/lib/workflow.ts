@@ -28,7 +28,7 @@ export type PresenceRow = {recording_id:number;start_s:number;end_s:number;score
   run_id:number|null;marked:boolean;source:AudioSource;local_time:string};
 // BirdNET range model for the site: 'unusual' species are not on its list; missing or null means no judgement.
 export type Region = 'usual'|'unusual'|null;
-export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|null;rows:PresenceRow[];has_ai:boolean;start_date:string;end_date:string;
+export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|null;rows:PresenceRow[];has_ai:boolean;ai_covers?:boolean;start_date:string;end_date:string;
   site:{id:number;name:string;timezone:string};presence:Presence;region?:Region};
 export type CustomModel = {id:number;round:number;created_at:string;dataset_id:number;run_id:number|null;species:Species;
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
@@ -87,7 +87,8 @@ const undecidedText = (checks:Validation[]) => t(checks.every(value=>value.resul
 export const staleReason = (value:Validation,growth?:Growth['state']) => value.model_reason==='custom_model_rebuilt'&&growth?`sGrow_${growth}`:value.model_reason;
 /** Plain status of one model's check. */
 export function checkText(value:Validation|null,growth?:Growth['state']) {
-  if(!value)return t('cNotStarted');
+  // A check opened but not answered yet has not started.
+  if(!value||value.status==='in_progress'&&!value.counts.answered)return t('cNotStarted');
   if(value.status==='in_progress')return fill('cInProgress',{answered:value.counts.answered,total:value.counts.total});
   if(value.status==='stale')return t(value.model_reason==='custom_model_rebuilt'?staleReason(value,growth)!:'wStale');
   return value.status==='decided'?t('cDecided'):undecidedText([value]);
@@ -96,12 +97,13 @@ export function checkText(value:Validation|null,growth?:Growth['state']) {
 export function listenLabel(value:Validation|null) {
   if(!value||!value.applicable)return t(value?'wCheckAgain':'cStart');
   if(value.stage==='complete')return t('wValidationDone');
+  if(!value.counts.answered)return t('cStart');
   return fill('vListenContinue',{answered:value.counts.answered,total:value.counts.total});
 }
 /** Presence in words with a leading symbol, so it never relies on colour alone. */
 export function presenceText(presence:Presence) {
   if(presence.status==='confirmed')return `✓ ${fill('pConfirmed',{n:presence.evidence.length})}`;
-  if(presence.status==='not_found')return `− ${fill('pNotFound',{n:presence.miss!.listened})}`;
+  if(presence.status==='not_found')return `− ${fill('pNotFound',{n:presence.miss!.listened,order:t(presence.miss!.source==='search'?'pOrderSearch':'pOrderAi')})}`;
   return `○ ${t('pUnchecked')}`;
 }
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
@@ -127,10 +129,10 @@ export const decidedModels = (models:Checked[]) =>
   });
 /** "When and how much" of a species. One decided AI is enough (B3); undecided only when no checked AI decided and none is in progress. */
 export function activity(models:Checked[]):'decided'|'in_progress'|'undecided'|'not_started' {
-  const states=models.map(model=>model.validation?.applicable?model.validation.status:'not_started');
+  const states=models.map(({validation:value})=>value?.applicable&&(value.status!=='in_progress'||value.counts.answered)?value.status:'not_started');
   return (['decided','in_progress','undecided'] as const).find(state=>states.includes(state))??'not_started';
 }
-const inProgress = (models:Checked[]) => models.map(model=>model.validation).find(value=>value?.applicable&&value.status==='in_progress');
+const inProgress = (models:Checked[]) => models.map(model=>model.validation).find(value=>value?.applicable&&value.status==='in_progress'&&value.counts.answered>0);
 export function activityText(models:Checked[]) {
   const state=activity(models),open=inProgress(models);
   if(state==='decided')return fill('wDecidedModels',{models:decidedModels(models).join(app.locale==='ja'?'・':', ')});

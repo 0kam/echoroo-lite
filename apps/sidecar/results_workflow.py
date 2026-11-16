@@ -313,6 +313,14 @@ def build_overview(root, dataset_id, ctx):
                                                            -len(r['presence']['evidence']), r['species']['scientific_name']))}
 
 
+def listed_models(root, ctx, scientific_name):
+    """The site's AIs whose species list includes this species; only they can count it."""
+    from reports import candidate_list
+    with connect(root) as db:
+        return [m for m in ctx['models'] if any(canonical_scientific_name(m['engine'], label) == scientific_name for label in
+                candidate_list(db, db.execute('SELECT * FROM analyses WHERE id=?', (m['latest_analysis_id'],)).fetchone()) or [])]
+
+
 def species_result(root, dataset_id, species_id, first=None, last=None, engine='auto', cell_date=None, hour=None, model_id=None):
     """One species: presence, each model's check, and the time chart of the chosen model."""
     from custom_models import list_models
@@ -323,13 +331,9 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
         if not row:
             raise CatalogError('not_found')
         taxon = names_for(row)
-    from reports import candidate_list
     quality = current_validations(root, ctx)
     custom = [m for m in list_models(root, ctx, species_id) if m['applicable']]
-    with connect(root) as db:
-        # Only models whose species list includes this species can count it.
-        listed = [m for m in ctx['models'] if any(canonical_scientific_name(m['engine'], label) == taxon['scientific_name'] for label in
-                  candidate_list(db, db.execute('SELECT * FROM analyses WHERE id=?', (m['latest_analysis_id'],)).fetchone()) or [])]
+    listed = listed_models(root, ctx, taxon['scientific_name'])
     checks = [{'engine': m['engine'], 'key': m['engine'], 'model_id': None, 'model_sha256': m['model_sha256'],
                'validation': quality.get((species_id, m['engine']))} for m in listed]
     checks += [{'engine': 'custom', 'key': f"custom:{m['id']}", 'model_id': m['id'], 'model_sha256': m['artifact_sha256'],

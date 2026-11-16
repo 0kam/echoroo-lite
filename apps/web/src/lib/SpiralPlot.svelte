@@ -98,7 +98,7 @@
 </div>{/if}
 <div class="plot-scroll" class:compact>
 <svg bind:this={element} xmlns="http://www.w3.org/2000/svg" viewBox={compact?`0 ${header-20} 960 755`:`0 0 960 ${height}`}
-  role="group" aria-label={t('spiralPlot')}>
+  role="group" aria-label={t(onselect ? 'spiralKeys' : 'spiralPlot')}>
   <title>{t('spiralPlot')} · {report.species ? commonName(report.species, app.locale) : ''} · {metric}</title>
   <desc>{t('spiralMeaning')} {report.site.timezone} · {report.start_date}–{report.end_date}</desc>
   <defs><pattern id={`${uid}-missing`} width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="#fafafa"/><path d="M-2,2 L2,-2 M0,7 L7,0 M5,9 L9,5" stroke="#aeacb8" stroke-width="1"/></pattern>

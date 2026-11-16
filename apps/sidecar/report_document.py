@@ -72,7 +72,8 @@ def quality_result(snap):
 def status(snap):
     """not_evaluated, stale, in_progress, decided or undecided."""
     validation=snap.get('validation');result=quality_result(snap)
-    if not validation:return 'not_evaluated'
+    # A check nobody has answered yet reads as not started, not as halfway.
+    if not validation or (validation.get('counts') or {}).get('answered')==0:return 'not_evaluated'
     if not validation['applicable']:return 'stale'
     if validation['stage']!='complete':return 'in_progress'
     return result.get('status','undecided') if result else 'undecided'
@@ -115,6 +116,29 @@ def about(value,t):
     if low is None or high is None:return t['about_only'].format(value=f"{value['value']:.0%}")
     text=t['about'].format(value=f"{value['value']:.0%}",low=f'{low:.0%}',high=f'{high:.0%}')
     return text+t['range_wide'] if high-low>.3 else text
+
+
+def windows_text(snapshots,t):
+    """The interval lengths of the AIs in this report, said once when they are all the same."""
+    windows={model_group(snap,t):snap['window_s'] for snap in snapshots};lengths=set(windows.values())
+    if len(windows)>1 and len(lengths)==1:return t['reading_window_all'].format(s=f'{lengths.pop():g}')
+    return t['list_sep'].join(t['reading_window'].format(model=k,s=f'{v:g}') for k,v in windows.items())
+
+
+def ranged(value):
+    return bool(value) and None not in (value.get('value'),value.get('low'),value.get('high'))
+
+
+def found_none(snap):
+    """A counted AI that found no interval of this species: no precision to speak of."""
+    return snap['threshold'] is not None and bool(snap['summaries']) and snap['summaries'][0].get('candidate_windows')==0
+
+
+def not_found_text(row,t):
+    """Names the list the person listened to: AI scores or similarity to the search example."""
+    n=row.get('listened_without_confirming')
+    return t['badge_not_found'].format(order=t['order_search' if row.get('not_found_list')=='search' else 'order_ai'],
+                                       count=number(n),unit=t['unit_sound' if n==1 else 'unit_sounds'])
 
 
 def rule_text(snap,t):
@@ -170,20 +194,23 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     para=lambda text,**extra:{'type':'paragraph','text':text,**extra}
 
     # Summary: the conclusion on the first screen.
-    rows=[]
+    rows=[];several=len({method(snap,t) for snap in snapshots})>1
     for taxon in taxa:
         common,scientific=names(taxon,locale);row=presence[taxon['id']];snaps=per_species[taxon['id']]
         heard={'confirmed':[['badge-yes',t['badge_heard']],['text',' '+t['sounds_count'].format(count=row['evidence_count'])]],
-               'not_found':[['badge-no',t['badge_not_found']]],'unchecked':[['badge-no',t['badge_unchecked']]]}[row['status']]
+               'not_found':[['badge-no',not_found_text(row,t)]],'unchecked':[['badge-no',t['badge_unchecked']]]}[row['status']]
         ai=[]
         for snap in snaps:
-            state=ai_state(snap);prefix=method(snap,t)+t['colon'] if len(snaps)>1 else ''
+            state=ai_state(snap);prefix=method(snap,t)+t['colon'] if several else ''
             if ai:ai.append(['br'])
             if state=='unused':
                 reason=(quality_result(snap) or {}).get('reason')
                 ai+=[['text',prefix],['badge-'+state,t['badge_'+state]],['small',t['table_unused_no_target' if reason=='no_target' else 'table_unused_other']]]
                 continue
             s=snap['summaries'][0] if snap['summaries'] else {}
+            if found_none(snap):
+                ai+=[['text',prefix+t['windows_count'].format(count=0)+' '],['small',t['table_found_none']]]
+                continue
             p=(quality_result(snap) or {}).get('precision') or {}
             ai+=[['text',prefix+t['windows_count'].format(count=number(s.get('candidate_windows')))+' '],['badge-'+state,t['badge_'+state]],
                  ['small',t['table_precision'].format(value=f"{p['value']:.0%}") if state=='checked' and p.get('value') is not None else t['table_reference']]]
@@ -211,16 +238,20 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     other=manifest.get('other_species') or {}
     left_out=[t['other_'+key].format(count=number(other[key])) for key in ('candidates','heard') if other.get(key)]
     if left_out:summary.append(para(t['sentence_sep'].join(left_out+[t['other_include']])))
+    # Answers "which birds were here?" without implying anyone confirmed them.
+    if other.get('candidate_species'):
+        summary.append({'type':'details','summary':t['other_list_title'].format(count=number(len(other['candidate_species']))),'body':[
+            para(t['other_list_note'],muted=True),{'type':'table','headers':[t['col_species'],t['other_list_col']],
+            'rows':[[[['text',name(row['species'],locale)],['small',' '+row['species']['scientific_name'] if common_name(row['species'],locale) else '']],
+                     t['list_sep'].join(t['other_list_count'].format(model=model,count=number(count)) for model,count in row['windows'])]
+                    for row in other['candidate_species']]}]})
     summary.append(para(t['absence_note'],muted=True))
     output=[{'type':'section','id':'summary','title':t['title'],'level':1,'body':summary}]
 
     # Species: how to read AI detections once, then one section per species.
     # Name only the interval lengths of the AIs in this report.
-    windows={model_group(snap,t):snap['window_s'] for snap in snapshots};lengths=set(windows.values())
-    same=len(windows)>1 and len(lengths)==1
-    reading=t['reading_windows'].format(windows=t['reading_window_all'].format(s=f'{lengths.pop():g}') if same else
-                                        t['list_sep'].join(t['reading_window'].format(model=k,s=f'{v:g}') for k,v in windows.items()))
-    if len(windows)>1:reading+=t['reading_no_sum_same' if same else 'reading_no_sum']
+    reading=t['reading_windows'].format(windows=windows_text(snapshots,t))
+    if len({model_group(snap,t) for snap in snapshots})>1:reading+=t['reading_no_sum_same' if len({s['window_s'] for s in snapshots})==1 else 'reading_no_sum']
     output.append({'type':'section','id':'species','title':t['nav_species'],'body':[
         {'type':'heading','text':t['reading_title']},para(reading),para(t['reading_figure']),
         {'type':'legend','items':[['#a24f4f',t['legend_red']],['#ffffff',t['legend_white']],['#f1f0f2',t['legend_gray']]]},
@@ -238,8 +269,8 @@ def blocks(manifest,snapshots,quiz,evidence=()):
             if len(listed['items'])>5:
                 body.append({'type':'details','summary':t['heard_more'].format(count=len(listed['items'])-5),'body':[{**listed,'items':listed['items'][5:]}]})
         else:
-            body.append({'type':'heading','text':t['heard_title'],'badge':['no',t['badge_'+row['status']]]})
-            if row['status']=='not_found':body.append(para(t['not_found_text'].format(count=number(row.get('listened_without_confirming')))))
+            body.append({'type':'heading','text':t['heard_title'],'badge':['no',not_found_text(row,t) if row['status']=='not_found' else t['badge_'+row['status']]]})
+            if row['status']=='not_found':body.append(para(t['not_found_text']))
         if row.get('region')=='unusual':body.append(para(t['region_unusual_note'],muted=True))
         if not snaps:
             body+=[{'type':'heading','text':t['ai_title'],'badge':['no',t['badge_no_ai']]},para(t['ai_none'])]
@@ -248,6 +279,9 @@ def blocks(manifest,snapshots,quiz,evidence=()):
             body.append({'type':'heading','text':t['ai_title'],'badge':[state,t['badge_'+state]]})
             if state=='unused':
                 body+=[para(unused_text(snap,t,label)),{'type':'facts','items':[[t['fact_ai'],model]]}]
+            elif found_none(snap):
+                body.append({'type':'facts','items':[[t['fact_ai'],model],[t['fact_rule'],rule_text(snap,t)],
+                    [t['fact_count'],t['count_none'].format(eligible=number(snap['summaries'][0].get('eligible_windows')),name=label)]]})
             else:
                 body.append({'type':'facts','items':[[t['fact_ai'],model],[t['fact_rule'],rule_text(snap,t)],
                                                      [t['fact_count'],count_text(snap,t)],[t['fact_precision'],precision_text(snap,t)]]})
@@ -256,10 +290,10 @@ def blocks(manifest,snapshots,quiz,evidence=()):
                 if examples:
                     body.append({'type':'details','summary':t['examples_title'].format(count=len(examples)),
                                  'body':[para(t['examples_note'],muted=True),sounds(examples,t,lambda r:t['score_note'].format(score=f"{float(r['score']):.2f}") if r.get('score') not in (None,'') else '')]})
-        links=[['#q-'+snap['figure_id'],t['link_detail']] for snap in snaps if snap.get('validation')][:1]
+        links=[['#q-'+snap['figure_id'],t['link_detail']] for snap in snaps if status(snap)!='not_evaluated'][:1]
         body.append({'type':'links','items':links+[['#summary',t['link_summary']]]})
         figures=[{'path':f"figures/{snap['figure_id']}.png",'id':snap['figure_id'],'alt':t['figure_alt'].format(name=label,model=method(snap,t)),
-                  'caption':method(snap,t) if len(snaps)>1 else ''} for snap in snaps if snap['threshold'] is not None]
+                  'caption':method(snap,t) if several else ''} for snap in snaps if snap['threshold'] is not None]
         output.append({'type':'section','id':'sp-'+taxon['id'],'title':common or scientific,'subtitle':scientific if common else '',
                        'figures':figures,'nofigure':t['no_figure'],'body':body})
 
@@ -277,20 +311,24 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     output.append({'type':'section','id':'recordings','title':t['nav_recordings'],'body':recordings})
 
     # Details: evidence and methods, each folded.
-    checks=[]
+    checks=[];shown=set()
     for snap in snapshots:
         validation=snap.get('validation')
-        if not validation:continue
+        if status(snap)=='not_evaluated':continue
         result=quality_result(snap) or {};label=name(snap['species'],locale);state=status(snap)
         source=t['source_none'] if snap['threshold'] is None else t['source_checked' if ai_state(snap)=='checked' else 'source_default']
         items=[[t['detail_threshold'],(f"{snap['threshold']:.2f}" if snap['threshold'] is not None else '—')+t['paren'].format(text=source)]]
         if state in ('in_progress','stale'):items.append([t['detail_state'],t['precision_'+state]])
         elif state=='undecided':items.append([t['detail_state'],unused_text(snap,t,label)])
-        if result.get('precision'):items.append([t['detail_precision'],about(result['precision'],t)])
+        if result.get('precision'):
+            items.append([t['detail_precision'],about(result['precision'],t)]);shown.add('terms')
+            if ranged(result['precision']):shown.add('range')
         if result:
-            items.append([t['detail_recall'],t['rare_recall'] if result.get('recall_status')=='not_estimable_rare' else
-                          t['recall_text'].format(about=about(result.get('recall'),t))])
+            rare=result.get('recall_status')=='not_estimable_rare'
+            items.append([t['detail_recall'],t['rare_recall'] if rare else t['recall_text'].format(about=about(result.get('recall'),t))]);shown.add('terms')
+            if not rare and ranged(result.get('recall')):shown.add('range')
             c=result.get('count') or {}
+            if ranged(c):shown.add('range')
             if c.get('value') is not None:
                 items.append([t['detail_estimated'],t['estimated_text'].format(value=number(round(c['value'])),low=number(round(c['low'])) if c.get('low') is not None else '—',
                                                                                high=number(round(c['high'])) if c.get('high') is not None else '—')])
@@ -306,7 +344,9 @@ def blocks(manifest,snapshots,quiz,evidence=()):
                          'body':[sounds(answered,t,lambda r:t['verdict_'+r['verdict']] if r.get('verdict') else '')]})
         checks+=body
     details=[para(t['details_note'],muted=True),
-        {'type':'details','id':'checks','summary':t['detail_checks'],'body':[para(t['range_note'],muted=True)]+checks if checks else [para(t['checks_none'])]}]
+        {'type':'details','id':'checks','summary':t['detail_checks'],
+         'body':[para(t[key],muted=True) for key in ('metric_terms','range_note') if {'metric_terms':'terms','range_note':'range'}[key] in shown]+checks
+         if checks else [para(t['checks_none'])]}]
     groups={}
     for snap in snapshots:
         s=snap['summaries'][0] if snap['summaries'] else {}

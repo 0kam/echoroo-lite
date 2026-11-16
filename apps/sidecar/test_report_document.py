@@ -164,6 +164,35 @@ class ReportDocumentTest(unittest.TestCase):
         self.assertIn('2 回目・途中でやめた',rendered);self.assertIn('2026-11-17 00:29',rendered)
         self.assertIn('この種の声 21 音、ほかの音 20 音',rendered)
 
+    def test_third_walkthrough_wording(self):
+        t=messages('ja');snap=snapshot();snap['validation'].update(stage='sample',results={})
+        other=deepcopy(snap);other.update(engine='perch',window_s=5,figure_id='F002',validation=None)
+        other['summaries'][0].update(candidate_windows=0,candidate_rate=0,candidate_days=0)
+        lone=deepcopy(snap);lone['species']={**lone['species'],'id':'lone','scientific_name':'Lone bird','common_names':{'ja':'孤鳥'}}
+        lone['summaries'][0]['species']=lone['species'];lone['figure_id']='F003'
+        report=manifest(snap);report['selected_species'].append(lone['species'])
+        report['presence'].append({'species_id':'lone','status':'not_found','evidence_count':0,'listened_without_confirming':10})
+        report['other_species']={'candidates':1,'heard':0,'candidate_species':[{'species':lone['species'],'windows':[['BirdNET 2.4',12]]}]}
+        content=blocks(report,[snap,other,lone],{'per_species':[]});summary=str(sections(content)['summary'])
+        # Every AI line names its AI once the report has two AIs, even for a species with one result.
+        rows=sections(content)['summary']['body'][3]['rows']
+        self.assertTrue(all(cell[0]=='text' and cell[1].startswith(('BirdNET 2.4','Perch')) for row in rows for cell in row[2] if cell[0]=='text'))
+        self.assertIn(t['table_found_none'],summary);self.assertIn(t['other_list_title'].format(count=1),summary);self.assertIn('BirdNET 2.4：12 区間',summary)
+        self.assertIn('AIのスコアが高い順に10音を聞いたが、声を確かめられなかった',str(content))
+        report['presence'][1]['not_found_list']='search'
+        self.assertIn('お手本に似ている順に10音を聞いたが',str(blocks(report,[snap,other,lone],{'per_species':[]})))
+        # A check with no answers yet reads as not started.
+        unanswered=snapshot();unanswered['validation'].update(stage='sample',results={});unanswered['validation']['counts']['answered']=0
+        self.assertEqual(status(unanswered),'not_evaluated')
+        rendered=str(blocks(manifest(unanswered),[unanswered],{'per_species':[]}))
+        self.assertIn(t['precision_unknown'],rendered);self.assertNotIn(t['precision_in_progress'],rendered);self.assertIn(t['checks_none'],rendered)
+        species=str(sections(content)['sp-sp']);self.assertIn(t['count_none'].format(eligible=100,name='例鳥'),species)
+        facts=[block['items'] for block in sections(content)['sp-sp']['body'] if block['type']=='facts']
+        self.assertEqual([[k for k,_ in items].count(t['fact_precision']) for items in facts],[1,0])
+        # The range note only accompanies a shown range.
+        self.assertNotIn(t['range_note'],str(content))
+        self.assertIn(t['range_note'],str(blocks(manifest(snapshot()),[snapshot()],{'per_species':[]})))
+
     def test_schedule_draws_each_recording_at_its_local_time(self):
         t=messages('ja');report=manifest(snapshot())
         crossing={'recorded_at':'2023-12-31T14:50:00+00:00','seconds':1200}

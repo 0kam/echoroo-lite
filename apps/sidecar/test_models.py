@@ -318,6 +318,7 @@ class ModelsTest(unittest.TestCase):
                     self.assertEqual(detail['report']['summaries'][0]['candidate_windows'], 3)
                     presence = client.get(f"/datasets/1/species/{target['id']}/presence").json()
                     self.assertEqual([r['start_s'] for r in presence['rows']], [25, 20, 15])
+                    self.assertTrue(presence['ai_covers'])
                     self.assertTrue(all(m['score'] >= .1 for r in presence['rows'] for m in r['models']))
                     scope = dict(dataset_id=1, species_id=target['id'], start_date='2024-08-08', end_date='2024-08-08')
                     check = client.post('/validations', json={**scope, 'model':engine}).json()

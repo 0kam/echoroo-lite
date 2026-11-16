@@ -62,7 +62,8 @@
   let tried=$state(false);
   const noName=$derived(!adding&&!siteName.trim()),noLatitude=$derived(!adding&&!(latitude!==null&&Math.abs(latitude)<=90)),noLongitude=$derived(!adding&&!(longitude!==null&&Math.abs(longitude)<=180));
   const missing=$derived(missingText([noName&&'siteName',(noLatitude||noLongitude)&&'uMapPlace',!folder&&'uChooseFolder']));
-  const blocked=$derived(scanning?'uScanWait':scanError?'uScanRetry':!preview?.count?'uNothingToAdd':'');
+  // An empty or already-added folder is explained once, in the status box; the button only stays unavailable.
+  const blocked=$derived(scanning?'uScanWait':scanError?'uScanRetry':'');
   // Every AI in use analyses every new recording; nothing is shown until each has a speed measurement.
   const estimate=$derived(preview?.count?analysisSeconds(app.ai.models.filter(m=>m.enabled&&m.available).map(m=>({engine:m.id,recordings:preview!.count,seconds:preview!.seconds}))):null);
   const localTime=(iso:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:scanZone}).format(new Date(iso));
@@ -110,7 +111,7 @@
         {/if}
         {#if register.error}<p class="error" role="alert">{t(register.error)}</p>{/if}
       </div>
-      <Button variant="primary" pending={register.pending} disabled={!missing&&!!blocked} aria-describedby="add-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else register.run();}}>{preview?.count?fill('uAddTheseFiles',{n:preview.count.toLocaleString(app.locale)}):t('uAddRecordings')}</Button>
+      <Button variant="primary" pending={register.pending} disabled={!missing&&(!!blocked||!preview?.count)} aria-describedby="add-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else register.run();}}>{preview?.count?fill('uAddTheseFiles',{n:preview.count.toLocaleString(app.locale)}):t('uAddRecordings')}</Button>
       <p class="reason {tried&&missing?'field-error':'muted'}" id="add-reason">{register.pending?'':missing||(blocked&&t(blocked))}</p>
     </section>
   </div>

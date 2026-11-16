@@ -293,7 +293,7 @@
 {#snippet sounds(at:number)}
   {@const list=lists[at]}
   {#each list?.segments??[] as s (s.segment_id)}{@const p=picks.state.items[pickKey(s)]}<div class="member" class:picked={!!p}>
-    <label class="check"><input type="checkbox" checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
+    <label class="check"><input type="checkbox" aria-label={`${t('ePick')}: ${when(s)}`} checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
     <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s,pick?.segment_id===s.segment_id)}{/snippet}</AudioRegion>
     {#if p}<div class="labels"><PickForm value={p} {recent} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
   </div>{/each}

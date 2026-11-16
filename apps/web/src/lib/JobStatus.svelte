@@ -42,7 +42,7 @@
       : counted ? fill('jobLine', { status: t(job.status), progress: counted }) : t(active ? 'running' : job.status)}</strong>
     {#if active}<Button size="sm" pending={cancel.pending} onclick={() => cancel.run()}>{t(explore ? 'operationCancel' : 'cancel')}</Button>{/if}
   </div>
-  {#if active}<p class="muted">{t(job.stage)}{#if explore && counted}{' · '}{counted}{/if}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p>
+  {#if active}<p class="muted">{t(job.stage)}{#if explore && counted}{' · '}{counted}{/if}{#if !explore && job.total}{' · '}{fill('jobPercent', { p: Math.floor(job.done / job.total * 100) })}{/if}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p>
     <progress value={explore ? step + (counted ? job.done / job.total : 0) : job.done} max={explore ? 6 : job.total || 1}></progress>{/if}
   {#if job.error}<p class="error">{t(job.error)}</p>{/if}
 </div>

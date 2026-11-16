@@ -85,7 +85,7 @@
       {:else}<p class="info">{fill('sPickedAdded',{species:handed.name,n:handed.n})}</p>{/if}{/if}</section>
   {#if species}
     <section class="panel step-card"><h2>{t('wSource')}</h2>{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
-      <Button active={!xc} pending={addReference.pending} disabled={search.pending} onclick={()=>{xc=false;if(!isTauri()&&!referencePath.trim())showMissing(true);else addReference.run();}}>{t('referenceFromFile')}</Button></div>
+      <Button active={!xc&&!!source} pending={addReference.pending} disabled={search.pending} onclick={()=>{xc=false;if(!isTauri()&&!referencePath.trim())showMissing(true);else addReference.run();}}>{t('referenceFromFile')}</Button></div>
       {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending} aria-invalid={noPath||undefined} aria-describedby={noPath?'path-error':undefined}/></label>
         {#if noPath}<p class="field-error" id="path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
       {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference} added={clips.map(c=>c.source.attribution?.id)} onremove={xcId=>{clips=clips.filter(c=>c.source.attribution?.id!==xcId);saveDraft();}}/></div>{/key}{/if}

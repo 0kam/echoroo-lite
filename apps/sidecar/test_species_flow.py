@@ -113,6 +113,10 @@ class SpeciesFlowCheck(unittest.TestCase):
             listed = client.get(f'/datasets/1/species/{sid}/presence', params={'source': 'search', **{k: scope[k] for k in ('start_date', 'end_date')}}).json()
             rows = listed['rows']
             self.assertEqual((listed['run_id'], len(rows)), (run['id'], 100))  # 107 hits, capped at the list size
+            self.assertTrue(listed['ai_covers'])
+            # A species no AI here lists: the AI tab says why it is empty.
+            other = client.post('/species', json={'scientific_name': 'Nullus testus'}).json()
+            self.assertFalse(client.get(f"/datasets/1/species/{other['id']}/presence", params={k: scope[k] for k in ('start_date', 'end_date')}).json()['ai_covers'])
             self.assertEqual([r['score'] for r in rows], sorted((r['score'] for r in rows), reverse=True))
             self.assertTrue(all(r['end_s'] - r['start_s'] == 5 for r in rows))
             mark = lambda row, marked: client.post('/presence/marks', json={'dataset_id': 1, 'species_id': sid, 'recording_id': row['recording_id'],

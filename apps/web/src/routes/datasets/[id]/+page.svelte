@@ -55,6 +55,11 @@
   const estimate=$derived(result?analysisSeconds(result.pending_analysis):null);
   // Over 30 minutes, point to the faster Kinglet AIs unless one is already the main AI.
   const suggestFaster=$derived(estimate!=null&&estimate>1800&&!app.ai.main.startsWith('kinglet')&&app.ai.models.some(m=>m.id.startsWith('kinglet')&&m.available));
+  // Which folded groups ("few", "rare") were opened or closed, kept for going back to this page.
+  const foldKey=`echoroo-groups-${page.params.id}`;
+  const folds:Record<string,boolean>=(()=>{try{return JSON.parse(sessionStorage.getItem(foldKey)||'{}');}catch{return {};}})();
+  // Only a state that differs from the default is kept, so the opening's own toggle event changes nothing.
+  const fold=(key:string,open:boolean)=>{if(open===(stage===key))delete folds[key];else folds[key]=open;sessionStorage.setItem(foldKey,JSON.stringify(folds));};
   const jobHere=$derived(job&&app.datasets.find(d=>d.id===job.dataset_id)?.site_id===result?.site.id?job:null);
 </script>
 {#snippet table(rows:Row[])}<div class="table-wrap"><table><colgroup><col class="name"/><col/><col class="state"/>{#if anyActivity}<col class="state"/>{/if}</colgroup>
@@ -74,7 +79,7 @@
     {#if result.location_stale}<p class="notice" role="status">{t('location_reanalysis')}</p>{/if}
     {#if result.species.length&&result.analysed_recordings===result.records&&!result.location_stale}<section class="panel next-step">
       <p class="status"><strong>{t(!next?'wNextExport':groups.confirmed.length?'wNextMore':'wNextListen')}</strong></p>
-      <p>{fill('wProgress',{total:result.species.length-(stage==='check'?groups.few.length:0)-(stage==='rare'?0:groups.rare.length),confirmed:groups.confirmed.length,missed:groups.missed.length})}</p>
+      <p>{fill('wProgress',{total:result.species.length,confirmed:groups.confirmed.length,missed:groups.missed.length})}</p>
       {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,time:effort.time})}</p>{/if}
       <div class="actions">{#if next}<Button variant="primary" href={speciesHref(next)}>{fill('wNextOpen',{name:commonName(next.species,app.locale)||next.species.scientific_name})}</Button>{/if}
         <Button variant={next?'default':'primary'} href={reports}>{t('wExport')}</Button>
@@ -96,13 +101,13 @@
       <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>{#if result.species.length&&!anyActivity}<p class="muted">{t('wActivityNoneAll')}</p>{/if}
       {#if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
       {#each order as key}{@const rows=groups[key]}{#if rows.length}
-        {#if key==='few'||key==='rare'}<details class="group" open={stage===key}><summary><h3>{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3></summary><p class="notice">{t(key==='few'?'wFewCaution':'wRareHint')}</p>{@render table(rows)}</details>
+        {#if key==='few'||key==='rare'}<details class="group" open={folds[key]??stage===key} ontoggle={e=>fold(key,e.currentTarget.open)}><summary><h3>{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3></summary><p class="notice">{t(key==='few'?'wFewCaution':'wRareHint')}</p>{@render table(rows)}</details>
         {:else}<h3 class="group">{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3>{#if key==='missed'}<p class="muted">{t('wMissedHint')}</p>{/if}{@render table(rows)}{/if}
       {/if}{/each}
       {#if !result.species.length}<p>{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</p>{/if}
     </section>
     <section class="panel stack"><h2>{t('sFindMissing')}</h2><p>{t('sFindMissingHint')}</p>
-      <div><Button variant="primary" href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindByExample')}</Button></div></section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
+      <div><Button variant={!result.species.length&&!unanalysed?'primary':'default'} href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindByExample')}</Button></div></section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
     <!-- Off the main workflow: browsing sounds without the AI's species names. -->
     <section class="panel explore-entry"><Button href={resolve(`/datasets/${id}/explore`)}>{t('eEntry')} ›</Button><p class="muted">{t('eEntryHint')}</p></section>
   {:else if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}

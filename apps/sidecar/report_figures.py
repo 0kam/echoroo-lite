@@ -57,9 +57,10 @@ def spiral(report,locale,counting_status_text):
     scale=2;image=Image.new('RGB',(960*scale,1250*scale),'white');draw=ImageDraw.Draw(image)
     svg=['<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1250" viewBox="0 0 960 1250">',
          '<rect width="960" height="1250" fill="white"/>']
-    def polygon(points,color):
-        draw.polygon([(round(x*scale),round(y*scale)) for x,y in points],fill=color)
-        svg.append('<polygon points="'+' '.join(f'{x:.2f},{y:.2f}' for x,y in points)+f'" fill="{color}"/>')
+    def polygon(points,color,outline=None,width=0):
+        draw.polygon([(round(x*scale),round(y*scale)) for x,y in points],fill=color,outline=outline,width=round(width*scale))
+        svg.append('<polygon points="'+' '.join(f'{x:.2f},{y:.2f}' for x,y in points)+f'" fill="{color}"'
+                   +(f' stroke="{outline}" stroke-width="{width}"' if outline else '')+'/>')
     def label(x,y,value,size=26):
         while draw.textlength(value,font=font(size*scale))>900*scale and size>12:size-=1
         draw.text((round(x*scale),round(y*scale)),value,font=font(size*scale),anchor='mm',fill='#575279')
@@ -85,12 +86,14 @@ def spiral(report,locale,counting_status_text):
         label(480,cy,t['figure_undecided'],26);svg.append('</svg>')
         return png_bytes(image),''.join(svg)
     inner,outer=60,340;ring=(outer-inner)/days
+    # A faint edge keeps white (no detection) cells readable as cells; thin rings already touch each other.
+    edge=1.5 if ring>=10 else .75 if ring>=4 else 0
     for cell in report['cells']:
         day=(date.fromisoformat(cell['date'])-date.fromisoformat(report['start_date'])).days
         r0,r1=inner+day*ring,inner+(day+1)*ring
         hour=cell['hour'];steps=8
         points=[point(r1,hour+i/steps) for i in range(steps+1)]+[point(r0,hour+i/steps) for i in range(steps,-1,-1)]
-        polygon(points,cell_color(cell,report))
+        polygon(points,cell_color(cell,report),*(('#d9d4de',edge) if edge and cell['status']!='no_recording' else ()))
         if cell['status'] in ('unanalysed','not_evaluated','partial'):
             x,y=point((r0+r1)/2,hour+.5)
             radius=max(.65,min(2,ring*.25))

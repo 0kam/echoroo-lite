@@ -17,7 +17,7 @@ from contextlib import ExitStack
 from reports import csv_bytes,save_report,scope_records,effort,window_key,window_in_scope,classification_batches
 from storage import CatalogError,checked_source,connect
 from results_workflow import attach_validation,context,counting_status,current_validations,detection_snapshot,custom_snapshot,region_statuses,threshold_for
-from report_document import create_html,messages,quality_result,status,status_text,method
+from report_document import create_html,messages,quality_result,status,status_text,method,windows_text
 from report_figures import DATA,spiral
 from models import REGISTRY,window_s
 
@@ -124,11 +124,15 @@ def export(root,body,cancel=None):
     # Species the export page offered with AI detections or confirmed calls but not chosen; the overview is cached.
     from results_workflow import overview
     # Counted apart so the report never reads as if confirmed species were dropped: heard ones, then AI-only candidates.
-    other_species={'heard':0,'candidates':0}
+    # The overview is already sorted by AI detections, so the candidate names keep that order.
+    other_species={'heard':0,'candidates':0,'candidate_species':[]}
     for row in overview(root,body.dataset_id,ctx['start_date'],ctx['end_date'])['species']:
         if row['species']['id'] in presence:continue
+        found=[[t['custom_model'] if m['engine']=='custom' else REGISTRY[m['engine']]['name'],m['candidate_windows']]
+               for m in row['models'] if (m.get('candidate_windows') or 0)>0]
         if row['presence']['evidence']:other_species['heard']+=1
-        elif any((m.get('candidate_windows') or 0)>0 for m in row['models']):other_species['candidates']+=1
+        elif found:other_species['candidate_species'].append({'species':row['species'],'windows':found})
+    other_species['candidates']=len(other_species['candidate_species'])
     token=uuid4().hex[:10];package_id=f'echoroo-{body.dataset_id}-{token}'
     destination=parent/package_id;zip_path=parent/(package_id+'.zip')
     zone=ZoneInfo(ctx['site']['timezone']);index=[];species_rows=[];hourly=[];evidence=[];quality_rows=[];presence_rows=[]
@@ -227,11 +231,12 @@ def export(root,body,cancel=None):
                         'heard_in_checks':sum(e['origin']=='check' for e in item['evidence']),
                         'voice_on_ai_page':sum(e['origin']=='label' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),
                         'not_found_list':miss.get('source'),'not_found_recorded_at':miss.get('created_at')})
+                lengths=t['paren'].format(text=windows_text(snapshots,t)) if snapshots else ''
                 manifest={**ctx,'schema':'echoroo_recording_report_v2','package_id':package_id,'saved_at':datetime.now(timezone.utc).isoformat(),
                     'format':'html','locale':body.locale,'other_species':other_species,'scope':scope,'results':index,'selected_species':[taxa[sid] for sid in wanted if sid in taxa],
                     'presence':[{**row,'species':taxa[row['species_id']]} for row in presence_rows],
                     'report_file':'index.html','folder_path':str(destination),
-                    'file_guide':[['presence.csv',t['presence_files']],['species.csv',t['file_species']],['hourly.csv',t['file_hourly']],['quality.csv',t['file_quality']],['scores/',t['all_scores']],
+                    'file_guide':[['presence.csv',t['presence_files']],['species.csv',t['file_species']],['hourly.csv',t['file_hourly']],['quality.csv',t['file_quality']],['scores/',t['all_scores'].format(windows=lengths)],
                         ['evidence.csv / audio/',t['evidence_files']],['validation/',t['validation_files']],['quiz-results.json',t['file_quiz']],
                         ['manifest.json / results/',t['file_manifest']]]}
                 if any(s['engine']=='custom' for s in snapshots):
@@ -243,7 +248,7 @@ def export(root,body,cancel=None):
                 write_json(folder/'recordings.json',list(records.values()));write_json(folder/'quiz-results.json',quiz)
                 create_html(folder,manifest,snapshots,evidence,quiz,list(records.values()))
                 (folder/'README.txt').write_text('\n\n'.join([t['files_note'],t['evidence_note'],t['readme_methods_title'],t['methods_note'],
-                    t['precision_note'],t['validation_scope'],t['region_source'],t['human_reference']]),encoding='utf-8')
+                    t['precision_note'],t['validation_scope'].format(windows=lengths),t['region_source'],t['human_reference']]),encoding='utf-8')
                 shutil.copyfile(DATA/'echoroo.png',folder/'figures'/'echoroo.png')
                 shutil.copyfile(DATA/'fonts'/'OFL.txt',folder/'font-license.txt')
                 manifest['files']={p.relative_to(folder).as_posix():{'sha256':digest(p),'bytes':p.stat().st_size} for p in sorted(folder.rglob('*')) if p.is_file()}

@@ -41,6 +41,8 @@
       revision:overview.revision,species_ids:selected,folder,locale:app.locale});
     history=await api(`/datasets/${id}/exports`);
   });
+  const groups=[['confirmed','rGroupConfirmed'],['not_found','rGroupMissed'],['unchecked','rGroupAi']];
+  const firstGroup=$derived(groups.find(([status])=>overview?.species.some(row=>row.presence.status===status))?.[0]);
   let tried=$state(false);
   const noSpecies=$derived(tried&&!selected.length),noFolder=$derived(tried&&!isTauri()&&!folder);
   const missing=$derived(missingText([!selected.length&&'wIncludeSpecies',!isTauri()&&!folder&&'exportFolder']));
@@ -61,8 +63,10 @@
       <p>{fill('rRecordingsCount',{n:overview.records.toLocaleString(app.locale)})} · {fill('wTotalLength',{duration:duration(overview.recorded_seconds)})}</p>
       <h3>{t('wIncludeSpecies')} · {fill('wSpeciesCount',{n:selected.length})}</h3>
       {#if noSpecies}<p class="field-error" id="species-error">{t('rSaveIdle')}</p>{/if}
-      {#each [['confirmed','rGroupConfirmed'],['not_found','rGroupMissed'],['unchecked','rGroupAi']] as [status,title]}{@const rows=overview.species.filter(row=>row.presence.status===status)}
-        {#if rows.length}<details open={status==='confirmed'}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
+      {#each groups as [status,title]}{@const rows=overview.species.filter(row=>row.presence.status===status)}{@const ids=rows.map(row=>row.species.id)}{@const all=ids.every(item=>selected.includes(item))}
+        <!-- The first group with species is open, so its choices (and "Select all") are visible even when nothing is confirmed yet. -->
+        {#if rows.length}<details open={status===firstGroup}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
+          <Button size="sm" disabled={exportFiles.pending} onclick={()=>selected=all?selected.filter(item=>!ids.includes(item)):[...new Set([...selected,...ids])]}>{t(all?'rSelectNone':'rSelectAll')}</Button>
           {#if status==='unchecked'}<p class="notice">{t('rAiOnlyCaution')}</p>{/if}
           {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending} aria-invalid={noSpecies||undefined} aria-describedby={noSpecies?'species-error':undefined}/>
             <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i>

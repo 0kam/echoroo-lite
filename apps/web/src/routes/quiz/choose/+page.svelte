@@ -66,12 +66,13 @@
       {#if libraryBirds<2}<p>{fill('uQuizNeedBirds',{n:2-libraryBirds})}</p>
         <Button variant="primary" href={`${resolve('/quiz/add')}${continuation}`}>{t('uQuizAddCall')}</Button>
       {:else}<Button variant="primary" pending={start.pending} aria-describedby="start-reason" onclick={()=>{if(speciesCount<2){triedStart=true;void focusMissing();}else start.run();}}>{t('quizStart')} · {speciesCount} {t('quizSpecies')}</Button>
-      {#if speciesCount<2}<p class={triedStart?'field-error':'muted'} id="start-reason">{t('uChooseTwoBirds')}</p>{/if}{/if}
+      {#if speciesCount<2&&triedStart}<p class="field-error" id="start-reason">{t('uChooseTwoBirds')}</p>{/if}{/if}
       {#if start.error}<p class="error">{t(start.error)}</p>{/if}
     </section>
     <form class="panel" novalidate onsubmit={e=>{e.preventDefault();if(missing){triedSave=true;void focusMissing();}else saveSet.run();}}><label>{t('uQuizSelectionName')}<input bind:value={setName} required maxlength="200" aria-invalid={noName||undefined} aria-describedby={noName?'name-error':undefined}/></label>
       {#if noName}<p class="field-error" id="name-error">{t('uEnterSetName')}</p>{/if}<Button type="submit" pending={saveSet.pending} aria-describedby="save-reason">{t('uQuizSave')}</Button>
-      <p class={triedSave&&missing?'field-error':'muted'} id="save-reason">{missing}</p>
+      <!-- What is missing is shown only after a save was tried. -->
+      {#if triedSave&&missing}<p class="field-error" id="save-reason">{missing}</p>{/if}
       {#if saveSet.error}<p class="error">{t(saveSet.error)}</p>{/if}</form>
   {:else}<p>{t('loading')}</p>{/if}
 </div>

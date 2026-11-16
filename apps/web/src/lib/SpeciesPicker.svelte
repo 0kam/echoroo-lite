@@ -50,6 +50,12 @@
     finally { if (current === version) busy = false; }
   }
   function choose(row: Species) { value = row; query = ''; rows = []; searched = false; naming = false; }
+  // Choosing a listed species after typing a name for it: the typed name becomes its name in this language, unless it already has one.
+  function useExisting(row: Species) {
+    const typed = (common || query).trim();
+    choose(row);
+    if (typed && !row.common_names[app.locale]) { naming = true; newName = typed; void saveName(); }
+  }
 </script>
 
 {#if value}
@@ -80,9 +86,9 @@
       <p class="muted" id={`${invalidId}-hint`}>{t('spScientificHint')}</p>
       {#if noScientific}<p class="field-error" id={`${invalidId}-scientific`}>{t('uEnterScientific')}</p>{/if}
       {#if shownExisting}{@const found = shownExisting}<p class="info" role="status">{t('spExists')} {#if commonName(found, app.locale)}<strong>{commonName(found, app.locale)}</strong>{/if} <i>{found.scientific_name}</i></p>
-        <Button variant="primary" onclick={() => { choose(found); naming = !found.common_names[app.locale]; newName = common; }}>{t('spChooseExisting')}</Button>{/if}<label>{t('wCommonName')}<input bind:value={common} maxlength="200" disabled={adding}/></label>
+        <Button variant="primary" onclick={() => useExisting(found)}>{t('spChooseExisting')}</Button>{/if}<label>{t('wCommonName')}<input bind:value={common} maxlength="200" disabled={adding}/></label>
       {#if shownSimilar}{@const found = shownSimilar}<div class="notice" role="status"><p>{t('spSimilar')} {#if commonName(found, app.locale)}<strong>{commonName(found, app.locale)}</strong>{/if} <i>{found.scientific_name}</i></p>
-        <p>{t('spSimilarHint')}</p><Button variant="primary" onclick={() => { choose(found); naming = !found.common_names[app.locale]; newName = common; }}>{t('spChooseExisting')}</Button></div>{/if}
+        <p>{t('spSimilarHint')}</p><Button variant="primary" onclick={() => useExisting(found)}>{t('spChooseExisting')}</Button></div>{/if}
       <Button type="submit" variant={shownExisting || shownSimilar ? 'default' : 'primary'} pending={adding} {disabled}>{t('addSpecies')}</Button>
       {#if !scientific.trim()}<p class={tried?'field-error':'muted'}>{missingText(['scientificName'])}</p>{/if}</form></div>{/if}
   {/if}

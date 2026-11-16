@@ -12,18 +12,20 @@
   import Toasts from '$lib/ui/Toasts.svelte';
   import './app.css';
   let { children } = $props();
-  const scrollPositions=new Map<string,number>();
+  // Each page's scroll position and the page it was left for: it is restored only when coming straight back from that page,
+  // so a return link after a longer detour (species page → species AI → check → species page) opens at the top.
+  const scrollPositions=new Map<string,{top:number;to:string|undefined}>();
   const scrollKey=(url:URL|undefined=page.url)=>url?.hash.split('?')[0];
   let stopRestore=()=>{},restoring=false;
   // A page that changes only its query while its scroll is still being restored (the sound map reopening its last group) keeps that restore.
   const redirect=(from:{url:URL}|null,to:{url:URL}|null)=>restoring&&!!from&&scrollKey(from.url)===scrollKey(to?.url);
   // A page left by finishing its task (a programmatic goto elsewhere, e.g. after adding recordings) opens at the top next time.
   beforeNavigate(({from,to,type})=>{if(redirect(from,to))return;stopRestore();
-    if(type==='goto'&&scrollKey(to?.url)!==scrollKey())scrollPositions.delete(scrollKey());else scrollPositions.set(scrollKey(),document.querySelector('main')?.scrollTop??0);});
+    if(type==='goto'&&scrollKey(to?.url)!==scrollKey())scrollPositions.delete(scrollKey());else scrollPositions.set(scrollKey(),{top:document.querySelector('main')?.scrollTop??0,to:scrollKey(to?.url)});});
   afterNavigate(async({from,to})=>{
     if(redirect(from,to))return;
     await tick();const main=document.querySelector('main');if(!main)return;
-    const target=scrollPositions.get(scrollKey())??0;
+    const saved=scrollPositions.get(scrollKey()),target=saved&&saved.to===scrollKey(from?.url)?saved.top:0;
     const restore=()=>{main.scrollTop=target;if(main.scrollHeight-main.clientHeight>=target)stopRestore();};
     // Results arrive after navigation; restore once the list has its full height.
     const observer=new MutationObserver(restore);
@@ -72,7 +74,7 @@
       {@const explore = job.stage.startsWith('explore_')}
       <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{fill('jobLine', { status: t(explore ? 'eMaking' : 'analysisInProgress'), progress: siteOf(target)?.name ?? '' })}</a>
     {:else if finished}
-      <a class="jobchip" href={resultOf(finished)}>✓ {fill(finished.stage.startsWith('explore_') ? 'jobDoneMap' : 'jobDoneAnalysis', { site: siteOf(datasetOf(finished.dataset_id))?.name ?? '' })}</a>
+      <a class="jobchip done" href={resultOf(finished)}>✓ {fill(finished.stage.startsWith('explore_') ? 'jobDoneMap' : 'jobDoneAnalysis', { site: siteOf(datasetOf(finished.dataset_id))?.name ?? '' })}</a>
     {/if}</span>
     <select aria-label={t('language')} value={app.locale} onchange={e => setLocale(e.currentTarget.value as 'ja' | 'en')}>
       <option value="ja">日本語</option><option value="en">English</option>

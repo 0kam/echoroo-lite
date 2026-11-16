@@ -39,7 +39,9 @@
       .catch(e => { if (version === request) error = e.message; });
   });
   const prepare = createTask(async () => { show(await api<Payload>(`/species/${speciesId}/examples/xeno-canto`, scope)); fetched = true; });
+  // A search example from a file on the PC carries no credit: its species is only what the user chose, so it is not called identified.
   const credit = (e: Example) => e.kind !== 'named' ? [t(e.kind === 'confirmed' ? 'refConfirmed' : 'refUnverified'), e.label.local_time?.slice(0, 16).replace('T', ' ')]
+    : e.label.origin === 'search-reference' && !e.label.recordist ? [t('refPcFile')]
     : [t('refNamed'), e.label.origin === 'quiz' ? t('refQuiz') : e.label.origin === 'xeno-canto' ? `XC${e.label.id}` : t('refSearchReference'),
       e.label.origin === 'xeno-canto' && e.label.country ? t(e.label.country === 'Japan' ? 'refJapan' : 'refOutsideJapan') : '',
       e.label.quality ? t('refQuality').replace('{quality}',e.label.quality) : '', e.label.recordist, e.label.license && licenseName(e.label.license)];
