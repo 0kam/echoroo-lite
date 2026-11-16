@@ -198,7 +198,8 @@ with ExitStack() as stack:
                 detail=api(f"/sources/recording/{question['source']['id']}/spectrogram?start_s={a}&end_s={question['end_s']}&detail=true")
                 assert detail['width']>1000
                 answered=api(f"/validations/{check['id']}/answers",{'item_id':question['id'],'verdict':'unknown','version':question['version']})
-                assert answered['counts']['answered']==1 and answered['status']=='in_progress'
+                # With a one-sound first block, a non-"Heard" answer ends the v2 check early by design.
+                assert answered['counts']['answered']==1 and answered['status'] in ('in_progress', 'undecided'), answered['status']
                 print(f"Frozen per-model check, high-resolution spectrogram and saved answer passed in {time.perf_counter()-started:.2f}s.")
             started = time.perf_counter()
             overview = api(f"/datasets/{imported['dataset_id']}/overview")
