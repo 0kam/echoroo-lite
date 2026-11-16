@@ -1,21 +1,45 @@
 <script lang="ts">
-  import { checkText,modelName } from './workflow';
+  import { tick } from 'svelte';
+  import { checkText,fill,modelName } from './workflow';
   import { commonName } from './species';
   import { percent, type Cell, type Report } from './reports';
   import { app, t } from './app.svelte';
+  import Button from './ui/Button.svelte';
   // Without `onselect` the cells are a picture only (the species page has no sound list, B4).
   let { report, onselect, compact=false }: { compact?:boolean; report: Report; onselect?: (cell: Cell) => void } = $props();
-  let element = $state<SVGSVGElement>(null!), zoom = $state(100), focusIndex = $state(0);
+  let element = $state<SVGSVGElement>(null!), focusIndex = $state(0), picked = $state('');
   const uid = $props.id();
   const days = $derived(Math.round((Date.parse(report.end_date) - Date.parse(report.start_date)) / 86400000) + 1);
+  const monthName = (key: string, year = false) => new Intl.DateTimeFormat(app.locale, { timeZone: 'UTC', month: 'short', year: year ? 'numeric' : undefined })
+    .format(new Date(`${key}-01T00:00:00Z`));
+  // In a long period a ring is about a pixel thick and cannot be pressed, so the pressable plot can show one calendar month instead.
+  // Months are read from the cells' site-local dates (one cell per day and hour, in date order): no timezone or locale can move a boundary.
+  // The year is named on the month where it changes, and on the first month when it changes at all.
+  const months = $derived.by(() => {
+    const list: { key: string; first: number; days: number; newYear: boolean; name: string }[] = [];
+    if (onselect && days > 62) for (let d = 0; d * 24 < report.cells.length; d++) {
+      const key = report.cells[d * 24].date.slice(0, 7), last = list.at(-1);
+      if (last?.key === key) last.days++;
+      else list.push({ key, first: d, days: 1, newYear: !!last && last.key.slice(0, 4) !== key.slice(0, 4), name: '' });
+    }
+    const crossesYear = list.some(m => m.newYear);
+    for (const [i, m] of list.entries()) m.name = monthName(m.key, m.newYear || (crossesYear && i === 0));
+    return list;
+  });
+  // undefined = the whole period.
+  const month = $derived(months.find(m => m.key === picked));
+  const from = $derived(month?.first ?? 0), shown = $derived(month?.days ?? days);
+  const cells = $derived(month ? report.cells.slice(from * 24, (from + shown) * 24) : report.cells);
+  // The one cell in the tab order; it stays among the visible cells when the view changes.
+  const tabStop = $derived(Math.min(from * 24 + cells.length - 1, Math.max(from * 24, focusIndex)));
   const siteLines = $derived([`${report.site.name}`]
     .flatMap(line => Array.from(line).join('').match(new RegExp(`.{1,${app.locale === 'ja' ? 48 : 90}}`, 'gu')) || []));
   const header = $derived(132 + siteLines.length * 20);
   const cx = 480, outer = 330, inner = 60;
   const quality = $derived(report.validation?.applicable ? report.validation : null);
   const cy = $derived(header + 360), height = $derived(header + 900);
-  const ring = $derived((outer - inner) / days);
-  const dateTicks = $derived([...new Set([0,1,2,3].map(i => Math.round((days-1)*i/3)))]);
+  const ring = $derived((outer - inner) / shown);
+  const dateTicks = $derived([...new Set([0,1,2,3].map(i => Math.round((shown-1)*i/3)))]);
   const metric = $derived(t('candidateRate'));
   const condition = $derived(`${modelName(report.engine)} · ${report.model_sha256.slice(0, 12)}`);
   const color = (cell: Cell) => {
@@ -43,9 +67,15 @@
   function navigate(event: KeyboardEvent, index: number) {
     const delta = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 24, ArrowUp: -24 }[event.key];
     if (delta !== undefined) {
-      event.preventDefault(); focusIndex = Math.min(report.cells.length - 1, Math.max(0, index + delta));
+      event.preventDefault(); focusIndex = Math.min(from * 24 + cells.length - 1, Math.max(from * 24, index + delta));
       element.querySelector<SVGElement>(`[data-cell="${focusIndex}"]`)?.focus();
-    } else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onselect?.(report.cells[index]); }
+    } else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(report.cells[index], index); }
+  }
+  // In the whole-period view of a long period a cell opens its month; keyboard focus follows the cell into that view.
+  async function activate(cell: Cell, index: number) {
+    if (!months.length || month) return onselect?.(cell);
+    picked = cell.date.slice(0, 7); focusIndex = index;
+    await tick(); element.querySelector<SVGElement>(`[data-cell="${index}"]`)?.focus();
   }
   export async function images() {
     const copy = element.cloneNode(true) as SVGSVGElement;
@@ -62,9 +92,12 @@
   }
 </script>
 
-{#if !compact}<div class="plot-controls"><label>{t('plotZoom')}<select bind:value={zoom}>{#each [100,150,200] as value}<option value={value}>{value}%</option>{/each}</select></label><span class="muted">{t('plotNavigation')}</span></div>
-{/if}<div class="plot-scroll" class:compact>
-<svg bind:this={element} xmlns="http://www.w3.org/2000/svg" viewBox={compact?`0 ${header-20} 960 755`:`0 0 960 ${height}`} style:width={`${zoom}%`} style:max-width={`${720*zoom/100}px`}
+{#if months.length}<div class="actions" role="group" aria-label={t('spiralPeriod')}>
+  <Button size="sm" active={!month} aria-pressed={!month} onclick={() => picked = ''}>{t('spiralWhole')}</Button>
+  {#each months as m (m.key)}<Button size="sm" active={m === month} aria-pressed={m === month} onclick={() => picked = m.key}>{m.name}</Button>{/each}
+</div>{/if}
+<div class="plot-scroll" class:compact>
+<svg bind:this={element} xmlns="http://www.w3.org/2000/svg" viewBox={compact?`0 ${header-20} 960 755`:`0 0 960 ${height}`}
   role="group" aria-label={t('spiralPlot')}>
   <title>{t('spiralPlot')} · {report.species ? commonName(report.species, app.locale) : ''} · {metric}</title>
   <desc>{t('spiralMeaning')} {report.site.timezone} · {report.start_date}–{report.end_date}</desc>
@@ -79,20 +112,27 @@
   <text visibility={compact?'hidden':undefined} x="36" y={header-22} font-size="15" fill="#575279">{report.start_date}–{report.end_date} · {report.site.timezone} · {condition}</text>
   <text visibility={compact?'hidden':undefined} x="36" y={header} font-size="15" fill="#575279">{metric} · {t('threshold')}: {report.threshold == null ? t('noThreshold') : +report.threshold.toPrecision(2)} · {report.window_s} {t('seconds')} {report.id ? ` · #${report.id}` : ''}</text>
   <circle {cx} {cy} r={outer} fill="#f1f0f2"/><circle {cx} {cy} r={inner} fill="#fff"/>
-  {#each report.cells as cell, index}
-    {#if onselect}<path d={wedge(Math.floor(index/24),cell.hour)} fill={color(cell)} role="button" tabindex={focusIndex===index ? 0 : -1} data-cell={index}
-      aria-label={describe(cell)} onclick={() => onselect(cell)} onkeydown={event => navigate(event,index)} onfocus={() => focusIndex=index}>
+  {#each cells as cell, i}{@const index=from*24+i}
+    {#if onselect}<path d={wedge(Math.floor(i/24),cell.hour)} fill={color(cell)} role="button" tabindex={tabStop===index ? 0 : -1} data-cell={index}
+      aria-label={describe(cell)} onclick={() => activate(cell,index)} onkeydown={event => navigate(event,index)} onfocus={() => focusIndex=index}>
       <title>{describe(cell)}</title></path>
-    {:else}<path d={wedge(Math.floor(index/24),cell.hour)} fill={color(cell)}><title>{describe(cell)}</title></path>{/if}
-    {#if cell.status === 'partial'}<path d={wedge(Math.floor(index/24),cell.hour)} fill={`url(#${uid}-partial)`} pointer-events="none"/>{/if}
+    {:else}<path d={wedge(Math.floor(i/24),cell.hour)} fill={color(cell)}><title>{describe(cell)}</title></path>{/if}
+    {#if cell.status === 'partial'}<path d={wedge(Math.floor(i/24),cell.hour)} fill={`url(#${uid}-partial)`} pointer-events="none"/>{/if}
   {/each}
   {#each [0,3,6,9,12,15,18,21] as hour}{@const p=point(outer+28,hour)}<text x={p[0]} y={p[1]+5} text-anchor="middle" font-size={compact?24:17} fill="#575279">{String(hour).padStart(2,'0')}:00</text>{/each}
-  {#if days>1}{#each dateTicks as day}{@const p=point(inner+(day+.5)*ring,16.5)}
+  {#if months.length && !month}
+    <!-- Whole period of a long recording: month boundaries instead of dates, heavier where the year changes. Names sit on a vertical line so that twelve months do not overlap. -->
+    {#each months as m (m.key)}{@const r=inner+m.first*ring}{@const p=point(r+m.days*ring/2,12.5)}
+      {#if m.first}<circle {cx} {cy} {r} fill="none" stroke={m.newYear?'#373450':'#8f8ba3'} stroke-width={m.newYear?3:1.4} pointer-events="none"/>{/if}
+      {#if m.days*ring>=20}<text x={p[0]} y={p[1]+8} text-anchor="middle" font-size={compact?22:12} fill="#373450" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{monthName(m.key)}</text>{/if}
+      {#if m.newYear}<text x={cx} y={cy-r+8} text-anchor="middle" font-size={compact?22:12} font-weight="600" fill="#373450" stroke="#fff" stroke-width="5" paint-order="stroke" pointer-events="none">{fill('spiralYearRing',{year:m.key.slice(0,4)})}</text>{/if}
+    {/each}
+  {:else if days>1}{#each dateTicks as day}{@const p=point(inner+(day+.5)*ring,16.5)}
     <circle cx={p[0]} cy={p[1]} r="1.5" fill="#575279" pointer-events="none"/>
-    <text x={p[0]-7} y={p[1]-3} text-anchor="end" font-size={compact?22:12} fill="#575279" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{new Date(Date.parse(report.start_date)+day*86400000).toISOString().slice(0,10)}</text>
+    <text x={p[0]-7} y={p[1]-3} text-anchor="end" font-size={compact?22:12} fill="#575279" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{new Date(Date.parse(report.start_date)+(from+day)*86400000).toISOString().slice(0,10)}</text>
   {/each}{/if}
-  <text x={cx} y={cy-8} text-anchor="middle" font-size={compact?24:13} fill="#575279">{t('dateOutward')}</text>
-  <text x={cx} y={cy+(compact?24:15)} text-anchor="middle" font-size={compact?24:13} fill="#575279">{days} {t('days')}</text>
+  <text x={cx} y={cy-8} text-anchor="middle" font-size={compact?18:13} fill="#575279" pointer-events="none">{t('dateOutward')}</text>
+  <text x={cx} y={cy+(compact?24:15)} text-anchor="middle" font-size={compact?24:13} fill="#575279" pointer-events="none">{shown} {t('days')}</text>
   <!-- The compact view shows this legend as HTML below the figure instead. -->
   <g visibility={compact?'hidden':undefined}>
   <text x="70" y={cy+395} font-size="16" fill="#373450">{metric}</text>
@@ -109,6 +149,7 @@
   </g>
 </svg>
 </div>
+{#if months.length}<p class="view" role="status">{month ? fill('spiralMonthHint',{month:month.name}) : t('spiralWholeHint')}</p>{/if}
 <!-- On screen the figure is scaled down, so its legend is plain text at a readable size; exports keep the SVG legend. -->
 {#if compact}<div class="legend">
   <span><i class="ramp"></i>{t('rampLegend')}</span>
@@ -119,11 +160,11 @@
 </div><p class="caution">{t(quality?.status === 'decided' ? 'wFigureCaution' : 'detectionFigureCaution')}</p>{/if}
 
 <style>
-  .plot-controls { display: flex; align-items: end; gap: 16px; margin: 10px 0; }
-  .plot-controls select { width: 100px; }
+  .actions { margin-bottom: 12px; }
+  .view { margin: 8px 0 0; }
   .plot-scroll { overflow: auto; max-height: 780px; border: 1px solid rgb(var(--stone-300)); background: #fff; }
-  svg { display: block; height: auto; min-width: 600px; margin: 0 auto; }
-  .plot-scroll.compact{border:0;max-height:none}.compact svg{min-width:0;width:100%!important;max-width:none!important}
+  svg { display: block; width: 100%; max-width: 720px; height: auto; min-width: 600px; margin: 0 auto; }
+  .plot-scroll.compact{border:0;max-height:none}.compact svg{min-width:0;max-width:none}
   .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 13px; color: rgb(var(--stone-600)); }
   .caution { margin: 8px 0 0; font-size: 14px; color: rgb(var(--stone-600)); }
   .legend span { display: inline-flex; align-items: center; gap: 8px; }

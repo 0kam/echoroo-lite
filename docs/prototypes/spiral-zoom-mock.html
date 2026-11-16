@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (proposal, not agreed): choosing a month to enlarge the time chart when the period is long. Data is synthetic. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>時間の図の拡大（見本）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.7 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 24px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .muted { color: #6e6a86; font-size: 14px; margin: 0 0 16px; }
+  #months { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  #months button { min-height: 44px; padding: 6px 16px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; }
+  #months button[aria-pressed=true] { background: #f6dedd; border-color: #c98f8c; color: #8a3f3c; }
+  svg { display: block; width: 100%; height: auto; background: #fff; border: 1px solid #e6ddd3; border-radius: 12px; }
+  path { cursor: pointer; }
+  .example { display: block; margin: 0 0 16px; font-size: 15px; }
+  .example select { display: block; min-height: 44px; margin-top: 4px; padding: 4px 8px; font: inherit; }
+  #hint { margin: 12px 0 4px; font-size: 15px; }
+  #picked { margin: 0; min-height: 28px; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>いつ・どれくらいか（見本）</h1>
+  <p class="muted">データは作りものです。</p>
+  <label class="example">例の期間
+    <select id="example">
+      <option value="0">半年（2026/04/01–2026/09/30）</option>
+      <option value="1">年をまたぐ（2025/10/01–2026/03/31）</option>
+    </select>
+  </label>
+  <div id="months" role="group" aria-label="表示する期間"></div>
+  <svg id="plot" viewBox="0 0 680 590" role="group" aria-label="時間ごとの図"><g id="cells"></g><g id="labels"></g></svg>
+  <p id="hint" role="status"></p>
+  <p id="picked" role="status"></p>
+</main>
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', cx = 340, cy = 295, outer = 240, inner = 45, DAY = 86400000;
+  // [first day, last day, day of the seasonal peak]
+  var examples = [[Date.UTC(2026, 3, 1), Date.UTC(2026, 8, 30), 85], [Date.UTC(2025, 9, 1), Date.UTC(2026, 2, 31), 105]];
+  var start, total, peak, lens, names, first, newYear, view = -1, picked = null;
+  // Months in date order; the year is written only on the first month and where the year changes.
+  function load(example) {
+    start = example[0]; total = Math.round((example[1] - start) / DAY) + 1; peak = example[2];
+    lens = []; names = []; first = []; newYear = [];
+    for (var d = 0; d < total; d++) {
+      var day = new Date(start + d * DAY), y = day.getUTCFullYear(), m = day.getUTCMonth() + 1;
+      if (d === 0 || day.getUTCDate() === 1) {
+        var changed = d > 0 && m === 1;
+        first.push(d); lens.push(0); newYear.push(changed);
+        names.push((d === 0 && example[1] > Date.UTC(y, 11, 31) || changed ? y + '年' : '') + m + '月');
+      }
+      lens[lens.length - 1]++;
+    }
+    view = -1; picked = null;
+    var box = document.getElementById('months'); box.textContent = '';
+    ['全期間'].concat(names).forEach(function (label, i) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = label;
+      b.addEventListener('click', function () { view = i - 1; picked = null; draw(); });
+      box.appendChild(b);
+    });
+    draw();
+  }
+  function noise(d, h) { var x = Math.sin(d * 127.1 + h * 311.7) * 43758.5453; return x - Math.floor(x); }
+  // Share of windows the AI counted as calls; null = no recording that day.
+  function rate(d, h) {
+    if (noise(d, 99) < .06) return null;
+    var season = Math.exp(-Math.pow((d - peak) / 45, 2)), dawn = Math.exp(-Math.pow((h - 5) / 1.6, 2)), dusk = .35 * Math.exp(-Math.pow((h - 18) / 1.2, 2));
+    var v = season * (dawn + dusk) * (.4 + noise(d, h));
+    return v < .08 ? 0 : Math.min(1, v * .8);
+  }
+  function color(v) {
+    if (v === null) return '#f1f0f2';
+    if (v === 0) return '#fff';
+    var f = .25 + .75 * v, to = [160, 80, 76];
+    return 'rgb(' + [248, 224, 222].map(function (s, i) { return Math.round(s + (to[i] - s) * f); }).join(',') + ')';
+  }
+  function point(r, h) { var a = h / 24 * 2 * Math.PI - Math.PI / 2; return [(cx + r * Math.cos(a)).toFixed(2), (cy + r * Math.sin(a)).toFixed(2)]; }
+  function add(parent, name, attrs, text) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    parent.appendChild(e); return e;
+  }
+  function dateOf(d) { return new Date(start + d * DAY).toISOString().slice(0, 10).replace(/-/g, '/'); }
+  function monthOf(d) { var m = 0; for (var i = 0; i < first.length; i++) if (first[i] <= d) m = i; return m; }
+  function draw() {
+    var from = view < 0 ? 0 : first[view], count = view < 0 ? total : lens[view], ring = (outer - inner) / count, gap = ring < 2 ? 0 : Math.min(.6, ring * .1);
+    var cells = document.getElementById('cells'), labels = document.getElementById('labels');
+    cells.textContent = ''; labels.textContent = '';
+    add(cells, 'circle', { cx: cx, cy: cy, r: outer, fill: '#f1f0f2' });
+    add(cells, 'circle', { cx: cx, cy: cy, r: inner, fill: '#fff' });
+    for (var i = 0; i < count; i++) for (var h = 0; h < 24; h++) (function (d, h, i) {
+      var r0 = inner + i * ring + gap / 2, r1 = inner + (i + 1) * ring - gap / 2, v = rate(d, h);
+      var p = add(cells, 'path', { d: 'M' + point(r0, h) + ' A' + r0 + ',' + r0 + ' 0 0 1 ' + point(r0, h + 1) + ' L' + point(r1, h + 1) + ' A' + r1 + ',' + r1 + ' 0 0 0 ' + point(r1, h) + ' Z', fill: color(v) });
+      add(p, 'title', {}, dateOf(d) + ' ' + ('0' + h).slice(-2) + ':00');
+      if (picked && picked.d === d && picked.h === h) { p.setAttribute('stroke', '#286983'); p.setAttribute('stroke-width', '2.5'); }
+      p.addEventListener('click', function () {
+        if (view < 0) { view = monthOf(d); picked = null; } else picked = { d: d, h: h, v: v };
+        draw();
+      });
+    })(from + i, h, i);
+    [0, 3, 6, 9, 12, 15, 18, 21].forEach(function (h) {
+      var p = point(outer + 24, h);
+      add(labels, 'text', { x: p[0], y: +p[1] + 5, 'text-anchor': 'middle', 'font-size': 14, fill: '#575279' }, ('0' + h).slice(-2) + ':00');
+    });
+    var ticks = view < 0 ? first.map(function (f, i) { return [f + lens[i] / 2, names[i].replace(/^.*年/, '')]; })
+      : [[.5, dateOf(from)], [count / 2, dateOf(from + Math.floor(count / 2))], [count - .5, dateOf(from + count - 1)]];
+    ticks.forEach(function (tick) {
+      var p = point(inner + tick[0] * ring, 16.5);
+      add(labels, 'text', { x: p[0], y: +p[1] + 4, 'text-anchor': 'middle', 'font-size': 12, fill: '#373450', stroke: '#fff', 'stroke-width': 3, 'paint-order': 'stroke', 'pointer-events': 'none' }, tick[1]);
+    });
+    // Month boundaries; the boundary where the year changes is heavier.
+    if (view < 0) first.forEach(function (f, i) {
+      if (i) add(labels, 'circle', { cx: cx, cy: cy, r: inner + f * ring, fill: 'none', stroke: newYear[i] ? '#373450' : '#8f8ba3', 'stroke-width': newYear[i] ? 1.6 : .7, 'pointer-events': 'none' });
+      if (newYear[i]) {
+        var p = point(inner + f * ring, 13.5);
+        add(labels, 'text', { x: p[0], y: +p[1] + 4, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 600, fill: '#373450', stroke: '#fff', 'stroke-width': 4, 'paint-order': 'stroke', 'pointer-events': 'none' }, names[i].replace(/年.*$/, '年') + 'はここから外側');
+      }
+    });
+    add(labels, 'text', { x: cx, y: cy + 5, 'text-anchor': 'middle', 'font-size': 13, fill: '#575279' }, count + ' 日');
+    Array.prototype.forEach.call(document.querySelectorAll('#months button'), function (b, i) { b.setAttribute('aria-pressed', String(i - 1 === view)); });
+    document.getElementById('hint').textContent = view < 0
+      ? '全期間を表示しています。図か月のボタンを押すと、その月だけを大きく表示します。'
+      : names[view] + 'だけを表示しています。マスを押すと、その時間の音を聞けます。';
+    document.getElementById('picked').textContent = picked
+      ? dateOf(picked.d) + ' ' + ('0' + picked.h).slice(-2) + ':00 を選びました（AIが声ありと数えた割合：' + (picked.v === null ? '録音なし' : Math.round(picked.v * 100) + '%') + '）'
+      : '';
+  }
+  document.getElementById('example').addEventListener('change', function (event) { load(examples[event.target.value]); });
+  load(examples[0]);
+})();
+</script>
+</body>
+</html>
