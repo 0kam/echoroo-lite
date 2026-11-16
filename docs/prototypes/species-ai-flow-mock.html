@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (proposal, not agreed): when to stop growing a species AI, and an accuracy check that ends early. All numbers are examples. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>この種用のAIを育てる流れ（見本）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.7 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: #6e6a86; font-size: 14px; }
+  .mockbar { background: #efe7dc; border: 1px dashed #b9ab99; border-radius: 12px; padding: 12px 16px; margin: 0 0 20px; }
+  .mockbar label { display: block; font-size: 14px; }
+  .mockbar select { display: block; min-height: 44px; margin: 4px 0 12px; padding: 4px 8px; font: inherit; max-width: 100%; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { min-height: 44px; padding: 6px 16px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; }
+  button.primary { background: #9b4b4b; border-color: #9b4b4b; color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  .panel { background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 20px 24px; margin: 0 0 16px; }
+  .crumb { font-size: 14px; color: #6e6a86; margin: 0 0 4px; }
+  .state { border-left: 6px solid #b9ab99; background: #f6f1ea; padding: 12px 16px; margin: 0 0 12px; }
+  .state.good { border-color: #3f7d5c; background: #eaf4ee; }
+  .state.warn { border-color: #b7791f; background: #fbf1df; }
+  .state strong { display: block; font-size: 17px; }
+  .rounds { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; padding: 0; list-style: none; }
+  .rounds li { border: 1px solid #d9cfc4; border-radius: 8px; padding: 4px 10px; font-size: 14px; background: #fff; }
+  .rounds li.same { background: #eaf4ee; border-color: #9cc4ad; }
+  .sound { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; border-top: 1px solid #e6ddd3; padding: 10px 0; }
+  .new { display: inline-block; font-size: 12px; background: #286983; color: #fff; border-radius: 6px; padding: 0 8px; margin-left: 8px; vertical-align: 2px; }
+  .bar { height: 10px; background: #e6ddd3; border-radius: 5px; overflow: hidden; margin: 0 0 12px; }
+  .bar i { display: block; height: 100%; background: #9b4b4b; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mockbar">
+    <label for="scenario">見本の例（数字はすべて例です）</label>
+    <select id="scenario">
+      <option value="0">うまく育つ例（エゾハルゼミ）</option>
+      <option value="1">声が少ない例（ニホンジカ・声をほぼ聞き終える）</option>
+      <option value="2">育てても落ち着かない例（ニホンジカ）</option>
+    </select>
+    <div class="row">
+      <button type="button" id="prev">‹ 前の場面</button>
+      <button type="button" id="next" class="primary">次の場面 ›</button>
+      <span id="where" class="muted" role="status"></span>
+    </div>
+  </div>
+  <div id="screen"></div>
+</main>
+<script>
+(function () {
+  var NEW = '<span class="new">新しい</span>';
+  function rounds(list) {
+    return '<ul class="rounds">' + list.map(function (r, i) {
+      return '<li class="' + (r >= 90 ? 'same' : '') + '">' + (i + 1) + '回目' + (r === null ? '' : '：前回と ' + r + '% 同じ') + '</li>';
+    }).join('') + '</ul>';
+  }
+  // The training page: counts, the new "how it is growing" box, then the sounds to answer.
+  function grow(name, counts, list, state) {
+    return '<p class="crumb">‹ 種のページに戻る</p><h1>この種用のAIを育てる</h1><p>' + name + '</p>' +
+      '<section class="panel"><p><strong>' + counts + '</strong>　AI：' + list.length + '回目</p>' +
+      '<h2>育ち具合' + NEW + '</h2>' + rounds(list) + state + '</section>' +
+      '<section class="panel"><h2>次に答える音</h2><p class="muted">声ありと声なしの境目になりそうな音を中心に、10音を選んでいます。</p>' +
+      [1, 2, 3].map(function (i) { return '<div class="sound"><span>2025/07/1' + i + ' 05:3' + i + '　▶ 聞く</span><span class="row"><button type="button">声あり</button><button type="button">声なし</button></span></div>'; }).join('') +
+      '<p class="muted" style="margin-top:12px">…ほか 7 音</p><div class="row"><button type="button">答えを反映してAIを作り直す</button><button type="button">今日はここまで</button></div></section>';
+  }
+  function box(kind, title, text, buttons) {
+    return '<div class="state ' + kind + '" role="status"><strong>' + title + '</strong>' + text + '</div>' + (buttons ? '<div class="row">' + buttons + '</div>' : '');
+  }
+  // The accuracy check: a first block of 20 sounds decides whether the remaining 40 are worth hearing.
+  function check(name, done, total, body) {
+    return '<p class="crumb">‹ 種のページに戻る</p><h1>AIの精度を確かめる</h1><p>' + name + ' · この種用のAI</p>' +
+      '<section class="panel"><p><strong>' + done + ' / ' + total + ' 音</strong></p><div class="bar"><i style="width:' + Math.round(done / total * 100) + '%"></i></div>' + body + '</section>';
+  }
+  function speciesPage(name, body) {
+    return '<p class="crumb">‹ 種の一覧に戻る</p><h1>' + name + '</h1><section class="panel"><h2>いつ・どれくらいか</h2>' + body + '</section>';
+  }
+  var cicada = 'エゾハルゼミ', deer = 'ニホンジカ';
+  var scenarios = [[
+    ['育てる：2回目', grow(cicada, '声あり 9・声なし 21', [null, 58],
+      box('', 'まだ育てている途中です', '作り直したら、AIの判断が前回から変わりました。もう10音答えて作り直すと、さらによくなります。'))],
+    ['育てる：3回目', grow(cicada, '声あり 13・声なし 27', [null, 58, 91],
+      box('', 'あと少しです', '作り直しても、AIの判断はほとんど変わりませんでした。次も同じなら、育てるのはここまでです。'))],
+    ['育てる：4回目（やめ時）', grow(cicada, '声あり 17・声なし 33', [null, 58, 91, 94],
+      box('good', 'これ以上答えても、ほとんど変わりません', '2回続けて、作り直してもAIの判断がほとんど変わりませんでした。育てるのはここまでにして、AIの精度を1回確かめます。',
+        '<button type="button" class="primary">精度を確かめる（まず20音）</button><button type="button">もう少し育てる</button>'))],
+    ['精度の確認：最初の20音', check(cicada, 20, 60,
+      box('good', '声が見つかりました。残りの40音に進みます', '最初の20音のうち、9音で声が聞こえました。残りに答えると、図に使うスコアの閾値が決まります。',
+        '<button type="button" class="primary">続ける</button><button type="button">あとで続ける</button>'))],
+    ['精度の確認：結果', check(cicada, 60, 60,
+      box('good', 'スコアの閾値が決まりました', 'スコアの閾値 0.62 以上の検出のうち、正しかったのは約 93% です（60音を確認）。',
+        '<button type="button" class="primary">図を見る</button>'))],
+    ['種のページ', speciesPage(cicada, box('good', 'この種用のAI：精度を確かめました', 'スコアの閾値 0.62 以上を「声あり」として、図にしています。') +
+      '<p class="muted">（ここに時間の図が出ます）</p>')]
+  ], [
+    ['育てる：3回目', grow(deer, '声あり 6・声なし 24', [null, 71, 88],
+      box('', 'まだ育てている途中です', '作り直したら、AIの判断が前回から変わりました。もう10音答えて作り直すと、さらによくなります。'))],
+    ['育てる：7回目（聞き終えた）', grow(deer, '声あり 14・声なし 56', [null, 71, 88, 92, 95, 97, 98],
+      box('good', 'この種の声は、ほぼ聞き終えたようです', '2回続けて、スコアの高い音を聞いても声が出てきませんでした。あなたが「声あり」と答えた 14 音が、この種の記録です。',
+        '<button type="button" class="primary">ここで終える</button><button type="button">もう少し育てる</button>') +
+      '<p class="muted" style="margin-top:12px">AIの精度を確かめる音は、残っていません（声の入った音は、育てる材料に使ったため）。</p>')],
+    ['種のページ', speciesPage(deer, box('', 'この種用のAI：精度は確かめていません', '確かめて決めたものではない既定のスコアの閾値 0.5 で、図にしています。') +
+      '<p class="muted">（ここに時間の図が出ます）</p>' +
+      '<h2>聞いて確かめた音（14音）' + NEW + '</h2><p>あなたが「声あり」と答えた音の日時です。AIの検出ではなく、人が聞いて確かめた音だけです。聞いていない時間に声がなかったことは意味しません。</p>' +
+      '<p class="muted">（ここに、確かめた 14 音の日時が出ます。図にするか一覧にするかは、レポートの整理で決めます）</p>')]
+  ], [
+    ['育てる：10回目（落ち着かない）', grow(deer, '声あり 9・声なし 91', [null, 41, 55, 62, 57, 60, 66, 58, 63, 61],
+      box('warn', 'AIの判断が、まだ落ち着きません', 'これ以上答えても、大きくは変わりにくいようです。この種の声が少ないか、ほかの音と似ている可能性があります。ここで精度を確かめるか、この種はここで終えます。',
+        '<button type="button" class="primary">精度を確かめる（まず20音）</button><button type="button">ここで終える</button><button type="button">もう少し育てる</button>'))],
+    ['精度の確認：最初の20音で終わり', check(deer, 20, 20,
+      box('warn', 'ここで終わります', 'AIのスコアが高い音にも、この種の声は入っていませんでした。残りの40音を聞いても、スコアの閾値は決まりません。') +
+      '<p>「声はあったか」の結果は、そのまま使えます。このAIの検出は、図とレポートでは数えません。</p>' +
+      '<div class="row"><button type="button" class="primary">この答えを材料にAIを作り直す</button><button type="button">この種はここで終える</button></div>')],
+    ['種のページ', speciesPage(deer, box('', 'この種用のAI：スコアの閾値を決められませんでした', 'このAIの検出は数えていません。') +
+      '<h2>聞いて確かめた音（9音）' + NEW + '</h2><p>あなたが「声あり」と答えた音の日時です。AIの検出ではなく、人が聞いて確かめた音だけです。聞いていない時間に声がなかったことは意味しません。</p>' +
+      '<p class="muted">（ここに、確かめた 9 音の日時が出ます）</p>')]
+  ]];
+  var scenario = 0, step = 0;
+  function draw() {
+    var steps = scenarios[scenario];
+    document.getElementById('screen').innerHTML = steps[step][1];
+    document.getElementById('where').textContent = (step + 1) + ' / ' + steps.length + '：' + steps[step][0];
+    document.getElementById('prev').disabled = step === 0;
+    document.getElementById('next').disabled = step === steps.length - 1;
+  }
+  document.getElementById('scenario').addEventListener('change', function (e) { scenario = +e.target.value; step = 0; draw(); });
+  document.getElementById('prev').addEventListener('click', function () { step--; draw(); });
+  document.getElementById('next').addEventListener('click', function () { step++; draw(); });
+  draw();
+})();
+</script>
+</body>
+</html>
