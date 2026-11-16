@@ -167,6 +167,57 @@ class WorkflowCheck(unittest.TestCase):
                 self.assertEqual((starts.tolist(),scores.ravel().tolist(),evidence.ravel().tolist()),
                                  ([0,3,6,9,12],[.1,.8,.2,.3,.4],[0,3,6,9,12]))
 
+    def test_undecided_check_counts_nothing_until_then_the_default(self):
+        from models import default_threshold
+        from report_document import messages
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            (root/'models.json').write_text(json.dumps({'main':'perch','extra':['birdnet'],'confirmed':True}))
+            sf.write(root/'20240808_060000.wav',np.zeros(300000),1000)
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
+                sid=client.get('/species?q=ウグイス').json()[0]['id'];label='Horornis diphone_Japanese Bush Warbler'
+                path=root/'bird.npz';np.savez(path,labels=np.repeat(label,100),scores=expit((np.arange(100)-70)/8),start_s=np.arange(100)*3,end_s=np.arange(1,101)*3)
+                with connect(root) as db:
+                    job=db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(1,'done',1)").lastrowid
+                    db.execute("INSERT INTO analyses(job_id,recording_id,engine,metadata,scores_path) VALUES(?,1,'birdnet',?,?)",
+                               (job,json.dumps({'model_sha256':'birdnet','species':[label]}),str(path)))
+                def model():
+                    row=next(r for r in client.get('/datasets/1/overview').json()['species'] if r['species']['id']==sid)
+                    return row['models'][0]
+                # Unchecked and in-progress checks keep the model default.
+                unchecked=model()
+                self.assertEqual(unchecked['threshold'],default_threshold('birdnet'));self.assertGreater(unchecked['candidate_windows'],0)
+                scope={'dataset_id':1,'species_id':sid,'start_date':'2024-08-08','end_date':'2024-08-08','model':'birdnet'}
+                check=client.post('/validations',json=scope).json()
+                self.assertEqual(model()['candidate_windows'],unchecked['candidate_windows'])
+                while check['question']:
+                    q=check['question']
+                    check=client.post(f"/validations/{check['id']}/answers",json={'item_id':q['id'],'verdict':'other','version':q['version']}).json()
+                self.assertEqual((check['status'],check['results']['birdnet']['reason']),('undecided','no_target'))
+                counted=model()
+                self.assertEqual((counted['threshold'],counted['candidate_windows'],counted['candidate_days']),(None,None,None))
+                report=client.get(f'/datasets/1/species/{sid}').json()['report']
+                self.assertEqual((report['threshold'],report['evidence'],report['summaries'][0]['candidate_windows']),(None,[],None))
+                self.assertEqual({(cell['candidate_windows'],cell['candidate_rate']) for cell in report['cells']},{(None,None)})
+                # Listening for presence still offers this AI's best sounds.
+                self.assertTrue(client.get(f'/datasets/1/species/{sid}/presence',params={'source':'ai'}).json()['rows'])
+                overview=client.get('/datasets/1/overview').json()
+                exported=client.post('/workflow-exports',json={**scope,'species_ids':[sid],'revision':overview['revision'],'folder':str(root),'locale':'ja'})
+                self.assertEqual(exported.status_code,200,exported.text)
+                t=messages('ja')
+                with zipfile.ZipFile(exported.json()['path']) as archive:
+                    rows=lambda name:list(csv.DictReader(io.StringIO(archive.read(name).decode('utf-8-sig'))))
+                    self.assertEqual([(r['threshold'],r['candidate_windows'],r['quality']) for r in rows('species.csv')],[('','','undecided')])
+                    self.assertEqual({r['candidate_windows'] for r in rows('hourly.csv')},{''})
+                    self.assertEqual({r['audio_role'] for r in rows('evidence.csv')},{'validation'})
+                    text=archive.read('report.txt').decode()
+                    for wanted in (t['ai_flagged_sentence'].format(detected=0),t['uncounted_sentence'].format(eligible=100),t['undecided_no_target']):
+                        self.assertIn(wanted,text)
+                    self.assertNotIn(t['undecided'],text)
+                    figure=archive.read('figures/F001.svg').decode()
+                    self.assertIn(t['figure_undecided'],figure);self.assertNotIn('<polygon',figure)
+
     def test_one_stage_check_hides_interim_results_and_adds_presence(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

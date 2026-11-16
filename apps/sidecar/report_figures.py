@@ -60,6 +60,10 @@ def spiral(report,locale,counting_status_text):
         method=REGISTRY[engine]['name']
     label(480,64,method+' · '+t['quality']+': '+counting_status_text,22)
     label(480,99,report['site']['name']+' · '+report['start_date']+' — '+report['end_date']+' · '+report['site']['timezone'],19)
+    if report['threshold'] is None:
+        # Nothing is counted, so there is no chart: grey cells would read as "no recording".
+        label(480,530,t['figure_undecided'],23);svg.append('</svg>')
+        return png_bytes(image),''.join(svg)
     inner,outer=60,340;ring=(outer-inner)/days
     for cell in report['cells']:
         day=(date.fromisoformat(cell['date'])-date.fromisoformat(report['start_date'])).days
@@ -84,7 +88,7 @@ def spiral(report,locale,counting_status_text):
         polygon([(310+i*1.7,941),(312+i*1.7,941),(312+i*1.7,961),(310+i*1.7,961)],cell_color(c,report))
     label(238,951,'>0%',26)
     label(710,951,'100%',26)
-    label(480,992,t['figure_detection' if report['threshold'] is not None else 'figure_undecided'],23)
+    label(480,992,t['figure_detection'],23)
     label(480,1030,t['figure_missing'],21)
     label(480,1068,t['figure_caution'],21)
     svg.append('</svg>')

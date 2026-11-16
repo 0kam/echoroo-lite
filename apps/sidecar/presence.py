@@ -61,9 +61,15 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None):
     else:
         lists = []
         quality = current_validations(root, ctx)
+        from models import default_threshold
         from results_workflow import cached
+
+        def listen_from(validation, model):
+            # Listening for presence is not counting: an undecided check keeps the model default here.
+            threshold = threshold_for(validation, model)
+            return default_threshold(model['engine']) if threshold is None else threshold
         for model in ctx['models']:
-            threshold = threshold_for(quality.get((species_id, model['engine'])), model)
+            threshold = listen_from(quality.get((species_id, model['engine'])), model)
             windows = cached(root, ['presence-top-v1', ctx['fingerprint'], ctx['start_date'], ctx['end_date'],
                                     species_id, model['engine'], model['model_sha256']],
                              lambda model=model: sorted(model_windows(root, ctx, species_id, model['engine'])[0],
@@ -71,8 +77,8 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None):
             lists.append((model['engine'], [w for w in windows if w['score'] >= threshold]))
         for model in list_models(root, ctx, species_id):
             if model['applicable']:
-                threshold = threshold_for(quality.get((species_id, f"custom:{model['id']}")),
-                                          {'engine': 'custom', 'model_sha256': model['artifact_sha256']})
+                threshold = listen_from(quality.get((species_id, f"custom:{model['id']}")),
+                                        {'engine': 'custom', 'model_sha256': model['artifact_sha256']})
                 windows = cached(root, ['presence-top-v1', ctx['fingerprint'], ctx['start_date'], ctx['end_date'],
                                         species_id, 'custom', model['id'], model['artifact_sha256']],
                                  lambda model=model: sorted(model_windows(root, ctx, species_id, 'custom', model['id'])[0],

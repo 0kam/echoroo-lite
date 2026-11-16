@@ -12,7 +12,8 @@
 {#if status}<p><strong>{checkText(validation)}</strong></p>{/if}
 {#if validation&&!validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
 {#if validation&&result}
-  {#if result.status==='undecided'}<p>{fill('rUndecided',{reason:t(`reason_${result.reason}`)})}</p>{/if}
+  <!-- When the status line is shown above, it already says that no sound was answered "Heard". -->
+  {#if result.status==='undecided'}<p>{fill('rUndecided',{reason:status&&result.reason==='no_target'?'':t(`reason_${result.reason}`)})}</p>{/if}
   <ul>
     <li>{fill('rDensity',{...shares(result.density),n:about(Math.round(result.count.value??0)),nlow:about(Math.round(result.count.low??0)),nhigh:about(Math.round(result.count.high??0))})}</li>
     {#if result.threshold!=null}<li>{fill('rThreshold',{threshold:+result.threshold.toPrecision(2),window:validation.window_s})}</li>{/if}

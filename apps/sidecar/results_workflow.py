@@ -135,8 +135,8 @@ def cached(root, key, build):
     return snapshot
 
 
-def detection_snapshot(root, ctx, model, species_id=None, threshold=None):
-    threshold = default_threshold(model['engine']) if threshold is None else threshold
+def detection_snapshot(root, ctx, model, species_id, threshold):
+    """`threshold` None counts nothing: an applicable check ended without a threshold."""
     body = SimpleNamespace(dataset_id=ctx['dataset']['id'], engine=model['engine'], model_sha256=model['model_sha256'],
         threshold=threshold, start_date=date.fromisoformat(ctx['start_date']), end_date=date.fromisoformat(ctx['end_date']),
         species_id=species_id, base_report_id=None)
@@ -159,7 +159,7 @@ def custom_snapshot(root, ctx, model):
         result = report_snapshot(root, ctx, model['id'], threshold)
         result['created_at'] = model['created_at']
         return attach_validation(result, quality)
-    return cached(root, ['custom-report-v4', ctx['revision'], ctx['start_date'], ctx['end_date'], model['id']], build)
+    return cached(root, ['custom-report-v5', ctx['revision'], ctx['start_date'], ctx['end_date'], model['id']], build)
 
 
 def current_validations(root, ctx):
@@ -186,8 +186,10 @@ def current_validations(root, ctx):
 
 
 def threshold_for(quality, model):
-    """Use a decided threshold, otherwise the documented model default."""
+    """A decided threshold; None (count nothing) when the applicable check ended undecided; otherwise the model default."""
     if quality and quality['applicable'] and quality['models'].get(model['engine']) == model['model_sha256']:
+        if quality['status'] == 'undecided':
+            return None
         chosen = quality['thresholds'].get(model['engine'])
         if chosen and chosen['threshold'] is not None:
             return chosen['threshold']
@@ -199,7 +201,8 @@ def attach_validation(snapshot, validation):
     result = (validation or {}).get('results', {}).get(snapshot['engine']) if validation else None
     for summary in snapshot['summaries']:
         summary.update(validation_status=validation['status'] if validation else 'not_started',
-                       threshold_state='decided' if result and result.get('threshold') is not None else 'default',
+                       threshold_state='undecided' if snapshot['threshold'] is None else
+                       'decided' if result and result.get('threshold') is not None else 'default',
                        engine=snapshot['engine'], model_sha256=snapshot['model_sha256'], window_s=snapshot['window_s'],
                        threshold=snapshot['threshold'],
                        density=(result or {}).get('density'), count=(result or {}).get('count'),
@@ -224,7 +227,7 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    result = cached(root, ['overview-v20', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
+    result = cached(root, ['overview-v21', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
                          enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx))
     from analysis import pending_pairs
@@ -267,7 +270,7 @@ def build_overview(root, dataset_id, ctx):
             rows[sid] = {'species': named.get(sid, taxon), 'models': [], 'search': searched.get(sid), 'presence': presence.get(sid, empty())}
         return rows[sid]
     for model in ctx['models']:
-        found = {s['species']['id']: s for s in detection_snapshot(root, ctx, model)['summaries']}
+        found = {s['species']['id']: s for s in detection_snapshot(root, ctx, model, None, default_threshold(model['engine']))['summaries']}
         for sid, key in quality:
             if key != model['engine']:
                 continue
@@ -335,8 +338,10 @@ def species_result(root, dataset_id, species_id, first=None, last=None, engine='
         check['status']=check['validation']['status'] if check['validation'] else 'not_started'
     overall_status = counting_status(check.get('validation') for check in checks)
     if engine == 'auto':
-        counts = [(m['engine'], next((s['candidate_windows'] or 0 for s in detection_snapshot(root, ctx, m)['summaries']
-                   if s['species']['id'] == species_id), 0)) for m in listed]
+        # An AI whose check ended undecided counts nothing, so it is not the one to open first.
+        counts = [(m['engine'], 0 if threshold_for(quality.get((species_id, m['engine'])), m) is None else
+                   next((s['candidate_windows'] or 0 for s in detection_snapshot(root, ctx, m, None, default_threshold(m['engine']))['summaries']
+                         if s['species']['id'] == species_id), 0)) for m in listed]
         engine = max(counts, key=lambda pair: pair[1])[0] if any(count for _, count in counts) else None
         if engine is None and custom and model_id is None:
             engine, model_id = 'custom', custom[0]['id']
