@@ -302,6 +302,9 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             self.assertEqual(model.status_code, 200, model.text)
             model = model.json()
             self.assertEqual((model['run_id'], model['round'], model['training']['positive_from_presence']), (None, 1, 1))
+            # The first AI has no round record yet; whether its scores were calibrated is kept with it.
+            self.assertEqual(model['growth'], {'rounds': [], 'state': 'growing'})
+            self.assertIsInstance(model['training']['calibrated'], bool)
             # Nothing new since it was made: making it again is refused, so its round and check stay.
             ready = client.get(url, params=dates).json()
             self.assertEqual((ready['can_train'], ready['reasons'], ready['needed']), (False, ['custom_no_new_answers'], 0))
@@ -333,6 +336,32 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             self.assertEqual(client.post(f"/search-runs/{run['id']}/delete").status_code, 200)
             self.assertTrue(client.get(f"/custom-models/{model['id']}").json()['applicable'])
             self.assertEqual(len(client.get(url, params=dates).json()['answered']), 1)
+            # Each making again adds a round record. One new answer is too few to tell whether the top two were voice.
+            from custom_models import score_windows
+            high = lambda: {w['segment_id'] for w in score_windows(root, model['id']) if w['score'] >= .5}
+            self.assertEqual([(r['round'], r['top_voice']) for r in rebuilt['growth']['rounds']], [(2, None)])
+            for number in (3, 4):
+                was, top = high(), client.get(url, params={**dates, 'batch': True}).json()['batch'][:2]
+                for row in top:
+                    label(row['segment_id'], 'other')
+                grown = client.post('/custom-models', json=scope).json()['growth']
+                now = high()
+                self.assertEqual(grown['rounds'][-1], {'round': number, 'top_voice': 0,
+                                                       'overlap': len(was & now) / len(was | now) if was and now else None})
+            # Twice no voice among the highest-scoring answers: the page and the species page are told so.
+            self.assertEqual((len(grown['rounds']), grown['state']), (3, 'no_voice'))
+            self.assertEqual(client.get(url, params=dates).json()['model']['growth'], grown)
+            detail = client.get(f'/datasets/1/species/{sid}', params={**scope, 'engine': 'custom', 'model_id': model['id']}).json()
+            self.assertEqual(next(c for c in detail['checks'] if c['engine'] == 'custom')['growth'], 'no_voice')
+            # An AI saved before round records existed has no history, and gets its first record when made again.
+            with connect(root) as db:
+                snapshot = json.loads(db.execute('SELECT snapshot FROM custom_models').fetchone()[0])
+                del snapshot['rounds'], snapshot['training']['calibrated']
+                db.execute('UPDATE custom_models SET snapshot=?', (json.dumps(snapshot),))
+            old = client.get(url, params={**dates, 'batch': True}).json()
+            self.assertEqual((old['model']['growth'], old['model']['applicable'], old['source']), ({'rounds': [], 'state': 'growing'}, True, 'custom'))
+            label(old['batch'][0]['segment_id'], 'other')
+            self.assertEqual([r['round'] for r in client.post('/custom-models', json=scope).json()['growth']['rounds']], [5])
 
     def test_0_2_0_catalogue_keeps_labels_and_models(self):
         from storage import SCHEMA_VERSION, columns, initialize
@@ -411,6 +440,55 @@ class BatchChoiceCheck(unittest.TestCase):
         flat = [(segment, .5) for segment in range(1000)]
         self.assertEqual([segment for segment, _ in model_picks(flat, {})], [0, 1, 85, 251, 417, 583, 749, 915, 998, 999])
         self.assertEqual(model_picks(scored[:4], {}), sorted(scored[:4], key=lambda p: -p[1]))
+
+    def test_calibration(self):
+        import custom_models
+        from custom_models import _calibrated_fit, _fit
+        rng = np.random.default_rng(1)
+        y = np.r_[np.ones(7), np.zeros(23)]
+        x = rng.normal(size=(30, 1536))
+        x[:, 0] += 40 * y
+        x = (x / np.linalg.norm(x, axis=1, keepdims=True)).astype(np.float32)
+        plain = _fit(x, y)
+        seen = []
+        with patch('custom_models._platt', side_effect=lambda f, y: seen.append(f.copy()) or (2.0, -.5)):
+            weights, intercept, calibrated = _calibrated_fit(x, y)
+        # The saved weights give the calibrated probability in one product.
+        self.assertTrue(calibrated)
+        np.testing.assert_allclose(x @ weights + intercept, 2 * (x @ plain[0] + plain[1]) - .5, atol=1e-5)
+        # Held-out scores: the i-th example of each kind is scored by the AI made without fold i mod 5.
+        fold = np.r_[np.arange(7) % 5, np.arange(23) % 5]
+        w, b = _fit(x[fold != 1], y[fold != 1])
+        np.testing.assert_allclose(seen[0][fold == 1], x[fold == 1] @ w + b, atol=1e-6)
+        # The real sigmoid keeps the order, and the same answers give the same AI.
+        first, again = _calibrated_fit(x, y), _calibrated_fit(x, y)
+        self.assertTrue(first[2] and np.array_equal(first[0], again[0]) and first[1] == again[1])
+        self.assertEqual(list(np.argsort(x @ first[0])), list(np.argsort(x @ plain[0])))
+        self.assertTrue(((x @ first[0] + first[1] > 0) == (y == 1)).all())
+        # Not calibrated: a slope that would reverse the order, or a kind with fewer than 3 examples.
+        with patch('custom_models._platt', return_value=(0.0, 0.0)):
+            flat = _calibrated_fit(x, y)
+        few = _calibrated_fit(x[5:], y[5:])
+        for (weights, intercept, calibrated), expected in ((flat, plain), (few, _fit(x[5:], y[5:]))):
+            self.assertTrue(not calibrated and np.array_equal(weights, expected[0]) and intercept == expected[1])
+
+    def test_growth_state(self):
+        from custom_models import growth_state
+        r = lambda overlap, top: {'round': 2, 'overlap': overlap, 'top_voice': top}
+        same, silent, moved = r(.95, 2), r(.95, 0), r(.5, 1)
+        self.assertEqual(growth_state([], 5), 'growing')  # also an AI saved before round records
+        self.assertEqual(growth_state([same], 5), 'growing')
+        self.assertEqual(growth_state([moved, same, same], 5), 'settled')
+        self.assertEqual(growth_state([same, r(.89, 2)], 5), 'growing')
+        self.assertEqual(growth_state([same, r(.9, 1)], 5), 'growing')
+        self.assertEqual(growth_state([same, r(None, 2)], 5), 'growing')
+        self.assertEqual(growth_state([silent, silent], 3), 'no_voice')
+        self.assertEqual(growth_state([silent, silent], 2), 'growing')  # too few voice answers to say so
+        self.assertEqual(growth_state([silent, r(.95, None)], 5), 'growing')
+        self.assertEqual(growth_state([moved] * 7, 5), 'growing')
+        self.assertEqual(growth_state([moved] * 8, 5), 'unsettled')
+        self.assertEqual(growth_state([moved] * 6 + [same, same], 5), 'settled')  # the earlier states come first
+        self.assertEqual(growth_state([moved] * 6 + [silent, silent], 5), 'no_voice')
 
     def test_boundary_score(self):
         from custom_models import boundary_score

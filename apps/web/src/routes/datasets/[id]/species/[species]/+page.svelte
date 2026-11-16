@@ -104,9 +104,12 @@
         {#if result.checks.length}<p class="status"><strong>{activityText(result.checks)}</strong></p>{/if}
         <p class="muted">{t(result.checks.length>1?'sActivityHint':result.checks.length?'sActivityHintOne':'sActivityHintNone')}</p>
         {#if remaining&&result.checks.some(item=>!undetected(item))}<p class="muted">{fill('sWorkload',{n:remaining,time:effort.time})}</p>{/if}
-        {#each ordered as item (item.key)}<div class="check-row">
-          <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation)}</span></div>
-          {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation?listenLabel(item.validation):t('cStart')}</Button>{/if}
+        {#each ordered as item (item.key)}{@const grown=item.validation?.model_reason==='custom_model_rebuilt'?item.growth:undefined}<div class="check-row">
+          <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}{item===required?'':` · ${t('sOptional')}`}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation,item.growth)}</span></div>
+          <!-- After the species AI was made again, the next step follows how far it has grown, not "check again" every time. -->
+          <!-- The check stays available in every state; while the AI is still growing, going on growing it comes first. -->
+          {#if grown==='growing'}<Button variant="primary" href={modelHref}>{t('sToGrow')}</Button>{/if}
+          {#if !undetected(item)}<Button variant={item===required&&result.presence.status==='confirmed'&&remaining&&grown!=='growing'?'primary':'default'} pending={check.pending} onclick={()=>check.run(item)}>{item.validation&&!grown?listenLabel(item.validation):t('cStart')}</Button>{/if}
         </div>{/each}
         {#if missed}<p>{t('sUndecidedHint')}</p>{/if}
         <!-- Deleting is kept away from the listening buttons. -->
@@ -125,7 +128,7 @@
       <div class="actions model-tabs">{#each result.checks as item (item.key)}<Button active={result.selected===item.key} aria-pressed={result.selected===item.key}
         onclick={()=>{engine=item.engine;modelId=item.model_id??0;load();}}>{checkName(item)}</Button>{/each}
         {#if loading}<span role="status"><Spinner/> {t('loading')}</span>{/if}</div>
-      {#if selected}<QualityPanel validation={selected.validation} status={false}/>{/if}
+      {#if selected}<QualityPanel validation={selected.validation} growth={selected.growth} status={false}/>{/if}
       {#if result.report}{#key liveUrl}<ReportView report={result.report} {liveUrl}/>{/key}
       {:else}<p class="empty">{t('wNoModel')}</p>{/if}
     </section>{/if}
