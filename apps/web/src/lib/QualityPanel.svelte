@@ -15,7 +15,8 @@
   <!-- When the status line is shown above, it already says that no sound was answered "Heard". -->
   {#if result.status==='undecided'}<p>{fill('rUndecided',{reason:status&&result.reason==='no_target'?'':t(`reason_${result.reason}`)})}</p>{/if}
   <ul>
-    <li>{fill('rDensity',{...shares(result.density),n:about(Math.round(result.count.value??0)),nlow:about(Math.round(result.count.low??0)),nhigh:about(Math.round(result.count.high??0))})}</li>
+    <!-- A check that ended after its first sounds has no share for all intervals. -->
+    {#if result.density&&result.count}<li>{fill('rDensity',{...shares(result.density),n:about(Math.round(result.count.value??0)),nlow:about(Math.round(result.count.low??0)),nhigh:about(Math.round(result.count.high??0))})}</li>{/if}
     {#if result.threshold!=null}<li>{fill('rThreshold',{threshold:+result.threshold.toPrecision(2),window:validation.window_s})}</li>{/if}
     {#if result.precision&&result.threshold!=null}<li>{fill('rPrecision',{...shares(result.precision),threshold:+result.threshold.toPrecision(2),n:validation.counts.answered})}</li>{/if}
     {#if result.recall_status==='not_estimable_rare'}<li>{t('rRecallRare')}</li>{:else if result.recall}<li>{fill('rRecall',shares(result.recall))}</li>{/if}

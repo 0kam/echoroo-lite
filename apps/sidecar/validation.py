@@ -13,7 +13,9 @@ from reports import analysis_metadata, classification_batches, classification_sp
 from species import names_for
 from storage import CatalogError, checked_source, connect
 
-METHOD = 'detection_top_bin_v1'
+# v2 asks the two top bins first and stops there when none is heard; v1 sessions keep asking every sound.
+METHOD = 'detection_top_bin_v2'
+FIRST_BLOCK = ('bin-4', 'bin-5')
 LEGACY_METHOD = 'stratified_quantile6_v1'
 QUANTILES = np.array([0, .5, .75, .875, .9375, .96875, 1.0])
 SAMPLE_PER_BIN, EXTENSION_PER_BIN = 10, 3
@@ -312,7 +314,9 @@ def start_session(root, body):
         members = x[strata == b]
         bounds.append({'low_x': float(members.min()) if len(members) else None,
                        'high_x': float(members.max()) if len(members) else None})
+    if not (strata == 5).any(): raise CatalogError('validation_no_top_group')
     chosen = sample_indices(strata, seed ^ 0x5A17, SAMPLE_PER_BIN)
+    chosen.sort(key=lambda pair: pair[1] < 4)  # stable: the two top bins first, each block still shuffled
     top = x[strata == 5]
     x0 = float(top.min()) if len(top) else float(logit_scores([threshold])[0])
     snapshot = {'method': METHOD, 'stage': 'sample', 'seed': str(seed), 'sample_seed': str(seed ^ 0x5A17),
@@ -381,7 +385,16 @@ def custom_model_status(root, snapshot):
 
 def _finish(root, db, sid, snap):
     rows = answered_items(db, sid)
-    if not rows or any(r['verdict'] is None for r in rows): return False
+    if snap['method'] == METHOD:
+        first = [r for r in rows if r['stratum'] in FIRST_BLOCK]
+        # Without one "Heard" no threshold can be decided, so the sounds not yet asked are left out.
+        snap['early_stop'] = bool(first) and all(r['verdict'] is not None for r in first) \
+            and not any(r['verdict'] == 'target' for r in rows) and any(r['verdict'] is None for r in rows)
+        if snap['early_stop']: rows = [r for r in rows if r['verdict'] is not None]
+    if not rows or any(r['verdict'] is None for r in rows):
+        # A corrected answer after an early stop found a voice: go on with the remaining sounds.
+        if snap['method'] == METHOD and snap['stage'] == 'complete': snap.update(stage='sample', results={}, thresholds={})
+        return False
     population = _load_population(root, sid)
     lookup = {(int(rid), float(start), float(end)): i for i, (rid, start, end) in enumerate(zip(
         population['recording_id'], population['start_s'], population['end_s']))}
@@ -389,6 +402,7 @@ def _finish(root, db, sid, snap):
     result = estimate(population['score'], population['bin'], sampled,
                       [r['verdict'] for r in rows], snap['x0'], int(snap['draw_seed']))
     result.update(model_sha256=snap['models'][snap['engine']], status='decided' if result['threshold'] is not None else 'undecided')
+    if snap.get('early_stop'): result.update(density=None, count=None)  # the lower bins were never heard
     snap['results'] = {snap['engine']: result}
     snap['thresholds'] = {snap['engine']: {'threshold': result['threshold'], 'adjusted': result['threshold'] is not None,
                                            'reason': result['reason']}}
@@ -499,6 +513,7 @@ def view_session(root, sid, ctx=None, include_items=True, item_id=None):
         require_visible(root, snap)
         taxon = names_for(db.execute('SELECT * FROM species WHERE id=?', (row['species_id'],)).fetchone())
         items = answered_items(db, sid)
+        if snap.get('early_stop'): items = [i for i in items if i['verdict'] is not None]
         counts = {'total': len(items), 'answered': sum(i['verdict'] is not None for i in items),
                   'unknown': sum(i['verdict'] == 'unknown' for i in items), 'bins': []}
         for b in range(6):
@@ -530,7 +545,7 @@ def view_session(root, sid, ctx=None, include_items=True, item_id=None):
         'question': question, 'model': row['model'], 'engine': snap['engine'], 'model_id': snap.get('model_id'),
         'history': history, 'models': snap['models'], 'thresholds': snap['thresholds'], 'results': snap['results'],
         'can_extend': applicable and snap['method'] == LEGACY_METHOD and bool(snap.get('can_extend')),
-        'extended': snap.get('extended', False),
+        'extended': snap.get('extended', False), 'early_stop': snap.get('early_stop', False),
         'start_date': snap['start_date'], 'end_date': snap['end_date'], 'window_s': snap['window_s'],
         'population': snap['N'], 'method': snap['method'], 'evaluation_scope': snap['evaluation_scope'],
         'reference': snap['reference'], 'sampling_unit': snap['sampling_unit'], 'quantile_bounds': snap['quantile_bounds'],

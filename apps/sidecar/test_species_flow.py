@@ -238,18 +238,15 @@ class SpeciesFlowCheck(unittest.TestCase):
             detail = client.get(f'/datasets/1/species/{sid}', params={**scope, 'engine': 'custom', 'model_id': model['id']}).json()
             self.assertEqual(next(c for c in detail['checks'] if c['engine'] == 'custom')['validation']['model_reason'], 'custom_model_rebuilt')
             self.assertIn('check', {e['origin'] for e in detail['presence']['evidence']})  # its "heard" answers still count
+            # Every sound with the voice became training material, so no high-scoring sound is left to check.
             fresh = client.post('/validations', json={**scope, 'model': 'custom', 'model_id': model['id']}).json()
-            self.assertNotEqual(fresh['id'], check['id'])
-            with connect(root) as db:
-                training = {(e['recording_id'], e['start_s'], e['end_s']) for e in json.loads(db.execute('SELECT snapshot FROM custom_models').fetchone()[0])['training']['examples']}
-                items = {tuple(r) for r in db.execute('SELECT recording_id,start_s,end_s FROM validation_items WHERE session_id=?', (fresh['id'],))}
-            self.assertFalse(items & training)
+            self.assertEqual(fresh['detail'], 'validation_no_top_group')
             with_model = client.get(url, params={**dates, 'batch': True}).json()
             self.assertEqual((with_model['source'], len(with_model['batch'])), ('custom', 10))
             self.assertFalse({row['segment_id'] for row in with_model['batch']} & {*voice, *silent, ranked[0], *(segment for segment, _ in pieces)})
             # Deleting the search removes its marks and the species AI last made with it, with that AI's checks; labels stay.
             preview = client.get(f"/search-runs/{run['id']}/delete-preview").json()
-            self.assertEqual({k: preview[k] for k in ('marks', 'custom_models', 'checks')}, {'marks': 1, 'custom_models': 1, 'checks': 2})
+            self.assertEqual({k: preview[k] for k in ('marks', 'custom_models', 'checks')}, {'marks': 1, 'custom_models': 1, 'checks': 1})
             self.assertNotIn('labels', preview)
             self.assertEqual(client.post(f"/search-runs/{run['id']}/delete").status_code, 200)
             with connect(root) as db:

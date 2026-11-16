@@ -6,14 +6,14 @@ import type { AudioSource } from './AudioRegion.svelte';
 import { app,t,duration } from './app.svelte';
 export type Metric = { value: number | null; low: number | null; high: number | null };
 export type CheckStatus = 'not_started'|'in_progress'|'decided'|'undecided'|'stale';
-/** One check's estimates with 90% ranges; present only after every sound is answered. */
-export type QualityResult = { status:'decided'|'undecided'; threshold:number|null; reason:string|null; density:Metric; count:Metric;
+/** One check's estimates with 90% ranges; present once every sound is answered, or when the first block found no call (`early_stop`, without density or count). */
+export type QualityResult = { status:'decided'|'undecided'; threshold:number|null; reason:string|null; density:Metric|null; count:Metric|null;
   precision:Metric|null; recall:Metric|null; recall_status:'estimated'|'not_estimable'|'not_estimable_rare'; auprc:Metric|null;
   unknown:number; disagreement:boolean; answers_per_bin:{heard:number;not_heard:number;unknown:number}[] };
-/** One model's check for one species: 60 mixed sounds, and 18 more when the result is too uncertain. */
+/** One model's check for one species: up to 60 sounds, the two top score groups first (v2); older checks mixed them and could add 18 more. */
 export type Validation = { id:number; dataset_id:number; species:Species; stage:'sample'|'extension'|'complete'; status:CheckStatus;
   model:string; engine:string; model_id:number|null; results:Record<string,QualityResult>;
-  counts:{total:number;answered:number;unknown:number};
+  counts:{total:number;answered:number;unknown:number;bins:{total:number;heard:number}[]}; method:string; early_stop:boolean;
   question:{id:number;position:number;verdict:string|null;version:number;source:AudioSource;start_s:number;end_s:number;review_position:number;review_total:number}|null;
   history:{id:number;position:number;verdict:string}[]; can_extend:boolean; extended:boolean; model_reason?:string|null;
   start_date:string; end_date:string; window_s:number; population:number; applicable:boolean; created_at:string };
