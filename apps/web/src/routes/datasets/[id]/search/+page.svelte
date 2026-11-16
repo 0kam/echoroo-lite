@@ -90,15 +90,15 @@
         {#if noPath}<p class="field-error" id="path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
       {#if xc&&!search.pending}{#key species.id}<div hidden={!!source}><XenoCantoSearch {species} onselect={chooseReference} added={clips.map(c=>c.source.attribution?.id)} onremove={xcId=>{clips=clips.filter(c=>c.source.attribution?.id!==xcId);saveDraft();}}/></div>{/key}{/if}
       {#if source}{#if xc}<Button disabled={search.pending} onclick={()=>source=null}>{t('uBackSounds')}</Button>{/if}{#key `${source.kind}:${source.id}`}<div class="reference-player" inert={search.pending} aria-disabled={search.pending}><p>{fileName(source.path)}</p>
-        <AudioRegion {source} bind:start bind:end invalid={badPart?fill('uClipLength',{max:30}):''}/>
+        <AudioRegion {source} secondary bind:start bind:end invalid={badPart?fill('uClipLength',{max:30}):''}/>
         {#if source.attribution}<p class="muted">XC{source.attribution.id} · {source.attribution.recordist} · {source.attribution.license}</p>{/if}</div>{/key}
-        <Button disabled={search.pending||clips.length>=20} onclick={()=>{if(!valid)showMissing();else{addClip();source=null;}}}>{t('addQueryClip')}</Button>
+        <Button variant="primary" disabled={search.pending||clips.length>=20} onclick={()=>{if(!valid)showMissing();else{addClip();source=null;}}}>{t('addQueryClip')}</Button>
       {/if}
       {#if clips.length}<h3>{t('wQueriesAdded')}</h3><div class="added-clips">{#each clips as clip,index}<div class="actions"><Button disabled={search.pending} onclick={()=>{source=clip.source;start=clip.start_s;end=clip.end_s;}}>{fileName(clip.source.path)} · {clip.start_s.toFixed(1)}–{clip.end_s.toFixed(1)} {t('seconds')}</Button><Button disabled={search.pending} aria-label={`${t('removeReference')}: ${fileName(clip.source.path)}`} onclick={()=>{clips.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div>{/each}</div>{/if}
     </section>
     <section class="panel step-card"><h2>{t('sSearchStepRun')}</h2><p class="muted">{#if first&&last}{dayRange(first,last)} · {/if} {t('wAutoSaved')}</p>
       {#if search.pending}<p class="muted" role="status">{t('searchingAudioStatus')}</p>{/if}
-      <Button variant="primary" pending={search.pending} disabled={!!activeJob()} aria-describedby="search-reason" onclick={()=>missing?showMissing():search.run()}>{search.pending?t('searchingAudio'):t('wSearchAction')}</Button>
+      <Button variant={source?'default':'primary'} pending={search.pending} disabled={!!activeJob()} aria-describedby="search-reason" onclick={()=>missing?showMissing():search.run()}>{search.pending?t('searchingAudio'):t('wSearchAction')}</Button>
       {#if !search.pending}<p class={triedClip&&missing?'field-error':'muted'} id="search-reason">{missing||(activeJob()?t('management_busy'):'')}</p>{/if}
       {#if search.pending}<Button pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>{/if}
       {#if search.error}<p class="error" role="alert">{t(search.error)}{#if search.error==='search_exists'} · <a href={`${resolve(`/datasets/${id}/species/${species.id}`)}${first&&last?`?${rangeQuery(first,last)}`:''}`}>{t('wOpenSpecies')}</a>{/if}</p>{/if}</section>

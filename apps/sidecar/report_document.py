@@ -5,7 +5,7 @@ from html import escape
 from math import ceil
 from zoneinfo import ZoneInfo
 
-from report_figures import DATA,common_name
+from report_figures import DATA,common_name,custom_method
 
 
 def messages(locale):
@@ -99,9 +99,7 @@ def ai_state(snap):
 
 def method(snap,t):
     if snap['engine']=='custom':
-        created=date.fromisoformat(snap['created_at'][:10]) if snap.get('created_at') else None
-        return t['custom_model_date'].format(month=created.month if created else '—', day=created.day if created else '—',
-                                             date=created.isoformat() if created else '—')
+        return custom_method(snap,t)
     from models import REGISTRY
     return REGISTRY[snap['engine']]['name']
 
@@ -210,15 +208,19 @@ def blocks(manifest,snapshots,quiz,evidence=()):
             [t['tile_value'].format(count=len(taxa)),t['tile_selected']]]},
         para(t['sentence_sep'].join(sure),cls='sure'),
         {'type':'table','headers':[t['col_species'],t['col_heard'],t['col_ai']],'rows':rows}]
-    if manifest.get('other_species'):summary.append(para(t['other_species'].format(count=number(manifest['other_species']))))
+    other=manifest.get('other_species') or {}
+    left_out=[t['other_'+key].format(count=number(other[key])) for key in ('candidates','heard') if other.get(key)]
+    if left_out:summary.append(para(t['sentence_sep'].join(left_out+[t['other_include']])))
     summary.append(para(t['absence_note'],muted=True))
     output=[{'type':'section','id':'summary','title':t['title'],'level':1,'body':summary}]
 
     # Species: how to read AI detections once, then one section per species.
     # Name only the interval lengths of the AIs in this report.
-    windows={model_group(snap,t):snap['window_s'] for snap in snapshots}
-    reading=t['reading_windows'].format(windows=t['list_sep'].join(t['reading_window'].format(model=k,s=f'{v:g}') for k,v in windows.items()))
-    if len(windows)>1:reading+=t['reading_no_sum']
+    windows={model_group(snap,t):snap['window_s'] for snap in snapshots};lengths=set(windows.values())
+    same=len(windows)>1 and len(lengths)==1
+    reading=t['reading_windows'].format(windows=t['reading_window_all'].format(s=f'{lengths.pop():g}') if same else
+                                        t['list_sep'].join(t['reading_window'].format(model=k,s=f'{v:g}') for k,v in windows.items()))
+    if len(windows)>1:reading+=t['reading_no_sum_same' if same else 'reading_no_sum']
     output.append({'type':'section','id':'species','title':t['nav_species'],'body':[
         {'type':'heading','text':t['reading_title']},para(reading),para(t['reading_figure']),
         {'type':'legend','items':[['#a24f4f',t['legend_red']],['#ffffff',t['legend_white']],['#f1f0f2',t['legend_gray']]]},
@@ -304,7 +306,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
                          'body':[sounds(answered,t,lambda r:t['verdict_'+r['verdict']] if r.get('verdict') else '')]})
         checks+=body
     details=[para(t['details_note'],muted=True),
-        {'type':'details','id':'checks','summary':t['detail_checks'],'body':checks or [para(t['checks_none'])]}]
+        {'type':'details','id':'checks','summary':t['detail_checks'],'body':[para(t['range_note'],muted=True)]+checks if checks else [para(t['checks_none'])]}]
     groups={}
     for snap in snapshots:
         s=snap['summaries'][0] if snap['summaries'] else {}
@@ -333,7 +335,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
         if q['species_id'] not in names_by_id:continue
         moment=datetime.fromisoformat(q['answered_at']).astimezone(ZoneInfo(site['timezone'])).strftime('%Y-%m-%d %H:%M')
         quiz_rows.append([name(names_by_id[q['species_id']],locale),f"{q['correct']} / {q['total']}",str(q['unknown']),moment,
-            f"Q{q['session_id']}"+('' if q['complete'] else t['paren'].format(text=t['partial_quiz']))])
+            t['quiz_session' if q['complete'] else 'quiz_session_partial'].format(n=q['session_id'])])
     if quiz_rows:
         details.append({'type':'details','summary':t['detail_quiz'],'body':[para(t['quiz_note']),
             {'type':'table','headers':[t[k] for k in ('col_species','quiz_score','quiz_unknown','quiz_date','quiz_set')],'rows':quiz_rows}]})
@@ -482,7 +484,7 @@ def create_html(folder,manifest,snapshots,evidence,quiz,records=()):
     html=f'''<!doctype html><html lang="{manifest['locale']}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; media-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>{e(t['title'])} · {e(manifest['site']['name'])}</title><style>{css}</style></head><body>
-<header><img src="figures/echoroo.png" width="32" height="32" alt=""><b>echoroo</b><nav aria-label="{e(t['nav_label'],quote=True)}">{nav}</nav><span class="stamp">{e(manifest['site']['name'])}{e(t['dot'])}{e(period_text(t,manifest))}</span></header>
+<header><img src="figures/echoroo.png" width="32" height="32" alt=""><b>Echoroo Lite</b><nav aria-label="{e(t['nav_label'],quote=True)}">{nav}</nav><span class="stamp">{e(manifest['site']['name'])}{e(t['dot'])}{e(period_text(t,manifest))}</span></header>
 <div class="tools"><button id="copy" type="button" data-success="{e(t['copied'],quote=True)}" data-failure="{e(t['copy_failed'],quote=True)}">{e(t['copy'])}</button><p id="copy-status" role="status"></p><p>{e(t['copy_hint'])}</p></div>
 <main>{main}</main><textarea hidden id="plain-text">{e(chr(10).join(plain))}</textarea><footer>{e(saved_time(manifest))}</footer><script>{script}</script></body></html>'''
     (folder/'index.html').write_text(html,encoding='utf-8')

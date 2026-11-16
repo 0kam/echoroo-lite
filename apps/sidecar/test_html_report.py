@@ -106,7 +106,7 @@ class HtmlReportCheck(unittest.TestCase):
                 self.assertEqual(english.status_code,200,english.text)
                 with zipfile.ZipFile(english.json()['path']) as archive:
                     self.assertIn('lang="en"',archive.read('index.html').decode())
-                    self.assertIn('Confirmed by listening: <span class="badge yes">Heard</span> 2 sounds',archive.read('index.html').decode())
+                    self.assertIn('Confirmed by listening: <span class="badge yes">Call heard</span> in 2 sounds',archive.read('index.html').decode())
                 self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),saved_hash)
                 count=len(list(output.iterdir()))
                 with patch('workflow_export.create_html',side_effect=OSError('disk full')):

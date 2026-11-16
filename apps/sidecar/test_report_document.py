@@ -88,11 +88,15 @@ class ReportDocumentTest(unittest.TestCase):
         self.assertIn('4 intervals (4.0% of the 100 intervals examined). Days with detections: 2',rendered)
 
     def test_summary_states_how_sure_and_durations_read_as_words(self):
-        snap=snapshot();t=messages('ja');report=manifest(snap);report['other_species']=18
+        snap=snapshot();t=messages('ja');report=manifest(snap);report['other_species']={'candidates':18,'heard':0}
         report['scope']['recorded_seconds']=2400
         summary=str(sections(blocks(report,[snap],{'per_species':[]}))['summary'])
         self.assertIn('人が聞いて声を確かめたのは、例鳥です。AI の精度まで確かめたのは、例鳥（正しかったのは約 50%）です。',summary)
-        self.assertIn('録音 40 分',summary);self.assertIn(t['other_species'].format(count=18),summary)
+        self.assertIn('録音 40 分',summary);self.assertIn(t['other_candidates'].format(count=18)+t['other_include'],summary)
+        self.assertNotIn(t['other_heard'].split('{')[0],summary)
+        report['other_species']={'candidates':0,'heard':2}
+        summary=str(sections(blocks(report,[snap],{'per_species':[]}))['summary'])
+        self.assertIn(t['other_heard'].format(count=2)+t['other_include'],summary);self.assertNotIn('AI の候補になったが',summary)
         reading=str(sections(blocks(report,[snap],{'per_species':[]}))['species'])
         self.assertIn('BirdNET 2.4 は 3 秒',reading);self.assertNotIn('5 秒',reading)
         self.assertEqual([duration_text(s,t) for s in (5400,43200,1200)],['1 時間 30 分','12 時間','20 分'])
@@ -147,6 +151,18 @@ class ReportDocumentTest(unittest.TestCase):
                               'session_id':3,'complete':True,'set_sha256':'abc'}]}
         summaries=[block['summary'] for block in sections(blocks(report,[confirmed],quiz))['details']['body'] if block['type']=='details']
         self.assertIn(t['detail_quiz'],summaries)
+
+    def test_custom_ai_date_uses_site_zone_and_shared_length_is_said_once(self):
+        t=messages('ja');snap=snapshot();snap['window_s']=5
+        custom=deepcopy(snap);custom.update(engine='custom',created_at='2026-11-16 15:24:00',site={'timezone':'Asia/Tokyo'},figure_id='F002',
+                      custom_model={'training':{'positive_5s':21,'negative_5s':20}})
+        content=blocks(manifest(snap),[snap,custom],{'per_species':[{'species_id':'sp','correct':0,'total':1,'unknown':1,
+            'answered_at':'2026-11-16T15:29:00+00:00','session_id':2,'complete':False}]})
+        rendered=str(content);reading=str(sections(content)['species'])
+        self.assertIn('この種用に作ったAI（11/17作成）',rendered);self.assertNotIn('11/16',rendered)
+        self.assertIn('どの AI も 5 秒',reading);self.assertIn(t['reading_no_sum_same'],reading)
+        self.assertIn('2 回目・途中でやめた',rendered);self.assertIn('2026-11-17 00:29',rendered)
+        self.assertIn('この種の声 21 音、ほかの音 20 音',rendered)
 
     def test_schedule_draws_each_recording_at_its_local_time(self):
         t=messages('ja');report=manifest(snapshot())

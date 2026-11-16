@@ -1,9 +1,9 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount,tick } from 'svelte';
+  import { onMount,tick,untrack } from 'svelte';
   import { beforeNavigate,afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
-  import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession } from '$lib/app.svelte';
+  import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession, type Job } from '$lib/app.svelte';
   import ModelChoice from '$lib/ModelChoice.svelte';
   import UpdateControl from '$lib/UpdateControl.svelte';
   import { fill } from '$lib/workflow';
@@ -35,6 +35,16 @@
   });
   const job = $derived(activeJob());
   const route = $derived(page.route.id ?? '');
+  // Where a job's result is shown: the site's results, or its sound map.
+  const resultOf = (item: Job) => item.stage.startsWith('explore_') ? resolve(`/datasets/${item.dataset_id}/explore`) : resolve(`/datasets/${item.dataset_id}`);
+  const showing = (item: Job) => route === (item.stage.startsWith('explore_') ? '/datasets/[id]/explore' : '/datasets/[id]')
+    && siteOf(datasetOf(Number(page.params.id)))?.id === siteOf(datasetOf(item.dataset_id))?.id;
+  // A job that finishes while its result page is not open leaves a notice linking to it, until that page is opened.
+  let finished = $state<Job | null>(null), watched: number | null = null;
+  $effect(() => { const now = job; untrack(() => {
+    if (watched !== null && now?.id !== watched) { const done = app.jobs.find(item => item.id === watched); if (done?.status === 'complete' && !showing(done)) finished = done; }
+    watched = now?.id ?? null; if (now) finished = null; }); });
+  $effect(() => { void route; void page.params.id; untrack(() => { if (finished && showing(finished)) finished = null; }); });
   const current = (prefix: string, exact = false) => exact ? route === prefix : route.startsWith(prefix);
   // Visiting a dataset route makes it the working dataset for subsequent navigation.
   $effect(() => {
@@ -57,11 +67,13 @@
       <a href={resolve('/settings')} class:current={current('/settings')}>{t('navSettings')}</a>
     </nav>
     <span class="spacer"></span>
-    {#if job}
+    <span aria-live="polite">{#if job}
       {@const target = datasetOf(job.dataset_id)}
       {@const explore = job.stage.startsWith('explore_')}
       <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{fill('jobLine', { status: t(explore ? 'eMaking' : 'analysisInProgress'), progress: siteOf(target)?.name ?? '' })}</a>
-    {/if}
+    {:else if finished}
+      <a class="jobchip" href={resultOf(finished)}>✓ {fill(finished.stage.startsWith('explore_') ? 'jobDoneMap' : 'jobDoneAnalysis', { site: siteOf(datasetOf(finished.dataset_id))?.name ?? '' })}</a>
+    {/if}</span>
     <select aria-label={t('language')} value={app.locale} onchange={e => setLocale(e.currentTarget.value as 'ja' | 'en')}>
       <option value="ja">日本語</option><option value="en">English</option>
     </select>

@@ -11,7 +11,8 @@ export type QuizLibrary = { clips: QuizClip[]; sets: {id: number; name: string; 
 export type QuizFeedback = {position: number; status: string; clip: QuizClip; answer: Species | null; answered_at: string};
 export type QuizSession = {id: number; count: number; answered: number; complete: boolean; correct: number; unknown: number;
   question: {position: number; seconds: number; choices: Species[]; feedback: QuizFeedback | null} | null;
-  review: QuizFeedback[]; per_species: {species: Species; correct: number; incorrect: number; unknown: number; total: number}[]};
+  review: QuizFeedback[]; per_species: {species: Species; correct: number; incorrect: number; unknown: number; total: number}[];
+  clip_ids: number[]; requested_count: number};
 
 export function quizContext(url: URL) {
   const params = new URL(url.hash.slice(1) || url.pathname + url.search, url).searchParams;

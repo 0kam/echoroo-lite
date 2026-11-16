@@ -2,10 +2,12 @@
 import io
 import json
 import math
-from datetime import date
+from datetime import date,datetime,timezone
 from functools import lru_cache
 from html import escape
 from pathlib import Path
+
+from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -26,6 +28,16 @@ def common_name(species,locale):
     names=species['common_names'];custom=species.get('custom_names') or {}
     common=names.get(locale) or names.get('en') or next(iter(custom.values()),'')
     return common if common!=species['scientific_name'] else ''
+
+
+def custom_method(report,t):
+    """'AI made for this species (created ...)', dated in the site's time zone; SQLite stores UTC without an offset."""
+    created=None
+    if report.get('created_at'):
+        moment=datetime.fromisoformat(report['created_at'])
+        created=(moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone(ZoneInfo(report['site']['timezone'])).date()
+    return t['custom_model_date'].format(month=created.month if created else '—',day=created.day if created else '—',
+                                         mon=t['months'][created.month-1] if created else '—')
 
 
 def cell_color(cell,report):
@@ -60,9 +72,7 @@ def spiral(report,locale,counting_status_text):
     label(480,30,(common+' · ' if common else '')+taxon['scientific_name'],32)
     engine=report.get('engine')
     if engine=='custom':
-        created=date.fromisoformat(report['created_at'][:10]) if report.get('created_at') else None
-        method=t['custom_model_date'].format(month=created.month if created else '—',day=created.day if created else '—',
-                                             date=created.isoformat() if created else '—')
+        method=custom_method(report,t)
     else:
         from models import REGISTRY
         method=REGISTRY[engine]['name']

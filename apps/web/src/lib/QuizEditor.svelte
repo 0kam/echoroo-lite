@@ -45,7 +45,7 @@
       path = picked;
     }
     select(await api<AudioSource>('/references', { path }));
-  }, { toast: true });
+  });
   const save = createTask(async () => {
     if (!source || !species) return;
     const clip=await api<QuizClip>('/quiz/clips', { species_id: species.id, source_kind: source.kind, source_id: source.id,

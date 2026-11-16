@@ -78,7 +78,7 @@
       {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,time:effort.time})}</p>{/if}
       <div class="actions">{#if next}<Button variant="primary" href={speciesHref(next)}>{fill('wNextOpen',{name:commonName(next.species,app.locale)||next.species.scientific_name})}</Button>{/if}
         <Button variant={next?'default':'primary'} href={reports}>{t('wExport')}</Button>
-        {#if saved}<Button href={reports}>{fill('wSavedReports',{n:saved})}</Button>{/if}</div></section>{/if}
+        {#if saved}<Button href={`${reports}${range?'&':'?'}saved=1`}>{fill('wSavedReports',{n:saved})}</Button>{/if}</div></section>{/if}
     <section class="panel stack"><div class="section-heading"><div class="stat-row"><span>{fill('wRecordingsAnalysed',{analysed:result.analysed_recordings,records:result.records})}</span>
       <span>{fill('wTotalLength',{duration:duration(result.recorded_seconds)})}</span>
       <span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span></div></div>

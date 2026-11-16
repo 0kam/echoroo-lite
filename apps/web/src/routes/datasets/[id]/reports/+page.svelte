@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount } from 'svelte';
+  import { onMount,tick } from 'svelte';
   import { page } from '$app/state';
   import { isTauri } from '@tauri-apps/api/core';
   import { chooseDirectory } from '$lib/files';
@@ -14,6 +14,8 @@
   type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string;results?:{report_id:number;start_date?:string;end_date?:string}[];species?:Species[];start_date?:string|null;end_date?:string|null};
   type Snapshot = {id:number;created_at:string;species:Species|null;start_date:string|null;end_date:string|null};
   const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
+  // Opened from "Saved reports" on the site page: the page opens at the saved list.
+  const toSaved=query.has('saved');query.delete('saved');
   const site=$derived(siteOf(datasetOf(id)));
   let overview=$state<Overview|null>(null),selected=$state<string[]>([]),error=$state(''),folder=$state('');
   let output=$state<Export|null>(null),history=$state<Export[]>([]),earlier=$state<Snapshot[]>([]);
@@ -29,6 +31,7 @@
     const exported=new Set(saved.flatMap(item=>item.results?.map(result=>result.report_id)??[]));earlier=snapshots.filter(item=>!exported.has(item.id));
     try{const draft=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(draft){selected=draft.selected.filter((id:string)=>data.species.some(row=>row.species.id===id));folder=draft.folder;}}catch{}
     restored=true;
+    if(toSaved){await tick();requestAnimationFrame(()=>document.getElementById('saved-reports')?.scrollIntoView({block:'start'}));}
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
   const exportFiles=createTask(async()=>{
     if(!overview)return;
@@ -81,7 +84,7 @@
       <Button variant={output?'default':'primary'} pending={exportFiles.pending} aria-describedby="export-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else exportFiles.run();}}>{t('rCreate')}</Button>
       <p class={tried&&missing?'field-error':'muted'} id="export-reason">{missing}</p>
     </section>
-    {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}{@const from=item.start_date??item.results?.[0]?.start_date}{@const to=item.end_date??item.results?.[0]?.end_date}<div class="history">
+    {#if history.length}<section class="panel" id="saved-reports"><h2>{t('wExportHistory')}</h2>{#each history as item}{@const from=item.start_date??item.results?.[0]?.start_date}{@const to=item.end_date??item.results?.[0]?.end_date}<div class="history">
       <div><p>{when(item.created_at)}</p>
         <!-- What the saved report covers: its period and the species chosen for it. -->
         {#if from&&to}<p>{dayRange(from,to)}</p>{/if}

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount } from 'svelte';
+  import { onMount,tick } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.svelte';
@@ -11,12 +11,15 @@
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
+  import { notify } from '$lib/ui/toast.svelte';
   const id=Number(page.params.id),speciesId=page.params.species!;
   const site=$derived(siteOf(datasetOf(id)));
   const range=new URLSearchParams([...new URL(page.url.hash.slice(1),page.url).searchParams].filter(([key])=>key.endsWith('_date')));
   // `info` holds the counts and the AI; the batch changes only when a new batch is loaded, so its rows do not move while answering.
   let info=$state<SpeciesAI|null>(null),batch=$state<LabelRow[]>([]),answered=$state<LabelRow[]>([]),source=$state<SpeciesAI['source']>(null);
   let error=$state(''),skipped:number[]=[],answeredShown=$state(10),confirming=$state(false);
+  // A sound is answered only after it was played, as on the other answer pages; `more` opens the sounds again once growing has settled.
+  let played=$state<number[]>([]),more=$state(false);
   const fetchState=(query='')=>api<SpeciesAI>(`/datasets/${id}/species/${speciesId}/custom-model?${range}${query}`);
   // Sounds shown and passed over are not offered again until the AI is made again.
   const next=createTask(async()=>{const value=await fetchState(`&batch=true${skipped.map(segment=>`&skip=${segment}`).join('')}`);
@@ -30,13 +33,17 @@
   },{toast:true});
   // The period the server used for this page, so a link without dates still makes the AI for what is shown.
   const build=createTask(async()=>{await api('/custom-models',{dataset_id:id,species_id:speciesId,
-    start_date:info!.start_date,end_date:info!.end_date});skipped=[];await next.run();toTop();});
+    start_date:info!.start_date,end_date:info!.end_date});skipped=[];await next.run();toTop();
+    notify('mdBuilt','success',undefined,{n:info?.model?.round??1});});
   // A new batch is answered from its first sound, so bring the top of the list back into view.
   const toTop=()=>document.getElementById('next-sounds')?.scrollIntoView({block:'start'});
   const another=async()=>{skipped.push(...batch.filter(row=>!row.label).map(row=>row.segment_id));await next.run();toTop();};
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;skipped=[];await next.run();},{toast:true});
   const model=$derived(info?.model??null);
+  // The words for how far it has grown: one round that hardly changed it (growth_state's 0.9) is "almost", not "changed".
+  const growText=$derived(model?.growth.state==='growing'&&(model.growth.rounds.at(-1)?.overlap??0)>=.9?'almost':model?.growth.state);
+  const folded=$derived(model?.growth.state==='settled'&&!more);
   // Opens this AI's accuracy check at once (an unfinished one with the same AI and period is reused).
   const startCheck=createTask(async()=>{const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
     start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(resolve(`/datasets/${id}/validation/${validation.id}`));},{toast:true});
@@ -63,22 +70,24 @@
       <!-- Shown from the first time the AI is made again: before that there is nothing to compare it with. -->
       {#if model?.growth.rounds.length}{@const grown=model.growth.state}<h2>{t('mdGrowth')}</h2>
         <ul class="rounds">{#each model.growth.rounds as item (item.round)}<li>{item.overlap==null?fill('mdGrowthRoundNone',{n:item.round}):fill('mdGrowthRound',{n:item.round,p:share(item.overlap)})}</li>{/each}</ul>
-        <div class="status-box" role="status"><strong>{t(`mdGrow_${grown}`)}</strong><p>{fill(`mdGrowText_${grown}`,{n:info.examples.positive_5s})}</p></div>
-        <!-- The check opens directly; finishing returns to the species page. The sounds below can still be answered in every state. -->
+        <div class="status-box" role="status"><strong>{t(`mdGrow_${growText}`)}</strong><p>{fill(`mdGrowText_${growText}`,{n:info.examples.positive_5s})}</p></div>
+        <!-- The check opens directly; finishing returns to the species page. Once settled, the sounds below wait behind "Grow it a little more". -->
         {#if grown!=='growing'}<div class="actions">
           {#if grown!=='no_voice'&&model.applicable}<Button variant="primary" pending={startCheck.pending} onclick={()=>startCheck.run()}>{t('cStart')}</Button>{/if}
-          {#if grown!=='settled'}<Button href={back}>{t('mdFinish')}</Button>{/if}
+          {#if grown!=='settled'}<Button href={back}>{t('mdFinish')}</Button>{:else if !more}<Button onclick={async()=>{more=true;await tick();toTop();}}>{t('mdGrowMore')}</Button>{/if}
         </div>{/if}
       {/if}
     </section>{/if}
     {#snippet row(item:LabelRow)}<article class="row">
       <div class="row-head"><span>{time(item)}</span>{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
-      <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}>
+      <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}
+        onplaying={()=>{if(!played.includes(item.segment_id))played=[...played,item.segment_id];}}>
         {#snippet actions()}<div class="actions" role="group" aria-label={time(item)}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
-          <Button active={item.label===value} aria-pressed={item.label===value} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}</Button>{/each}</div>{/snippet}
+          <Button active={item.label===value} aria-pressed={item.label===value} pending={label.pending} disabled={next.pending||build.pending||(!item.label&&!played.includes(item.segment_id))} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}</Button>{/each}
+          {#if !item.label&&!played.includes(item.segment_id)}<span class="muted">{t('pPlayFirst')}</span>{/if}</div>{/snippet}
       </AudioRegion>
     </article>{/snippet}
-    <section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
+    {#if !folded}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
       <!-- Nothing to rank by is a step still to do, not an error. -->
       {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
         <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
@@ -100,7 +109,7 @@
         {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
         {#if next.error&&!error}<p class="error" role="alert">{t(next.error)}</p>{/if}
       </div>{/if}
-    </section>
+    </section>{/if}
     <!-- The count follows each answer and undo; new answers are added on top, and the list is reordered only with a new batch. -->
     {#if answered.length}<details class="panel"><summary>{fill('mdAnswered',{n:info.answered.length})}</summary>
       <p class="muted">{t('mdUndo')}</p>

@@ -35,7 +35,7 @@
 </script>
 
 {#snippet about(model: Model)}
-  <span><strong>{model.name}</strong>{#if model.experimental} <span class="rare">{t('modelPreview')}</span>{/if}<br />
+  <span><strong>{model.name}</strong>{#if model.experimental}{' '}<span class="rare">{t('modelPreview')}</span>{/if}<br />
     <span class="muted">{t(`modelHint_${model.id}`)}</span>
     {#if model.seconds_per_hour != null}<br /><span class="muted">{fill('modelSpeed', { time: roughTime(model.seconds_per_hour) })}</span>{/if}</span>
 {/snippet}

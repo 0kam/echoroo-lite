@@ -123,8 +123,12 @@ def export(root,body,cancel=None):
     if not snapshots and not any(p['evidence'] for p in presence.values()):raise CatalogError('no_report_analyses')
     # Species the export page offered with AI detections or confirmed calls but not chosen; the overview is cached.
     from results_workflow import overview
-    other_species=sum(row['species']['id'] not in presence and bool(row['presence']['evidence'] or any((m.get('candidate_windows') or 0)>0 for m in row['models']))
-                      for row in overview(root,body.dataset_id,ctx['start_date'],ctx['end_date'])['species'])
+    # Counted apart so the report never reads as if confirmed species were dropped: heard ones, then AI-only candidates.
+    other_species={'heard':0,'candidates':0}
+    for row in overview(root,body.dataset_id,ctx['start_date'],ctx['end_date'])['species']:
+        if row['species']['id'] in presence:continue
+        if row['presence']['evidence']:other_species['heard']+=1
+        elif any((m.get('candidate_windows') or 0)>0 for m in row['models']):other_species['candidates']+=1
     token=uuid4().hex[:10];package_id=f'echoroo-{body.dataset_id}-{token}'
     destination=parent/package_id;zip_path=parent/(package_id+'.zip')
     zone=ZoneInfo(ctx['site']['timezone']);index=[];species_rows=[];hourly=[];evidence=[];quality_rows=[];presence_rows=[]

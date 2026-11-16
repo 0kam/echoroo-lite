@@ -37,9 +37,9 @@
 <div class="job">
   <div class="section-heading">
     <!-- An analysis job counts recordings × AIs, which is not a recording count; the page shows analysed recordings, this box only the bar and time left. -->
-    <!-- A map build is named as such, with its current step, from the moment it is queued. -->
+    <!-- A map build is named as such, with its current step, from the moment it is queued. A waiting analysis is already "Running": the line below says what it is doing. -->
     <strong>{explore && active ? fill('jobLine', { status: t('eMaking'), progress: fill('eJobStep', { n: step + 1, total: 6 }) })
-      : counted ? fill('jobLine', { status: t(job.status), progress: counted }) : t(job.status)}</strong>
+      : counted ? fill('jobLine', { status: t(job.status), progress: counted }) : t(active ? 'running' : job.status)}</strong>
     {#if active}<Button size="sm" pending={cancel.pending} onclick={() => cancel.run()}>{t(explore ? 'operationCancel' : 'cancel')}</Button>{/if}
   </div>
   {#if active}<p class="muted">{t(job.stage)}{#if explore && counted}{' · '}{counted}{/if}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p>

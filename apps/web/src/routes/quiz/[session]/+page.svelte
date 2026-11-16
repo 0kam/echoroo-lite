@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths';
   import { onMount, tick } from 'svelte';
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import { api, mediaURL } from '$lib/api.svelte';
   import { app, t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
@@ -38,6 +39,11 @@
   const replay = createTask(async (position: number) => {
     questionPlayer?.stop(); reviewPosition = position; await tick();
     try { await questionPlayer?.play(); } catch { throw Error('unreadable_audio'); }
+  }, { toast: true });
+  // The same birds and number of questions again, as a new session.
+  const again = createTask(async () => {
+    const next = await api<QuizSession>('/quiz/sessions', { clip_ids: session!.clip_ids, count: session!.requested_count });
+    await goto(`${resolve(`/quiz/${next.id}`)}${context.query ? `?${context.query}` : ''}`);
   }, { toast: true });
   onMount(() => { load().catch(e => loadError = e instanceof Error ? e.message : 'unknown_error');  });
 </script>
@@ -97,6 +103,8 @@
           {@const review = session.review.find(row=>row.position===reviewPosition)!}
           <AudioRegion bind:this={questionPlayer} source={{kind:'quiz',id:session.id,position:review.position,seconds:review.clip.seconds}} start={0} end={review.clip.seconds} fixedRange />
         {/key}{/if}
+        <div class="actions result-actions"><Button variant="primary" pending={again.pending} onclick={() => again.run()}>{t('quizAgain')}</Button>
+          {#if context.back}<Button href={context.back}>{t(context.backLabel)}</Button>{:else}<Button href={quizUrl}>{t('backToQuiz')}</Button>{/if}</div>
       {/if}
       {#if answer.error || advance.error || replay.error}<p class="error" role="alert">{t(answer.error || advance.error || replay.error)}</p>{/if}
     </section>
@@ -115,4 +123,5 @@
   .result-score { margin: 12px 0; font-size: 28px; color: rgb(var(--primary-700)); }
   .review-heading { margin-top: 24px; }
   .review-list { max-height: 340px; overflow: auto; }
+  .result-actions { margin-top: 24px; }
 </style>

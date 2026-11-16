@@ -165,7 +165,7 @@
       <canvas bind:this={canvas} aria-label={t('spectrogram')}></canvas>
       {#if !loading && !error}
         {#each ticks as tick}{#if tick.row_fraction > 0 && tick.row_fraction < 1}<div class="guide" style:bottom={`${tick.row_fraction * 100}%`}></div>{/if}{/each}
-        {#if choosing || marked}{@const [from, to] = marked ?? [start, end]}<div class="selection" style:left={`${percent(from)}%`} style:width={`${Math.max(0, percent(to) - percent(from))}%`}></div>{/if}
+        {#if choosing || marked}{@const [from, to] = marked ?? [start, end]}<div class="selection" class:chosen={choosing} style:left={`${percent(from)}%`} style:width={`${Math.max(0, percent(to) - percent(from))}%`}></div>{/if}
         {#if cursor >= viewStart && cursor <= viewEnd}<div class="playhead" style:left={`${percent(cursor)}%`}></div>{/if}
       {/if}
       {#if loading || error}<div class="spectrogram-state" role="status">{t(error || 'loadingSpectrogram')}</div>{/if}
@@ -210,6 +210,8 @@
   canvas { width: 100%; height: 100%; display: block; }
   .guide { position: absolute; left: 0; right: 0; height: 1px; background: rgb(255 255 255 / .15); pointer-events: none; }
   .selection { position: absolute; top: 0; bottom: 0; border-left: 2px solid #fff5bd; border-right: 2px solid #fff5bd; pointer-events: none; }
+  /* A part being chosen is tinted and the rest dimmed, so it reads at a glance even when it starts at 0 s. */
+  .selection.chosen { background: rgb(255 245 189 / .15); box-shadow: 0 0 0 100vw rgb(0 0 0 / .5); }
   .playhead { position: absolute; top: 0; bottom: 0; border-left: 2px solid #60dcff; pointer-events: none; }
   .spectrogram-state { position: absolute; inset: 0; display: grid; place-items: center; background: #010101e8; color: #fff5bd; padding: 24px; }
   .dense { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 0 8px; align-items: center; }

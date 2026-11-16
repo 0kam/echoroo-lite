@@ -14,13 +14,21 @@
   let query = $state(''), rows = $state<Species[]>([]), busy = $state(false), error = $state(''), searched = $state(false);
   let scientific=$state(''),common=$state(''),adding=$state(false),tried=$state(false),existing=$state<Species|null>(null);
   let naming=$state(false),newName=$state(''),triedName=$state(false);
+  // A listed species with the same species epithet (e.g. Yezoterpnosia nigricosta for Terpnosia nigricosta): asked about once per typed name.
+  let similar=$state<Species|null>(null),similarFor=$state('');
+  const epithet=(name:string)=>norm(name).split(' ')[1]??'';
+  const shownSimilar=$derived(similar&&similarFor===norm(scientific)?similar:null);
   const noScientific=$derived(tried&&!scientific.trim());
   // The species already listed under the typed scientific name, once 'Add a species' found it.
   const shownExisting=$derived(existing && norm(existing.scientific_name) === norm(scientific) ? existing : null);
   onDestroy(()=>{clearTimeout(timer);version++;});
   async function add(){adding=true;error='';try{
     const same=(await api<Species[]>(`/species?q=${encodeURIComponent(norm(scientific))}`)).find(row=>norm(row.scientific_name)===norm(scientific));
-    if(same)existing=same;else choose(await api<Species>('/species',{scientific_name:scientific,[app.locale]:common||query}));
+    if(same){existing=same;return;}
+    // ponytail: only the first 50 matches of the epithet are compared; enough for a warning, not a synonym check.
+    const near=epithet(scientific)&&similarFor!==norm(scientific)?(await api<Species[]>(`/species?q=${encodeURIComponent(epithet(scientific))}`)).find(row=>epithet(row.scientific_name)===epithet(scientific)):undefined;
+    if(near){similar=near;similarFor=norm(scientific);return;}
+    choose(await api<Species>('/species',{scientific_name:scientific,[app.locale]:common||query}));
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}finally{adding=false;}}
   // Only the current language is sent, so a name saved in the other language stays.
   async function saveName(){if(!newName.trim()){triedName=true;return;}adding=true;error='';
@@ -37,7 +45,7 @@
     clearTimeout(timer);
     const current = ++version;
     busy = true; error = '';
-    try { const data = await api<Species[]>(`/species?q=${encodeURIComponent(query.trim())}`); if (current === version) { rows = data; searched = true; } }
+    try { const data = await api<Species[]>(`/species?q=${encodeURIComponent(query.trim())}`); if (current === version) { rows = data; searched = true; if (!data.length) common = query.trim(); } }
     catch (e) { if (current === version) error = e instanceof Error ? e.message : 'unknown_error'; }
     finally { if (current === version) busy = false; }
   }
@@ -72,7 +80,10 @@
       <p class="muted" id={`${invalidId}-hint`}>{t('spScientificHint')}</p>
       {#if noScientific}<p class="field-error" id={`${invalidId}-scientific`}>{t('uEnterScientific')}</p>{/if}
       {#if shownExisting}{@const found = shownExisting}<p class="info" role="status">{t('spExists')} {#if commonName(found, app.locale)}<strong>{commonName(found, app.locale)}</strong>{/if} <i>{found.scientific_name}</i></p>
-        <Button variant="primary" onclick={() => { choose(found); naming = !found.common_names[app.locale]; newName = common; }}>{t('spChooseExisting')}</Button>{/if}<label>{t('wCommonName')}<input bind:value={common} placeholder={query} maxlength="200" disabled={adding}/></label><Button type="submit" variant={shownExisting ? 'default' : 'primary'} pending={adding} {disabled}>{t('addSpecies')}</Button>
+        <Button variant="primary" onclick={() => { choose(found); naming = !found.common_names[app.locale]; newName = common; }}>{t('spChooseExisting')}</Button>{/if}<label>{t('wCommonName')}<input bind:value={common} maxlength="200" disabled={adding}/></label>
+      {#if shownSimilar}{@const found = shownSimilar}<div class="notice" role="status"><p>{t('spSimilar')} {#if commonName(found, app.locale)}<strong>{commonName(found, app.locale)}</strong>{/if} <i>{found.scientific_name}</i></p>
+        <p>{t('spSimilarHint')}</p><Button variant="primary" onclick={() => { choose(found); naming = !found.common_names[app.locale]; newName = common; }}>{t('spChooseExisting')}</Button></div>{/if}
+      <Button type="submit" variant={shownExisting || shownSimilar ? 'default' : 'primary'} pending={adding} {disabled}>{t('addSpecies')}</Button>
       {#if !scientific.trim()}<p class={tried?'field-error':'muted'}>{missingText(['scientificName'])}</p>{/if}</form></div>{/if}
   {/if}
 {/if}
