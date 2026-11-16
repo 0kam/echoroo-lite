@@ -38,6 +38,7 @@ export type SpeciesAI = {species:Species;start_date:string;end_date:string;model
   batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number};
   requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[]};
 export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;round?:number;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
+  /** null: the applicable check ended undecided, so this AI's detections are not counted. */
   threshold?:number|null;validation:Validation|null};
 export type Overview = ReportOptions & {dataset:{id:number;name:string};site:{id:number;name:string;timezone:string};fingerprint:string;revision:string;mixed_models:boolean;location_stale:boolean;
   start_date:string;end_date:string;records:number;recorded_seconds:number;analysed_recordings:number;pending_analysis:Work[];
@@ -77,12 +78,14 @@ export function analysisSeconds(work:Work[]) {
 export const roughTime = (seconds:number) => seconds<60?fill('timeSeconds',{n:Math.max(1,Math.round(seconds))})
   :seconds<=5400?fill('timeMinutes',{n:Math.round(seconds/60)}):fill('timeHours',{n:(seconds/3600).toFixed(1)});
 export const windowSeconds = (engine:string) => modelOf(engine)?.window_s??5;
+/** Why no threshold was decided: "no sound answered Heard" only when that holds for every given check. */
+const undecidedText = (checks:Validation[]) => t(checks.every(value=>value.results[value.engine]?.reason==='no_target')?'cUndecidedNoTarget':'cUndecided');
 /** Plain status of one model's check. */
 export function checkText(value:Validation|null) {
   if(!value)return t('cNotStarted');
   if(value.status==='in_progress')return fill('cInProgress',{answered:value.counts.answered,total:value.counts.total});
   if(value.status==='stale')return t(value.model_reason==='custom_model_rebuilt'?'custom_model_rebuilt':'wStale');
-  return t(value.status==='decided'?'cDecided':'cUndecided');
+  return value.status==='decided'?t('cDecided'):undecidedText([value]);
 }
 /** The one button into a check: start, continue (answered/total), or see the result. */
 export function listenLabel(value:Validation|null) {
@@ -127,7 +130,7 @@ export function activityText(models:Checked[]) {
   const state=activity(models),open=inProgress(models);
   if(state==='decided')return fill('wDecidedModels',{models:decidedModels(models).join(app.locale==='ja'?'・':', ')});
   if(open)return fill('cInProgress',{answered:open.counts.answered,total:open.counts.total});
-  return t(state==='undecided'?'cUndecided':'wNoDecided');
+  return state==='undecided'?undecidedText(models.flatMap(model=>model.validation?.applicable&&model.validation.status==='undecided'?[model.validation]:[])):t('wNoDecided');
 }
 /** B3: the AI with more detections is the one to check; the others are optional. */
 export const defaultModel = <T extends {candidate_windows?:number|null}>(models:T[]) =>

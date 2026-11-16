@@ -39,8 +39,15 @@ def status(snap):
     return result.get('status','undecided') if result else 'undecided'
 
 
+def undecided_text(snaps,t):
+    """Why no threshold was decided; "no sound answered Heard" only when that holds for every undecided check."""
+    reasons=[(quality_result(snap) or {}).get('reason') for snap in snaps if status(snap)=='undecided']
+    return t['undecided_no_target' if reasons and all(reason=='no_target' for reason in reasons) else 'undecided']
+
+
 def status_text(snap,t):
     value=status(snap)
+    if value=='undecided':return undecided_text([snap],t)
     if value!='decided':return t[value]
     score=f"{snap['threshold']:.2f}";p=quality_result(snap).get('precision') or {}
     if None in (p.get('value'),p.get('low'),p.get('high')):return t['decided_score'].format(score=score)
@@ -49,10 +56,10 @@ def status_text(snap,t):
 
 
 def criterion(snap,t):
-    if snap['threshold'] is None:return t['undecided']
+    if snap['threshold'] is None:return t['figure_undecided']
     validation=snap.get('validation')
     adjusted=validation and validation['applicable'] and (validation.get('thresholds',{}).get(snap['engine']) or {}).get('adjusted')
-    return t['criterion_value'].format(score=f"{snap['threshold']:.2f}")+'\n'+(t['adjusted'] if adjusted else t['undecided_threshold'] if status(snap)=='undecided' else t['default'])
+    return t['criterion_value'].format(score=f"{snap['threshold']:.2f}")+'\n'+t['adjusted' if adjusted else 'default']
 
 
 def method(snap,t):
@@ -91,10 +98,11 @@ def presence_text(row,t):
     return t['presence_unchecked']
 
 
-def activity_text(row,reliable,t):
+def activity_text(row,reliable,t,snaps):
     state=row.get('counting_status','not_started')
     if state=='decided':
         return t['activity_decided'].format(models='\n'.join(reliable)).rstrip()
+    if state=='undecided':return undecided_text(snaps,t)
     return t['activity_'+state]
 
 
@@ -143,7 +151,8 @@ def blocks(manifest,snapshots,quiz):
         heading(t[title])
         table([t['species_name'],t['presence_column'],t['activity_column']],
             [[name(taxon,locale),presence_text(presence[taxon['id']],t),
-              activity_text({**presence[taxon['id']],'counting_status':overall_state(taxon['id'])},reliable.get(taxon['id'],[]),t)]
+              activity_text({**presence[taxon['id']],'counting_status':overall_state(taxon['id'])},reliable.get(taxon['id'],[]),t,
+                            [snap for snap in snapshots if snap['species']['id']==taxon['id']])]
              for taxon in taxa],[2.4,2.4,2.4])
     days=(date.fromisoformat(manifest['end_date'])-date.fromisoformat(manifest['start_date'])).days+1
     practice={q['species_id']:q for q in quiz['per_species']}

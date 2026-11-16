@@ -48,6 +48,7 @@
 <div class="shell">
   <header class="topbar">
     <a class="brand" href={resolve('/')}><img src="/echoroo.png" alt="" /> Echoroo <b>Lite</b></a>
+    {#if update.current}<span class="muted version">{fill('appVersion', { version: update.current })}</span>{/if}
     <nav class="main-nav" aria-label={t('workflow')}>
       <a href={resolve('/datasets')} class:current={current('/datasets')}>{t('navLibrary')}</a>
       <a href={resolve('/quiz')} class:current={current('/quiz')}>{t('quiz')}</a>
@@ -93,6 +94,7 @@
 
 <style>
   .connection { max-width: 1120px; margin: 0 auto 16px; }
+  .version { white-space: nowrap; font-size: 13px; }
   .dot-pulse { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
 </style>
