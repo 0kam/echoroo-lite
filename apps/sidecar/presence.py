@@ -1,6 +1,6 @@
 """Is the species here? A person listened and said "this is its call" at least once.
 
-Evidence is a marked sound from the candidate list, or any "heard" check answer.
+Evidence is a marked sound from the candidate list, any "heard" check answer, or any "voice" answer on the species-AI page.
 """
 import json
 from zoneinfo import ZoneInfo
@@ -162,6 +162,12 @@ def summaries(root, ctx, species_id=None):
             (ctx['site']['id'], species_id, species_id)).fetchall()
         misses = db.execute('''SELECT m.* FROM presence_misses m JOIN datasets d ON d.id=m.dataset_id
             WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''', (ctx['site']['id'], species_id, species_id)).fetchall()
+        # "Voice" answers the species-AI page lists (the site's main analysis), so an answer taken back there leaves the evidence too.
+        from custom_models import _main_analyses
+        labels = db.execute('''SELECT l.species_id,a.recording_id,s.start_s,s.end_s,l.id,NULL AS created_at,NULL AS run_id
+            FROM model_labels l JOIN segments s ON s.id=l.segment_id JOIN analyses a ON a.id=s.analysis_id
+            WHERE l.label='target' AND (? IS NULL OR l.species_id=?) AND a.id IN (SELECT value FROM json_each(?)) ORDER BY l.id''',
+            (species_id, species_id, json.dumps([a['id'] for a in _main_analyses(db, ctx)]))).fetchall()
     from models import selected_engines
     from custom_models import list_models
     from search_runs import site_run
@@ -171,7 +177,7 @@ def summaries(root, ctx, species_id=None):
         marks = [r for r in marks if r['run_id'] is None or
                  (run := site_run(db, ctx['site']['id'], r['species_id'])) and run['id'] == r['run_id']]
         misses = [r for r in misses if r['source'] != 'search' or site_run(db, ctx['site']['id'], r['species_id'])]
-    for origin, rows in (('mark', marks), ('check', heard)):
+    for origin, rows in (('mark', marks), ('check', heard), ('label', labels)):
         for row in rows:
             record = records.get(row['recording_id'])
             if not record or not window_in_scope(record, row['start_s'], row['end_s'], zone, ctx['start_date'], ctx['end_date']):

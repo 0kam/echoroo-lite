@@ -227,7 +227,7 @@ def counting_status(validations):
 
 def overview(root, dataset_id, first=None, last=None):
     ctx = context(root, dataset_id, first, last)
-    result = cached(root, ['overview-v21', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
+    result = cached(root, ['overview-v22', dataset_id, ctx['revision'], ctx['start_date'], ctx['end_date'],
                          enabled_engines(root)],
                   lambda: build_overview(root, dataset_id, ctx))
     from analysis import pending_pairs

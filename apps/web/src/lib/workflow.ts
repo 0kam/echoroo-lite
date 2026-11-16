@@ -21,7 +21,7 @@ export type Validation = { id:number; dataset_id:number; species:Species; stage:
  * stayed the same (null when either AI had none); `top_voice` counts voice among the two highest-scoring new answers (null under two). */
 export type Growth = {state:'growing'|'settled'|'no_voice'|'unsettled';rounds:{round:number;overlap:number|null;top_voice:number|null}[]};
 export type Check = {key:string;engine:string;model_id:number|null;created_at?:string;round?:number;growth?:Growth['state'];validation:Validation|null};
-export type Evidence = {recording_id:number;start_s:number;end_s:number;origin:'mark'|'check';source_path:string;seconds:number;local_time:string};
+export type Evidence = {recording_id:number;start_s:number;end_s:number;origin:'mark'|'check'|'label';source_path:string;seconds:number;local_time:string};
 export type Presence = {status:'confirmed'|'not_found'|'unchecked';evidence:Evidence[];miss:{listened:number;source:'ai'|'search';created_at:string}|null};
 export type SearchRef = {id:number;created_at:string};
 export type PresenceRow = {recording_id:number;start_s:number;end_s:number;score:number|null;models:{engine:string;rank:number;score:number}[];

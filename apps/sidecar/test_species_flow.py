@@ -255,12 +255,41 @@ class SpeciesFlowCheck(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM model_labels').fetchone()[0], 19)
             self.assertEqual(counts, [0] * 7)
             self.assertFalse((root / 'custom-models' / str(model['id'])).exists())
-            self.assertEqual(client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']['status'], 'unchecked')
+            # The kept "voice" answers are still sounds a person confirmed.
+            presence = client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']
+            self.assertEqual((presence['status'], [e['origin'] for e in presence['evidence']]), ('confirmed', ['label'] * 4))
             with patch('search_runs.load_perch', return_value=(Session(), 'perch-sha')), patch('search.load_perch', return_value=(Session(), 'perch-sha')):
                 self.assertEqual(client.post('/search-runs', json=search).status_code, 200)
 
 
 class GrowWithoutSearchCheck(unittest.TestCase):
+    def test_voice_answers_are_presence_evidence(self):
+        with site() as (root, client, species):
+            sid = species['id']
+            dates = {'start_date': '2024-08-01', 'end_date': '2024-08-06'}
+            presence = lambda **period: client.get(f'/datasets/1/species/{sid}', params={**dates, **period}).json()['presence']
+            label = lambda segment, value: client.post(f'/datasets/1/species/{sid}/labels', json={'segment_id': segment, 'label': value})
+            mark = lambda marked: client.post('/presence/marks', json={'dataset_id': 1, 'species_id': sid, 'recording_id': 1, 'start_s': 0,
+                                                                       'end_s': 5, 'run_id': None, 'marked': marked})
+            examples = lambda: client.get(f'/datasets/1/species/{sid}/custom-model', params=dates).json()['examples']
+            self.assertEqual(presence()['status'], 'unchecked')
+            label(1, 'target')  # recording 1 (1 August), 0-5 s
+            label(2, 'other')   # "no voice" is not evidence
+            found = presence()
+            self.assertEqual((found['status'], [(e['origin'], e['recording_id'], e['start_s'], e['end_s']) for e in found['evidence']]),
+                             ('confirmed', [('label', 1, 0, 5)]))
+            overview = client.get('/datasets/1/overview', params=dates).json()
+            self.assertEqual(next(r for r in overview['species'] if r['species']['id'] == sid)['presence']['status'], 'confirmed')
+            self.assertEqual(presence(start_date='2024-08-02')['status'], 'unchecked')  # outside the period
+            # The same sound marked as well is one evidence sound, and one piece of training material.
+            before = examples()
+            mark(True)
+            self.assertEqual([e['origin'] for e in presence()['evidence']], ['mark'])
+            self.assertEqual(examples(), before)
+            mark(False)
+            label(1, None)  # the answer taken back
+            self.assertEqual(presence()['status'], 'unchecked')
+
     def test_builtin_batches_materials_and_rebuild(self):
         with site() as (root, client, species):
             sid = species['id']

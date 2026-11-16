@@ -7,6 +7,7 @@
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
   import { activity,activityText,checkName,checkText,defaultModel,fill,listenLabel,presenceText,rangeQuery,remainingSounds,windowSeconds,workload,type Check,type Overview,type SpeciesResult,type Validation } from '$lib/workflow';
+  import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReportView from '$lib/ReportView.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -76,6 +77,10 @@
   const removeCheck=createTask(async(item:Check)=>{await api(`/validations/${item.validation!.id}/delete`,{});confirming='';cache.clear();await load();},{toast:true});
   const askSearchDelete=createTask(async()=>{preview=await api(`/search-runs/${result!.search!.id}/delete-preview`);confirming='search';},{toast:true});
   const removeSearch=createTask(async()=>{await api(`/search-runs/${result!.search!.id}/delete`,{});confirming='';preview=null;cache.clear();engine='auto';modelId=0;await load();},{toast:true});
+  // Sounds a person confirmed, in recording order; times are the site's, not the PC's.
+  const heard=$derived(result?[...result.presence.evidence].sort((a,b)=>Date.parse(a.local_time)-Date.parse(b.local_time)):[]);
+  let allHeard=$state(false);
+  const heardTime=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:result?.site.timezone}).format(new Date(value));
   const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:result?.site.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
 </script>
 <div class="page">
@@ -98,6 +103,12 @@
           {#if about?.in_quiz}<Button href={practice}>{t('wPractice')}</Button>{/if}
         </div>
         <p class="muted">{t('pEvidenceNote')}</p>
+        {#if heard.length}<h3>{fill('sHeardTitle',{n:heard.length})}</h3><p class="muted">{t('sHeardNote')}</p>
+          {#each allHeard?heard:heard.slice(0,10) as item (`${item.recording_id}:${item.start_s}:${item.end_s}`)}<article class="heard">
+            <span>{heardTime(item.local_time)}</span>
+            <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.source_path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}/>
+          </article>{/each}
+          {#if !allHeard&&heard.length>10}<Button onclick={()=>allHeard=true}>{t('sHeardAll')}</Button>{/if}{/if}
       </section>
       <section class="panel card" aria-labelledby="activity-title">
         <h2 id="activity-title">{t('sActivityTitle')}</h2>
@@ -154,4 +165,5 @@
   .check-name{display:flex;flex-direction:column}.confirm{padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}.confirm p,.confirm ul{margin:0 0 12px}
   .more{margin-top:8px}.more summary{min-height:44px;padding:10px 0}.more .stack{margin-top:8px}
   .grow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}.grow p{margin:0;flex:1 1 320px}
+.heard{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}h3{margin:0}
   .model-tabs{margin:12px 0 4px}section p{margin:8px 0}</style>
