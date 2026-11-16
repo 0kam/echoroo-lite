@@ -57,7 +57,7 @@ def location_status(db, site, enabled=None):
     return complete, stale
 
 
-
+def site_states(root):
     """Recordings and fully analysed recordings per site, counted like the site results page."""
     with connect(root) as db:
         states = []
@@ -68,6 +68,7 @@ def location_status(db, site, enabled=None):
             records = db.execute('SELECT COUNT(*) FROM recordings r JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=?', (site['id'],)).fetchone()[0]
             states.append({'site_id': site['id'], 'records': records, 'analysed': len(complete)})
     return states
+
 
 def edit_site(root, site_id, body):
     with connect(root) as db:
