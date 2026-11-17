@@ -1,11 +1,11 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount } from 'svelte';
+  import { onMount,tick } from 'svelte';
   import { page } from '$app/state';
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,rangeQuery,workload,type Validation } from '$lib/workflow';
+  import { fill,modelIntro,rangeQuery,workload,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReferencePanel,{type ExampleRef} from '$lib/ReferencePanel.svelte';
@@ -22,6 +22,9 @@
   // An answered sound always has a next sound: a later answered one, or the first unanswered one (or the result).
   const goNext=()=>navigate.run(next?.id);
   const answered=$derived(!!validation?.question?.verdict);
+  // A new sound is answered only after it was played, so no answer is given (or looks given) before listening.
+  let played=$state<number[]>([]);
+  const canAnswer=$derived(answered||played.includes(validation?.question?.id??-1));
   // Pressing Next before answering points to the answer buttons instead of moving on.
   let triedNext=$state<number|null>(null);
   const remaining=$derived(validation?validation.counts.total-validation.counts.answered:0);
@@ -34,6 +37,8 @@
     // Correcting an earlier sound moves on to the following sound, just like a first answer.
     corrected=question.verdict!==null;
     validation=corrected&&next?await api<Validation>(`/validations/${sid}?item_id=${next.id}`):value;
+    // The answers of the new sound wait for playback, so keyboard focus moves to its play button.
+    await tick();if(!canAnswer)document.querySelector<HTMLElement>('.validation-page .zoom-controls button')?.focus();
   });
   const busy=$derived(answer.pending||navigate.pending||extend.pending);
   const done=$derived(validation?.stage==='complete'&&!validation.question);
@@ -42,6 +47,8 @@
   const firstTotal=$derived(first?.reduce((sum,bin)=>sum+bin.total,0)??0),firstHeard=$derived(first?.reduce((sum,bin)=>sum+bin.heard,0)??0);
   let continued=$state(false);
   const found=$derived(!!first&&started&&!continued&&firstHeard>0&&validation?.question?.verdict===null&&validation.question.position===firstTotal);
+  // In the first block, progress counts toward its sounds, as the start page says ("first 20, up to 60").
+  const inFirst=$derived(!!first&&!continued&&!!validation&&validation.counts.answered<firstTotal);
   const asking=$derived(started&&!done&&!!validation?.question&&!found);
   // The species results tab this check belongs to, so pages opened from here return to it.
   const range=$derived(validation?rangeQuery(validation.start_date,validation.end_date):'');
@@ -58,7 +65,7 @@
       {#if site}<div class="site-name">{site.name}</div>{/if}
       {#if done||!started||found}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
       {:else}<h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>{/if}
-      <p>{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p></div></div>{/if}
+      <p>{fill('vModelTitle',{model:modelIntro(validation.engine)})}</p></div></div>{/if}
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
     {#if done}<section class="panel">{#if validation.early_stop}<h2>{t('vEarlyStopTitle')}</h2><p>{t('vEarlyStopText')}</p><p>{t('vEarlyStopUse')}</p>
       {:else}<h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>{/if}
@@ -71,7 +78,8 @@
         {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
     {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill(first?'wValidationPlanFirst':'wValidationPlan',{first:firstTotal,total:validation.counts.total,time:effort.time})}</p>
-      <p><strong>{t('refListenFirst')}</strong></p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
+      <p>{t('vPurpose')}</p><p class="muted">{fill('wEveryNote',{n:validation.window_s})}</p>
+      {#if heard?.length}<p><strong>{t('refListenFirst')}</strong></p>{/if}<Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
     {:else if found}<div class="with-examples"><section class="panel stack" role="status"><h2>{fill('vFoundTitle',{n:remaining})}</h2>
       <p>{fill('vFoundText',{m:firstTotal,k:firstHeard})}</p><p class="muted">{fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</p>
       <div class="actions"><Button variant="primary" onclick={()=>continued=true}>{t('vContinue')}</Button><Button href={back}>{t('vContinueLater')}</Button></div></section>{@render examples()}</div>
@@ -80,16 +88,16 @@
         {#if validation.question}
           {@const question=validation.question}
           <p class="muted">{t(first?'vOrderNote':'vMixedNote')}</p>
-          {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`}/>{/key}
+          {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`} onplaying={()=>{if(!played.includes(question.id))played=[...played,question.id];}}/>{/key}
           <div class="actions answers" bind:offsetHeight={barHeight}>
-            <div class="progress-row"><progress id="validation-progress" value={answered?question.review_position:validation.counts.answered} max={answered?question.review_total:validation.counts.total}></progress>
-              <label for="validation-progress">{answered?fill('vReviewProgress',{n:question.review_position,total:question.review_total}):fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</label>
+            <div class="progress-row"><progress id="validation-progress" value={answered?question.review_position:validation.counts.answered} max={answered?question.review_total:inFirst?firstTotal:validation.counts.total}></progress>
+              <label for="validation-progress">{answered?fill('vReviewProgress',{n:question.review_position,total:question.review_total}):fill(inFirst?'vProgressFirst':'vProgress',{answered:validation.counts.answered,first:firstTotal,total:validation.counts.total})}</label>
               {#if corrected}<span role="status">✓ {t('vCorrectionSaved')}</span>{/if}</div>
             <Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('vPreviousSound')}</Button>
             <div class="verdicts" role="group" aria-label={t('wQuestion')}>{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
-            <Button size="lg" active={question.verdict===verdict} aria-pressed={question.verdict===verdict} disabled={busy||!validation.applicable} onclick={()=>answer.run(verdict)}>{question.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
-            <Button disabled={busy} title={answered?undefined:t('vAnswerToContinue')} onclick={()=>{if(answered)goNext();else{triedNext=question.id;document.querySelector<HTMLElement>('.verdicts button')?.focus();}}}>{t(nextLabel)} ›</Button>
-            {#if triedNext===question.id&&!answered}<p class="field-error unknown-note" role="alert">{t('vAnswerToContinue')}</p>{:else}<p class="muted unknown-note">{t('vUnknownNote')}</p>{/if}</div>
+            <Button size="lg" active={question.verdict===verdict} aria-pressed={question.verdict===verdict} disabled={busy||!validation.applicable||!canAnswer} onclick={()=>answer.run(verdict)}>{question.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
+            <Button disabled={busy} title={answered?undefined:t('vAnswerToContinue')} onclick={()=>{if(answered)goNext();else{triedNext=question.id;document.querySelector<HTMLElement>(canAnswer?'.verdicts button':'.validation-page .zoom-controls button')?.focus();}}}>{t(nextLabel)} ›</Button>
+            {#if triedNext===question.id&&!answered}<p class="field-error unknown-note" role="alert">{t(canAnswer?'vAnswerToContinue':'pPlayFirst')}</p>{:else}<p class="muted unknown-note">{t(canAnswer?'vUnknownNote':'pPlayFirst')}</p>{/if}</div>
           {#if answered&&next}<div class="actions review-navigation"><Button disabled={busy} onclick={()=>navigate.run()}>{t(remaining>0?'vResume':'wValidationDone')}</Button></div>{/if}
         {/if}
         {#if answer.error||navigate.error}<p class="error" class:answer-feedback={!!validation.question} style:bottom={validation.question?`${barHeight+8}px`:undefined} role="alert">{t(answer.error||navigate.error)}</p>{/if}

@@ -10,7 +10,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,refreshCatalog,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { fill,modelName } from '$lib/workflow';
+  import { fill,modelIntro } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
   import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
@@ -159,7 +159,7 @@
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
   // A fixed range only plays start–end, so the clip end stands in for the recording length.
   const sourceOf=(s:Segment)=>({id:s.recording_id,kind:'recording' as const,path:s.path,seconds:s.end_s});
-  const when=(s:Segment)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
+  const when=(s:Segment)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
   const pct=(share:number,digits=0)=>new Intl.NumberFormat(app.locale,{style:'percent',maximumFractionDigits:digits}).format(share);
   const groupName=(g:{node:number;name:string})=>g.name?fill('eGroup',{n:g.name}):t('eWhole');
   // Common names in the UI language are fetched once per species; the scientific name is shown until then or when there is none.
@@ -289,11 +289,11 @@
   }
 </script>
 <!-- In the list the line wraps, and the row of the current sound is marked. -->
-{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{/if}{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
+{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{' '}{/if}{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
 {#snippet sounds(at:number)}
   {@const list=lists[at]}
   {#each list?.segments??[] as s (s.segment_id)}{@const p=picks.state.items[pickKey(s)]}<div class="member" class:picked={!!p}>
-    <label class="check"><input type="checkbox" checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
+    <label class="check"><input type="checkbox" aria-label={`${t('ePick')}: ${when(s)}`} checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
     <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s,pick?.segment_id===s.segment_id)}{/snippet}</AudioRegion>
     {#if p}<div class="labels"><PickForm value={p} {recent} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
   </div>{/each}
@@ -326,19 +326,18 @@
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
       {#if build.error==='no_search_embeddings'}<Button href={resolve(`/datasets/${id}`)}>{t('eBackToAnalyse')}</Button>{/if}</section>{/if}
     {#if node}
-      <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelName(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
+      <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelIntro(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
       <div class="explore">
         <section class="panel stack map-panel" aria-label={t('eMapHeading')}>
           {#if pointsError}<p class="error" role="alert">{t(pointsError)}</p>{/if}
           <!-- The list is the keyboard path to the same groups; the map adds pointer zoom, pan, picking and double-click to go inside. -->
-          <div class="map">
-            <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
-            <div class="map-nav" role="group" aria-label={t('eMapNav')}>
-              <Button size="sm" disabled={!canBack} onclick={()=>step(-1)}>{t('eBackView')}</Button>
-              <Button size="sm" disabled={!canForward} onclick={()=>step(1)}>{t('eForwardView')}</Button>
-              <Button size="sm" disabled={!node.node&&!transformed} onclick={whole}>{t('eTop')}</Button>
-            </div>
+          <!-- The controls sit above the map, never over its points and group numbers. -->
+          <div class="map-nav" role="group" aria-label={t('eMapNav')}>
+            <Button size="sm" disabled={!canBack} onclick={()=>step(-1)}>{t('eBackView')}</Button>
+            <Button size="sm" disabled={!canForward} onclick={()=>step(1)}>{t('eForwardView')}</Button>
+            <Button size="sm" disabled={!node.node&&!transformed} onclick={whole}>{t('eTop')}</Button>
           </div>
+          <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
           <!-- Fixed text lines and a kept-up card: a new pick changes what the card shows, never how tall it is. -->
           <div class="pick" aria-busy={pickAt>=0&&!pickError&&shownAt!==pickAt}>
@@ -407,9 +406,9 @@
   /* The map column stays in view and never runs past the window: 140px is the 76px top bar, the 32px page padding and 16px above and below. */
   .map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
   /* The map shrinks in short windows so the current sound under it stays in view. */
-  .map{position:relative}.map-nav{position:absolute;top:8px;left:8px;display:flex;gap:4px}
-  /* The map takes the height left over by the hint (three lines at 1024px), the current-sound card and the 44px tally row with their 12px gaps, so the column fits a 768px window. */
-  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 540px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  .map-nav{display:flex;gap:4px}
+  /* The map takes the height left over by its 44px controls, the hint (three lines at 1024px), the current-sound card and the 44px tally row with their 12px gaps, so the column fits a 768px window. */
+  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 596px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
   /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
   .pick{display:flex;flex-direction:column;gap:8px;min-height:198px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
   .line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -425,13 +424,13 @@
   .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
   /* A 56px first column holds the check, its label under the box, left of the play button; a ticked sound's labels sit under it. */
-  .member{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;align-items:center;padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
+  .member{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;align-items:center;padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
   .member.picked{margin:0 -12px;padding:8px 12px 12px;background:rgb(var(--primary-500)/.12)}
   /* The labels use the whole row width, from under the check, so their items stay on one line in a narrow column. */
   .labels{grid-column:1/-1}
   /* English labels wrap at the space; Japanese stays one word. */
-  .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;line-height:1.2;text-align:center;word-break:keep-all;cursor:pointer}
-  .check input{width:22px;height:22px;accent-color:rgb(var(--primary-700))}
+  .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;line-height:1.2;text-align:center;cursor:pointer}
+  .check input{width:24px;height:24px}
   /* The date and AI suggestions of a listed sound wrap instead of being cut: English needs three lines or more for two or three suggestions. */
   .member .about{white-space:normal}
   /* Outlined, so the mark stays visible on a ticked row's tint; the word, not the colour, carries the meaning. */

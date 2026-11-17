@@ -10,7 +10,8 @@
 <script lang="ts">
   import { api, mediaURL } from './api.svelte';
   import { onMount, untrack, type Snippet } from 'svelte';
-  import { app, t } from './app.svelte';
+  import { app, t, fileName } from './app.svelte';
+  import { fill } from './workflow';
   import Button from './ui/Button.svelte';
   import ScaleSwitch from './ui/ScaleSwitch.svelte';
   import { kHz, paint, type Spectrogram, type Tick } from './spectrogram';
@@ -21,22 +22,36 @@
   // `dense` (with `compact` and `fixedRange`): the play button sits left of the figure and `meta` and `actions` share one line above it, with no time axis, for long lists.
   // `invalid`: a note shown under the From/To fields when the chosen part cannot be used.
   // `marked`: a part of a fixed range to set off with two lines, as [from, to] in seconds of the source.
+  // `secondary`: the play button is never the page's main button (e.g. an example beside the sound being checked).
   let { source, start = $bindable(0), end = $bindable(5), status = $bindable<PlayerStatus>('idle'), compact = false, fixedRange = false,
-    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta, invalid='', marked }:
+    zoomable=false, selectable=true, autoplay=false, dense=false, storageKey, onplaying, actions, meta, invalid='', marked, secondary=false }:
     { source: AudioSource | {kind:'quiz';id:number;position:number;seconds:number}; start?: number; end?: number; status?: PlayerStatus; compact?: boolean; fixedRange?: boolean;
-      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet;invalid?:string;marked?:[number,number] } = $props();
+      zoomable?:boolean;selectable?:boolean;autoplay?:boolean;dense?:boolean;storageKey?:string;onplaying?:()=>void;actions?:Snippet;meta?:Snippet;invalid?:string;marked?:[number,number];secondary?:boolean } = $props();
   const invalidId=$props.id();
   const choosing = $derived(!fixedRange && selectable);
   const mediaPath = $derived(source.kind==='quiz' ? `/quiz/sessions/${source.id}/questions/${source.position}` : `/sources/${source.kind}/${source.id}`);
   let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
   let viewStart = $state(0), span = $state(30), loading = $state(true), error = $state('');
   let cursor = $state(0), playhead = $state<number | null>(null);
-  let ticks = $state<Tick[]>([]), loadedScale = '';
+  let ticks = $state<Tick[]>([]), loadedScale = '', figureHeight = $state(0);
+  // Labels that would overlap (e.g. 8 and 12 kHz near the top of a short figure) are dropped: the edges win, then higher ticks.
+  // A label is 12px tall: the top one hangs below the edge, the bottom one sits above it, the others are centred on their line.
+  const labelSpan = (tick: Tick) => { const y = tick.row_fraction * figureHeight; return tick.row_fraction === 1 ? [y - 12, y] : tick.row_fraction === 0 ? [y, y + 12] : [y - 6, y + 6]; };
+  const labelled = $derived.by(() => { const kept: Tick[] = [];
+    for (const tick of [...ticks].sort((a, b) => Number(b.row_fraction % 1 === 0) - Number(a.row_fraction % 1 === 0) || b.row_fraction - a.row_fraction)) {
+      const [low, high] = labelSpan(tick);
+      if (kept.every(other => { const [l, h] = labelSpan(other); return high + 4 <= l || low >= h + 4; })) kept.push(tick);
+    }
+    return kept; });
   let initialized=$state(false);
   let anchor: number | null = null, request = 0, stopAt: number | null = null;
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
   let playbackVersion = 0;
   let cancelMetadata: (() => void) | undefined;
+  // A short clip from a recording names its file and where it sits in it (whole seconds, h:mm:ss past an hour).
+  const at = (seconds: number) => { const s = Math.round(seconds), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, pad = (n: number) => String(n).padStart(2, '0');
+    return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`; };
+  const origin = $derived(fixedRange && source.kind === 'recording' && source.path ? fill('aFrom', { file: fileName(source.path), start: at(marked?.[0] ?? start), end: at(marked?.[1] ?? end) }) : '');
   const viewEnd = $derived(Math.min(source.seconds, viewStart + span));
   const percent = (time: number) => Math.max(0, Math.min(100, (time - viewStart) / (viewEnd - viewStart) * 100));
 
@@ -138,7 +153,7 @@
 
 {#snippet playbackButton()}
   <!-- In a list of sounds (compact) every row has one, so none is the main button (A7). -->
-  <Button variant={compact?'default':'primary'} aria-busy={status === 'loading'} aria-label={dense ? t(status === 'idle' ? 'uListen' : 'pause') : undefined}
+  <Button variant={compact||secondary?'default':'primary'} aria-busy={status === 'loading'} aria-label={dense ? t(status === 'idle' ? 'uListen' : 'pause') : undefined}
     onclick={() => zoomable ? toggle() : status !== 'idle' ? stop() : fixedRange || choosing ? play() : playFromHead()}>
     {#if dense}{status === 'idle' ? '▶' : '❚❚'}
     {:else}{status === 'loading' ? t('loading') + ' · ' + t('pause') : status === 'playing' ? '❚❚ ' + t('pause') : '▶ ' + t(choosing?'playRange':'uListen')}{/if}
@@ -154,17 +169,17 @@
     {#key app.frequencyScale}<ZoomSpectrogram {mediaPath} start={viewStart} end={viewEnd} cursor={status === 'idle' ? playhead : cursor} {storageKey}
       onseek={seek} onplay={toggle} controls={playbackButton}/>{/key}
   {:else}<div class="spectrogram-grid">
-    <span class="unit">kHz</span><div class="head">{#if dense}<div class="meta">{@render meta?.()}</div>{@render actions?.()}{:else if !compact}<ScaleSwitch/>{/if}</div>
-    <div class="frequencies" aria-hidden="true">{#each ticks as tick}<span style:bottom={`${tick.row_fraction * 100}%`} class:edge-low={tick.row_fraction === 0} class:edge-high={tick.row_fraction === 1}>{kHz(tick)}</span>{/each}</div>
+    <span class="unit">{t('aFreqUnit')}</span><div class="head">{#if dense}<div class="meta">{@render meta?.()}</div>{@render actions?.()}{:else if !compact}<ScaleSwitch/>{/if}</div>
+    <div class="frequencies" aria-hidden="true">{#each labelled as tick}<span style:bottom={`${tick.row_fraction * 100}%`} class:edge-low={tick.row_fraction === 0} class:edge-high={tick.row_fraction === 1}>{kHz(tick)}</span>{/each}</div>
     <!-- Double-clicking plays from that point, like the zoomable view. -->
-    <div class="spectrogram" class:fixed={!choosing} role="group" aria-label={t('spectrogram')}
+    <div class="spectrogram" bind:clientHeight={figureHeight} class:fixed={!choosing} role="group" aria-label={t('spectrogram')}
       ondblclick={event => { if (!choosing && !loading && !error) { const from = pointerTime(event as unknown as PointerEvent), to = fixedRange ? end : viewEnd; if (!fixedRange) playhead = from; void play(Math.min(from, to - .05), to); } }}
       onpointerdown={event => { if (!choosing || loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
       onpointermove={select} onpointerup={event => { select(event); anchor = null; }} onpointercancel={() => anchor = null}>
       <canvas bind:this={canvas} aria-label={t('spectrogram')}></canvas>
       {#if !loading && !error}
         {#each ticks as tick}{#if tick.row_fraction > 0 && tick.row_fraction < 1}<div class="guide" style:bottom={`${tick.row_fraction * 100}%`}></div>{/if}{/each}
-        {#if choosing || marked}{@const [from, to] = marked ?? [start, end]}<div class="selection" style:left={`${percent(from)}%`} style:width={`${Math.max(0, percent(to) - percent(from))}%`}></div>{/if}
+        {#if choosing || marked}{@const [from, to] = marked ?? [start, end]}<div class="selection" class:chosen={choosing} style:left={`${percent(from)}%`} style:width={`${Math.max(0, percent(to) - percent(from))}%`}></div>{/if}
         {#if cursor >= viewStart && cursor <= viewEnd}<div class="playhead" style:left={`${percent(cursor)}%`}></div>{/if}
       {/if}
       {#if loading || error}<div class="spectrogram-state" role="status">{t(error || 'loadingSpectrogram')}</div>{/if}
@@ -186,6 +201,7 @@
     onwaiting={() => { if (status === 'playing') status = 'loading'; }}
     onpause={() => { if (audio.paused && (status !== 'loading' || stopAt !== null)) { status = 'idle'; clearTimeout(stopTimer); } }} onended={stop} onseeked={scheduleStop} onratechange={scheduleStop}
     ontimeupdate={() => cursor = audio.currentTime}></audio>
+  {#if origin}<p class="origin">{origin}</p>{/if}
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
 </div>
 
@@ -197,8 +213,8 @@
   .region-controls label { width: 112px; }
   .region-controls .position { flex: 1; min-width: 140px; }
   .range-hint { align-self: center; flex-basis: 100%; }
-  .spectrogram-grid { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 8px; }
-  .unit { align-self: end; text-align: right; font-size: 12px; color: rgb(var(--stone-600)); }
+  .spectrogram-grid { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 4px 8px; }
+  .unit { align-self: end; text-align: right; font-size: 11px; line-height: 1.2; word-break: keep-all; color: rgb(var(--stone-600)); }
   .head { display: flex; justify-content: flex-end; min-height: 0; }
   .frequencies { position: relative; font-size: 12px; line-height: 1; color: rgb(var(--stone-600)); }
   .frequencies span { position: absolute; right: 0; transform: translateY(50%); font-variant-numeric: tabular-nums; }
@@ -209,6 +225,8 @@
   canvas { width: 100%; height: 100%; display: block; }
   .guide { position: absolute; left: 0; right: 0; height: 1px; background: rgb(255 255 255 / .15); pointer-events: none; }
   .selection { position: absolute; top: 0; bottom: 0; border-left: 2px solid #fff5bd; border-right: 2px solid #fff5bd; pointer-events: none; }
+  /* A part being chosen is tinted and the rest dimmed, so it reads at a glance even when it starts at 0 s. */
+  .selection.chosen { background: rgb(255 245 189 / .15); box-shadow: 0 0 0 100vw rgb(0 0 0 / .5); }
   .playhead { position: absolute; top: 0; bottom: 0; border-left: 2px solid #60dcff; pointer-events: none; }
   .spectrogram-state { position: absolute; inset: 0; display: grid; place-items: center; background: #010101e8; color: #fff5bd; padding: 24px; }
   .dense { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 0 8px; align-items: center; }
@@ -219,5 +237,7 @@
   .dense .meta { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dense .axis-gap, .dense .time-axis { display: none; }
   .dense > .error { grid-column: 1 / -1; }
+  .origin { margin: 0; font-size: 12px; color: rgb(var(--stone-600)); overflow-wrap: anywhere; }
+  .dense > .origin { grid-column: 2; }
   .time-axis { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 12px; color: rgb(var(--stone-600)); }
 </style>

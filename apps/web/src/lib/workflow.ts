@@ -28,7 +28,7 @@ export type PresenceRow = {recording_id:number;start_s:number;end_s:number;score
   run_id:number|null;marked:boolean;source:AudioSource;local_time:string};
 // BirdNET range model for the site: 'unusual' species are not on its list; missing or null means no judgement.
 export type Region = 'usual'|'unusual'|null;
-export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|null;rows:PresenceRow[];has_ai:boolean;start_date:string;end_date:string;
+export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|null;rows:PresenceRow[];has_ai:boolean;ai_covers?:boolean;start_date:string;end_date:string;
   site:{id:number;name:string;timezone:string};presence:Presence;region?:Region};
 export type CustomModel = {id:number;round:number;created_at:string;dataset_id:number;run_id:number|null;species:Species;
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
@@ -63,6 +63,8 @@ export const customName = (model:{created_at?:string;round?:number}) => fill('cu
 const modelOf = (engine:string) => app.ai.models.find(model=>model.id===engine);
 /** Display name from GET /models; 'custom' is an AI made for one species. */
 export const modelName = (engine:string) => engine==='custom'?t('customModel'):modelOf(engine)?.name??engine;
+/** The AI's name with a one-line note on who made it, for its first mention on a page. */
+export const modelIntro = (engine:string) => engine==='custom'?modelName(engine):fill('aiAbout',{name:modelName(engine),about:t(`aiAbout_${engine.split('-')[0]}`)});
 export const checkName = (check:{engine:string;created_at?:string;round?:number}) => check.engine==='custom'?customName(check):modelName(check.engine);
 /** Window length of a model's intervals from GET /models (BirdNET 3 s); species models are 5 s. */
 /** Analysis one AI still has to do: how many recordings and their total length in seconds. */
@@ -85,10 +87,18 @@ export const windowSeconds = (engine:string) => modelOf(engine)?.window_s??5;
 const undecidedText = (checks:Validation[]) => t(checks.every(value=>value.results[value.engine]?.reason==='no_target')?'cUndecidedNoTarget':'cUndecided');
 /** Why a check no longer applies. After the species AI was made again, the words follow how far it has grown (`growth`, where known). */
 export const staleReason = (value:Validation,growth?:Growth['state']) => value.model_reason==='custom_model_rebuilt'&&growth?`sGrow_${growth}`:value.model_reason;
+/** Progress as the question page shows it: new checks ask the two top score groups first and stop there when no call is heard,
+ * so until those are answered the goal is that first block ("5 / 20 sounds (up to 60)"). */
+export function checkProgress(value:Validation) {
+  const first=value.method==='detection_top_bin_v2'?value.counts.bins.slice(4).reduce((sum,bin)=>sum+bin.total,0):0;
+  const inFirst=value.counts.answered<first,goal=inFirst?first:value.counts.total;
+  return {goal,text:fill(inFirst?'vProgressFirst':'vProgress',{answered:value.counts.answered,first,total:value.counts.total})};
+}
 /** Plain status of one model's check. */
 export function checkText(value:Validation|null,growth?:Growth['state']) {
-  if(!value)return t('cNotStarted');
-  if(value.status==='in_progress')return fill('cInProgress',{answered:value.counts.answered,total:value.counts.total});
+  // A check opened but not answered yet has not started.
+  if(!value||value.status==='in_progress'&&!value.counts.answered)return t('cNotStarted');
+  if(value.status==='in_progress')return fill('cInProgress',{progress:checkProgress(value).text});
   if(value.status==='stale')return t(value.model_reason==='custom_model_rebuilt'?staleReason(value,growth)!:'wStale');
   return value.status==='decided'?t('cDecided'):undecidedText([value]);
 }
@@ -96,12 +106,13 @@ export function checkText(value:Validation|null,growth?:Growth['state']) {
 export function listenLabel(value:Validation|null) {
   if(!value||!value.applicable)return t(value?'wCheckAgain':'cStart');
   if(value.stage==='complete')return t('wValidationDone');
-  return fill('vListenContinue',{answered:value.counts.answered,total:value.counts.total});
+  if(!value.counts.answered)return t('cStart');
+  return fill('vListenContinue',{answered:value.counts.answered,total:checkProgress(value).goal});
 }
 /** Presence in words with a leading symbol, so it never relies on colour alone. */
 export function presenceText(presence:Presence) {
   if(presence.status==='confirmed')return `✓ ${fill('pConfirmed',{n:presence.evidence.length})}`;
-  if(presence.status==='not_found')return `− ${fill('pNotFound',{n:presence.miss!.listened})}`;
+  if(presence.status==='not_found')return `− ${fill('pNotFound',{n:presence.miss!.listened,order:t(presence.miss!.source==='search'?'pOrderSearch':'pOrderAi')})}`;
   return `○ ${t('pUnchecked')}`;
 }
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
@@ -127,14 +138,16 @@ export const decidedModels = (models:Checked[]) =>
   });
 /** "When and how much" of a species. One decided AI is enough (B3); undecided only when no checked AI decided and none is in progress. */
 export function activity(models:Checked[]):'decided'|'in_progress'|'undecided'|'not_started' {
-  const states=models.map(model=>model.validation?.applicable?model.validation.status:'not_started');
+  const states=models.map(({validation:value})=>value?.applicable&&(value.status!=='in_progress'||value.counts.answered)?value.status:'not_started');
   return (['decided','in_progress','undecided'] as const).find(state=>states.includes(state))??'not_started';
 }
-const inProgress = (models:Checked[]) => models.map(model=>model.validation).find(value=>value?.applicable&&value.status==='in_progress');
+const inProgress = (models:Checked[]) => models.map(model=>model.validation).find(value=>value?.applicable&&value.status==='in_progress'&&value.counts.answered>0);
+/** activityText with a leading symbol, so the state never relies on colour alone. */
+export const activityLine = (models:Checked[]) => {const state=activity(models);return `${state==='decided'?'✓':state==='undecided'?'−':'○'} ${activityText(models)}`;};
 export function activityText(models:Checked[]) {
   const state=activity(models),open=inProgress(models);
   if(state==='decided')return fill('wDecidedModels',{models:decidedModels(models).join(app.locale==='ja'?'・':', ')});
-  if(open)return fill('cInProgress',{answered:open.counts.answered,total:open.counts.total});
+  if(open)return fill('cInProgress',{progress:checkProgress(open).text});
   return state==='undecided'?undecidedText(models.flatMap(model=>model.validation?.applicable&&model.validation.status==='undecided'?[model.validation]:[])):t('wNoDecided');
 }
 /** B3: the AI with more detections is the one to check; the others are optional. */
@@ -147,7 +160,7 @@ type Countable = Checked & {candidate_windows?:number|null;eligible_windows?:num
 export function remainingSounds(models:Countable[]):number {
   const state=activity(models),open=inProgress(models);
   if(state==='decided'||state==='undecided')return 0;
-  if(open)return open.counts.total-open.counts.answered;
+  if(open){const {goal}=checkProgress(open);return goal-open.counts.answered;}
   const population=defaultModel(models)?.eligible_windows??Infinity;
   return Math.min(CHECK_SOUNDS,population);
 }

@@ -36,7 +36,7 @@
     <div class="page-header">
       <div>
         <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
-        <h1>{site?.name} · {t('wViewRecordings')}</h1>
+        <h1>{fill('wRecordingsAt',{site:site?.name??''})}</h1>
       </div>
 
     </div>

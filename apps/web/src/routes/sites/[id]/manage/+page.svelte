@@ -12,12 +12,12 @@
   import { fill } from '$lib/workflow';
   type Collection = Dataset & {count:number;seconds:number;first:string|null;last:string|null};
   type Details = {site:Site;datasets:Collection[]};
-  type Removal = {site_id:number;dataset_id:number|null;name:string;revision:string;recordings:number;analyses:number;searches:number;validations:number;custom_models?:number;reports:number;exports:number};
+  type Removal = {site_id:number;dataset_id:number|null;name:string;revision:string;recordings:number;analyses:number;searches:number;validations:number;custom_models?:number;marks?:number;misses?:number;reports:number;exports:number};
   const id = Number(page.params.id);
   let details = $state<Details|null>(null), name=$state(''), latitude=$state<number|null>(null), longitude=$state<number|null>(null);
   let changingPlace=$state(false), removal=$state<Removal|null>(null), renameId=$state<number|null>(null), collectionName=$state('');
   let dialog: HTMLDialogElement, discardDialog: HTMLDialogElement;
-  let destination: URL|null=null, leaving=false;
+  let destination: URL|null=null, leaving=false, opener: HTMLElement|null=null;
   const dirty=$derived(!!details&&(name!==details.site.name||latitude!==details.site.latitude||longitude!==details.site.longitude||renameId!==null));
   beforeNavigate(event=>{
     if(!dirty||leaving)return;
@@ -29,7 +29,7 @@
   onMount(()=>{void load.run();});
   const save=createTask(async()=>{receive(await api(`/sites/${id}/edit`,{name,latitude,longitude}));await refreshCatalog();notify('pkSaved');},{toast:true});
   const rename=createTask(async()=>{receive(await api(`/sites/${id}/datasets/${renameId}/edit`,{name:collectionName}));await refreshCatalog();notify('pkSaved');},{toast:true});
-  const inspect=createTask(async(datasetId:number|null)=>{remove.error='';removal=await api(`/sites/${id}/delete-preview${datasetId===null?'':`?dataset_id=${datasetId}`}`);dialog.showModal();});
+  const inspect=createTask(async(datasetId:number|null)=>{opener=document.activeElement as HTMLElement|null;remove.error='';removal=await api(`/sites/${id}/delete-preview${datasetId===null?'':`?dataset_id=${datasetId}`}`);dialog.showModal();});
   const remove=createTask(async()=>{
     if(!removal)return;
     await api(`/sites/${id}/delete`,{dataset_id:removal.dataset_id,revision:removal.revision});
@@ -54,7 +54,7 @@
         <label>{t('longitude')}<input type="number" step="any" min="-180" max="180" bind:value={longitude} disabled={save.pending} required/></label></div>
         <p class="notice">{t('mLocationEffect')}</p>
       {:else}<p class="muted">{t('latitude')} {latitude?.toFixed(6)} · {t('longitude')} {longitude?.toFixed(6)}</p>{/if}
-      <p class="muted">{t('uTimeZone')}: {details.site.timezone}</p>
+      <p class="muted">{fill('mTimeZoneShown',{zone:details.site.timezone})}</p>
       <div class="actions"><Button type="submit" variant="primary" pending={save.pending} disabled={!dirty||renameId!==null}>{t('mSave')}</Button>
         {#if (dirty||changingPlace)&&renameId===null}<Button disabled={save.pending} onclick={()=>receive(details!)}>{t('mCancel')}</Button>{/if}</div>
       {#if renameId!==null}<p class="muted">{t('mSaveFirst')}</p>{:else if !dirty}<p class="muted">{t('mNoChanges')}</p>{/if}
@@ -83,10 +83,11 @@
   {#if load.pending}<p role="status">{t('loading')}</p>{/if}
   {#if load.error||inspect.error}<p class="error" role="alert">{t(load.error||inspect.error)}</p>{/if}
 </div>
-<dialog bind:this={dialog} oncancel={event=>{if(remove.pending)event.preventDefault();}} aria-labelledby="remove-title">
+<!-- Closing (Cancel, Esc) returns focus to the button that opened it; that button was busy while the preview loaded. -->
+<dialog bind:this={dialog} oncancel={event=>{if(remove.pending)event.preventDefault();}} onclose={()=>opener?.focus()} aria-labelledby="remove-title">
   {#if removal}<h2 id="remove-title">{removal.name} — {t('mDeleteTitle')}</h2><p>{t('mDeleteEffect')}</p>
-    <dl>{#each [['mRecordings',removal.recordings],['mAnalyses',removal.analyses],['mSearches',removal.searches],['mValidations',removal.validations],['mCustomModels',removal.custom_models??0],['mReports',removal.reports],['mExports',removal.exports]] as [key,count]}{#if count||key==='mRecordings'}<div><dt>{t(String(key))}</dt><dd>{count}</dd></div>{/if}{/each}</dl>
-    <p>{t('mKeepFiles')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>dialog.close()}>{t('mCancel')}</Button><Button variant="primary" pending={remove.pending} onclick={()=>remove.run()}>{t('mDeleteConfirm')}</Button></div>
+    <dl>{#each [['mRecordings',removal.recordings],['mAnalyses',removal.analyses],['mSearches',removal.searches],['mValidations',removal.validations],['mCustomModels',removal.custom_models??0],['mMarks',removal.marks??0],['mMisses',removal.misses??0],['mReports',removal.reports],['mExports',removal.exports]] as [key,count]}{#if count||key==='mRecordings'}<div><dt>{t(String(key))}</dt><dd>{count}</dd></div>{/if}{/each}</dl>
+    <p>{t('mKeepFiles')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>dialog.close()}>{t('mCancel')}</Button><Button variant="danger" pending={remove.pending} onclick={()=>remove.run()}>{t('mDeleteConfirm')}</Button></div>
     {#if remove.error}<p class="error" role="alert">{t(remove.error)}</p>{/if}
   {/if}
 </dialog>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { isTauri } from '@tauri-apps/api/core';
@@ -31,6 +31,8 @@
 
   // The folder is checked as soon as it is chosen (and again if the time zone changes); there is no separate check button.
   let preview=$state<Preview|null>(null),scanning=$state(false),scanError=$state(''),scanVersion=0;
+  // After the person chooses a folder, its result (often "already added") is brought into view; restoring a draft does not scroll.
+  let reveal=false;
   async function scan(){
     const version=++scanVersion;preview=null;scanError='';register.error='';
     if(!folder){scanning=false;return;}
@@ -38,11 +40,11 @@
     scanning=true;
     try{const result=await api<Preview>('/imports/preview',{folder,site_id:body().site_id,timezone:scanZone});if(version===scanVersion)preview=result;}
     catch(e){if(version===scanVersion)scanError=e instanceof Error?e.message:'unknown_error';}
-    finally{if(version===scanVersion)scanning=false;}
+    finally{if(version===scanVersion){scanning=false;if(reveal){reveal=false;await tick();document.getElementById('check-add')?.scrollIntoView({block:'nearest'});}}}
   }
   $effect(()=>{if(!restored)return;void folder;void scanZone;untrack(()=>void scan());});
   // Choosing the same folder again re-reads it (e.g. after renaming files); the effect only runs when the value changes.
-  const setFolder=(value:string)=>{if(value!==folder)folder=value;else if(!scanning)void scan();};
+  const setFolder=(value:string)=>{reveal=true;if(value!==folder)folder=value;else if(!scanning)void scan();};
   const browse=createTask(async()=>{const picked=await chooseDirectory();if(picked)setFolder(picked);});
   const commitFolder=()=>setFolder(folderDraft.trim());
   const filenameExamples=['2MA04037_20240808_060000.wav','20240808T060000.wav','REC_2024-08-08_06-00-00_001.wav'];
@@ -62,13 +64,15 @@
   let tried=$state(false);
   const noName=$derived(!adding&&!siteName.trim()),noLatitude=$derived(!adding&&!(latitude!==null&&Math.abs(latitude)<=90)),noLongitude=$derived(!adding&&!(longitude!==null&&Math.abs(longitude)<=180));
   const missing=$derived(missingText([noName&&'siteName',(noLatitude||noLongitude)&&'uMapPlace',!folder&&'uChooseFolder']));
-  const blocked=$derived(scanning?'uScanWait':scanError?'uScanRetry':!preview?.count?'uNothingToAdd':'');
+  // An empty or already-added folder is explained once, in the status box; the button only stays unavailable.
+  // A failed check is explained once, in the status box with its retry button.
+  const blocked=$derived(scanning?'uScanWait':'');
   // Every AI in use analyses every new recording; nothing is shown until each has a speed measurement.
   const estimate=$derived(preview?.count?analysisSeconds(app.ai.models.filter(m=>m.enabled&&m.available).map(m=>({engine:m.id,recordings:preview!.count,seconds:preview!.seconds}))):null);
-  const localTime=(iso:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:scanZone}).format(new Date(iso));
+  const localTime=(iso:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:scanZone}).format(new Date(iso));
 </script>
 <div class="page narrow">
-  <div class="crumbs">{#if origin}<a href={appHref(origin)}>{t(origin.startsWith('/sites/')?'mBackManage':'uBackResults')}</a>{:else}<a href={resolve('/datasets')}>{t('uBackSites')}</a>{/if}</div>
+  <div class="crumbs">{#if origin}<a href={appHref(origin)}>{origin.startsWith('/sites/')?t('mBackManage'):fill('uBackSite',{site:selected?.name??''})}</a>{:else}<a href={resolve('/datasets')}>{t('uBackSites')}</a>{/if}</div>
   <h1>{adding?fill('uAddRecordingsTo',{site:selected?.name??''}):t('uNewSite')}</h1>
   <div class="steps">
     {#if adding}<section class="panel step-card"><h2>{fill('uSiteSame',{site:selected?.name??''})}</h2></section>
@@ -92,7 +96,7 @@
       {#if tried&&!folder}<p class="field-error" id="folder-error">{t('uPickFolder')}</p>{/if}
       {#if browse.error}<p class="error" role="alert">{t(browse.error)}</p>{/if}
     </section>
-    <section class="panel step-card stack"><h2>{t('uCheckAndAdd')}</h2>
+    <section class="panel step-card stack" id="check-add"><h2>{t('uCheckAndAdd')}</h2>
       <div class="status-box" role="status" aria-live="polite">
         {#if register.pending}<p class="busy"><Spinner/> {t('uAdding')}</p><Button size="sm" pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>
         {:else if scanning}<p class="busy"><Spinner/> {t('uScanning')}</p><Button size="sm" pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>
@@ -110,7 +114,7 @@
         {/if}
         {#if register.error}<p class="error" role="alert">{t(register.error)}</p>{/if}
       </div>
-      <Button variant="primary" pending={register.pending} disabled={!missing&&!!blocked} aria-describedby="add-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else register.run();}}>{preview?.count?fill('uAddTheseFiles',{n:preview.count.toLocaleString(app.locale)}):t('uAddRecordings')}</Button>
+      <Button variant="primary" pending={register.pending} disabled={!missing&&(!!blocked||!preview?.count)} aria-describedby="add-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else register.run();}}>{preview?.count?fill('uAddTheseFiles',{n:preview.count.toLocaleString(app.locale)}):t('uAddRecordings')}</Button>
       <p class="reason {tried&&missing?'field-error':'muted'}" id="add-reason">{register.pending?'':missing||(blocked&&t(blocked))}</p>
     </section>
   </div>

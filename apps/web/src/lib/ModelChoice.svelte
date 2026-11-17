@@ -35,7 +35,8 @@
 </script>
 
 {#snippet about(model: Model)}
-  <span><strong>{model.name}</strong>{#if model.experimental} <span class="rare">{t('modelPreview')}</span>{/if}<br />
+  <!-- The badge already says it is a preview, so the name drops its own "(preview)". -->
+  <span><strong>{model.experimental ? model.name.replace(' (preview)', '') : model.name}</strong>{#if model.experimental}{' '}<span class="rare">{t('modelPreview')}</span>{/if}<br />
     <span class="muted">{t(`modelHint_${model.id}`)}</span>
     {#if model.seconds_per_hour != null}<br /><span class="muted">{fill('modelSpeed', { time: roughTime(model.seconds_per_hour) })}</span>{/if}</span>
 {/snippet}
@@ -55,12 +56,12 @@
       <label class="checkbox"><input type="checkbox" checked={extra.includes(model.id)} onchange={e => toggle(model.id, e.currentTarget.checked)} />{@render about(model)}</label>
     {/each}
   </fieldset>
-  <p class="muted">{t('modelsHidden')}</p>
+  {#if !firstRun}<p class="muted">{t('modelsHidden')}</p>{/if}
   {#if measure.pending}<p class="muted" role="status">{fill('modelsMeasuring', { name: measuring })}</p>{/if}
   {#if measure.error}<p class="error" role="alert">{t(measure.error)}</p>{/if}
   {#if save.error}<p class="error" role="alert">{t(save.error)}</p>{/if}
   {#if firstRun}
-    <Button variant="primary" size="lg" pending={save.pending} onclick={() => save.run()}>{t('firstRunStart')}</Button>
+    <div class="start"><Button variant="primary" size="lg" pending={save.pending} onclick={() => save.run()}>{t('firstRunStart')}</Button></div>
   {:else}
     {#if save.pending}<p class="muted" role="status">{t('modelsSaving')}</p>{:else if added}<p class="info" role="status">{t('modelsChanged')}</p>{/if}
     <Button size="sm" pending={measure.pending} onclick={() => measure.run()}>{t('modelsMeasure')}</Button>
@@ -69,4 +70,5 @@
 
 <style>
   .checkbox { align-items: flex-start; margin-top: 12px; }
+  .start { padding: 12px 0; border-top: 1px solid rgb(var(--color-card-border)); }
 </style>

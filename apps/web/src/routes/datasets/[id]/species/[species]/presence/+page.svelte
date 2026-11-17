@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,presenceText,rangeQuery,type PresenceList,type PresenceRow } from '$lib/workflow';
+  import { fill,presenceText,rangeQuery,type PresenceList,type PresenceRow } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import ReferencePanel from '$lib/ReferencePanel.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -37,7 +37,11 @@
   const other=(name:'ai'|'search')=>`${resolve(`/datasets/${id}/species/${speciesId}/presence`)}?${range}&source=${name}`;
   // "Listened to the top N": the longest run of played sounds from the top of the list.
   const listened=$derived(list?(()=>{const index=list.rows.findIndex(row=>!played.includes(key(row)));return index<0?list.rows.length:index;})():0);
+  // "Could not confirm" needs the top 10 sounds (or every sound, if fewer) to have been played.
+  const needed=$derived(list?Math.max(0,Math.min(10,list.rows.length)-listened):0);
   const anyMarked=$derived(!!list?.rows.some(row=>row.marked));
+  // Once enough sounds were played and none is marked, recording "could not confirm" is this page's main step.
+  const canMiss=$derived(!!list?.rows.length&&!anyMarked&&!needed&&!saved);
   const mark=createTask(async(row:PresenceRow)=>{
     await api('/presence/marks',{dataset_id:id,species_id:speciesId,recording_id:row.recording_id,start_s:row.start_s,end_s:row.end_s,run_id:row.run_id,marked:!row.marked});
     row.marked=!row.marked;saved=0;caution='';await load();
@@ -46,13 +50,14 @@
     await api('/presence/misses',{dataset_id:id,species_id:speciesId,start_date:list.start_date,end_date:list.end_date,source,listened});
     saved=listened;await load();
   },{toast:true});
-  const flagged=(row:PresenceRow)=>row.models.map(model=>fill('pRank',{model:modelName(model.engine),rank:model.rank})).join(app.locale==='ja'?'・':', ');
-  const time=(row:PresenceRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',timeZone:list?.site.timezone}).format(new Date(row.local_time));
+  // How the list is ordered, in the words of the recorded result (AI score or likeness to the example).
+  const order=$derived(t(source==='search'?'pOrderSearch':'pOrderAi'));
+  const time=(row:PresenceRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:list?.site.timezone}).format(new Date(row.local_time));
   const practice=$derived(`${resolve('/quiz')}?species=${speciesId}&return=${encodeURIComponent(`/datasets/${id}/species/${speciesId}/presence?${range}&source=${source}`)}`);
 </script>
 <div class="page wide presence-page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
-  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{list?fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name}):t('sPresenceTitle')}</h1>{#if list}<p>{t('pHint')}</p>{/if}</div></div>
+  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{list?fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name}):t('sPresenceTitle')}</h1>{#if list}<p>{t('pHint')}{#if list.rows.length} {fill('pHintMiss',{n:Math.min(10,list.rows.length)})}{/if}</p>{/if}</div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if list}
     {#if list.has_ai&&list.run_id}<div class="actions" role="group" aria-label={t('sPresenceTitle')}>
@@ -62,7 +67,7 @@
       <p class="status" role="status"><strong>{presenceText(list.presence)}</strong></p>
       {#each list.rows.slice(0,shown) as row,index (key(row))}<article class="row" class:marked={row.marked}>
         <div class="row-head"><span class="rank">{index+1}</span><span>{time(row)}</span>
-          <span class="muted">{source==='search'?fill('pSimilarity',{value:(row.score??0).toFixed(2)}):flagged(row)}</span></div>
+          {#if source==='search'}<span class="muted">{fill('pSimilarity',{value:(row.score??0).toFixed(2)})}</span>{/if}</div>
         <AudioRegion source={row.source} fixedRange compact start={row.start_s} end={row.end_s} onplaying={()=>{if(!played.includes(key(row)))played=[...played,key(row)];}}>
           <!-- A4: a sound can be marked only after it was played; undoing is always possible. -->
           {#snippet actions()}<Button active={row.marked} aria-pressed={row.marked} pending={mark.pending} disabled={!row.marked&&!played.includes(key(row))}
@@ -71,14 +76,15 @@
         </AudioRegion>
         {#if caution===key(row)&&!row.marked}<div class="notice caution" role="alert">{#if unusual}<p>{t('pUnusual')}</p>{/if}{#if named===false}<p>{t('pNoExamples')}</p>{/if}
           <div class="actions"><Button onclick={()=>caution=''}>{t('mCancel')}</Button><Button pending={mark.pending} onclick={()=>mark.run(row)}>{t(named===false?'pMarkAnyway':'pMarkCompared')}</Button></div></div>{/if}
-      </article>{:else}<p>{t('pNoRows')}</p>{/each}
+      </article>{:else}<p>{t(source==='ai'&&list.run_id&&list.ai_covers===false?'pNoAiForSpecies':'pNoRows')}</p>{/each}
       {#if shown<list.rows.length}<Button onclick={()=>shown+=10}>{t('pMore')}</Button>{/if}
       {#if !anyMarked&&list.rows.length}<div class="miss">
-        <p>{listened?fill('pListened',{n:listened}):t('pListenedNone')}</p>
-        {#if saved}<p role="status">✓ {fill('pMissSaved',{n:saved})}</p>
-        {:else}<Button disabled={!listened} pending={recordMiss.pending} onclick={()=>recordMiss.run()}>{t('pRecordMiss')}</Button>{/if}</div>{/if}
-      <p class="muted">{t('pEvidenceNote')}</p>
-      <div class="actions"><Button variant="primary" href={back}>{t('wBackSpecies')}</Button></div>
+        <p>{listened?fill('pListened',{n:listened,order}):t('pListenedNone')}</p>
+        {#if saved}<p role="status">✓ {fill('pMissSaved',{n:saved,order})}</p>
+        {:else if needed}{#if listened}<p class="muted">{fill('pNeedMore',{n:needed})}</p>{/if}
+        {:else}<Button variant="primary" pending={recordMiss.pending} onclick={()=>recordMiss.run()}>{fill('pRecordMiss',{n:listened,order})}</Button>
+          <p class="muted">{t('pMissKeep')}</p>{/if}</div>{/if}
+      <div class="actions"><Button variant={canMiss?'default':'primary'} href={back}>{t('wBackSpecies')}</Button></div>
     </section>
     <div class="examples-column"><ReferencePanel species={list.species} datasetId={id} {practice} onexamples={examples=>named=examples.some(item=>item.kind==='named')}/></div></div>
   {:else if !error}<p role="status"><Spinner/> {t('pPreparing')}</p>{/if}

@@ -56,7 +56,7 @@ export const day = (date: string) =>
 /** A date range that names a single day only once. */
 export const dayRange = (first: string, last: string) => first === last ? day(first) : `${day(first)} – ${day(last)}`;
 export const siteTime = (recording: { recorded_at: string; timezone: string }, style: 'short' | 'medium' = 'medium') =>
-  new Intl.DateTimeFormat(app.locale, { dateStyle: style, timeStyle: 'short', timeZone: recording.timezone })
+  new Intl.DateTimeFormat(app.locale, { dateStyle: style, timeStyle: 'short',hourCycle:'h23', timeZone: recording.timezone })
     .format(new Date(recording.recorded_at));
 
 export function setLocale(locale: Locale) {

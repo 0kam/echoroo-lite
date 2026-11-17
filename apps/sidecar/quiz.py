@@ -141,7 +141,9 @@ def session_view(root, session_id, position=None):
     return {'id': session_id, 'purpose': 'practice', 'created_at': row['created_at'], 'count': len(questions),
             'answered': len(answers), 'complete': len(answers) == len(questions), 'question': question,
             'correct': sum(r['status'] == 'correct' for r in review), 'unknown': sum(r['status'] == 'unknown' for r in review),
-            'review': review, 'per_species': list(per_species.values())}
+            'review': review, 'per_species': list(per_species.values()),
+            # What the session was started from, so "Try again" starts a new one the same way.
+            'clip_ids': snapshot.get('clip_ids', []), 'requested_count': snapshot.get('requested_count', len(questions))}
 
 
 def answer_question(root, session_id, body):

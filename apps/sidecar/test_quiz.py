@@ -52,6 +52,7 @@ class QuizTest(unittest.TestCase):
                 session = client.post('/quiz/sessions', json={'clip_ids': ids, 'count': 3}).json()
                 sid = session['id']
                 self.assertEqual(session['purpose'], 'practice')
+                self.assertEqual((session['clip_ids'], session['requested_count']), (ids, 3))  # for "Try again"
                 self.assertNotIn('clip', session['question'])
                 self.assertEqual(session['review'], [])
                 self.assertEqual(len(session['question']['choices']), 4)

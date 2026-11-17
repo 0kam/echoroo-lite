@@ -21,6 +21,7 @@
   .toast.error { border-left: 4px solid rgb(var(--color-danger)); }
   .toast.info { border-left: 4px solid rgb(var(--primary-500)); }
   .toast small { opacity: .8; overflow-wrap: anywhere; }
-  .close { margin-left: auto; border: 0; background: transparent; color: inherit; padding: 0 4px; font-size: 16px; line-height: 1; min-height: 0; }
+  .toast { align-items: center; padding-right: 4px; }
+  .close { flex: none; margin: -8px 0 -8px auto; width: 44px; height: 44px; min-height: 44px; border: 0; background: transparent; color: inherit; padding: 0; font-size: 20px; line-height: 1; }
   @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 </style>

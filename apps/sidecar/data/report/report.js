@@ -44,7 +44,8 @@ document.addEventListener('toggle',event => {
 },true);
 function revealTarget() {
   const target = document.getElementById(location.hash.slice(1));
-  if (target instanceof HTMLDetailsElement) target.open = true;
+  // Open every folded section around the target, not only the target itself.
+  for (let node = target; node; node = node.parentElement) if (node instanceof HTMLDetailsElement) node.open = true;
   if (target) target.scrollIntoView({block: 'start'});
 }
 addEventListener('hashchange', revealTarget);
@@ -53,9 +54,9 @@ document.getElementById('copy').addEventListener('click', async event => {
   const button = event.currentTarget;
   const copy = document.querySelector('main').cloneNode(true);
   copy.querySelectorAll('.tab-panel[hidden]').forEach(node => node.removeAttribute('hidden'));
-  copy.querySelectorAll('audio, img, nav, button, [data-nocopy], #audio').forEach(node => node.remove());
+  copy.querySelectorAll('audio, img, nav, button, svg, .tip, [data-nocopy]').forEach(node => node.remove());
   copy.querySelectorAll('details, summary').forEach(node => {
-    const replacement = document.createElement(node.tagName === 'SUMMARY' ? 'h2' : 'div');
+    const replacement = document.createElement(node.tagName === 'SUMMARY' ? 'h3' : 'div');
     replacement.append(...node.childNodes); node.replaceWith(replacement);
   });
   const html = copy.innerHTML;
@@ -79,4 +80,28 @@ document.getElementById('copy').addEventListener('click', async event => {
     finally { document.removeEventListener('copy', handler); }
   }
   document.getElementById('copy-status').textContent = button.dataset[success ? 'success' : 'failure'];
+});
+// Show the recording nearest to the pointer at once, instead of the browser's delayed tooltip on a thin line.
+document.querySelectorAll('.schedule').forEach(box => {
+  const svg = box.querySelector('svg'), tip = box.querySelector('.tip');
+  let current = null;
+  const hide = () => { if (current) current.classList.remove('on'); current = null; tip.hidden = true; };
+  const show = event => {
+    const day = event.target.closest('.day');
+    let nearest = null, distance = Infinity;
+    if (day) day.querySelectorAll('rect[data-label]').forEach(line => {
+      const r = line.getBoundingClientRect(), d = Math.abs(event.clientX - (r.left + r.width / 2));
+      if (d < distance) { distance = d; nearest = line; }
+    });
+    if (!nearest) return hide();
+    if (nearest !== current) { if (current) current.classList.remove('on'); current = nearest; current.classList.add('on'); }
+    tip.textContent = current.dataset.label; tip.hidden = false;
+    const r = current.getBoundingClientRect(), b = box.getBoundingClientRect();
+    // Keep the tooltip inside the figure near the 0 h and 24 h edges.
+    tip.style.left = Math.min(Math.max(r.left + r.width / 2 - b.left, tip.offsetWidth / 2), b.width - tip.offsetWidth / 2) + 'px';
+    tip.style.top = (r.top - b.top) + 'px';
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', hide);
 });

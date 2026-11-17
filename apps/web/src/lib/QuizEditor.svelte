@@ -7,12 +7,13 @@
   import AudioRegion, { type AudioSource } from './AudioRegion.svelte';
   import SpeciesPicker from './SpeciesPicker.svelte';
   import XenoCantoSearch from './XenoCantoSearch.svelte';
-  import type { QuizClip } from './quiz';
+  import type { QuizClip, QuizLibrary } from './quiz';
   import type { Species } from './species';
   import Button from './ui/Button.svelte';
   import { createTask } from './ui/task.svelte';
   import { fill, focusMissing, missingText } from './workflow';
-  let { initial = null, onadded }: { initial?: QuizClip | null; onadded: (clip: QuizClip) => void | Promise<void> } = $props();
+  // `suggest`: a species id to fill in (opened from that species' check) unless the quiz already has its calls, when the next call should be another bird.
+  let { initial = null, suggest = '', onadded }: { initial?: QuizClip | null; suggest?: string; onadded: (clip: QuizClip) => void | Promise<void> } = $props();
   let species = $state<Species | null>(untrack(() => initial?.species ?? null));
   let source = $state<AudioSource | null>(untrack(() => initial?.source ?? null));
   let path = $state(''), playerKey = $state(0);
@@ -22,7 +23,9 @@
   let credit = $state(untrack(() => ({ recordist: initial?.metadata.credit.recordist ?? '',
     source_url: initial?.metadata.credit.source_url ?? '', license: initial?.metadata.credit.license ?? '' })));
   let restored=$state(false);
-  onMount(()=>{if(!initial){try{const saved=JSON.parse(sessionStorage.getItem('echoroo-quiz-audio')||'null');if(saved)({species,source,path,start,end,credit}=saved);}catch{}}restored=true;});
+  onMount(()=>{if(!initial){try{const saved=JSON.parse(sessionStorage.getItem('echoroo-quiz-audio')||'null');if(saved)({species,source,path,start,end,credit}=saved);}catch{}}restored=true;
+    if(suggest&&!initial&&species?.id!==suggest)void Promise.all([api<QuizLibrary>('/quiz/library'),api<Species>(`/species/${suggest}`)])
+      .then(([library,row])=>{if(!library.clips.some(clip=>clip.enabled&&clip.species_id===suggest))species=row;},()=>{});});
   $effect(()=>{if(restored&&!initial)sessionStorage.setItem('echoroo-quiz-audio',JSON.stringify({species,source,path,start,end,credit}));});
   const name = (value: string) => value.split(/[\\/]/).pop();
   const partOk = $derived(!!source && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= source.seconds && end - start >= .2 - 1e-9 && end - start <= 60 + 1e-9);
@@ -42,7 +45,7 @@
       path = picked;
     }
     select(await api<AudioSource>('/references', { path }));
-  }, { toast: true });
+  });
   const save = createTask(async () => {
     if (!source || !species) return;
     const clip=await api<QuizClip>('/quiz/clips', { species_id: species.id, source_kind: source.kind, source_id: source.id,
@@ -60,7 +63,7 @@
     {#if noPath}<p class="field-error" id="quiz-path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
   {#if source}
     <p class="muted">{name(source.path)}</p>
-    {#key playerKey}<AudioRegion {source} bind:start bind:end invalid={tried && !partOk ? fill('uClipLength', { max: 60 }) : ''} />{/key}
+    {#key playerKey}<AudioRegion {source} secondary bind:start bind:end invalid={tried && !partOk ? fill('uClipLength', { max: 60 }) : ''} />{/key}
     <details><summary>{t('quizCredit')}</summary><div class="form-grid">
       <label>{t('quizRecordist')}<input bind:value={credit.recordist} maxlength="200" /></label>
       <label>{t('quizSourceURL')}<input bind:value={credit.source_url} maxlength="1000" /></label>
@@ -68,7 +71,7 @@
     </div></details>
     <p class="muted">{t('quizLabelHint')}</p>
     <Button variant="primary" pending={save.pending} aria-describedby="quiz-save-reason" onclick={() => missing ? showMissing() : save.run()}>{t('quizSaveClip')}</Button>
-    <p class={tried && missing ? 'field-error' : 'muted'} id="quiz-save-reason">{missing}</p>
+    {#if tried && missing}<p class="field-error" id="quiz-save-reason">{missing}</p>{/if}
   {/if}
   {#if addReference.error || save.error}<p class="error" role="alert">{t(addReference.error || save.error)}</p>{/if}
 </section>

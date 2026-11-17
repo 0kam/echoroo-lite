@@ -38,8 +38,16 @@
     api<Payload>(`/species/${speciesId}/examples?${query}`).then(value => { if (version === request) show(value); })
       .catch(e => { if (version === request) error = e.message; });
   });
+  // Getting examples needs a Xeno-Canto key: without one, the panel says so (and where to enter it) instead of offering a button that would fail.
+  let keyReady = $state<boolean | null>(null);
+  $effect(() => { if (data && !named && keyReady === null) api<{ configured: boolean }>('/xeno-canto/key').then(r => keyReady = r.configured).catch(() => keyReady = true); });
+  const settings = $derived(`${resolve('/settings')}?return=${encodeURIComponent(route.url.hash.slice(1))}`);
+  // Recording times are the site's wall-clock time as sent, shown in the app's date style.
+  const localTime = (value: string) => new Intl.DateTimeFormat(app.locale, { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 16)}:00Z`));
   const prepare = createTask(async () => { show(await api<Payload>(`/species/${speciesId}/examples/xeno-canto`, scope)); fetched = true; });
-  const credit = (e: Example) => e.kind !== 'named' ? [t(e.kind === 'confirmed' ? 'refConfirmed' : 'refUnverified'), e.label.local_time?.slice(0, 16).replace('T', ' ')]
+  // A search example from a file on the PC carries no credit: its species is only what the user chose, so it is not called identified.
+  const credit = (e: Example) => e.kind !== 'named' ? [t(e.kind === 'confirmed' ? 'refConfirmed' : 'refUnverified'), e.label.local_time && localTime(e.label.local_time)]
+    : e.label.origin === 'search-reference' && !e.label.recordist ? [t('refPcFile')]
     : [t('refNamed'), e.label.origin === 'quiz' ? t('refQuiz') : e.label.origin === 'xeno-canto' ? `XC${e.label.id}` : t('refSearchReference'),
       e.label.origin === 'xeno-canto' && e.label.country ? t(e.label.country === 'Japan' ? 'refJapan' : 'refOutsideJapan') : '',
       e.label.quality ? t('refQuality').replace('{quality}',e.label.quality) : '', e.label.recordist, e.label.license && licenseName(e.label.license)];
@@ -47,11 +55,12 @@
 
 <section class="panel examples" aria-labelledby="examples-title">
   <h2 id="examples-title">{t('refTitle')}</h2>
+  {#if data?.examples.some(e => e.kind !== 'named')}<p class="muted">{t('refIncludes')}</p>{/if}
   {#if error}<p class="error" role="alert">{t(error)}</p>
   {:else if !data}<p role="status"><Spinner /> {t('loading')}</p>
   {:else}
     {#if example}
-      {#key `${example.source.kind}:${example.source.id}:${example.start_s}`}<AudioRegion source={example.source} start={example.start_s} end={example.end_s} fixedRange />{/key}
+      {#key `${example.source.kind}:${example.source.id}:${example.start_s}`}<AudioRegion source={example.source} start={example.start_s} end={example.end_s} fixedRange secondary />{/key}
       <p class="muted credit">{credit(example).filter(Boolean).join(' · ')}{#if example.label.url} · <a href={example.label.url} onclick={e => { e.preventDefault(); void openExternal(example.label.url!); }}>{example.label.url.replace(/^(https?:)?\/\//, '').split('/')[0]}</a>{/if}</p>
       {#if data.examples.length > 1}<div class="actions between">
         <Button size="sm" disabled={index === 0} onclick={() => index--}>‹ {t('refPrevious')}</Button><span>{index + 1} / {data.examples.length}</span>
@@ -59,8 +68,9 @@
     {:else}<p class="muted">{t('refNone')}</p>{/if}
     {#if !named}
       {#if fetched && !prepare.error}<p class="muted">{t('refXcNone')}</p>
+      {:else if keyReady === false && !prepare.error}<p>{t('refKeyNeeded')} <a class="target" href={settings}>{t('navSettings')}</a></p>
       {:else}<Button pending={prepare.pending} onclick={() => prepare.run()}>{t('refPrepare')}</Button><p class="muted">{t('refPrepareHint')}</p>{/if}
-      {#if prepare.error}<p class="error" role="alert">{t(prepare.error)}{#if prepare.error === 'xc_key_required'} · <a href={`${resolve('/settings')}?return=${encodeURIComponent(route.url.hash.slice(1))}`}>{t('navSettings')}</a>{/if}</p>{/if}
+      {#if prepare.error}<p class="error" role="alert">{t(prepare.error)}{#if prepare.error === 'xc_key_required'} · <a class="target" href={settings}>{t('navSettings')}</a>{/if}</p>{/if}
     {/if}
     <div class="actions">
       <Button size="sm" onclick={() => void openExternal(page.url)}>{t('refLearn').replace('{site}', page.name)}</Button>

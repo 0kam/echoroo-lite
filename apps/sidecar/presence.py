@@ -42,7 +42,7 @@ def merge_candidates(rows):
 def candidates(root, dataset_id, species_id, source, first=None, last=None):
     """The sounds most likely to be this species, from the top down."""
     from custom_models import list_models
-    from results_workflow import context, current_validations, region_statuses, threshold_for
+    from results_workflow import context, current_validations, listed_models, region_statuses, threshold_for
     from search_runs import site_run, top_hits
     from validation import model_windows
     ctx = context(root, dataset_id, first, last)
@@ -102,7 +102,10 @@ def candidates(root, dataset_id, species_id, source, first=None, last=None):
     result = merge_candidates(result)[:LIST_SIZE]
     region = region_statuses(root, ctx, [taxon['scientific_name']])[taxon['scientific_name']]
     return {'species': names_for(taxon), 'source': source, 'run_id': run['id'] if run else None, 'rows': result,
-            'has_ai': bool(ctx['models']), 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
+            'has_ai': bool(ctx['models']),
+            # Whether any AI here can recognise this species: a built-in AI that lists it, or an AI made for it.
+            'ai_covers': bool(listed_models(root, ctx, taxon['scientific_name'])) or any(m['applicable'] for m in list_models(root, ctx, species_id)),
+            'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'site': ctx['site'], 'presence': summary, 'region': region}
 
 
@@ -138,6 +141,14 @@ def record_miss(root, body):
             (body.dataset_id, body.species_id, body.source, body.listened,
              json.dumps({'start_date': body.start_date.isoformat(), 'end_date': body.end_date.isoformat()})))
     return {'listened': body.listened}
+
+
+def delete_misses(root, body):
+    """Take back "could not confirm" for a species. The status reads every record at the site, so all of them go."""
+    with connect(root) as db:
+        deleted = db.execute('''DELETE FROM presence_misses WHERE species_id=? AND dataset_id IN
+            (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?))''', (body.species_id, body.dataset_id)).rowcount
+    return {'deleted': deleted}
 
 
 def empty():

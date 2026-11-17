@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths';
   import { onMount, tick } from 'svelte';
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import { api, mediaURL } from '$lib/api.svelte';
   import { app, t } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
@@ -19,7 +20,7 @@
   const sessionId = $derived(Number(page.params.session));
   let session = $state<QuizSession | null>(null), loadError = $state('');
   let reviewPosition = $state<number | null>(null), questionPlayer = $state<{play:()=>Promise<void>;stop:()=>void}>();
-  let feedbackElement = $state<HTMLDivElement>(), questionHeading = $state<HTMLHeadingElement>();
+  let feedbackElement = $state<HTMLDivElement>(), questionHeading = $state<HTMLHeadingElement>(), titleHeading = $state<HTMLHeadingElement>();
   let answering = $state<string | null>(null);
   async function load() { session = await api<QuizSession>(`/quiz/sessions/${sessionId}`); }
   const answer = createTask(async (speciesId: string | null) => {
@@ -33,18 +34,23 @@
     } finally { answering = null; }
   }, { toast: true });
   const advance = createTask(async () => {
-    questionPlayer?.stop(); await load(); await tick(); questionHeading?.focus();
+    questionPlayer?.stop(); await load(); await tick(); (session?.question ? questionHeading : titleHeading)?.focus();
   }, { toast: true });
   const replay = createTask(async (position: number) => {
     questionPlayer?.stop(); reviewPosition = position; await tick();
     try { await questionPlayer?.play(); } catch { throw Error('unreadable_audio'); }
   }, { toast: true });
+  // The same birds and number of questions again, as a new session.
+  const again = createTask(async () => {
+    const next = await api<QuizSession>('/quiz/sessions', { clip_ids: session!.clip_ids, count: session!.requested_count });
+    await goto(`${resolve(`/quiz/${next.id}`)}${context.query ? `?${context.query}` : ''}`);
+  }, { toast: true });
   onMount(() => { load().catch(e => loadError = e instanceof Error ? e.message : 'unknown_error');  });
 </script>
 
 <div class="page">
-  <div class="crumbs"><a href={quizUrl}>{t('backToQuiz')}</a></div>
-  <h1>{session?.question?fill('quizTitleProgress',{n:session.question.position+1,total:session.count}):t('quiz')}</h1>
+  <div class="crumbs">{#if context.back}<a href={context.back}>{t(context.backLabel)}</a>{:else}<a href={quizUrl}>{t('backToQuiz')}</a>{/if}</div>
+  <h1 tabindex="-1" bind:this={titleHeading}>{session?.question?fill('quizTitleProgress',{n:session.question.position+1,total:session.count}):session?t('quizResultTitle'):t('quiz')}</h1>
   {#if loadError}<div class="panel empty"><p class="error">{t(loadError === 'not_found' ? 'sessionNotFound' : loadError)}</p></div>
   {:else if !session}<p class="muted"><Spinner /> {t('loading')}</p>
   {:else}
@@ -75,7 +81,8 @@
             <h2>{t(`quiz_${feedback.status}`)}</h2>
             <p>{t('quizCorrectAnswer')}: <strong>{commonName(feedback.clip.species, app.locale)}</strong> · <i>{feedback.clip.species.scientific_name}</i></p>
             <p>{t('quizYourAnswer')}: {#if feedback.answer}{commonName(feedback.answer, app.locale)} · <i>{feedback.answer.scientific_name}</i>{:else}{t('quizUnknown')}{/if}</p>
-            <p>{t(`quizSound_${feedback.clip.metadata.sound_type}`)}</p>
+            <!-- "other" is the unset default, so only song and call are worth a sentence. -->
+            {#if feedback.clip.metadata.sound_type !== 'other'}<p>{t(`quizSound_${feedback.clip.metadata.sound_type}`)}</p>{/if}
             {#if feedback.clip.metadata.note}<p>{feedback.clip.metadata.note}</p>{/if}
             <p class="muted">{t('quizCredit')}: {credit.recordist || xc?.recordist || t('quizCreditMissing')}{#if url} · <a href={url} onclick={e => { e.preventDefault(); void openExternal(url); }}>{xcId ? `XC${xcId}` : url.replace(/^(https?:)?\/\//, '').split('/')[0]}</a>{/if}
               · {#if /^(https?:)?\/\//.test(license)}<a href={license} onclick={e => { e.preventDefault(); void openExternal(license); }}>{licenseName(license)}</a>{:else}{license || t('quizLicenseMissing')}{/if}</p>
@@ -83,7 +90,6 @@
           <Button class="next" variant="primary" pending={advance.pending} onclick={() => advance.run()}>{t(session.complete ? 'quizShowResults' : 'quizNext')}</Button>
         {/if}
       {:else}
-        <h2 class="question" tabindex="-1" bind:this={questionHeading}>{t('quizResults')}</h2>
         <p class="result-score">{session.correct} / {session.answered} · {(session.correct / session.answered * 100).toFixed(1)}%</p>
         <p>{t('quiz_incorrect')}: {session.answered - session.correct - session.unknown} · {t('quizUnknown')}: {session.unknown}</p>
         <p class="muted">{t('quizResultHint')}</p>
@@ -98,6 +104,8 @@
           {@const review = session.review.find(row=>row.position===reviewPosition)!}
           <AudioRegion bind:this={questionPlayer} source={{kind:'quiz',id:session.id,position:review.position,seconds:review.clip.seconds}} start={0} end={review.clip.seconds} fixedRange />
         {/key}{/if}
+        <div class="actions result-actions"><Button variant="primary" pending={again.pending} onclick={() => again.run()}>{t('quizAgain')}</Button>
+          {#if context.back}<Button href={context.back}>{t(context.backLabel)}</Button>{:else}<Button href={quizUrl}>{t('backToQuiz')}</Button>{/if}</div>
       {/if}
       {#if answer.error || advance.error || replay.error}<p class="error" role="alert">{t(answer.error || advance.error || replay.error)}</p>{/if}
     </section>
@@ -116,4 +124,5 @@
   .result-score { margin: 12px 0; font-size: 28px; color: rgb(var(--primary-700)); }
   .review-heading { margin-top: 24px; }
   .review-list { max-height: 340px; overflow: auto; }
+  .result-actions { margin-top: 24px; }
 </style>

@@ -113,6 +113,10 @@ class SpeciesFlowCheck(unittest.TestCase):
             listed = client.get(f'/datasets/1/species/{sid}/presence', params={'source': 'search', **{k: scope[k] for k in ('start_date', 'end_date')}}).json()
             rows = listed['rows']
             self.assertEqual((listed['run_id'], len(rows)), (run['id'], 100))  # 107 hits, capped at the list size
+            self.assertTrue(listed['ai_covers'])
+            # A species no AI here lists: the AI tab says why it is empty.
+            other = client.post('/species', json={'scientific_name': 'Nullus testus'}).json()
+            self.assertFalse(client.get(f"/datasets/1/species/{other['id']}/presence", params={k: scope[k] for k in ('start_date', 'end_date')}).json()['ai_covers'])
             self.assertEqual([r['score'] for r in rows], sorted((r['score'] for r in rows), reverse=True))
             self.assertTrue(all(r['end_s'] - r['start_s'] == 5 for r in rows))
             mark = lambda row, marked: client.post('/presence/marks', json={'dataset_id': 1, 'species_id': sid, 'recording_id': row['recording_id'],
@@ -129,6 +133,11 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual(client.post('/presence/misses', json={**scope, 'source': 'search', 'listened': 8}).json(), {'listened': 8})
             presence = client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']
             self.assertEqual((presence['status'], presence['miss']['listened']), ('not_found', 8))
+            # Taking the record back returns the species to "not yet listened to".
+            client.post('/presence/misses', json={**scope, 'source': 'ai', 'listened': 10})
+            self.assertEqual(client.post('/presence/misses/delete', json={'dataset_id': 1, 'species_id': sid}).json(), {'deleted': 2})
+            self.assertEqual(client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']['status'], 'unchecked')
+            client.post('/presence/misses', json={**scope, 'source': 'search', 'listened': 8})
             mark(rows[0], True)
             self.assertEqual(client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']['status'], 'confirmed')
             # The AI list interleaves each model's ranking and says which model flagged a sound.

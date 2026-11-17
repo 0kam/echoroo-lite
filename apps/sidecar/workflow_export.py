@@ -17,8 +17,8 @@ from contextlib import ExitStack
 from reports import csv_bytes,save_report,scope_records,effort,window_key,window_in_scope,classification_batches
 from storage import CatalogError,checked_source,connect
 from results_workflow import attach_validation,context,counting_status,current_validations,detection_snapshot,custom_snapshot,region_statuses,threshold_for
-from report_document import create_html,messages,quality_result,status,status_text,criterion,method
-from report_figures import DATA,spiral,recording_schedule
+from report_document import create_html,messages,quality_result,status,status_text,method,windows_text
+from report_figures import DATA,spiral
 from models import REGISTRY,window_s
 
 
@@ -29,6 +29,14 @@ def write_json(path,value):
 
 def digest(path):
     with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
+
+
+def folder_name(site,start,end,token):
+    """'里山の森_2025-07-11〜13_d3748e': readable, safe on Windows and macOS, unique by its suffix."""
+    name=''.join('_' if c in '<>:"/\\|?*' or ord(c)<32 or c.isspace() else c for c in site).strip('._ ')[:40] or 'echoroo'
+    start,end=str(start),str(end)
+    period=(start if start==end else f'{start}〜{end[8:]}' if start[:7]==end[:7] else f'{start}〜{end[5:]}' if start[:4]==end[:4] else f'{start}〜{end}')
+    return f'{name}_{period}_{token}'
 
 
 def quality_export(validation,result):
@@ -121,8 +129,22 @@ def export(root,body,cancel=None):
             if model['species']['id']==sid and model['applicable']:
                 snapshots.append(custom_snapshot(root,ctx,model))
     if not snapshots and not any(p['evidence'] for p in presence.values()):raise CatalogError('no_report_analyses')
-    token=uuid4().hex[:10];package_id=f'echoroo-{body.dataset_id}-{token}'
-    destination=parent/package_id;zip_path=parent/(package_id+'.zip')
+    # Species the export page offered with AI detections or confirmed calls but not chosen; the overview is cached.
+    from results_workflow import overview
+    # Counted apart so the report never reads as if confirmed species were dropped: heard ones, then AI-only candidates.
+    # The overview is already sorted by AI detections, so the candidate names keep that order.
+    other_species={'heard':0,'candidates':0,'candidate_species':[]}
+    for row in overview(root,body.dataset_id,ctx['start_date'],ctx['end_date'])['species']:
+        if row['species']['id'] in presence:continue
+        found=[[t['custom_model'] if m['engine']=='custom' else REGISTRY[m['engine']]['name'],m['candidate_windows']]
+               for m in row['models'] if (m.get('candidate_windows') or 0)>0]
+        if row['presence']['evidence']:other_species['heard']+=1
+        elif found:other_species['candidate_species'].append({'species':row['species'],'windows':found})
+    other_species['candidates']=len(other_species['candidate_species'])
+    while True:
+        package_id=folder_name(ctx['site']['name'],ctx['start_date'],ctx['end_date'],uuid4().hex[:6])
+        destination=parent/package_id;zip_path=parent/(package_id+'.zip')
+        if not destination.exists() and not zip_path.exists():break
     zone=ZoneInfo(ctx['site']['timezone']);index=[];species_rows=[];hourly=[];evidence=[];quality_rows=[];presence_rows=[]
     published_folder=published_zip=False
     try:
@@ -219,23 +241,28 @@ def export(root,body,cancel=None):
                         'heard_in_checks':sum(e['origin']=='check' for e in item['evidence']),
                         'voice_on_ai_page':sum(e['origin']=='label' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),
                         'not_found_list':miss.get('source'),'not_found_recorded_at':miss.get('created_at')})
+                lengths=t['paren'].format(text=windows_text(snapshots,t)) if snapshots else ''
                 manifest={**ctx,'schema':'echoroo_recording_report_v2','package_id':package_id,'saved_at':datetime.now(timezone.utc).isoformat(),
-                    'format':'html','locale':body.locale,'scope':scope,'results':index,'selected_species':[taxa[sid] for sid in wanted if sid in taxa],
+                    'format':'html','locale':body.locale,'other_species':other_species,'scope':scope,'results':index,'selected_species':[taxa[sid] for sid in wanted if sid in taxa],
                     'presence':[{**row,'species':taxa[row['species_id']]} for row in presence_rows],
                     'report_file':'index.html','folder_path':str(destination),
-                    'file_guide':[['presence.csv',t['presence_files']],['species.csv',t['species_list']],['hourly.csv',t['details']],['quality.csv',t['quality_title']],['scores/',t['all_scores']],
-                        ['evidence.csv / audio/',t['evidence_files']],['validation/',t['validation_files']],['quiz-results.json',t['quiz_title']],
-                        ['manifest.json / results/',t['methods_title']]]}
+                    'file_guide':[['presence.csv',t['presence_files']],['species.csv',t['file_species']],['hourly.csv',t['file_hourly']],['quality.csv',t['file_quality']],['scores/',t['all_scores'].format(windows=lengths)],
+                        ['evidence.csv / audio/',t['evidence_files']],['validation/',t['validation_files']],['quiz-results.json',t['file_quiz']],
+                        ['manifest.json / results/',t['file_manifest']]]}
                 if any(s['engine']=='custom' for s in snapshots):
                     manifest['file_guide'].append(['models/',t['custom_model_files']])
-                (folder/'figures'/'recording-schedule.png').write_bytes(recording_schedule(scope))
                 for filename,rows in [('presence',presence_rows),('species',species_rows),('hourly',hourly),('evidence',evidence),('quality',quality_rows)]:
                     fields=list(dict.fromkeys(k for row in rows for k in row))
                     values=[{k:json.dumps(v,ensure_ascii=False) if isinstance(v,(dict,list)) else v for k,v in row.items()} for row in rows]
                     (folder/(filename+'.csv')).write_bytes(csv_bytes(values,fields or ['report_id']))
                 write_json(folder/'recordings.json',list(records.values()));write_json(folder/'quiz-results.json',quiz)
-                create_html(folder,manifest,snapshots,evidence,quiz)
-                (folder/'README.txt').write_text(t['files_note']+'\n\n'+t['evidence_note'],encoding='utf-8')
+                create_html(folder,manifest,snapshots,evidence,quiz,list(records.values()))
+                # File names, the report ID and the format version are for whoever checks the files, not for the page.
+                files='\n'.join(f'{path}: {text}' for path,text in manifest['file_guide'])
+                (folder/'README.txt').write_text('\n\n'.join([t['files_note'],t['readme_files_title'],files,t['evidence_note'],t['readme_methods_title'],t['methods_note'],
+                    *([t['custom_models_note']] if any(s['engine']=='custom' for s in snapshots) else []),
+                    t['precision_note'],t['validation_scope'].format(windows=lengths),t['region_source'],t['human_reference'],
+                    t['reproduce_note'],f"{t['package_id']}: {package_id}\n{t['schema']}: {manifest['schema']}"]),encoding='utf-8')
                 shutil.copyfile(DATA/'echoroo.png',folder/'figures'/'echoroo.png')
                 shutil.copyfile(DATA/'fonts'/'OFL.txt',folder/'font-license.txt')
                 manifest['files']={p.relative_to(folder).as_posix():{'sha256':digest(p),'bytes':p.stat().st_size} for p in sorted(folder.rglob('*')) if p.is_file()}

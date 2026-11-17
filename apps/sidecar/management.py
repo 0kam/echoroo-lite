@@ -57,6 +57,19 @@ def location_status(db, site, enabled=None):
     return complete, stale
 
 
+def site_states(root):
+    """Recordings and fully analysed recordings per site, counted like the site results page."""
+    with connect(root) as db:
+        states = []
+        for row in db.execute('SELECT * FROM sites ORDER BY id').fetchall():
+            site = dict(row)
+            site['location_changed'] = bool(db.execute('SELECT 1 FROM changed_locations WHERE site_id=?', (site['id'],)).fetchone())
+            complete, _ = location_status(db, site)
+            records = db.execute('SELECT COUNT(*) FROM recordings r JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=?', (site['id'],)).fetchone()[0]
+            states.append({'site_id': site['id'], 'records': records, 'analysed': len(complete)})
+    return states
+
+
 def edit_site(root, site_id, body):
     with connect(root) as db:
         old = db.execute('SELECT * FROM sites WHERE id=?', (site_id,)).fetchone()
@@ -130,7 +143,12 @@ def deletion_plan(db, site_id, dataset_id=None):
 def preview_delete(root, site_id, dataset_id=None):
     with connect(root) as db:
         plan = deletion_plan(db,site_id,dataset_id)
-    return {k: (len(v) if isinstance(v,list) else v) for k,v in plan.items() if k!='analyses'} | {'analyses':len(plan['analyses'])}
+        # The "heard" marks and "could not confirm" records that delete() removes, so the confirmation can name them.
+        marks = db.execute('''SELECT COUNT(*) FROM presence_marks WHERE recording_id IN (SELECT value FROM json_each(?))
+            OR run_id IN (SELECT value FROM json_each(?))''', (json.dumps(plan['recordings']), json.dumps(plan['searches']))).fetchone()[0]
+        misses = 0 if plan['remaining_dataset_id'] is not None else db.execute(
+            'SELECT COUNT(*) FROM presence_misses WHERE dataset_id IN (SELECT value FROM json_each(?))', (json.dumps(plan['datasets']),)).fetchone()[0]
+    return {k: (len(v) if isinstance(v,list) else v) for k,v in plan.items() if k!='analyses'} | {'analyses':len(plan['analyses']),'marks':marks,'misses':misses}
 
 
 def delete(root, site_id, dataset_id, revision):

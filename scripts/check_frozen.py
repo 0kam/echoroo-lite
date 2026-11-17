@@ -209,9 +209,10 @@ with ExitStack() as stack:
                 assert archive.testzip() is None
                 manifest = json.loads(archive.read('manifest.json'))
                 assert manifest['format'] == 'html' and manifest['scope']['recording_ids'] == sorted(r['id'] for r in records)
-                assert '聞き分けクイズの補足記録' in archive.read('index.html').decode()
-                assert '図を保存' in archive.read('index.html').decode()
-                assert '聞いて確認した' in archive.read('index.html').decode() and 'presence.csv' in archive.namelist()
+                html = archive.read('index.html').decode()
+                # The quiz record appears only when an included species has one, so it is not required here.
+                assert '図を保存' in html and '<section class="block" id="recordings">' in html
+                assert '人が聞いて確かめた：' in html and 'presence.csv' in archive.namelist()
                 assert all(entry['bytes'] > 0 for name, entry in manifest['files'].items() if name.endswith('.png'))
             assert Path(suite['report_path']).is_file()
             print(f"Frozen HTML report, Japanese figures, presence audio and data suite passed in {time.perf_counter() - started:.2f}s.")

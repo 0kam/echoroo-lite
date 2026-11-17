@@ -42,14 +42,14 @@
   {#if configured === false}
     <p class="muted">{t('xcNotConfigured')} · <a href={`${resolve('/settings')}?return=${encodeURIComponent(page.url.hash.slice(1))}`}>{t('navSettings')}</a></p>
   {/if}
-  <p class={tried && !species ? 'field-error' : 'muted'}>{species ? `${commonName(species, app.locale)} · ${species.scientific_name}` : t('chooseTargetFirst')}</p>
+  {#if configured}<p class={tried && !species ? 'field-error' : 'muted'}>{species ? `${commonName(species, app.locale)} · ${species.scientific_name}` : t('chooseTargetFirst')}</p>
   <form class="query" onsubmit={e => { e.preventDefault(); if (species) search.run(1, true); else { tried = true; onmissing?.(); } }}>
-    {#if countryFilter}<label>{t('xcCountry')}<input bind:value={country} maxlength="100" placeholder="Japan" /></label>
+    {#if countryFilter}<label>{t('xcCountry')}<input bind:value={country} maxlength="100" placeholder={t('xcCountryExample')} /></label>
       <Button onclick={() => { countryFilter = false; country = ''; }}>{t('xcAllCountries')}</Button>
     {:else}<Button onclick={() => countryFilter = true}>{t('xcFilterCountry')}</Button>{/if}
     <label>{t('xcQuality')}<select bind:value={quality}><option value="">{t('allQualities')}</option>{#each ['A','B','C','D','E'] as q}<option value={q}>{q}{q==='A'?` (${t('xcQualityBest')})`:q==='E'?` (${t('xcQualityWorst')})`:''}</option>{/each}</select></label>
-    <Button type="submit" pending={search.pending} disabled={!configured}>{t('xcSearch')}</Button>
-  </form>
+    <Button type="submit" pending={search.pending}>{t('xcSearch')}</Button>
+  </form>{/if}
   {#if search.error}<p class="error" role="alert">{t(search.error)}</p>{/if}
   {#if results}
     <p class="muted">{results.total_recordings} {t('files')} · {t('page')} {results.page} / {results.total_pages}</p>

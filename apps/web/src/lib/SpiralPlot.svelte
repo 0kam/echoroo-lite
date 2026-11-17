@@ -3,7 +3,7 @@
   import { checkText,fill,modelName } from './workflow';
   import { commonName } from './species';
   import { percent, type Cell, type Report } from './reports';
-  import { app, t } from './app.svelte';
+  import { app, t, day as dayText } from './app.svelte';
   import Button from './ui/Button.svelte';
   // Without `onselect` the cells are a picture only (the species page has no sound list, B4).
   let { report, onselect, compact=false }: { compact?:boolean; report: Report; onselect?: (cell: Cell) => void } = $props();
@@ -98,7 +98,7 @@
 </div>{/if}
 <div class="plot-scroll" class:compact>
 <svg bind:this={element} xmlns="http://www.w3.org/2000/svg" viewBox={compact?`0 ${header-20} 960 755`:`0 0 960 ${height}`}
-  role="group" aria-label={t('spiralPlot')}>
+  role="group" aria-label={t(onselect ? 'spiralKeys' : 'spiralPlot')}>
   <title>{t('spiralPlot')} · {report.species ? commonName(report.species, app.locale) : ''} · {metric}</title>
   <desc>{t('spiralMeaning')} {report.site.timezone} · {report.start_date}–{report.end_date}</desc>
   <defs><pattern id={`${uid}-missing`} width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="#fafafa"/><path d="M-2,2 L2,-2 M0,7 L7,0 M5,9 L9,5" stroke="#aeacb8" stroke-width="1"/></pattern>
@@ -127,12 +127,13 @@
       {#if m.days*ring>=20}<text x={p[0]} y={p[1]+8} text-anchor="middle" font-size={compact?22:12} fill="#373450" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{monthName(m.key)}</text>{/if}
       {#if m.newYear}<text x={cx} y={cy-r+8} text-anchor="middle" font-size={compact?22:12} font-weight="600" fill="#373450" stroke="#fff" stroke-width="5" paint-order="stroke" pointer-events="none">{fill('spiralYearRing',{year:m.key.slice(0,4)})}</text>{/if}
     {/each}
-  {:else if days>1}{#each dateTicks as day}{@const p=point(inner+(day+.5)*ring,16.5)}
+  {:else if days>1}<!-- Dates sit on the midnight line, so neighbouring labels are a whole ring step apart and never overlap. -->
+  {#each dateTicks as day}{@const p=point(inner+(day+.5)*ring,0)}
     <circle cx={p[0]} cy={p[1]} r="1.5" fill="#575279" pointer-events="none"/>
-    <text x={p[0]-7} y={p[1]-3} text-anchor="end" font-size={compact?22:12} fill="#575279" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{new Date(Date.parse(report.start_date)+(from+day)*86400000).toISOString().slice(0,10)}</text>
+    <text x={p[0]-7} y={p[1]-3} text-anchor="end" font-size={compact?22:12} fill="#575279" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{dayText(new Date(Date.parse(report.start_date)+(from+day)*86400000).toISOString())}</text>
   {/each}{/if}
-  <text x={cx} y={cy-8} text-anchor="middle" font-size={compact?18:13} fill="#575279" pointer-events="none">{t('dateOutward')}</text>
-  <text x={cx} y={cy+(compact?24:15)} text-anchor="middle" font-size={compact?24:13} fill="#575279" pointer-events="none">{shown} {t('days')}</text>
+  <!-- Which way the days run is a full sentence, too long for the centre, so it sits with the legend. -->
+  <text x={cx} y={cy+(compact?8:5)} text-anchor="middle" font-size={compact?24:13} fill="#575279" pointer-events="none">{shown} {t('days')}</text>
   <!-- The compact view shows this legend as HTML below the figure instead. -->
   <g visibility={compact?'hidden':undefined}>
   <text x="70" y={cy+395} font-size="16" fill="#373450">{metric}</text>
@@ -144,6 +145,7 @@
     <rect x={70+i*285} y={cy+419} width="20" height="16" fill={item.fill} stroke="#aeacb8" stroke-width=".5"/>
     <text x={100+i*285} y={cy+432} font-size="14" fill="#575279">{t(item.key)}</text>{/each}
   <rect x="70" y={cy+450} width="20" height="16" fill="#fff" stroke="#aeacb8"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t('uZeroCalls')}</text>
+  <text x="355" y={cy+463} font-size="14" fill="#575279">{t('dateOutward')}</text>
   <text visibility={compact?'hidden':undefined} x="70" y={cy+494} font-size="14" fill="#575279">{t(quality?.status === 'decided' ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
 {#if quality}<text visibility={compact?'hidden':undefined} x="70" y={cy+523} font-size="14" fill="#575279">{t('wQuality')}: {checkText(quality)}</text>{/if}
   </g>
@@ -157,6 +159,7 @@
   <span><i style:background="#f1f0f2"></i>{t('cell_no_recording')}</span>
   <span><i class="missing"></i>{t('missingAnalysis')}</span>
   <span><i class="partial"></i>{t('cell_partial')}</span>
+  <span>{t('dateOutward')}</span>
 </div><p class="caution">{t(quality?.status === 'decided' ? 'wFigureCaution' : 'detectionFigureCaution')}</p>{/if}
 
 <style>

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from './api.svelte';
   import { t } from './app.svelte';
+  import { openExternal } from './files';
   import Button from './ui/Button.svelte';
   import { createTask } from './ui/task.svelte';
   import { notify } from './ui/toast.svelte';
@@ -13,8 +14,9 @@
   onMount(() => { void api<{ configured: boolean }>('/xeno-canto/key').then(r => configured = r.configured).catch(e => save.error = e.message); });
 </script>
 
-<p class="muted">{t('xcKeyHint')} <a href="https://xeno-canto.org/account" target="_blank" rel="noreferrer">Xeno-Canto</a></p>
-<p class="small-text"><strong>{t(configured ? 'xcConfigured' : 'xcNotConfigured')}</strong></p>
+<p class="muted">{t('xcKeyHint')}</p>
+<p><a href="https://xeno-canto.org/account" onclick={e => { e.preventDefault(); void openExternal('https://xeno-canto.org/account'); }}>{t('xcAccountPage')}</a></p>
+<p class="small-text"><strong>{t(configured ? 'xcConfigured' : 'xcNoKey')}</strong></p>
 <form class="inline" onsubmit={e => { e.preventDefault(); save.run(); }}>
   <label>{t('xcKey')}<input type="password" autocomplete="off" bind:value={key} maxlength="500" /></label>
   <Button type="submit" pending={save.pending}>{t('xcSaveKey')}</Button>

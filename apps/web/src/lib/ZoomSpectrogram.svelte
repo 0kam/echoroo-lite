@@ -61,7 +61,8 @@
   <Button size="sm" aria-label={t('aZoomIn')} title={t('aZoomIn')} disabled={Math.max(zoom.x,zoom.y)>=8} onclick={()=>scale('both',1.4)}>＋</Button>
   <Button size="sm" disabled={zoom.x===1&&zoom.y===1} onclick={reset}>{t('aFit')}</Button><ScaleSwitch/></div></div>
 <div class="grid">
-  <div class="frequency" role="slider" tabindex="0" aria-orientation="vertical" aria-valuemin="1" aria-valuemax="8" aria-valuenow={zoom.y} aria-valuetext={`${zoom.y.toFixed(1)}×`} aria-label={t('aFrequencyAxis')} title={t('aAxisHelp')} use:wheelAction={'y'} onkeydown={e=>keyboard(e,'y')}>
+  <!-- The axes zoom with the wheel only; keyboard users zoom with the buttons, so the axes are not tab stops before the answers. -->
+  <div class="frequency" aria-hidden="true" title={t('aAxisHelp')} use:wheelAction={'y'}>
     {#each visibleTicks as {tick,y} (tick.frequency_hz)}<span style:top={`${y}px`} class:edge-high={y<8} class:edge-low={y>viewHeight-8}>{kHz(tick)}</span>{/each}
   </div>
   <!-- Drag or arrow keys pan the view; +/- zoom. -->
@@ -82,7 +83,7 @@
     </div>
     {#if loading||error}<div class="state" role="status">{t(error||'loadingSpectrogram')}</div>{/if}
   </div>
-  <span class="unit">kHz</span><div class="time-axis" role="slider" tabindex="0" aria-orientation="horizontal" aria-valuemin="1" aria-valuemax="8" aria-valuenow={zoom.x} aria-valuetext={`${zoom.x.toFixed(1)}×`} aria-label={t('aTimeAxis')} title={t('aAxisHelp')} use:wheelAction={'x'} onkeydown={e=>keyboard(e,'x')}>
+  <span class="unit">{t('aFreqUnit')}</span><div class="time-axis" title={t('aAxisHelp')} use:wheelAction={'x'}>
     <span>{(viewStart-start).toFixed(2)} s</span><span>{((viewStart+viewEnd)/2-start).toFixed(2)} s</span><span>{(viewEnd-start).toFixed(2)} s</span>
   </div>
 </div>
@@ -94,8 +95,8 @@
   /* In a narrow column the hint takes its own short line instead of pushing the buttons onto two rows. */
   @container (max-width:640px){.hint{order:-1;flex-basis:100%}}
   /* Play, zoom and mel|linear share one row, so the answer bar below never covers the figure (A6). */
-  .unit{align-self:center;padding-right:8px;text-align:right;font-size:12px;color:rgb(var(--stone-600))}
-  .grid{display:grid;grid-template-columns:54px minmax(0,1fr);gap:4px}
+  .unit{align-self:center;padding-right:8px;text-align:right;font-size:11px;line-height:1.2;word-break:keep-all;color:rgb(var(--stone-600))}
+  .grid{display:grid;grid-template-columns:56px minmax(0,1fr);gap:4px}
   .frequency{position:relative;cursor:ns-resize;font-size:12px;line-height:1;color:rgb(var(--stone-600));overflow:hidden}
   .frequency span{position:absolute;right:8px;transform:translateY(-50%);font-variant-numeric:tabular-nums}.frequency .edge-high{transform:none}.frequency .edge-low{transform:translateY(-100%)}
   .viewport{height:var(--spec-lg);overflow:hidden;position:relative;background:#050505;overscroll-behavior:contain}

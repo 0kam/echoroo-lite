@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (agreed 2026-11-17): the species page as two questions with one open step and one main button. Names and numbers are examples. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>種のページ（見本）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.7 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0; }
+  h2 { font-size: 19px; margin: 0; }
+  h3 { font-size: 17px; margin: 16px 0 4px; }
+  p { margin: 0 0 12px; }
+  a { color: #8a3f3f; }
+  .muted { color: #6e6a86; font-size: 15px; }
+  .mockbar { background: #efe7dc; border: 1px dashed #b9ab99; border-radius: 12px; padding: 12px 16px; margin: 0 0 20px; }
+  .mockbar label { display: block; font-size: 14px; }
+  .mockbar select { display: block; min-height: 44px; margin: 4px 0 0; padding: 4px 8px; font: inherit; max-width: 100%; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .button { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 18px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; text-decoration: none; }
+  .button.primary { background: #9b4b4b; border-color: #9b4b4b; color: #fff; font-weight: 600; }
+  .button.danger { border-color: #c98b8b; color: #8a3f3f; }
+  .back { margin: 0 0 16px; }
+  .site { font-size: 14px; color: #6e6a86; }
+  .sci { font-style: italic; color: #6e6a86; margin: 0 0 20px; }
+  .step { background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 18px 24px; margin: 0 0 12px; }
+  .step.open { border: 2px solid #9b4b4b; padding: 17px 23px; }
+  .step.later { background: #f6f1ea; }
+  .step-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-content: space-between; }
+  .num { display: inline-flex; justify-content: center; align-items: center; width: 28px; height: 28px; border-radius: 50%; background: #e6ddd3; font-weight: 700; margin-right: 8px; }
+  .open .num { background: #9b4b4b; color: #fff; }
+  .answer { font-weight: 600; }
+  .step-body { margin-top: 12px; }
+  .tag { display: inline-block; font-size: 13px; background: #fbf1df; border: 1px solid #e3c88f; border-radius: 6px; padding: 0 8px; }
+  details { margin: 12px 0 0; }
+  summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+  .sound { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; border-top: 1px solid #e6ddd3; padding: 8px 0; }
+  .done { background: #eaf4ee; border: 1px solid #9cc4ad; border-radius: 16px; padding: 18px 24px; margin: 16px 0 12px; }
+  .warn { border-left: 6px solid #b7791f; background: #fbf1df; padding: 12px 16px; margin: 0 0 12px; }
+  .figure { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 12px; }
+  @media (max-width: 720px) { .figure { grid-template-columns: minmax(0, 1fr); } }
+  .placeholder { border: 1px dashed #b9ab99; border-radius: 12px; background: #fff; padding: 12px; font-size: 14px; color: #6e6a86; }
+  .tabs { margin: 8px 0 0; }
+  .tabs .button[aria-pressed="true"] { background: #f6e1e1; border-color: #c98b8b; }
+  .redo { margin-top: 28px; }
+  .note { font-size: 13px; color: #6e6a86; border-top: 1px dashed #b9ab99; margin-top: 32px; padding-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mockbar">
+    <label for="scenario">見本の場面（名前と数字はすべて例です。ボタンを押しても動きません）</label>
+    <select id="scenario">
+      <option value="start">1. はじめて開いたとき</option>
+      <option value="heard">2. 声があったと確かめたあと</option>
+      <option value="checking">3. AI の答えを確かめている途中</option>
+      <option value="finished">4. すべて終わったとき</option>
+      <option value="undecided">5. 境目が決まらなかったとき</option>
+      <option value="missing">6. 聞いても見つからなかったとき</option>
+      <option value="noai">7. AI の一覧にない種：はじめて開いたとき</option>
+      <option value="noaiHeard">8. AI の一覧にない種：お手本の声で探して声があったあと</option>
+      <option value="growing">9. この種だけを探す AI を育てている途中</option>
+    </select>
+  </div>
+  <div id="screen"></div>
+  <p class="note">見本の外の注記：主ボタン（色付き）は、どの場面でもページに 1 つだけです。枠の太い手順が「今やること」です。</p>
+</main>
+<script>
+(function () {
+  function button(text, kind) { return '<a class="button ' + (kind || '') + '" href="#" onclick="return false">' + text + '</a>'; }
+  var practice = '<p class="muted">聞き分けに自信がなければ、先に<a href="#" onclick="return false">鳴き声クイズで練習</a>できます。</p>';
+  function step(n, title, state, answer, body) {
+    return '<section class="step ' + state + '" aria-labelledby="s' + n + '"><div class="step-head"><h2 id="s' + n + '"><span class="num">' + n + '</span>' + title + '</h2>' +
+      (answer ? '<span class="answer">' + answer + '</span>' : '') + '</div>' + (body ? '<div class="step-body">' + body + '</div>' : '') + '</section>';
+  }
+  function sounds(n, origins) {
+    var rows = '';
+    for (var i = 0; i < Math.min(n, 3); i++) rows += '<div class="sound"><span>2025/07/1' + (1 + i) + ' 0' + (4 + i) + ':1' + i + '</span>' + button('▶ 聞く') + '</div>';
+    return '<details><summary>確かめた音を聞く（' + n + ' 音）</summary><p class="muted">' + origins + '</p>' + rows + (n > 3 ? button('すべて表示') : '') + '</details>';
+  }
+  var figure = function (open) {
+    return '<div class="tabs row" role="group" aria-label="どの AI の図か"><span class="muted">どの AI の図か：</span>' +
+      '<a class="button" aria-pressed="true" href="#" onclick="return false">Perch V2</a><a class="button" aria-pressed="false" href="#" onclick="return false">BirdNET</a></div>' +
+      '<div class="figure"><div class="placeholder"><strong>いつ声が見つかったか</strong><br>（今と同じ円の図。言葉だけ変える）<br>内側が最初の日、外側が最後の日です。<br>色が濃いほど、「声あり」と数えた時間が多い。<br>斜線：まだ解析していない　薄い灰色：録音なし<br><br>' +
+      (open ? 'AI の点数 0.62 以上を「声あり」と数えています。この境目は、あなたの答えで決まりました。' : 'まだ確かめていない境目（AI の点数 0.5 以上）で数えた、参考の図です。') +
+      '</div><div class="placeholder"><strong>見つかった音を聞く</strong><br>2025/07/13 04:31 · 1 / 100<br>（今と同じ音の図。縦軸は「音の高さ（kHz）」、切り替えは「低い音を広く／高い音も同じ幅」）<br><br>' + button('▶ この音を聞く') + '</div></div>';
+  };
+  var check2 = '<p>AI が見つけた音を最大 60 音聞いて、AI の答えがどのくらい正しいかを確かめます（約 8〜10 分）。答えると、どこから「声あり」と数えるかの境目が決まり、いつ・どれくらい鳴いたかを図にできます。</p>' +
+    '<p class="muted">ここで「聞こえる」と答えた音も、①の「声があった」の根拠になります。確かめる AI：Perch V2（Google が作った、鳥などの声を聞き分ける AI）。</p>';
+  var otherAi = '<details><summary>ほかの AI でも確かめる（しなくてよい）</summary><div class="sound"><span>BirdNET（コーネル大学が作った、鳥の声を聞き分ける AI）· 3 秒ごと · まだ確かめていません</span>' + button('確かめる') + '</div></details>';
+  var reference = '<details><summary>確かめる前の図を見る（参考）</summary>' + figure(false) + '</details>';
+  var redo = function (items) { return '<details class="redo"><summary>やり直す</summary>' + items.map(function (t) { return '<p>' + button(t, 'danger') + '</p>'; }).join('') + '</details>'; };
+  var head = '<p class="back">' + button('‹ 種の一覧に戻る') + '</p><div class="site">里山の森（例）</div><h1>トラツグミ</h1><p class="sci">Zoothera aurea</p>';
+  var finish = '<div class="done"><h2>この種でやることは終わりです</h2><p>ほかの種も確かめたら、種の一覧の「レポートを作る」からまとめられます。</p>' + button('種の一覧に戻る', 'primary') + '</div>';
+  var screens = {
+    start: step(1, 'この地点で、声はあったか', 'open', '○ まだ確かめていません',
+        '<p>AI がこの種らしいと見た音を、点数の高い順に聞きます。1 回でも「この種の声」と答えれば、「声があった」と記録されます。</p>' + button('聞いて確かめる', 'primary') + practice) +
+      step(2, 'いつ・どれくらい鳴いたか', 'later', 'まだ確かめていません', '<p class="muted">①のあとに行います。先にこちらをしてもかまいません。</p>' + button('先にこちらを確かめる')),
+    heard: step(1, 'この地点で、声はあったか', '', '✓ 声があった（3 音を確かめた）', sounds(3, '声を確かめる画面で答えた音：3')) +
+      step(2, 'いつ・どれくらい鳴いたか', 'open', 'まだ確かめていません', check2 + button('AI の答えを確かめる', 'primary') + otherAi + reference),
+    checking: step(1, 'この地点で、声はあったか', '', '✓ 声があった（5 音を確かめた）', sounds(5, '声を確かめる画面で答えた音：3　AI の答えを確かめる画面で答えた音：2')) +
+      step(2, 'いつ・どれくらい鳴いたか', 'open', '確かめている途中（24 / 60）', '<p>続きから答えられます。残りは約 36 音、5 分ほどです。</p>' + button('続きを答える（24 / 60）', 'primary') + reference) +
+      redo(['Perch V2 の確認を消す']),
+    finished: step(1, 'この地点で、声はあったか', '', '✓ 声があった（19 音を確かめた）', sounds(19, '声を確かめる画面：3　AI の答えを確かめる画面：14　この種だけを探す AI を育てる画面：2')) +
+      step(2, 'いつ・どれくらい鳴いたか', '', '✓ 境目が決まった（Perch V2）',
+        '<p>AI が「声あり」とした音のうち、正しかったのは約 9 割でした（60 音を確かめた）。録音した時間のうち、この種の声があったのは約 4%（3〜6%）と見込まれます。鳥の数ではありません。</p>' + figure(true)) +
+      finish + redo(['Perch V2 の確認を消す']),
+    undecided: step(1, 'この地点で、声はあったか', '', '✓ 声があった（4 音を確かめた）', sounds(4, '声を確かめる画面：1　AI の答えを確かめる画面：3')) +
+      step(2, 'いつ・どれくらい鳴いたか', 'open', '境目が決まりませんでした',
+        '<div class="warn">60 音を確かめましたが、AI の点数をどこで区切っても、「声あり」とした音の 9 割以上が正しいとは見込めませんでした。①の「声があった」はそのまま使えます。</div>' +
+        '<p>あなたの答えを材料に、この種だけを探す AI を作ると、うまく数えられることがあります。10 音ずつ答えて育てます。</p>' +
+        '<div class="row">' + button('この種だけを探す AI を育てる', 'primary') + button('ここで終える') + '</div>' +
+        '<p class="muted">ここで終えると、レポートでは「声はあった。いつ・どれくらいかは分からなかった」と書きます。</p>') +
+      redo(['Perch V2 の確認を消す']),
+    missing: step(1, 'この地点で、声はあったか', '', '− 上から 20 音を聞いたが、声はなかった',
+        '<p>AI の点数が高い 20 音には、この種の声がありませんでした。この記録はレポートに「聞いたが見つからなかった」として載ります。いなかったという意味ではありません。</p>' +
+        '<details><summary>お手本の声に似た音を探す（しなくてよい）</summary><p>この種の録音（お手本）を 1 つ選ぶと、録音全体から似た音を探して、点数の高い順に聞けます。</p>' + button('お手本の声で探す') + '</details>') +
+      step(2, 'いつ・どれくらい鳴いたか', 'later', '調べません', '<p class="muted">声が見つからなかったので、調べる音がありません。</p>') +
+      finish,
+    noai: step(1, 'この地点で、声はあったか', 'open', '○ まだ確かめていません',
+        '<p>この種を聞き分ける AI がないので、AI の結果からは探せません。この種の録音（お手本）を 1 つ選ぶと、録音全体から似た音を探して、似ている順に聞けます。1 回でも「この種の声」と答えれば、「声があった」と記録されます。</p>' +
+        button('お手本の声で探す', 'primary') + practice) +
+      step(2, 'いつ・どれくらい鳴いたか', 'later', 'まだ確かめていません', '<p class="muted">①で声が見つかったら、あなたの答えでこの種だけを探す AI を育てて調べます。</p>'),
+    noaiHeard: step(1, 'この地点で、声はあったか', '', '✓ 声があった（4 音を確かめた）', sounds(4, '声を確かめる画面（お手本の声で探した音）で答えた音：4')) +
+      step(2, 'いつ・どれくらい鳴いたか', 'open', 'まだ確かめていません',
+        '<p>この種を聞き分ける AI がないので、あなたの答えを材料に、この種だけを探す AI を育てます。10 音ずつ「声あり」「声なし」を答えると、AI が作られます（合わせて 20 音から）。育て終わったら、その AI の答えを確かめて図にします。</p>' +
+        button('この種だけを探す AI を育てる', 'primary')) +
+      redo(['お手本の声で探した結果を消す']),
+    growing: step(1, 'この地点で、声はあったか', '', '✓ 声があった（9 音を確かめた）', sounds(9, '声を確かめる画面：4　この種だけを探す AI を育てる画面：5')) +
+      step(2, 'いつ・どれくらい鳴いたか', 'open', 'AI を育てている途中',
+        '<div class="sound"><span><strong>この種だけを探す AI</strong>（あなたの答えで作った AI）· 3 回目：前回から判断が変わりました</span>' + button('続けて育てる', 'primary') + '</div>' +
+        '<p class="muted">作り直しても判断がほとんど変わらなくなったら、育てるのは終わりです。そのあと、この AI の答えを確かめて図にします。</p>' +
+        '<div class="sound"><span>Perch V2 · 境目が決まりませんでした</span></div>' + reference) +
+      redo(['Perch V2 の確認を消す'])
+  };
+  var select = document.getElementById('scenario');
+  function show() { document.getElementById('screen').innerHTML = head + screens[select.value]; }
+  select.addEventListener('change', show);
+  show();
+})();
+</script>
+</body>
+</html>

@@ -6,7 +6,8 @@
   import AudioRegion from './AudioRegion.svelte';
   import Button from './ui/Button.svelte';
   // liveUrl: an unsaved result (e.g. the species page) is filtered through its own endpoint instead of /reports.
-  let {report,liveUrl=''}:{report:Report;liveUrl?:string}=$props();
+  // secondary: the play button is not the page's main button (the species page has its own).
+  let {report,liveUrl='',secondary=false}:{report:Report;liveUrl?:string;secondary?:boolean}=$props();
   let filtered=$state<Report|null>(null),filter=$state<Cell|null>(null),index=$state(0),loading=$state(false),error=$state('');
   let version=0;
   const visible=$derived(filtered??report),hit=$derived(visible.evidence[index]);
@@ -33,8 +34,8 @@
       {#if filter}<p>{day(filter.date)} · {filter.hour}:00 <Button onclick={()=>select(null)}>{t('uAllSounds')}</Button></p>{/if}
       {#if loading}<p role="status">{t('loading')}</p>
       {:else if hit}
-        <p>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:report.site.timezone}).format(new Date(hit.local_time))} · {index+1} / {visible.evidence.length}</p>
-        {#key `${hit.recording_id}:${hit.start_s}`}<AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange start={hit.start_s} end={hit.end_s}/>{/key}
+        <p>{new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:report.site.timezone}).format(new Date(hit.local_time))} · {index+1} / {visible.evidence.length}</p>
+        {#key `${hit.recording_id}:${hit.start_s}`}<AudioRegion source={{id:hit.recording_id,kind:'recording',path:hit.path,seconds:hit.seconds}} fixedRange {secondary} start={hit.start_s} end={hit.end_s}/>{/key}
         <div class="actions"><Button disabled={index===0} onclick={()=>index--}>‹ {t('uPreviousSound')}</Button><Button disabled={index>=visible.evidence.length-1} onclick={()=>index++}>{t('uNextSound')} ›</Button></div>
       {:else}<p class="empty">{t(filter?emptyHour(filter):'uNoDetection')}</p>{/if}
     </section>

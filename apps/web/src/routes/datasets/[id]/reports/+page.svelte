@@ -1,19 +1,21 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount } from 'svelte';
+  import { onMount,tick } from 'svelte';
   import { page } from '$app/state';
   import { isTauri } from '@tauri-apps/api/core';
   import { chooseDirectory } from '$lib/files';
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,dayRange,duration,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { activityText,fill,focusMissing,missingText,presenceText,rangeQuery,type Overview } from '$lib/workflow';
+  import { activityLine,fill,focusMissing,missingText,presenceText,rangeQuery,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string;results?:{report_id:number;start_date?:string;end_date?:string}[]};
+  type Export = {id:number;path:string;folder_path?:string;report_path?:string;format?:string;created_at:string;results?:{report_id:number;start_date?:string;end_date?:string}[];species?:Species[];start_date?:string|null;end_date?:string|null};
   type Snapshot = {id:number;created_at:string;species:Species|null;start_date:string|null;end_date:string|null};
   const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
+  // Opened from "Saved reports" on the site page: the page opens at the saved list.
+  const toSaved=query.has('saved');query.delete('saved');
   const site=$derived(siteOf(datasetOf(id)));
   let overview=$state<Overview|null>(null),selected=$state<string[]>([]),error=$state(''),folder=$state('');
   let output=$state<Export|null>(null),history=$state<Export[]>([]),earlier=$state<Snapshot[]>([]);
@@ -23,12 +25,13 @@
   const back=$derived(`${resolve(`/datasets/${id}`)}?${overview?rangeQuery(overview.start_date,overview.end_date):query}`);
   onMount(()=>{void(async()=>{try{
     const [data,saved,snapshots]=await Promise.all([api<Overview>(`/datasets/${id}/overview?${query}`),api<Export[]>(`/datasets/${id}/exports`),api<Snapshot[]>(`/reports?dataset_id=${id}`)]);
-    // A3: only species a person confirmed by listening are included unless chosen.
-    overview=data;history=saved;selected=data.species.filter(row=>row.presence.status==='confirmed').map(row=>row.species.id);
+    // A3: species a person listened to (confirmed, or recorded as "could not confirm") are included; AI-only candidates only when chosen.
+    overview=data;history=saved;selected=data.species.filter(row=>row.presence.status!=='unchecked').map(row=>row.species.id);
     // Snapshots saved by an export are opened from that export; list only the ones saved on their own by earlier versions.
     const exported=new Set(saved.flatMap(item=>item.results?.map(result=>result.report_id)??[]));earlier=snapshots.filter(item=>!exported.has(item.id));
     try{const draft=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(draft){selected=draft.selected.filter((id:string)=>data.species.some(row=>row.species.id===id));folder=draft.folder;}}catch{}
     restored=true;
+    if(toSaved){await tick();requestAnimationFrame(()=>document.getElementById('saved-reports')?.scrollIntoView({block:'start'}));}
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
   const exportFiles=createTask(async()=>{
     if(!overview)return;
@@ -38,15 +41,23 @@
       revision:overview.revision,species_ids:selected,folder,locale:app.locale});
     history=await api(`/datasets/${id}/exports`);
   });
+  const groups=[['confirmed','rGroupConfirmed'],['not_found','rGroupMissed'],['unchecked','rGroupAi']];
+  // The listened-to groups open; with none, the AI candidates are the likely choice, so their group opens instead.
+  const opened=(status:string)=>status!=='unchecked'||!overview?.species.some(row=>row.presence.status!=='unchecked');
   let tried=$state(false);
   const noSpecies=$derived(tried&&!selected.length),noFolder=$derived(tried&&!isTauri()&&!folder);
   const missing=$derived(missingText([!selected.length&&'wIncludeSpecies',!isTauri()&&!folder&&'exportFolder']));
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
-  const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',timeZone:overview?.site.timezone}).format(new Date(value.replace(' ','T')+'Z'));
+  const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:overview?.site.timezone}).format(new Date(value.replace(' ','T')+'Z'));
+  // Which open button was pressed last, and whether it worked: the note appears beside that button.
+  let pressed=$state(''),openedKey=$state('');
   const openReport=createTask(async(exportId:number,kind:'document'|'folder')=>{
-    await api(`/workflow-exports/${exportId}/open?kind=${kind}`,{});
+    pressed=`${exportId}:${kind}`;openedKey='';
+    await api(`/workflow-exports/${exportId}/open?kind=${kind}`,{});openedKey=pressed;
   });
 </script>
+{#snippet openNote(exportId:number,kind:'document'|'folder')}{@const key=`${exportId}:${kind}`}{#if pressed===key&&!openReport.pending}
+  {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{:else if openedKey===key}<p role="status">✓ {t(`rOpened_${kind}`)}</p>{/if}{/if}{/snippet}
 <div class="page narrow report-page">
   <div class="crumbs"><a href={back}>{t('uBackResults')}</a></div>
   <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('wExport')}</h1><p>{t('rExportIntro')}</p></div></div>
@@ -54,16 +65,17 @@
   {#if overview}
     <section class="panel">
       <h2>{overview.site.name}</h2>
-      <p>{dayRange(overview.start_date,overview.end_date)} · {overview.site.timezone}</p>
+      <p>{dayRange(overview.start_date,overview.end_date)} · {fill('rZone',{zone:overview.site.timezone==='Asia/Tokyo'?t('rZoneTokyo'):fill('rZoneLocal',{zone:overview.site.timezone})})}</p>
       <p>{fill('rRecordingsCount',{n:overview.records.toLocaleString(app.locale)})} · {fill('wTotalLength',{duration:duration(overview.recorded_seconds)})}</p>
       <h3>{t('wIncludeSpecies')} · {fill('wSpeciesCount',{n:selected.length})}</h3>
-      {#if noSpecies}<p class="field-error" id="species-error">{t('rSaveIdle')}</p>{/if}
-      {#each [['confirmed','rGroupConfirmed'],['not_found','rGroupMissed'],['unchecked','rGroupAi']] as [status,title]}{@const rows=overview.species.filter(row=>row.presence.status===status)}
-        {#if rows.length}<details open={status==='confirmed'}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
+      {#if !selected.length}<p class={noSpecies?'field-error':'muted'} id="species-error">{t('rSaveIdle')}</p>{/if}
+      {#each groups as [status,title]}{@const rows=overview.species.filter(row=>row.presence.status===status)}{@const ids=rows.map(row=>row.species.id)}{@const all=ids.every(item=>selected.includes(item))}
+        {#if rows.length}<details open={opened(status)}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
+          <Button size="sm" disabled={exportFiles.pending} onclick={()=>selected=all?selected.filter(item=>!ids.includes(item)):[...new Set([...selected,...ids])]}>{t(all?'rSelectNone':'rSelectAll')}</Button>
           {#if status==='unchecked'}<p class="notice">{t('rAiOnlyCaution')}</p>{/if}
-          {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending} aria-invalid={noSpecies||undefined} aria-describedby={noSpecies?'species-error':undefined}/>
+          {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} aria-label={commonName(row.species,app.locale)||row.species.scientific_name} disabled={exportFiles.pending} aria-invalid={noSpecies||undefined} aria-describedby={noSpecies?'species-error':undefined}/>
             <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i>
-              <span class="muted">{presenceText(row.presence)} · {t('wActivity')}: {activityText(row.models)}</span></span></label>{/each}
+              <span class="muted">{presenceText(row.presence)} · {t('wActivity')}: {activityLine(row.models)}</span></span></label>{/each}
         </details>{/if}{/each}
       {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} disabled={exportFiles.pending} aria-invalid={noFolder||undefined} aria-describedby={noFolder?'folder-error':undefined}/></label>
         {#if noFolder}<p class="field-error" id="folder-error">{t('rNeedFolder')}</p>{/if}{/if}
@@ -74,23 +86,24 @@
         {:else if output}<p><strong>{t('rCreated')}</strong> {t('rReady')}</p>
           <div class="actions"><Button pending={openReport.pending} onclick={()=>openReport.run(output!.id,'document')}>{t('rOpen')}</Button>
             <Button pending={openReport.pending} onclick={()=>openReport.run(output!.id,'folder')}>{t('rOpenFolder')}</Button></div>
+          {@render openNote(output.id,'document')}{@render openNote(output.id,'folder')}
           <p class="path">{output.folder_path}</p>
         {:else}<p>{t('rExportContents')}</p>{/if}
-        {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{/if}
       </div>
       <Button variant={output?'default':'primary'} pending={exportFiles.pending} aria-describedby="export-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else exportFiles.run();}}>{t('rCreate')}</Button>
       <p class={tried&&missing?'field-error':'muted'} id="export-reason">{missing}</p>
     </section>
-    {#if history.length}<section class="panel"><h2>{t('wExportHistory')}</h2>{#each history as item}<div class="history">
+    {#if history.length}<section class="panel" id="saved-reports"><h2>{t('wExportHistory')}</h2>{#each history as item}{@const from=item.start_date??item.results?.[0]?.start_date}{@const to=item.end_date??item.results?.[0]?.end_date}<div class="history">
       <div><p>{when(item.created_at)}</p>
-        <!-- The period of the report, from its first result; exports without results carry none. -->
-        {#if item.results?.[0]?.start_date&&item.results[0].end_date}<p>{dayRange(item.results[0].start_date,item.results[0].end_date)}</p>{/if}
+        <!-- What the saved report covers: its period and the species chosen for it. -->
+        {#if from&&to}<p>{dayRange(from,to)}</p>{/if}
+        {#if item.species?.length}<p>{new Intl.ListFormat(app.locale).format(item.species.map(s=>commonName(s,app.locale)||s.scientific_name))}</p>{/if}
         <small class="path">{item.folder_path??item.path}</small></div>
-      {#if item.folder_path}<Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{/if}
+      {#if item.folder_path}<div class="open"><Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{@render openNote(item.id,'document')}</div>{/if}
     </div>{/each}</section>{/if}
     {#if earlier.length}<details><summary>{t('wEarlierReports')} · {earlier.length}</summary>{#each earlier as item}<p><a href={`${resolve(`/datasets/${id}/reports/${item.id}`)}?${query}`}>{item.species?(item.species.common_names&&commonName(item.species,app.locale))||item.species.scientific_name:t('species')} · {item.start_date&&item.end_date?dayRange(item.start_date,item.end_date):''} · {when(item.created_at)}</a></p>{/each}</details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('rLoading')}</p>{/if}
 </div>
 <style>h2{margin-bottom:12px}section>p,section>label{margin:16px 0}.busy{display:flex;align-items:center;gap:8px}
-  .export-species{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid rgb(var(--stone-300));font-size:16px;font-weight:400}details{margin:8px 0}summary{padding:12px 0}section summary{font-size:18px;font-weight:600}h3{margin:24px 0 0}.export-species .muted{display:block}
-  .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}.history{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.history p{margin:0 0 8px}</style>
+  .export-species{display:flex;align-items:center;gap:12px;min-height:44px;padding:16px 0;cursor:pointer;border-bottom:1px solid rgb(var(--stone-300));font-size:16px;font-weight:400}details{margin:8px 0}summary{padding:12px 0}section summary{font-size:18px;font-weight:600}h3{margin:24px 0 0}.export-species .muted{display:block}
+  .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}.history{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.history p{margin:0 0 8px}.history>.open{flex:none;max-width:50%;display:flex;flex-direction:column;align-items:flex-end}.open p{margin:8px 0 0}</style>

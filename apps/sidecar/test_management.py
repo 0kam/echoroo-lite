@@ -92,6 +92,8 @@ class ManagementCheck(unittest.TestCase):
                 self.assertEqual({k:preview[k] for k in ('recordings','analyses','searches','validations','reports','exports')},
                                  dict(recordings=1,analyses=2,searches=1,validations=1,reports=2,exports=1))
                 self.assertEqual(preview['custom_models'],1)
+                # The confirmation names the "heard" marks it deletes; "could not confirm" records stay with the remaining import.
+                self.assertEqual((preview['marks'],preview['misses']),(1,0))
                 # Reading the confirmation or cancelling it changes nothing.
                 self.assertEqual(client.get('/sites/1/delete-preview?dataset_id=1').json(),preview)
                 response=client.post('/sites/1/delete',json={'dataset_id':1,'revision':preview['revision']})
@@ -127,6 +129,16 @@ class ManagementCheck(unittest.TestCase):
                     self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
                 self.assertEqual(client.get('/sites/2/management').json()['detail'],'not_found')
             self.assertTrue(all(p.read_bytes()==content for p,content in originals.items()))
+
+    def test_site_states_count_analysed_recordings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            with TestClient(create_app(root,root,'test'),headers={'Authorization':'Bearer test'}) as client:
+                self.populate(root,client)
+                self.assertEqual(client.get('/sites/states').json(),[{'site_id':1,'records':2,'analysed':2},{'site_id':2,'records':2,'analysed':2}])
+                with connect(root) as db:
+                    db.execute("DELETE FROM analyses WHERE recording_id=4 AND engine='birdnet'")
+                self.assertEqual(client.get('/sites/states').json()[1],{'site_id':2,'records':2,'analysed':1})
 
     def test_edit_reanalysis_and_busy_guard(self):
         with tempfile.TemporaryDirectory() as tmp:

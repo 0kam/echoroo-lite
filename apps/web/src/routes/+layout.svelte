@@ -1,9 +1,9 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount,tick } from 'svelte';
+  import { onMount,tick,untrack } from 'svelte';
   import { beforeNavigate,afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
-  import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession } from '$lib/app.svelte';
+  import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession, type Job } from '$lib/app.svelte';
   import ModelChoice from '$lib/ModelChoice.svelte';
   import UpdateControl from '$lib/UpdateControl.svelte';
   import { fill } from '$lib/workflow';
@@ -12,16 +12,20 @@
   import Toasts from '$lib/ui/Toasts.svelte';
   import './app.css';
   let { children } = $props();
-  const scrollPositions=new Map<string,number>();
+  // Each page's scroll position and the page it was left for: it is restored only when coming straight back from that page,
+  // so a return link after a longer detour (species page → species AI → check → species page) opens at the top.
+  const scrollPositions=new Map<string,{top:number;to:string|undefined}>();
   const scrollKey=(url:URL|undefined=page.url)=>url?.hash.split('?')[0];
   let stopRestore=()=>{},restoring=false;
   // A page that changes only its query while its scroll is still being restored (the sound map reopening its last group) keeps that restore.
   const redirect=(from:{url:URL}|null,to:{url:URL}|null)=>restoring&&!!from&&scrollKey(from.url)===scrollKey(to?.url);
-  beforeNavigate(({from,to})=>{if(redirect(from,to))return;stopRestore();scrollPositions.set(scrollKey(),document.querySelector('main')?.scrollTop??0);});
+  // A page left by finishing its task (a programmatic goto elsewhere, e.g. after adding recordings) opens at the top next time.
+  beforeNavigate(({from,to,type})=>{if(redirect(from,to))return;stopRestore();
+    if(type==='goto'&&scrollKey(to?.url)!==scrollKey())scrollPositions.delete(scrollKey());else scrollPositions.set(scrollKey(),{top:document.querySelector('main')?.scrollTop??0,to:scrollKey(to?.url)});});
   afterNavigate(async({from,to})=>{
     if(redirect(from,to))return;
     await tick();const main=document.querySelector('main');if(!main)return;
-    const target=scrollPositions.get(scrollKey())??0;
+    const saved=scrollPositions.get(scrollKey()),target=saved&&saved.to===scrollKey(from?.url)?saved.top:0;
     const restore=()=>{main.scrollTop=target;if(main.scrollHeight-main.clientHeight>=target)stopRestore();};
     // Results arrive after navigation; restore once the list has its full height.
     const observer=new MutationObserver(restore);
@@ -33,6 +37,16 @@
   });
   const job = $derived(activeJob());
   const route = $derived(page.route.id ?? '');
+  // Where a job's result is shown: the site's results, or its sound map.
+  const resultOf = (item: Job) => item.stage.startsWith('explore_') ? resolve(`/datasets/${item.dataset_id}/explore`) : resolve(`/datasets/${item.dataset_id}`);
+  const showing = (item: Job) => route === (item.stage.startsWith('explore_') ? '/datasets/[id]/explore' : '/datasets/[id]')
+    && siteOf(datasetOf(Number(page.params.id)))?.id === siteOf(datasetOf(item.dataset_id))?.id;
+  // A job that finishes while its result page is not open leaves a notice linking to it, until that page is opened.
+  let finished = $state<Job | null>(null), watched: number | null = null;
+  $effect(() => { const now = job; untrack(() => {
+    if (watched !== null && now?.id !== watched) { const done = app.jobs.find(item => item.id === watched); if (done?.status === 'complete' && !showing(done)) finished = done; }
+    watched = now?.id ?? null; if (now) finished = null; }); });
+  $effect(() => { void route; void page.params.id; untrack(() => { if (finished && showing(finished)) finished = null; }); });
   const current = (prefix: string, exact = false) => exact ? route === prefix : route.startsWith(prefix);
   // Visiting a dataset route makes it the working dataset for subsequent navigation.
   $effect(() => {
@@ -55,11 +69,13 @@
       <a href={resolve('/settings')} class:current={current('/settings')}>{t('navSettings')}</a>
     </nav>
     <span class="spacer"></span>
-    {#if job}
+    <span aria-live="polite">{#if job}
       {@const target = datasetOf(job.dataset_id)}
       {@const explore = job.stage.startsWith('explore_')}
-      <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{fill('jobLine', { status: t(explore ? 'eMaking' : 'analysisInProgress'), progress: siteOf(target)?.name ?? '' })}{#if !explore && job.total} · {job.done} / {job.total}{/if}</a>
-    {/if}
+      <a class="jobchip" href={explore ? resolve(`/datasets/${job.dataset_id}/explore`) : resolve('/datasets')}><span class="dot-pulse"></span>{fill('jobLine', { status: t(explore ? 'eMaking' : 'analysisInProgress'), progress: siteOf(target)?.name ?? '' })}</a>
+    {:else if finished}
+      <a class="jobchip done" href={resultOf(finished)}>✓ {fill(finished.stage.startsWith('explore_') ? 'jobDoneMap' : 'jobDoneAnalysis', { site: siteOf(datasetOf(finished.dataset_id))?.name ?? '' })}</a>
+    {/if}</span>
     <select aria-label={t('language')} value={app.locale} onchange={e => setLocale(e.currentTarget.value as 'ja' | 'en')}>
       <option value="ja">日本語</option><option value="en">English</option>
     </select>

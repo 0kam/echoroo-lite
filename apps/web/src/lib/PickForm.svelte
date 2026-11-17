@@ -68,7 +68,8 @@
     <Button size="sm" onclick={()=>editing=null}>{t('mCancel')}</Button></div>{/if}
   <span class="name">{t('pfVoice')}</span>
   <div class="controls"><span class="segmented" role="group" aria-label={t('pfVoice')}>{#each TYPES as [type,key] (type)}
-    <button type="button" aria-pressed={value.sound_type===type} onclick={()=>change({sound_type:type})}>{t(key)}</button>{/each}</span></div>
+    <button type="button" aria-pressed={value.sound_type===type} onclick={()=>change({sound_type:type})}>{t(key)}</button>{/each}</span>
+    <span class="muted">{t('pfVoiceHint')}</span></div>
   <span class="name">{t('pfQuality')}{#if !value.quality}<span class="missing">{t('pfMissing')}</span>{/if}</span>
   <div class="controls">
     <!-- Pressing the chosen grade again clears it: a grade nobody chose is left blank rather than guessed. -->

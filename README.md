@@ -12,7 +12,7 @@
 
 ## 使い方
 
-基本は次の 4 ステップです。画像を押すと、そのステップの動画（日本語の字幕つき、版 0.2.1、録音は例のデータ）が YouTube で再生されます。
+基本は次の 4 ステップです。画像を押すと、そのステップの動画（日本語の字幕つき、版 0.2.1、録音は例のデータ）が YouTube で再生されます。動画は版 0.2.1 のもので、今の版では種のページの並びと画面の言葉が少し変わっています。
 
 ### 1. 録音を追加して解析する
 
@@ -34,13 +34,13 @@
 ### 3. いつ・どれくらい鳴いたかを見る
 
 種のページの図で、どの日のどの時刻に声が多かったかが分かります（円の向きが時刻、内側から外側へ日付）。図を押すと、その時間の音を聞けます。
-「AI の精度を確かめる」で最大 60 の音に答えると、AI の見逃しと誤検出がどれくらいかが分かり、図に使う基準（スコアの閾値）が決まります。
+「AI の答えを確かめる」で最大 60 の音に答えると、AI の答えがどのくらい正しいかが分かり、どこから「声あり」と数えるかの境目が決まります。
 
 [![動画：いつ・どれくらい鳴いたかを見る（約2分半）](docs/images/04-species.jpg)](https://youtu.be/-BLj4wnpTeI)
 
 ### 4. レポートを書き出す
 
-人が聞いて確かめた種の一覧、AI の精度、時間の図、根拠の音をまとめた HTML のレポートを書き出します。CSV と音声ファイルも一緒に保存されます。文章・表・図は、報告書の下書きにそのまま使えます。
+人が聞いて確かめた種の一覧、AI の検出のうち正しかった割合、時間の図、確かめた音をまとめた HTML のレポートを書き出します。CSV と音声ファイルも一緒に保存されます。文章・表・図は、報告書の下書きにそのまま使えます。
 
 [![動画：レポートを書き出す（約2分）](docs/images/06-report-species.jpg)](https://youtu.be/JO7wxgvA9Mo)
 
@@ -91,7 +91,7 @@
 Echoroo Lite is a desktop app that finds bird calls in recordings with AI, lets a person listen and confirm them, and turns the results into biodiversity reports, for acoustic monitoring at sites such as Japan's OECM sites (自然共生サイト). Analysis runs on your PC without an internet connection. [Download](https://github.com/0kam/echoroo-lite/releases/latest) · [Installation guide](docs/install-guide.md) (Japanese)
 
 - **Japan only, non-commercial only**: species lists and names are built for birds in Japan, and the app includes BirdNET 2.4 (CC BY-NC-SA 4.0).
-- **Steps**: add a folder of mono WAV/FLAC/MP3 files whose names include the start time (e.g. `SM2-NP-05_20250710_100000.wav`) → listen to the AI's top sounds to confirm each species → check the AI's accuracy (up to 60 sounds) to set the score threshold for its time charts → export an HTML report with CSV and audio files.
+- **Steps**: add a folder of mono WAV/FLAC/MP3 files whose names include the start time (e.g. `SM2-NP-05_20250710_100000.wav`) → listen to the AI's top sounds to confirm each species → check the AI's answers (up to 60 sounds) to set the cut-off score for its time charts → export an HTML report with CSV and audio files.
 - **More**: find species the AIs do not cover from a reference call (similarity is not an identification probability), grow an AI for one species from about 20 answers, explore a sound map (experimental), and practise with a bird-call quiz.
 - **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models for 317 Japanese bird species), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
 - **Requirements**: Windows 10/11 x64, macOS 12+ on Apple silicon, or Linux x86_64. 8 GB RAM recommended. Installers are unsigned.
