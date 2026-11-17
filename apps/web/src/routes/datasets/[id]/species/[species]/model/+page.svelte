@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
+  import { fill,modelIntro,modelName,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -98,7 +98,7 @@
         <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
       {:else}
         {#if !model&&info.needed}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
-        <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelName(info.engine)})}</p>
+        <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelIntro(info.engine)})}</p>
         <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p>
         {#each batch as item (item.segment_id)}{@render row(item)}{:else}<p>{t('mdNoneLeft')}</p>{/each}
       {/if}

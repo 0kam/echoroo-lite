@@ -131,8 +131,8 @@
     <circle cx={p[0]} cy={p[1]} r="1.5" fill="#575279" pointer-events="none"/>
     <text x={p[0]-7} y={p[1]-3} text-anchor="end" font-size={compact?22:12} fill="#575279" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{new Date(Date.parse(report.start_date)+(from+day)*86400000).toISOString().slice(0,10)}</text>
   {/each}{/if}
-  <text x={cx} y={cy-8} text-anchor="middle" font-size={compact?18:13} fill="#575279" pointer-events="none">{t('dateOutward')}</text>
-  <text x={cx} y={cy+(compact?24:15)} text-anchor="middle" font-size={compact?24:13} fill="#575279" pointer-events="none">{shown} {t('days')}</text>
+  <!-- Which way the days run is a full sentence, too long for the centre, so it sits with the legend. -->
+  <text x={cx} y={cy+(compact?8:5)} text-anchor="middle" font-size={compact?24:13} fill="#575279" pointer-events="none">{shown} {t('days')}</text>
   <!-- The compact view shows this legend as HTML below the figure instead. -->
   <g visibility={compact?'hidden':undefined}>
   <text x="70" y={cy+395} font-size="16" fill="#373450">{metric}</text>
@@ -144,6 +144,7 @@
     <rect x={70+i*285} y={cy+419} width="20" height="16" fill={item.fill} stroke="#aeacb8" stroke-width=".5"/>
     <text x={100+i*285} y={cy+432} font-size="14" fill="#575279">{t(item.key)}</text>{/each}
   <rect x="70" y={cy+450} width="20" height="16" fill="#fff" stroke="#aeacb8"/><text x="100" y={cy+463} font-size="14" fill="#575279">{t('uZeroCalls')}</text>
+  <text x="355" y={cy+463} font-size="14" fill="#575279">{t('dateOutward')}</text>
   <text visibility={compact?'hidden':undefined} x="70" y={cy+494} font-size="14" fill="#575279">{t(quality?.status === 'decided' ? 'wFigureCaution' : 'detectionFigureCaution')}</text>
 {#if quality}<text visibility={compact?'hidden':undefined} x="70" y={cy+523} font-size="14" fill="#575279">{t('wQuality')}: {checkText(quality)}</text>{/if}
   </g>
@@ -157,6 +158,7 @@
   <span><i style:background="#f1f0f2"></i>{t('cell_no_recording')}</span>
   <span><i class="missing"></i>{t('missingAnalysis')}</span>
   <span><i class="partial"></i>{t('cell_partial')}</span>
+  <span>{t('dateOutward')}</span>
 </div><p class="caution">{t(quality?.status === 'decided' ? 'wFigureCaution' : 'detectionFigureCaution')}</p>{/if}
 
 <style>

@@ -63,6 +63,8 @@ export const customName = (model:{created_at?:string;round?:number}) => fill('cu
 const modelOf = (engine:string) => app.ai.models.find(model=>model.id===engine);
 /** Display name from GET /models; 'custom' is an AI made for one species. */
 export const modelName = (engine:string) => engine==='custom'?t('customModel'):modelOf(engine)?.name??engine;
+/** The AI's name with a one-line note on who made it, for its first mention on a page. */
+export const modelIntro = (engine:string) => engine==='custom'?modelName(engine):fill('aiAbout',{name:modelName(engine),about:t(`aiAbout_${engine.split('-')[0]}`)});
 export const checkName = (check:{engine:string;created_at?:string;round?:number}) => check.engine==='custom'?customName(check):modelName(check.engine);
 /** Window length of a model's intervals from GET /models (BirdNET 3 s); species models are 5 s. */
 /** Analysis one AI still has to do: how many recordings and their total length in seconds. */

@@ -10,7 +10,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,refreshCatalog,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { fill,modelName } from '$lib/workflow';
+  import { fill,modelIntro } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
   import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
@@ -326,7 +326,7 @@
       {#if build.error}<p class="error" role="alert">{t(build.error)}</p>{/if}
       {#if build.error==='no_search_embeddings'}<Button href={resolve(`/datasets/${id}`)}>{t('eBackToAnalyse')}</Button>{/if}</section>{/if}
     {#if node}
-      <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelName(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
+      <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelIntro(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
       <div class="explore">
         <section class="panel stack map-panel" aria-label={t('eMapHeading')}>
           {#if pointsError}<p class="error" role="alert">{t(pointsError)}</p>{/if}

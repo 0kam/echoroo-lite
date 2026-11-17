@@ -155,7 +155,7 @@
     {#key app.frequencyScale}<ZoomSpectrogram {mediaPath} start={viewStart} end={viewEnd} cursor={status === 'idle' ? playhead : cursor} {storageKey}
       onseek={seek} onplay={toggle} controls={playbackButton}/>{/key}
   {:else}<div class="spectrogram-grid">
-    <span class="unit">kHz</span><div class="head">{#if dense}<div class="meta">{@render meta?.()}</div>{@render actions?.()}{:else if !compact}<ScaleSwitch/>{/if}</div>
+    <span class="unit">{t('aFreqUnit')}</span><div class="head">{#if dense}<div class="meta">{@render meta?.()}</div>{@render actions?.()}{:else if !compact}<ScaleSwitch/>{/if}</div>
     <div class="frequencies" aria-hidden="true">{#each ticks as tick}<span style:bottom={`${tick.row_fraction * 100}%`} class:edge-low={tick.row_fraction === 0} class:edge-high={tick.row_fraction === 1}>{kHz(tick)}</span>{/each}</div>
     <!-- Double-clicking plays from that point, like the zoomable view. -->
     <div class="spectrogram" class:fixed={!choosing} role="group" aria-label={t('spectrogram')}
@@ -198,8 +198,8 @@
   .region-controls label { width: 112px; }
   .region-controls .position { flex: 1; min-width: 140px; }
   .range-hint { align-self: center; flex-basis: 100%; }
-  .spectrogram-grid { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 8px; }
-  .unit { align-self: end; text-align: right; font-size: 12px; color: rgb(var(--stone-600)); }
+  .spectrogram-grid { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 4px 8px; }
+  .unit { align-self: end; text-align: right; font-size: 11px; color: rgb(var(--stone-600)); }
   .head { display: flex; justify-content: flex-end; min-height: 0; }
   .frequencies { position: relative; font-size: 12px; line-height: 1; color: rgb(var(--stone-600)); }
   .frequencies span { position: absolute; right: 0; transform: translateY(50%); font-variant-numeric: tabular-nums; }

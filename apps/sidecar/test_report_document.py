@@ -83,9 +83,9 @@ class ReportDocumentTest(unittest.TestCase):
     def test_decided_check_states_threshold_and_precision(self):
         snap=snapshot();t=messages('en')
         rendered=str(blocks(manifest(snap,'en'),[snap],{'per_species':[]}))
-        self.assertIn('Of the intervals counted as "call present", about 50% were correct (probably between 30% and 70%; estimated from 60 sounds that people listened to)',rendered)
+        self.assertIn('Of the clips counted as "call present", about 50% were correct (probably between 30% and 70%; estimated from 60 sounds that people listened to)',rendered)
         self.assertIn(t['rule_checked'].format(score='0.40'),rendered)
-        self.assertIn('4 intervals (4.0% of the 100 intervals examined). Days with detections: 2',rendered)
+        self.assertIn('4 clips (4.0% of the 100 clips examined). Days with detections: 2',rendered)
 
     def test_summary_states_how_sure_and_durations_read_as_words(self):
         snap=snapshot();t=messages('ja');report=manifest(snap);report['other_species']={'candidates':18,'heard':0}
@@ -177,8 +177,8 @@ class ReportDocumentTest(unittest.TestCase):
         # Every AI line names its AI once the report has two AIs, even for a species with one result.
         rows=sections(content)['summary']['body'][3]['rows']
         self.assertTrue(all(cell[0]=='text' and cell[1].startswith(('BirdNET 2.4','Perch')) for row in rows for cell in row[2] if cell[0]=='text'))
-        self.assertIn(t['table_found_none'],summary);self.assertIn(t['other_list_title'].format(count=1),summary);self.assertIn('BirdNET 2.4：12 区間',summary)
-        self.assertIn('AIのスコアが高い順に10音を聞いたが、声を確かめられなかった',str(content))
+        self.assertIn(t['table_found_none'],summary);self.assertIn(t['other_list_title'].format(count=1),summary);self.assertIn('BirdNET 2.4：12 音',summary)
+        self.assertIn('AI の点数が高い順に10音を聞いたが、声を確かめられなかった',str(content))
         report['presence'][1]['not_found_list']='search'
         self.assertIn('お手本に似ている順に10音を聞いたが',str(blocks(report,[snap,other,lone],{'per_species':[]})))
         # A check with no answers yet reads as not started.

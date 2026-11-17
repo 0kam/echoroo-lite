@@ -31,9 +31,9 @@ MARGIN_S = 2.5
 README = f"""Echoroo Lite の音の地図で、聞いて選んだ音です。
 
 audio/ に WAV、metadata.csv に各音の情報、manifest.json に元の録音とファイルの確認情報があります。
-各 WAV には、聞いて確かめた区間の前後 {MARGIN_S:g} 秒も入っています（録音の端では短くなります）。
+各 WAV には、聞いて確かめた部分の前後 {MARGIN_S:g} 秒も入っています（録音の端では短くなります）。
 聞いて確かめた部分は、metadata.csv の remarks と manifest.json に記録しています
-（start_s・end_s が確かめた区間、clip_start_s・clip_end_s が WAV の範囲。どちらも元の録音の秒）。
+（start_s・end_s が確かめた部分、clip_start_s・clip_end_s が WAV の範囲。どちらも元の録音の秒）。
 録音者名・ライセンス・標高は空欄です。提供するときに記入してください。
 座標はぼかしていません。珍しい種を含む場合は、渡す前に公開範囲を確認してください。
 研究機関への受け渡し、または Xeno-canto のフォームへ転記する元資料に使えます。
@@ -41,9 +41,9 @@ audio/ に WAV、metadata.csv に各音の情報、manifest.json に元の録音
 These sounds were selected by listening on the Echoroo Lite sound map.
 
 audio/ contains WAV files, metadata.csv describes them, and manifest.json records their sources and file checks.
-Each WAV also holds {MARGIN_S:g} s before and after the interval that was checked by listening (less at the ends of a recording).
+Each WAV also holds {MARGIN_S:g} s before and after the part that was checked by listening (less at the ends of a recording).
 The checked part is recorded in the remarks column of metadata.csv and in manifest.json
-(start_s and end_s: the checked interval; clip_start_s and clip_end_s: the range of the WAV; all in seconds of the source recording).
+(start_s and end_s: the checked part; clip_start_s and clip_end_s: the range of the WAV; all in seconds of the source recording).
 Recordist name, license, and elevation are blank. Complete them before contributing the files.
 Coordinates are not obscured. Check the appropriate disclosure before sharing rare species.
 The package can be given to a research institution or used as a source for the Xeno-canto form.

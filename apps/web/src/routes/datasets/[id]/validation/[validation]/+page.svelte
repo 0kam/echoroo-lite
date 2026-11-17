@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelName,rangeQuery,workload,type Validation } from '$lib/workflow';
+  import { fill,modelIntro,rangeQuery,workload,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReferencePanel,{type ExampleRef} from '$lib/ReferencePanel.svelte';
@@ -63,7 +63,7 @@
       {#if site}<div class="site-name">{site.name}</div>{/if}
       {#if done||!started||found}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
       {:else}<h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>{/if}
-      <p>{fill('vModelTitle',{model:modelName(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p></div></div>{/if}
+      <p>{fill('vModelTitle',{model:modelIntro(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p></div></div>{/if}
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
     {#if done}<section class="panel">{#if validation.early_stop}<h2>{t('vEarlyStopTitle')}</h2><p>{t('vEarlyStopText')}</p><p>{t('vEarlyStopUse')}</p>
       {:else}<h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>{/if}

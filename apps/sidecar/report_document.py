@@ -251,6 +251,9 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     # Species: how to read AI detections once, then one section per species.
     # Name only the interval lengths of the AIs in this report.
     reading=t['reading_windows'].format(windows=windows_text(snapshots,t))
+    # Each built-in AI is introduced once, with who made it.
+    from models import REGISTRY
+    reading+=''.join(t['about_'+e.split('-')[0]].format(name=REGISTRY[e]['name']) for e in dict.fromkeys(s['engine'] for s in snapshots) if e!='custom')
     if len({model_group(snap,t) for snap in snapshots})>1:reading+=t['reading_no_sum_same' if len({s['window_s'] for s in snapshots})==1 else 'reading_no_sum']
     output.append({'type':'section','id':'species','title':t['nav_species'],'body':[
         {'type':'heading','text':t['reading_title']},para(reading),para(t['reading_figure']),
