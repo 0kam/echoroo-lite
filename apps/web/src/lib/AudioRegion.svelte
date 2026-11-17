@@ -33,7 +33,16 @@
   let canvas=$state<HTMLCanvasElement>(null!), audio: HTMLAudioElement;
   let viewStart = $state(0), span = $state(30), loading = $state(true), error = $state('');
   let cursor = $state(0), playhead = $state<number | null>(null);
-  let ticks = $state<Tick[]>([]), loadedScale = '';
+  let ticks = $state<Tick[]>([]), loadedScale = '', figureHeight = $state(0);
+  // Labels that would overlap (e.g. 8 and 12 kHz near the top of a short figure) are dropped: the edges win, then higher ticks.
+  // A label is 12px tall: the top one hangs below the edge, the bottom one sits above it, the others are centred on their line.
+  const labelSpan = (tick: Tick) => { const y = tick.row_fraction * figureHeight; return tick.row_fraction === 1 ? [y - 12, y] : tick.row_fraction === 0 ? [y, y + 12] : [y - 6, y + 6]; };
+  const labelled = $derived.by(() => { const kept: Tick[] = [];
+    for (const tick of [...ticks].sort((a, b) => Number(b.row_fraction % 1 === 0) - Number(a.row_fraction % 1 === 0) || b.row_fraction - a.row_fraction)) {
+      const [low, high] = labelSpan(tick);
+      if (kept.every(other => { const [l, h] = labelSpan(other); return high + 4 <= l || low >= h + 4; })) kept.push(tick);
+    }
+    return kept; });
   let initialized=$state(false);
   let anchor: number | null = null, request = 0, stopAt: number | null = null;
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
@@ -161,9 +170,9 @@
       onseek={seek} onplay={toggle} controls={playbackButton}/>{/key}
   {:else}<div class="spectrogram-grid">
     <span class="unit">{t('aFreqUnit')}</span><div class="head">{#if dense}<div class="meta">{@render meta?.()}</div>{@render actions?.()}{:else if !compact}<ScaleSwitch/>{/if}</div>
-    <div class="frequencies" aria-hidden="true">{#each ticks as tick}<span style:bottom={`${tick.row_fraction * 100}%`} class:edge-low={tick.row_fraction === 0} class:edge-high={tick.row_fraction === 1}>{kHz(tick)}</span>{/each}</div>
+    <div class="frequencies" aria-hidden="true">{#each labelled as tick}<span style:bottom={`${tick.row_fraction * 100}%`} class:edge-low={tick.row_fraction === 0} class:edge-high={tick.row_fraction === 1}>{kHz(tick)}</span>{/each}</div>
     <!-- Double-clicking plays from that point, like the zoomable view. -->
-    <div class="spectrogram" class:fixed={!choosing} role="group" aria-label={t('spectrogram')}
+    <div class="spectrogram" bind:clientHeight={figureHeight} class:fixed={!choosing} role="group" aria-label={t('spectrogram')}
       ondblclick={event => { if (!choosing && !loading && !error) { const from = pointerTime(event as unknown as PointerEvent), to = fixedRange ? end : viewEnd; if (!fixedRange) playhead = from; void play(Math.min(from, to - .05), to); } }}
       onpointerdown={event => { if (!choosing || loading || error || event.button !== 0) return; stop(); anchor = pointerTime(event); event.currentTarget.setPointerCapture(event.pointerId); select(event); }}
       onpointermove={select} onpointerup={event => { select(event); anchor = null; }} onpointercancel={() => anchor = null}>

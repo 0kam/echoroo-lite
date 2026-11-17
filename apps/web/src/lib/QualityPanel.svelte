@@ -22,6 +22,7 @@
     {#if result.recall_status==='not_estimable_rare'}<li>{t('rRecallRare')}</li>{:else if result.recall}<li>{fill('rRecall',shares(result.recall))}</li>{/if}
     {#if result.unknown}<li>{fill('rUnknown',{n:result.unknown})}</li>{/if}
   </ul>
+  {#if result.density||result.precision||result.recall}<p class="muted">{t('rLikelyNote')}</p>{/if}
   {#if result.disagreement}<p class="notice">{t('rDisagreement')}</p>{/if}
   <details><summary>{t('uMoreQuality')}</summary>
     <p>{fill('rAnswers',{total:validation.counts.answered,heard:sum('heard'),not_heard:sum('not_heard'),unknown:sum('unknown')})}</p>

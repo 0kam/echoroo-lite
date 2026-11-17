@@ -7,7 +7,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,dayRange,duration,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { activityText,fill,focusMissing,missingText,presenceText,rangeQuery,type Overview } from '$lib/workflow';
+  import { activityLine,fill,focusMissing,missingText,presenceText,rangeQuery,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -25,8 +25,8 @@
   const back=$derived(`${resolve(`/datasets/${id}`)}?${overview?rangeQuery(overview.start_date,overview.end_date):query}`);
   onMount(()=>{void(async()=>{try{
     const [data,saved,snapshots]=await Promise.all([api<Overview>(`/datasets/${id}/overview?${query}`),api<Export[]>(`/datasets/${id}/exports`),api<Snapshot[]>(`/reports?dataset_id=${id}`)]);
-    // A3: only species a person confirmed by listening are included unless chosen.
-    overview=data;history=saved;selected=data.species.filter(row=>row.presence.status==='confirmed').map(row=>row.species.id);
+    // A3: species a person listened to (confirmed, or recorded as "could not confirm") are included; AI-only candidates only when chosen.
+    overview=data;history=saved;selected=data.species.filter(row=>row.presence.status!=='unchecked').map(row=>row.species.id);
     // Snapshots saved by an export are opened from that export; list only the ones saved on their own by earlier versions.
     const exported=new Set(saved.flatMap(item=>item.results?.map(result=>result.report_id)??[]));earlier=snapshots.filter(item=>!exported.has(item.id));
     try{const draft=JSON.parse(sessionStorage.getItem(draftKey)||'null');if(draft){selected=draft.selected.filter((id:string)=>data.species.some(row=>row.species.id===id));folder=draft.folder;}}catch{}
@@ -42,9 +42,8 @@
     history=await api(`/datasets/${id}/exports`);
   });
   const groups=[['confirmed','rGroupConfirmed'],['not_found','rGroupMissed'],['unchecked','rGroupAi']];
-  const firstGroup=$derived(groups.find(([status])=>overview?.species.some(row=>row.presence.status===status))?.[0]);
-  // With no confirmed species the AI candidates are the likely choice, so their group opens too.
-  const opened=(status:string)=>status===firstGroup||status==='unchecked'&&!overview?.species.some(row=>row.presence.status==='confirmed');
+  // The listened-to groups open; with none, the AI candidates are the likely choice, so their group opens instead.
+  const opened=(status:string)=>status!=='unchecked'||!overview?.species.some(row=>row.presence.status!=='unchecked');
   let tried=$state(false);
   const noSpecies=$derived(tried&&!selected.length),noFolder=$derived(tried&&!isTauri()&&!folder);
   const missing=$derived(missingText([!selected.length&&'wIncludeSpecies',!isTauri()&&!folder&&'exportFolder']));
@@ -69,15 +68,14 @@
       <p>{dayRange(overview.start_date,overview.end_date)} · {overview.site.timezone}</p>
       <p>{fill('rRecordingsCount',{n:overview.records.toLocaleString(app.locale)})} · {fill('wTotalLength',{duration:duration(overview.recorded_seconds)})}</p>
       <h3>{t('wIncludeSpecies')} · {fill('wSpeciesCount',{n:selected.length})}</h3>
-      {#if noSpecies}<p class="field-error" id="species-error">{t('rSaveIdle')}</p>{/if}
+      {#if !selected.length}<p class={noSpecies?'field-error':'muted'} id="species-error">{t('rSaveIdle')}</p>{/if}
       {#each groups as [status,title]}{@const rows=overview.species.filter(row=>row.presence.status===status)}{@const ids=rows.map(row=>row.species.id)}{@const all=ids.every(item=>selected.includes(item))}
-        <!-- The first group with species is open, so its choices (and "Select all") are visible even when nothing is confirmed yet. -->
         {#if rows.length}<details open={opened(status)}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
           <Button size="sm" disabled={exportFiles.pending} onclick={()=>selected=all?selected.filter(item=>!ids.includes(item)):[...new Set([...selected,...ids])]}>{t(all?'rSelectNone':'rSelectAll')}</Button>
           {#if status==='unchecked'}<p class="notice">{t('rAiOnlyCaution')}</p>{/if}
           {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending} aria-invalid={noSpecies||undefined} aria-describedby={noSpecies?'species-error':undefined}/>
             <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i>
-              <span class="muted">{presenceText(row.presence)} · {t('wActivity')}: {activityText(row.models)}</span></span></label>{/each}
+              <span class="muted">{presenceText(row.presence)} · {t('wActivity')}: {activityLine(row.models)}</span></span></label>{/each}
         </details>{/if}{/each}
       {#if !isTauri()}<label>{t('exportFolder')}<input bind:value={folder} disabled={exportFiles.pending} aria-invalid={noFolder||undefined} aria-describedby={noFolder?'folder-error':undefined}/></label>
         {#if noFolder}<p class="field-error" id="folder-error">{t('rNeedFolder')}</p>{/if}{/if}

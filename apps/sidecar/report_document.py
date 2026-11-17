@@ -154,10 +154,24 @@ def rule_text(snap,t):
     return t['rule_checked' if ai_state(snap)=='checked' else 'rule_default'].format(score=f"{snap['threshold']:.2f}")
 
 
+def counted_of(snap,t):
+    """'800 sounds cut every 3 s, 77 of them': the window length explains why AIs examined different numbers."""
+    s=snap['summaries'][0] if snap['summaries'] else {}
+    return t['counted_of'].format(count=number(s.get('candidate_windows')),eligible=number(s.get('eligible_windows')),
+                                  rate=percent(s.get('candidate_rate')),s=f"{snap['window_s']:g}")
+
+
 def count_text(snap,t):
     s=snap['summaries'][0] if snap['summaries'] else {}
-    return t['count_text'].format(count=number(s.get('candidate_windows')),eligible=number(s.get('eligible_windows')),
-                                  rate=percent(s.get('candidate_rate')),days=number(s.get('candidate_days')))
+    return t['count_text'].format(counted=counted_of(snap,t),days=number(s.get('candidate_days')))
+
+
+def estimate(value):
+    """Rounded to 2 significant digits like the app (Math.round, then Intl maximumSignificantDigits:2)."""
+    n=int(value+.5)
+    if n<100:return n
+    q=10**(len(str(n))-2)
+    return (n+q//2)//q*q
 
 
 def precision_text(snap,t):
@@ -219,11 +233,18 @@ def blocks(manifest,snapshots,quiz,evidence=()):
 
     # Summary: the conclusion on the first screen.
     rows=[];several=len({method(snap,t) for snap in snapshots})>1
+    from models import REGISTRY
+    builtin=list(dict.fromkeys(s['engine'] for s in snapshots if s['engine']!='custom'))
+    # An AI that has no row for a species did not examine it (e.g. BirdNET outside its site list).
+    gaps=any(set(builtin)-{snap['engine'] for snap in per_species[s['id']]} for s in taxa if per_species[s['id']])
     for taxon in taxa:
         common,scientific=names(taxon,locale);row=presence[taxon['id']];snaps=per_species[taxon['id']]
         heard={'confirmed':[['badge-yes',t['badge_heard']],['text',' '+count_of(t,'sounds_count',row['evidence_count'])]],
                'not_found':[['badge-no',not_found_text(row,t)]],'unchecked':[['badge-no',unchecked_text(snaps,t)]]}[row['status']]
         ai=[]
+        for engine in [e for e in builtin if snaps and e not in {snap['engine'] for snap in snaps}]:
+            if ai:ai.append(['br'])
+            ai+=[['text',REGISTRY[engine]['name']+t['colon']],['small',t['not_examined']]]
         for snap in snaps:
             state=ai_state(snap);prefix=method(snap,t)+t['colon'] if several else ''
             if ai:ai.append(['br'])
@@ -276,7 +297,6 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     # Name only the interval lengths of the AIs in this report.
     reading=t['reading_windows'].format(windows=windows_text(snapshots,t))
     # Each built-in AI is introduced once, with who made it.
-    from models import REGISTRY
     reading+=''.join(t['about_'+e.split('-')[0]].format(name=REGISTRY[e]['name']) for e in dict.fromkeys(s['engine'] for s in snapshots) if e!='custom')
     if len({model_group(snap,t) for snap in snapshots})>1:reading+=t['reading_no_sum']
     output.append({'type':'section','id':'species','title':t['nav_species'],'body':[
@@ -303,12 +323,12 @@ def blocks(manifest,snapshots,quiz,evidence=()):
             body+=[{'type':'heading','text':t['ai_title'],'badge':['no',t['badge_no_ai']]},para(t['ai_none'])]
         for snap in snaps:
             state=ai_state(snap);model=method(snap,t)
-            body.append({'type':'heading','text':t['ai_title'],'badge':[state,t['badge_'+state]]})
+            body.append({'type':'heading','text':t['ai_title'],'badge':['no',t['badge_found_none']] if found_none(snap) else [state,t['badge_'+state]]})
             if state=='unused':
                 body+=[para(unused_text(snap,t,label)),{'type':'facts','items':[[t['fact_ai'],model]]}]
             elif found_none(snap):
                 body.append({'type':'facts','items':[[t['fact_ai'],model],[t['fact_rule'],rule_text(snap,t)],
-                    [t['fact_count'],t['count_none'].format(eligible=number(snap['summaries'][0].get('eligible_windows')),name=label)]]})
+                    [t['fact_count'],t['count_none'].format(eligible=number(snap['summaries'][0].get('eligible_windows')),name=label,s=f"{snap['window_s']:g}")]]})
             else:
                 body.append({'type':'facts','items':[[t['fact_ai'],model],[t['fact_rule'],rule_text(snap,t)],
                                                      [t['fact_count'],count_text(snap,t)],[t['fact_precision'],precision_text(snap,t)]]})
@@ -358,8 +378,8 @@ def blocks(manifest,snapshots,quiz,evidence=()):
             if ranged(c):shown.add('range')
             if c.get('value') is not None:
                 windows=(snap['summaries'][0] if snap['summaries'] else {}).get('candidate_windows')
-                items.append([t['detail_estimated'],t['estimated_text'].format(value=number(round(c['value'])),low=number(round(c['low'])) if c.get('low') is not None else '—',
-                                                                               high=number(round(c['high'])) if c.get('high') is not None else '—')
+                items.append([t['detail_estimated'],t['estimated_text'].format(value=number(estimate(c['value'])),low=number(estimate(c['low'])) if c.get('low') is not None else '—',
+                                                                               high=number(estimate(c['high'])) if c.get('high') is not None else '—')
                               +(t['estimated_vs_counted'].format(counted=number(windows)) if snap['threshold'] is not None and windows is not None else '')])
         counts=answer_counts(validation)
         items.append([t['detail_answered'],t['answered_text'].format(answered=validation['counts']['answered'],**counts)])
@@ -385,17 +405,15 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     groups={}
     for snap in snapshots:
         s=snap['summaries'][0] if snap['summaries'] else {}
-        counted=(f"{number(s.get('candidate_windows'))} / {number(s.get('eligible_windows'))}（{percent(s.get('candidate_rate'))}）" if locale=='ja'
-                 else f"{number(s.get('candidate_windows'))} / {number(s.get('eligible_windows'))} ({percent(s.get('candidate_rate'))})")
         source=t['source_none'] if snap['threshold'] is None else t['source_checked' if ai_state(snap)=='checked' else 'source_default']
         groups.setdefault(model_group(snap,t),[]).append([name(snap['species'],locale),method(snap,t),
             (f"{snap['threshold']:.2f}" if snap['threshold'] is not None else '—')+t['paren'].format(text=source),
-            counted if snap['threshold'] is not None else t['uncounted'],number(s.get('candidate_days')) if snap['threshold'] is not None else '—',
-            t['badge_'+ai_state(snap)]])
+            counted_of(snap,t) if snap['threshold'] is not None else t['uncounted'],number(s.get('candidate_days')) if snap['threshold'] is not None else '—',
+            t['badge_found_none'] if found_none(snap) else t['badge_'+ai_state(snap)]])
     if groups:
         details.append({'type':'details','summary':t['detail_table'],'body':[{'type':'table',
             'headers':[t[k] for k in ('col_species','col_model','col_rule','col_counted','col_days','col_state')],
-            'rows':[r for rows in groups.values() for r in rows],'tabs':groups if len(groups)>1 else None}]})
+            'rows':[r for rows in groups.values() for r in rows],'tabs':groups if len(groups)>1 else None}]+([para(t['not_examined_note'],muted=True)] if gaps else [])})
     decided=[f"{name(s['species'],locale)}{t['paren'].format(text=method(s,t))}" for s in snapshots if ai_state(s)=='checked']
     preset=any(ai_state(s)=='reference' for s in snapshots)
     cutoff=([t['method_cutoff_checked'].format(names=joined(decided,t))]+([t['method_cutoff_default_rest']] if preset else []) if decided
@@ -418,8 +436,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     if quiz_rows:
         details.append({'type':'details','summary':t['detail_quiz'],'body':[para(t['quiz_note']),
             {'type':'table','headers':[t[k] for k in ('col_species','quiz_score','quiz_unknown','quiz_date','quiz_set')],'rows':quiz_rows}]})
-    details.append({'type':'details','summary':t['detail_files'],'body':[para(t['files_note']+t['sentence_sep']+t['files_readme']),
-        para(f"{t['saved']}{t['colon']}{saved_time(manifest)}")]})
+    details.append({'type':'details','summary':t['detail_files'],'body':[para(t['files_note']+t['sentence_sep']+t['files_readme'])]})
     output.append({'type':'section','id':'details','title':t['nav_details'],'body':details})
     return output
 

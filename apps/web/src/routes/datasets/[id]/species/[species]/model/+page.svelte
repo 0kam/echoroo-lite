@@ -69,6 +69,7 @@
     {#if !searchFirst}<section class="panel">
       {@render counts()}
       <p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>
+      {#if model}<p class="muted">{t('mdStopRule')}</p>{/if}
       {#if model&&!model.applicable}<p class="info">{t(model.reason??'custom_model_scope_changed')}</p>{/if}
       <!-- Shown from the first time the AI is made again: before that there is nothing to compare it with. -->
       {#if model?.growth.rounds.length}{@const grown=model.growth.state}<h2>{t('mdGrowth')}</h2>
@@ -98,8 +99,11 @@
         <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
       {:else}
         {#if !model&&info.needed}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
-        <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelIntro(info.engine)})}</p>
-        <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p><p class="muted">{t('mdEvidence')}</p>
+        <p>{t('mdShortIntro')}</p>
+        <!-- The details stay one click away so the first sound is in view. -->
+        <details><summary>{t('mdHowChosen')}</summary>
+          <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelIntro(info.engine)})}</p>
+          <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p><p class="muted">{t('mdEvidence')}</p></details>
         {#each batch as item (item.segment_id)}{@render row(item)}{:else}<p>{t('mdNoneLeft')}</p>{/each}
       {/if}
       {#if !searchFirst}<div class="footer">
@@ -122,7 +126,7 @@
       {#if answeredShown<answered.length}<Button onclick={()=>answeredShown+=10}>{t('pMore')}</Button>{/if}
     </details>{/if}
     {#if model}<details class="more"><summary>{t('sMore')}</summary>
-      <Button variant="danger" size="sm" onclick={()=>confirming=!confirming}>{t('modelDelete')}</Button>
+      <Button variant="danger" size="sm" onclick={()=>confirming=!confirming}>{t('mdDeleteAI')}</Button>
       {#if confirming}<div class="confirm"><p>{t('modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=false}>{t('mCancel')}</Button>
         <Button variant="danger" pending={remove.pending} onclick={()=>remove.run(model.id)}>{t('modelDeleteYes')}</Button></div></div>{/if}
     </details>{/if}

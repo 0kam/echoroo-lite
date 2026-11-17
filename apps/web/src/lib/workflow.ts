@@ -135,6 +135,8 @@ export function activity(models:Checked[]):'decided'|'in_progress'|'undecided'|'
   return (['decided','in_progress','undecided'] as const).find(state=>states.includes(state))??'not_started';
 }
 const inProgress = (models:Checked[]) => models.map(model=>model.validation).find(value=>value?.applicable&&value.status==='in_progress'&&value.counts.answered>0);
+/** activityText with a leading symbol, so the state never relies on colour alone. */
+export const activityLine = (models:Checked[]) => {const state=activity(models);return `${state==='decided'?'✓':state==='undecided'?'−':'○'} ${activityText(models)}`;};
 export function activityText(models:Checked[]) {
   const state=activity(models),open=inProgress(models);
   if(state==='decided')return fill('wDecidedModels',{models:decidedModels(models).join(app.locale==='ja'?'・':', ')});

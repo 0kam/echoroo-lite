@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { modelIntro,activity,activityText,checkName,checkText,defaultModel,fill,listenLabel,presenceText,rangeQuery,remainingSounds,windowSeconds,workload,type Check,type Overview,type SpeciesResult,type Validation } from '$lib/workflow';
+  import { modelIntro,activity,speciesGroup,activityLine,checkName,checkText,defaultModel,fill,listenLabel,presenceText,rangeQuery,remainingSounds,windowSeconds,workload,type Check,type Overview,type SpeciesResult,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReportView from '$lib/ReportView.svelte';
@@ -17,7 +17,7 @@
   const site=$derived(siteOf(datasetOf(id)));
   const initial=new URL(page.url.hash.slice(1),page.url).searchParams;
   let result=$state<SpeciesResult|null>(null),engine=$state(initial.get('engine')||'auto'),modelId=$state(Number(initial.get('model_id'))||0),error=$state(''),loading=$state(true),liveUrl=$state('');
-  let request=0,about=$state<{in_quiz:boolean}|null>(null),detected=$state<Overview['species'][number]['models']|null>(null);
+  let request=0,about=$state<{in_quiz:boolean}|null>(null),detected=$state<Overview['species'][number]['models']|null>(null),recordedSeconds=$state(0);
   // Which deletion is waiting for confirmation: a check's model key, or 'search'.
   let confirming=$state(''),preview=$state<{marks:number;custom_models:number;checks:number}|null>(null);
   // Each AI's payload for the current period, so switching chart tabs back and forth is instant.
@@ -46,7 +46,7 @@
   onMount(()=>{void load();api<{in_quiz:boolean}>(`/species/${speciesId}/examples?dataset_id=${id}`).then(value=>about=value).catch(()=>{});
     // Detection counts per AI choose the AI to check (B3); the site overview has them and is usually cached.
     const dates=new URLSearchParams([...initial].filter(([key])=>key.endsWith('_date')));
-    api<Overview>(`/datasets/${id}/overview?${dates}`).then(value=>detected=value.species.find(row=>row.species.id===speciesId)?.models??[]).catch(()=>{});});
+    api<Overview>(`/datasets/${id}/overview?${dates}`).then(value=>{recordedSeconds=value.recorded_seconds;detected=value.species.find(row=>row.species.id===speciesId)?.models??[];}).catch(()=>{});});
   const range=$derived(result?rangeQuery(result.start_date,result.end_date):new URLSearchParams([...initial].filter(([key])=>key.endsWith('_date'))).toString());
   // The current view (period and chart tab), so pages opened from here can return to it.
   const view=$derived(`${range}&engine=${engine}${engine==='custom'&&modelId?`&model_id=${modelId}`:''}`);
@@ -78,9 +78,15 @@
   const main=$derived(growing??(settled==='in_progress'?result?.checks.find(item=>item.validation?.applicable&&item.validation.status==='in_progress'&&item.validation.counts.answered>0)
     :settled==='undecided'?result?.checks.find(item=>item.engine==='custom'&&!item.validation?.applicable):required));
   const mode=$derived(step!==2?'':growing?'growing':settled==='in_progress'?'continue':settled==='undecided'?main?'check':'undecided':searchFirst?'grow':'check');
+  // The site list's caution for species with few detections and nothing done yet, shown here too.
+  const few=$derived(!!result&&!!detected&&speciesGroup({species:result.species,models:detected,search:result.search,presence:result.presence,region:result.region},recordedSeconds)==='few');
+  // With several AIs, say why this one: it found this species the most (B3).
+  const mostDetections=$derived(!!main&&counted.filter(item=>!undetected(item)).length>1&&main.key===defaultModel(counted)?.key);
+  // A delete confirmation opens below the fold: bring it into view and move the keyboard there.
+  const reveal=(node:HTMLElement)=>{node.scrollIntoView({block:'nearest',behavior:'smooth'});node.focus({preventScroll:true});};
   const others=$derived(ordered.filter(item=>item!==main&&!undetected(item)));
   const answer2=$derived(!result?'':growing?`○ ${t('sqGrowing')}`:step===0&&settled==='not_started'?`− ${t('sqSkipped')}`
-    :`${settled==='decided'?'✓':settled==='undecided'?'−':'○'} ${activityText(result.checks)}`);
+    :activityLine(result.checks));
   const check=createTask(async(item:Check)=>{
     if(!result)return;
     const validation=item.validation?.applicable?item.validation:await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
@@ -127,6 +133,7 @@
   </div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}
+    {#if few}<p class="notice">{t('wFewCaution')}</p>{/if}
     {#if result.location_stale}<p class="notice" role="status">{t('location_reanalysis')}</p>{/if}
     <!-- Two questions as numbered steps: only the open one has its explanation and the page's one main button. -->
     <div class="steps">
@@ -160,7 +167,7 @@
           <p class="muted">{t('sqGrowingNote')}</p>
         {:else if mode==='check'&&main}
           {#if remaining}<p>{fill('sqCheckHint',{n:remaining,time:effort.time})}</p>{/if}
-          <p class="muted">{t('sqEvidence')} {fill('sqCheckAI',{model:main.engine==='custom'?checkName(main):modelIntro(main.engine)})} {fill('wEveryNote',{n:windowSeconds(main.engine)})}</p>
+          <p class="muted">{t('sqEvidence')} {fill('sqCheckAI',{model:main.engine==='custom'?checkName(main):modelIntro(main.engine)})}{#if mostDetections} {t('sqMostDetections')}{/if} {fill('wEveryNote',{n:windowSeconds(main.engine)})}</p>
           <Button variant="primary" pending={check.pending} onclick={()=>check.run(main)}>{t('sqCheckAnswers')}</Button>
         {:else if mode==='continue'&&main?.validation}
           <p>{fill('sqContinueHint',{n:remaining,time:effort.time})}</p><p class="muted">{t('sqEvidence')}</p>
@@ -174,7 +181,7 @@
           <Button variant="primary" href={modelHref}>{t('sqGrow')}</Button>
         {:else if step===1&&settled==='not_started'}
           <p class="muted">{t(searchFirst?'sqLaterSearch':'sqLater')}</p>
-          {#if !searchFirst&&required}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqFirstThis')}</Button>{/if}
+          {#if !searchFirst&&required}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqCheckAnswers')}</Button>{/if}
         {:else if step===0&&settled==='not_started'}<p class="muted">{t('sqSkippedNote')}</p>
           {#if required&&!undetected(required)}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqCheckAnyway')}</Button>{/if}{/if}
         {#if step===2&&others.length}<details class="more"><summary>{t('sqOtherAIs')}</summary>{#each others as item (item.key)}{@render checkRow(item)}{/each}</details>{/if}
@@ -189,17 +196,17 @@
     {#if result.search||result.presence.status==='not_found'||result.checks.some(item=>item.validation)}<details class="more redo"><summary>{t('sqRedo')}</summary>
       {#if result.presence.status==='not_found'}<div class="stack">
         <Button variant="danger" size="sm" onclick={()=>confirming=confirming==='miss'?'':'miss'}>{t('sqDeleteMiss')}</Button>
-        {#if confirming==='miss'}<div class="confirm" role="group" aria-label={t('sqDeleteMiss')}><p>{t('sqDeleteMissConfirm')}</p>
+        {#if confirming==='miss'}<div class="confirm" tabindex="-1" use:reveal role="group" aria-label={t('sqDeleteMiss')}><p>{t('sqDeleteMissConfirm')}</p>
           <div class="actions"><Button onclick={()=>confirming=''}>{t('mCancel')}</Button><Button variant="danger" pending={removeMiss.pending} onclick={()=>removeMiss.run()}>{t('sDeleteYes')}</Button></div></div>{/if}
       </div>{/if}
       {#each result.checks.filter(item=>item.validation) as item (item.key)}<div class="stack">
         <Button variant="danger" size="sm" onclick={()=>confirming=confirming===item.key?'':item.key}>{t('sDeleteCheck')}：{checkName(item)}</Button>
-        {#if confirming===item.key}<div class="confirm" role="group" aria-label={t('sDeleteCheck')}><p>{fill('sDeleteCheckConfirm',{model:checkName(item)})}</p>
+        {#if confirming===item.key}<div class="confirm" tabindex="-1" use:reveal role="group" aria-label={t('sDeleteCheck')}><p>{fill('sDeleteCheckConfirm',{model:checkName(item)})}</p>
           <div class="actions"><Button onclick={()=>confirming=''}>{t('mCancel')}</Button><Button variant="danger" pending={removeCheck.pending} onclick={()=>removeCheck.run(item)}>{t('sDeleteYes')}</Button></div></div>{/if}
       </div>{/each}
       {#if result.search}<div class="stack">
         <Button variant="danger" size="sm" pending={askSearchDelete.pending} onclick={()=>confirming==='search'?confirming='':askSearchDelete.run()}>{t('sSearchDelete')}</Button>
-        {#if confirming==='search'&&preview}<div class="confirm" role="group" aria-label={t('sSearchDelete')}>
+        {#if confirming==='search'&&preview}<div class="confirm" tabindex="-1" use:reveal role="group" aria-label={t('sSearchDelete')}>
           {#if preview.custom_models}<p class="notice"><strong>{t('sSearchDeleteModels')}</strong></p>{/if}
           {#if preview.marks}<p>{t('sSearchDeleteConfirm')}</p><ul><li>{fill('sSearchDeleteMarks',{n:preview.marks})}</li></ul><p>{t('sSearchDeletePresence')}</p>
           {:else if !preview.custom_models}<p>{t('sSearchDeleteNothing')}</p>{/if}

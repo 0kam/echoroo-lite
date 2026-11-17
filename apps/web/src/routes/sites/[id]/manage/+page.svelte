@@ -12,7 +12,7 @@
   import { fill } from '$lib/workflow';
   type Collection = Dataset & {count:number;seconds:number;first:string|null;last:string|null};
   type Details = {site:Site;datasets:Collection[]};
-  type Removal = {site_id:number;dataset_id:number|null;name:string;revision:string;recordings:number;analyses:number;searches:number;validations:number;custom_models?:number;reports:number;exports:number};
+  type Removal = {site_id:number;dataset_id:number|null;name:string;revision:string;recordings:number;analyses:number;searches:number;validations:number;custom_models?:number;marks?:number;misses?:number;reports:number;exports:number};
   const id = Number(page.params.id);
   let details = $state<Details|null>(null), name=$state(''), latitude=$state<number|null>(null), longitude=$state<number|null>(null);
   let changingPlace=$state(false), removal=$state<Removal|null>(null), renameId=$state<number|null>(null), collectionName=$state('');
@@ -86,7 +86,7 @@
 <!-- Closing (Cancel, Esc) returns focus to the button that opened it; that button was busy while the preview loaded. -->
 <dialog bind:this={dialog} oncancel={event=>{if(remove.pending)event.preventDefault();}} onclose={()=>opener?.focus()} aria-labelledby="remove-title">
   {#if removal}<h2 id="remove-title">{removal.name} — {t('mDeleteTitle')}</h2><p>{t('mDeleteEffect')}</p>
-    <dl>{#each [['mRecordings',removal.recordings],['mAnalyses',removal.analyses],['mSearches',removal.searches],['mValidations',removal.validations],['mCustomModels',removal.custom_models??0],['mReports',removal.reports],['mExports',removal.exports]] as [key,count]}{#if count||key==='mRecordings'}<div><dt>{t(String(key))}</dt><dd>{count}</dd></div>{/if}{/each}</dl>
+    <dl>{#each [['mRecordings',removal.recordings],['mAnalyses',removal.analyses],['mSearches',removal.searches],['mValidations',removal.validations],['mCustomModels',removal.custom_models??0],['mMarks',removal.marks??0],['mMisses',removal.misses??0],['mReports',removal.reports],['mExports',removal.exports]] as [key,count]}{#if count||key==='mRecordings'}<div><dt>{t(String(key))}</dt><dd>{count}</dd></div>{/if}{/each}</dl>
     <p>{t('mKeepFiles')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>dialog.close()}>{t('mCancel')}</Button><Button variant="danger" pending={remove.pending} onclick={()=>remove.run()}>{t('mDeleteConfirm')}</Button></div>
     {#if remove.error}<p class="error" role="alert">{t(remove.error)}</p>{/if}
   {/if}

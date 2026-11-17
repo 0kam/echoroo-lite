@@ -68,9 +68,9 @@
     {:else}<p class="muted">{t('refNone')}</p>{/if}
     {#if !named}
       {#if fetched && !prepare.error}<p class="muted">{t('refXcNone')}</p>
-      {:else if keyReady === false && !prepare.error}<p>{t('refKeyNeeded')} <a href={settings}>{t('navSettings')}</a></p>
+      {:else if keyReady === false && !prepare.error}<p>{t('refKeyNeeded')} <a class="target" href={settings}>{t('navSettings')}</a></p>
       {:else}<Button pending={prepare.pending} onclick={() => prepare.run()}>{t('refPrepare')}</Button><p class="muted">{t('refPrepareHint')}</p>{/if}
-      {#if prepare.error}<p class="error" role="alert">{t(prepare.error)}{#if prepare.error === 'xc_key_required'} · <a href={settings}>{t('navSettings')}</a>{/if}</p>{/if}
+      {#if prepare.error}<p class="error" role="alert">{t(prepare.error)}{#if prepare.error === 'xc_key_required'} · <a class="target" href={settings}>{t('navSettings')}</a>{/if}</p>{/if}
     {/if}
     <div class="actions">
       <Button size="sm" onclick={() => void openExternal(page.url)}>{t('refLearn').replace('{site}', page.name)}</Button>

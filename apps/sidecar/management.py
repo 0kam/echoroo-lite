@@ -143,7 +143,12 @@ def deletion_plan(db, site_id, dataset_id=None):
 def preview_delete(root, site_id, dataset_id=None):
     with connect(root) as db:
         plan = deletion_plan(db,site_id,dataset_id)
-    return {k: (len(v) if isinstance(v,list) else v) for k,v in plan.items() if k!='analyses'} | {'analyses':len(plan['analyses'])}
+        # The "heard" marks and "could not confirm" records that delete() removes, so the confirmation can name them.
+        marks = db.execute('''SELECT COUNT(*) FROM presence_marks WHERE recording_id IN (SELECT value FROM json_each(?))
+            OR run_id IN (SELECT value FROM json_each(?))''', (json.dumps(plan['recordings']), json.dumps(plan['searches']))).fetchone()[0]
+        misses = 0 if plan['remaining_dataset_id'] is not None else db.execute(
+            'SELECT COUNT(*) FROM presence_misses WHERE dataset_id IN (SELECT value FROM json_each(?))', (json.dumps(plan['datasets']),)).fetchone()[0]
+    return {k: (len(v) if isinstance(v,list) else v) for k,v in plan.items() if k!='analyses'} | {'analyses':len(plan['analyses']),'marks':marks,'misses':misses}
 
 
 def delete(root, site_id, dataset_id, revision):

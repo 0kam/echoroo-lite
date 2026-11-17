@@ -47,6 +47,8 @@
   const firstTotal=$derived(first?.reduce((sum,bin)=>sum+bin.total,0)??0),firstHeard=$derived(first?.reduce((sum,bin)=>sum+bin.heard,0)??0);
   let continued=$state(false);
   const found=$derived(!!first&&started&&!continued&&firstHeard>0&&validation?.question?.verdict===null&&validation.question.position===firstTotal);
+  // In the first block, progress counts toward its sounds, as the start page says ("first 20, up to 60").
+  const inFirst=$derived(!!first&&!continued&&!!validation&&validation.counts.answered<firstTotal);
   const asking=$derived(started&&!done&&!!validation?.question&&!found);
   // The species results tab this check belongs to, so pages opened from here return to it.
   const range=$derived(validation?rangeQuery(validation.start_date,validation.end_date):'');
@@ -76,7 +78,7 @@
         {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
     {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill(first?'wValidationPlanFirst':'wValidationPlan',{first:firstTotal,total:validation.counts.total,time:effort.time})}</p>
-      <p class="muted">{fill('wEveryNote',{n:validation.window_s})}</p>
+      <p>{t('vPurpose')}</p><p class="muted">{fill('wEveryNote',{n:validation.window_s})}</p>
       <p><strong>{t('refListenFirst')}</strong></p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
     {:else if found}<div class="with-examples"><section class="panel stack" role="status"><h2>{fill('vFoundTitle',{n:remaining})}</h2>
       <p>{fill('vFoundText',{m:firstTotal,k:firstHeard})}</p><p class="muted">{fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</p>
@@ -88,8 +90,8 @@
           <p class="muted">{t(first?'vOrderNote':'vMixedNote')}</p>
           {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`} onplaying={()=>{if(!played.includes(question.id))played=[...played,question.id];}}/>{/key}
           <div class="actions answers" bind:offsetHeight={barHeight}>
-            <div class="progress-row"><progress id="validation-progress" value={answered?question.review_position:validation.counts.answered} max={answered?question.review_total:validation.counts.total}></progress>
-              <label for="validation-progress">{answered?fill('vReviewProgress',{n:question.review_position,total:question.review_total}):fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</label>
+            <div class="progress-row"><progress id="validation-progress" value={answered?question.review_position:validation.counts.answered} max={answered?question.review_total:inFirst?firstTotal:validation.counts.total}></progress>
+              <label for="validation-progress">{answered?fill('vReviewProgress',{n:question.review_position,total:question.review_total}):fill(inFirst?'vProgressFirst':'vProgress',{answered:validation.counts.answered,first:firstTotal,total:validation.counts.total})}</label>
               {#if corrected}<span role="status">✓ {t('vCorrectionSaved')}</span>{/if}</div>
             <Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('vPreviousSound')}</Button>
             <div class="verdicts" role="group" aria-label={t('wQuestion')}>{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}

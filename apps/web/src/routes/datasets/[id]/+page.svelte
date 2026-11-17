@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,dayRange,duration,refreshCatalog,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { activity,activityText,analysisSeconds,checkName,fill,presenceText,rangeQuery,remainingSounds,roughTime,speciesGroup,workload,type Overview } from '$lib/workflow';
+  import { activity,activityLine,analysisSeconds,checkName,fill,presenceText,rangeQuery,remainingSounds,roughTime,speciesGroup,workload,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
@@ -67,7 +67,7 @@
   {#each rows as row (row.species.id)}<tr><td><a href={speciesHref(row)}><strong>{commonName(row.species,app.locale)}</strong>{#if row.region==='unusual'} <span class="rare">{t('wUnusual')}</span>{/if}<i class="scientific-name">{row.species.scientific_name}</i></a></td>
     <td>{#each row.models as model}<div>{checkName(model)}: {model.threshold===null?t('wNotCounted'):model.candidate_windows==null?'—':fill('wDetectionCount',{n:model.candidate_windows.toLocaleString(app.locale),days:model.candidate_days??0})}</div>{:else}—{/each}</td>
     <td>{presenceText(row.presence)}</td>
-    {#if anyActivity}<td>{activityText(row.models)}</td>{/if}</tr>{/each}
+    {#if anyActivity}<td>{activityLine(row.models)}</td>{/if}</tr>{/each}
 </tbody></table></div>{/snippet}
 <div class="page">
   <div class="crumbs"><a href={resolve('/datasets')}>{t('uBackSites')}</a></div>
@@ -86,7 +86,8 @@
         {#if saved}<Button href={`${reports}${range?'&':'?'}saved=1`}>{fill('wSavedReports',{n:saved})}</Button>{/if}</div></section>{/if}
     <section class="panel stack"><div class="section-heading"><div class="stat-row"><span>{fill('wRecordingsAnalysed',{analysed:result.analysed_recordings,records:result.records})}</span>
       <span>{fill('wTotalLength',{duration:duration(result.recorded_seconds)})}</span>
-      <span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span></div></div>
+      <!-- While analysis runs, only the running state below is shown. -->
+      {#if !jobHere}<span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span>{/if}</div></div>
       {#if result.mixed_models}<p class="notice">{t('wModelVersions')}</p>{/if}
       <!-- Before and during analysis the box is already there, so progress does not push the page around. -->
       {#if jobHere||unanalysed>0}<div class="status-box" role="status">
@@ -99,6 +100,7 @@
     </section>
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindMissing')}</Button></div>
       <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>{#if result.species.length&&!anyActivity}<p class="muted">{t('wActivityNoneAll')}</p>{/if}
+      {#if result.species.some(row=>activity(row.models)==='undecided')}<p class="muted">{t('wCutoffMeaning')}</p>{/if}
       {#if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
       {#each order as key}{@const rows=groups[key]}{#if rows.length}
         {#if key==='few'||key==='rare'}<details class="group" open={folds[key]??stage===key} ontoggle={e=>fold(key,e.currentTarget.open)}><summary><h3>{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3></summary><p class="notice">{t(key==='few'?'wFewCaution':'wRareHint')}</p>{@render table(rows)}</details>

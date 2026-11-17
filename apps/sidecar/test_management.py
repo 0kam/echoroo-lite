@@ -92,6 +92,8 @@ class ManagementCheck(unittest.TestCase):
                 self.assertEqual({k:preview[k] for k in ('recordings','analyses','searches','validations','reports','exports')},
                                  dict(recordings=1,analyses=2,searches=1,validations=1,reports=2,exports=1))
                 self.assertEqual(preview['custom_models'],1)
+                # The confirmation names the "heard" marks it deletes; "could not confirm" records stay with the remaining import.
+                self.assertEqual((preview['marks'],preview['misses']),(1,0))
                 # Reading the confirmation or cancelling it changes nothing.
                 self.assertEqual(client.get('/sites/1/delete-preview?dataset_id=1').json(),preview)
                 response=client.post('/sites/1/delete',json={'dataset_id':1,'revision':preview['revision']})

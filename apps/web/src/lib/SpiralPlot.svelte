@@ -127,7 +127,8 @@
       {#if m.days*ring>=20}<text x={p[0]} y={p[1]+8} text-anchor="middle" font-size={compact?22:12} fill="#373450" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{monthName(m.key)}</text>{/if}
       {#if m.newYear}<text x={cx} y={cy-r+8} text-anchor="middle" font-size={compact?22:12} font-weight="600" fill="#373450" stroke="#fff" stroke-width="5" paint-order="stroke" pointer-events="none">{fill('spiralYearRing',{year:m.key.slice(0,4)})}</text>{/if}
     {/each}
-  {:else if days>1}{#each dateTicks as day}{@const p=point(inner+(day+.5)*ring,16.5)}
+  {:else if days>1}<!-- Dates sit on the midnight line, so neighbouring labels are a whole ring step apart and never overlap. -->
+  {#each dateTicks as day}{@const p=point(inner+(day+.5)*ring,0)}
     <circle cx={p[0]} cy={p[1]} r="1.5" fill="#575279" pointer-events="none"/>
     <text x={p[0]-7} y={p[1]-3} text-anchor="end" font-size={compact?22:12} fill="#575279" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{dayText(new Date(Date.parse(report.start_date)+(from+day)*86400000).toISOString())}</text>
   {/each}{/if}

@@ -40,6 +40,8 @@
   // "Could not confirm" needs the top 10 sounds (or every sound, if fewer) to have been played.
   const needed=$derived(list?Math.max(0,Math.min(10,list.rows.length)-listened):0);
   const anyMarked=$derived(!!list?.rows.some(row=>row.marked));
+  // Once enough sounds were played and none is marked, recording "could not confirm" is this page's main step.
+  const canMiss=$derived(!!list?.rows.length&&!anyMarked&&!needed&&!saved);
   const mark=createTask(async(row:PresenceRow)=>{
     await api('/presence/marks',{dataset_id:id,species_id:speciesId,recording_id:row.recording_id,start_s:row.start_s,end_s:row.end_s,run_id:row.run_id,marked:!row.marked});
     row.marked=!row.marked;saved=0;caution='';await load();
@@ -80,10 +82,9 @@
         <p>{listened?fill('pListened',{n:listened,order}):t('pListenedNone')}</p>
         {#if saved}<p role="status">✓ {fill('pMissSaved',{n:saved,order})}</p>
         {:else if needed}{#if listened}<p class="muted">{fill('pNeedMore',{n:needed})}</p>{/if}
-        {:else}<Button pending={recordMiss.pending} onclick={()=>recordMiss.run()}>{fill('pRecordMiss',{n:listened,order})}</Button>
+        {:else}<Button variant="primary" pending={recordMiss.pending} onclick={()=>recordMiss.run()}>{fill('pRecordMiss',{n:listened,order})}</Button>
           <p class="muted">{t('pMissKeep')}</p>{/if}</div>{/if}
-      <p class="muted">{t('pEvidenceNote')}</p>
-      <div class="actions"><Button variant="primary" href={back}>{t('wBackSpecies')}</Button></div>
+      <div class="actions"><Button variant={canMiss?'default':'primary'} href={back}>{t('wBackSpecies')}</Button></div>
     </section>
     <div class="examples-column"><ReferencePanel species={list.species} datasetId={id} {practice} onexamples={examples=>named=examples.some(item=>item.kind==='named')}/></div></div>
   {:else if !error}<p role="status"><Spinner/> {t('pPreparing')}</p>{/if}

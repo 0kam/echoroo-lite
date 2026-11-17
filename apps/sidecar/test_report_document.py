@@ -83,15 +83,15 @@ class ReportDocumentTest(unittest.TestCase):
     def test_decided_check_states_threshold_and_precision(self):
         snap=snapshot();t=messages('en')
         rendered=str(blocks(manifest(snap,'en'),[snap],{'per_species':[]}))
-        self.assertIn('Of the clips counted as "call present", about 50% were correct (probably between 30% and 70%; estimated from 60 sounds that people listened to)',rendered)
+        self.assertIn('Of the sounds counted as "call present", about 50% were correct (probably between 30% and 70%; estimated from 60 sounds that people listened to)',rendered)
         self.assertIn(t['rule_checked'].format(score='0.40'),rendered)
-        self.assertIn('4 clips (4.0% of the 100 clips examined). Days with detections: 2',rendered)
+        self.assertIn('4 of the 100 3-second sounds examined (4.0%). Days with detections: 2',rendered)
 
     def test_summary_states_how_sure_and_durations_read_as_words(self):
         snap=snapshot();t=messages('ja');report=manifest(snap);report['other_species']={'candidates':18,'heard':0}
         report['scope']['recorded_seconds']=2400
         summary=str(sections(blocks(report,[snap],{'per_species':[]}))['summary'])
-        self.assertIn('人が聞いて声を確かめたのは、例鳥です。AI の精度まで確かめたのは、例鳥（正しかったのは約 50%）です。',summary)
+        self.assertIn('人が聞いて声を確かめたのは、例鳥です。AI の検出のうち正しかった割合まで確かめたのは、例鳥（約 50%）です。',summary)
         self.assertIn('録音 40 分',summary);self.assertIn(t['other_candidates'].format(count=18)+t['other_include'],summary)
         self.assertNotIn(t['other_heard'].split('{')[0],summary)
         report['other_species']={'candidates':0,'heard':2}
@@ -103,7 +103,7 @@ class ReportDocumentTest(unittest.TestCase):
         self.assertEqual(duration_text(5400,messages('en')),'1 h 30 min')
         snap['validation']['stage']='sample';snap['species']['common_names']={};snap['species']['custom_names']={'ja':'自作名'}
         summary=str(sections(blocks(manifest(snap,'en'),[snap],{'per_species':[]}))['summary'])
-        self.assertIn('The AI accuracy check for 自作名 is not finished',summary);self.assertNotIn('other species',summary)
+        self.assertIn('For 自作名, checking how often the AI detections are correct is not finished',summary);self.assertNotIn('other species',summary)
 
     def test_quality_csv_has_new_metrics_without_old_goal_fields(self):
         snap=snapshot();result=snap['validation']['results']['birdnet']
@@ -186,7 +186,7 @@ class ReportDocumentTest(unittest.TestCase):
         self.assertEqual(status(unanswered),'not_evaluated')
         rendered=str(blocks(manifest(unanswered),[unanswered],{'per_species':[]}))
         self.assertIn(t['precision_unknown'],rendered);self.assertNotIn(t['precision_in_progress'],rendered);self.assertIn(t['checks_none'],rendered)
-        species=str(sections(content)['sp-sp']);self.assertIn(t['count_none'].format(eligible=100,name='例鳥'),species)
+        species=str(sections(content)['sp-sp']);self.assertIn(t['count_none'].format(eligible=100,name='例鳥',s='5'),species)
         facts=[block['items'] for block in sections(content)['sp-sp']['body'] if block['type']=='facts']
         self.assertEqual([[k for k,_ in items].count(t['fact_precision']) for items in facts],[1,0])
         # The range note only accompanies a shown range.
@@ -202,7 +202,7 @@ class ReportDocumentTest(unittest.TestCase):
                   'start_s':i,'end_s':i+3,'local_time':'2024-01-01T05:00:00+09:00'} for i in range(5)]
         rendered=str(blocks(report,[snap],{'per_species':[]},answers))
         # Answers that confirmed nothing are not "not listened yet", and the play link names what is inside.
-        self.assertIn('精度の確認で 5 音を聞いたが、まだ声を確かめられていない（すべて「判断できない」）',rendered)
+        self.assertIn('「AI の答えを確かめる」で 5 音を聞いたが、まだ声を確かめられていない（すべて「判断できない」）',rendered)
         self.assertNotIn(t['badge_unchecked'],rendered)
         self.assertIn('答えた 5 音を聞く（すべて「判断できない」）',rendered)
         # The method says which cut-off each result used.
@@ -211,6 +211,25 @@ class ReportDocumentTest(unittest.TestCase):
         self.assertIn('例鳥（BirdNET 2.4）の境目は、その答えから決めました',rendered);self.assertNotIn(t['method_cutoff_default_rest'],rendered)
         self.assertEqual(folder_name('里山の森','2025-07-11','2025-07-13','d3748e'),'里山の森_2025-07-11〜13_d3748e')
         self.assertEqual(folder_name(' a<b>:c/d ','2024-12-30','2025-01-02','x'),'a_b__c_d_2024-12-30〜2025-01-02_x')
+
+    def test_fifth_walkthrough_wording(self):
+        from report_document import estimate
+        # Estimates read like the app: 2 significant digits; small counts stay exact.
+        self.assertEqual([estimate(v) for v in (378.4,329.2,727,325,99.6,7)],[380,330,730,330,100,7])
+        t=messages('ja');snap=snapshot();snap['threshold']=.1;snap['validation']=None
+        none=snapshot();none['threshold']=.1;none['validation']=None;none['engine']='perch';none['window_s']=5
+        none['summaries'][0].update(candidate_windows=0,candidate_rate=0)
+        lone=snapshot();lone['species']={**lone['species'],'id':'sp2'};lone['engine']='perch';lone['window_s']=5;lone['validation']=None
+        report=manifest(snap);report['selected_species'].append(lone['species'])
+        report['presence'].append({**report['presence'][0],'species_id':'sp2','status':'unchecked','evidence_count':0})
+        content=blocks(report,[snap,none,lone],{'per_species':[]});rendered=str(content)
+        self.assertIn('3 秒ごとに区切った 100 音のうち 4 音（4.0%）',rendered)
+        # A row without detections says so instead of "not checked yet"; a missing AI says it did not examine the species.
+        table=next(b for b in sections(content)['details']['body'] if b.get('summary')==t['detail_table'])
+        self.assertEqual([row[-1] for row in table['body'][0]['rows']],[t['badge_reference'],t['badge_found_none'],t['badge_reference']])
+        self.assertEqual(table['body'][1]['text'],t['not_examined_note'])
+        self.assertIn(t['not_examined'],str(sections(content)['summary']))
+        self.assertNotIn(t['saved'],rendered)
 
     def test_schedule_draws_each_recording_at_its_local_time(self):
         t=messages('ja');report=manifest(snapshot())

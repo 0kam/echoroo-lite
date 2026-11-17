@@ -5,7 +5,7 @@
   import { commonName, type Species } from './species';
   import Button from './ui/Button.svelte';
   import Spinner from './ui/Spinner.svelte';
-  import { focusMissing, missingText } from './workflow';
+  import { fill, focusMissing, missingText } from './workflow';
   // Case and spacing variants of one scientific name are the same species.
   const norm = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
   // `invalid`: a note shown under the name field when the page needs a species before it can go on.
@@ -16,6 +16,10 @@
   let naming=$state(false),newName=$state(''),triedName=$state(false);
   // A listed species with the same species epithet (e.g. Yezoterpnosia nigricosta for Terpnosia nigricosta): asked about once per typed name.
   let similar=$state<Species|null>(null),similarFor=$state('');
+  // The typed scientific name when the chosen species is listed under a newer one (same epithet, other genus), shown under the choice.
+  let formerName=$state('');
+  const renamed=(typed:string,row:Species)=>{const [genus,species]=norm(typed).split(' '),[rowGenus,rowSpecies]=norm(row.scientific_name).split(' ');
+    return !!species&&species===rowSpecies&&genus!==rowGenus?typed.trim().replace(/\s+/g,' '):'';};
   const epithet=(name:string)=>norm(name).split(' ')[1]??'';
   const shownSimilar=$derived(similar&&similarFor===norm(scientific)?similar:null);
   const noScientific=$derived(tried&&!scientific.trim());
@@ -49,7 +53,7 @@
     catch (e) { if (current === version) error = e instanceof Error ? e.message : 'unknown_error'; }
     finally { if (current === version) busy = false; }
   }
-  function choose(row: Species) { value = row; query = ''; rows = []; searched = false; naming = false; }
+  function choose(row: Species) { formerName = renamed(query, row) || renamed(scientific, row); value = row; query = ''; rows = []; searched = false; naming = false; }
   // Choosing a listed species after typing a name for it: the typed name becomes its name in this language, unless it already has one.
   function useExisting(row: Species) {
     const typed = (common || query).trim();
@@ -64,6 +68,7 @@
     <span class="actions">{#if !value.common_names[app.locale] && !naming && !disabled}<button type="button" class="button sm" onclick={() => { naming = true; }}>{t('spAddName')}</button>{/if}
     <button type="button" class="button sm" {disabled} onclick={() => { value = null; }}>{t('changeSpecies')}</button></span>
   </div>
+  {#if formerName}<p class="muted">{fill('spRenamed',{typed:formerName,name:value.scientific_name})}</p>{/if}
   {#if naming && !disabled}<form class="stack" novalidate onsubmit={e => { e.preventDefault(); void saveName(); }}>
     <label>{t('wCommonName')}<input bind:value={newName} maxlength="200" disabled={adding} aria-invalid={(triedName && !newName.trim()) || undefined} aria-describedby={triedName && !newName.trim() ? `${invalidId}-name` : undefined} /></label>
     {#if triedName && !newName.trim()}<p class="field-error" id={`${invalidId}-name`}>{t('uEnterCommonName')}</p>{/if}
@@ -96,7 +101,8 @@
 {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
 
 <style>
-  .picked { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid rgb(var(--primary-200)); background: rgb(var(--primary-100)); border-radius: 6px; }
+    /* Neutral once chosen: the primary tint read as an error. */
+  .picked { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid rgb(var(--stone-300)); background: rgb(var(--color-card-bg)); border-radius: 6px; }
   :global(.dark) .picked { background: rgb(var(--stone-200)); border-color: rgb(var(--stone-300)); }
   .state { margin-top: 6px; }
   .pad { padding: 8px 12px; }
