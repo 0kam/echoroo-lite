@@ -93,7 +93,7 @@ export const en = {
   spiralPlot: "When it called (chart)",
   spiralKeys: "When it called (chart). Use the arrow keys to move between hours and press Enter to listen.",
   spiralMeaning: "Angle shows local time; the centre is the first day and the outside is the last day.",
-  dateOutward: "Centre: first day; outside: last day",
+  dateOutward: "Inner ring: first day; outer ring: last day",
   days: "days",
   spiralPeriod: "Period shown",
   spiralWhole: "Whole period",

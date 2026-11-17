@@ -79,7 +79,7 @@
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
     {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill(first?'wValidationPlanFirst':'wValidationPlan',{first:firstTotal,total:validation.counts.total,time:effort.time})}</p>
       <p>{t('vPurpose')}</p><p class="muted">{fill('wEveryNote',{n:validation.window_s})}</p>
-      <p><strong>{t('refListenFirst')}</strong></p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
+      {#if heard?.length}<p><strong>{t('refListenFirst')}</strong></p>{/if}<Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
     {:else if found}<div class="with-examples"><section class="panel stack" role="status"><h2>{fill('vFoundTitle',{n:remaining})}</h2>
       <p>{fill('vFoundText',{m:firstTotal,k:firstHeard})}</p><p class="muted">{fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</p>
       <div class="actions"><Button variant="primary" onclick={()=>continued=true}>{t('vContinue')}</Button><Button href={back}>{t('vContinueLater')}</Button></div></section>{@render examples()}</div>

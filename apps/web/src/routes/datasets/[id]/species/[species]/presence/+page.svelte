@@ -57,7 +57,7 @@
 </script>
 <div class="page wide presence-page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
-  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{list?fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name}):t('sPresenceTitle')}</h1>{#if list}<p>{t('pHint')}</p>{/if}</div></div>
+  <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{list?fill('pTitle',{name:commonName(list.species,app.locale)||list.species.scientific_name}):t('sPresenceTitle')}</h1>{#if list}<p>{t('pHint')}{#if list.rows.length} {fill('pHintMiss',{n:Math.min(10,list.rows.length)})}{/if}</p>{/if}</div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if list}
     {#if list.has_ai&&list.run_id}<div class="actions" role="group" aria-label={t('sPresenceTitle')}>

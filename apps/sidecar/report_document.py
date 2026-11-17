@@ -107,6 +107,18 @@ def ai_state(snap):
     return 'checked' if status(snap)=='decided' else 'reference'
 
 
+def badge(snap,t):
+    """An AI's badge; a started check reads "checking" here as in the summary sentence, not "counted by AI only"."""
+    state=ai_state(snap)
+    return t['badge_in_progress' if state=='reference' and status(snap)=='in_progress' else 'badge_'+state]
+
+
+def heard_text(row,t):
+    """'15 sounds', plus where they were answered when that was on more than one page (so 15 is not read against a check's 14)."""
+    parts=[t['from_'+key].format(count=number(row.get(field) or 0)) for key,field in (('mark','marked'),('check','heard_in_checks'),('label','voice_on_ai_page')) if row.get(field)]
+    return count_of(t,'sounds_count',row['evidence_count'])+(t['heard_from'].format(list=t['list_sep'].join(parts)) if len(parts)>1 else '')
+
+
 def method(snap,t):
     if snap['engine']=='custom':
         return custom_method(snap,t)
@@ -239,7 +251,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
     gaps=any(set(builtin)-{snap['engine'] for snap in per_species[s['id']]} for s in taxa if per_species[s['id']])
     for taxon in taxa:
         common,scientific=names(taxon,locale);row=presence[taxon['id']];snaps=per_species[taxon['id']]
-        heard={'confirmed':[['badge-yes',t['badge_heard']],['text',' '+count_of(t,'sounds_count',row['evidence_count'])]],
+        heard={'confirmed':[['badge-yes',t['badge_heard']],['text',' '+heard_text(row,t)]],
                'not_found':[['badge-no',not_found_text(row,t)]],'unchecked':[['badge-no',unchecked_text(snaps,t)]]}[row['status']]
         ai=[]
         for engine in [e for e in builtin if snaps and e not in {snap['engine'] for snap in snaps}]:
@@ -257,7 +269,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
                 ai+=[['text',prefix+count_of(t,'windows_count',0)+' '],['small',t['table_found_none']]]
                 continue
             p=(quality_result(snap) or {}).get('precision') or {}
-            ai+=[['text',prefix+count_of(t,'windows_count',s.get('candidate_windows'))+' '],['badge-'+state,t['badge_'+state]],
+            ai+=[['text',prefix+count_of(t,'windows_count',s.get('candidate_windows'))+' '],['badge-'+state,badge(snap,t)],
                  ['small',t['table_precision'].format(value=f"{p['value']:.0%}") if state=='checked' and p.get('value') is not None else '']]
         rows.append([[['a','#sp-'+taxon['id'],common or scientific],['small',scientific if common else '']],heard,ai or [['badge-no',t['badge_no_ai']]]])
     heard=[name(s,locale) for s in taxa if presence[s['id']]['status']=='confirmed']
@@ -310,7 +322,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
         if row['status']=='confirmed':
             heard=[r for r in evidence if r.get('audio_role')=='presence' and r['species_id']==taxon['id']]
             listed=sounds(heard,t,origin)
-            body+=[{'type':'heading','text':t['heard_title'],'badge':['yes',t['badge_heard']],'after':' '+count_of(t,'sounds_count',row['evidence_count'])},
+            body+=[{'type':'heading','text':t['heard_title'],'badge':['yes',t['badge_heard']],'after':' '+heard_text(row,t)},
                    para(t['heard_note'].format(name=label),muted=True)]
             if listed['items']:body.append({**listed,'items':listed['items'][:5]})
             if len(listed['items'])>5:
@@ -323,7 +335,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
             body+=[{'type':'heading','text':t['ai_title'],'badge':['no',t['badge_no_ai']]},para(t['ai_none'])]
         for snap in snaps:
             state=ai_state(snap);model=method(snap,t)
-            body.append({'type':'heading','text':t['ai_title'],'badge':['no',t['badge_found_none']] if found_none(snap) else [state,t['badge_'+state]]})
+            body.append({'type':'heading','text':t['ai_title'],'badge':['no',t['badge_found_none']] if found_none(snap) else [state,badge(snap,t)]})
             if state=='unused':
                 body+=[para(unused_text(snap,t,label)),{'type':'facts','items':[[t['fact_ai'],model]]}]
             elif found_none(snap):
@@ -409,7 +421,7 @@ def blocks(manifest,snapshots,quiz,evidence=()):
         groups.setdefault(model_group(snap,t),[]).append([name(snap['species'],locale),method(snap,t),
             (f"{snap['threshold']:.2f}" if snap['threshold'] is not None else '—')+t['paren'].format(text=source),
             counted_of(snap,t) if snap['threshold'] is not None else t['uncounted'],number(s.get('candidate_days')) if snap['threshold'] is not None else '—',
-            t['badge_found_none'] if found_none(snap) else t['badge_'+ai_state(snap)]])
+            t['badge_found_none'] if found_none(snap) else badge(snap,t)])
     if groups:
         details.append({'type':'details','summary':t['detail_table'],'body':[{'type':'table',
             'headers':[t[k] for k in ('col_species','col_model','col_rule','col_counted','col_days','col_state')],

@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,dayRange,duration,refreshCatalog,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { activity,activityLine,analysisSeconds,checkName,fill,presenceText,rangeQuery,remainingSounds,roughTime,speciesGroup,workload,type Overview } from '$lib/workflow';
+  import { activity,activityLine,analysisSeconds,checkName,fewBelow,fill,modelIntro,presenceText,rangeQuery,remainingSounds,roughTime,speciesGroup,workload,type Overview } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
@@ -60,6 +60,10 @@
   const folds:Record<string,boolean>=(()=>{try{return JSON.parse(sessionStorage.getItem(foldKey)||'{}');}catch{return {};}})();
   // Only a state that differs from the default is kept, so the opening's own toggle event changes nothing.
   const fold=(key:string,open:boolean)=>{if(open===(stage===key))delete folds[key];else folds[key]=open;sessionStorage.setItem(foldKey,JSON.stringify(folds));};
+  // The detection count that separates "Needs checking" from "Few detections" (speciesGroup), as a whole number of sounds.
+  const fewLine=$derived(result?Math.ceil(fewBelow(result.recorded_seconds)):0);
+  // The built-in AIs named in the table, each introduced once.
+  const aiNames=$derived(new Intl.ListFormat(app.locale).format([...new Set(result?.species.flatMap(row=>row.models.map(model=>model.engine))??[])].filter(engine=>engine!=='custom').map(modelIntro)));
   const jobHere=$derived(job&&app.datasets.find(d=>d.id===job.dataset_id)?.site_id===result?.site.id?job:null);
 </script>
 {#snippet table(rows:Row[])}<div class="table-wrap"><table><colgroup><col class="name"/><col/><col class="state"/>{#if anyActivity}<col class="state"/>{/if}</colgroup>
@@ -80,7 +84,7 @@
     {#if result.species.length&&result.analysed_recordings===result.records&&!result.location_stale}<section class="panel next-step">
       <p class="status"><strong>{t(!next?'wNextExport':groups.confirmed.length?'wNextMore':'wNextListen')}</strong></p>
       <p>{fill('wProgress',{total:result.species.length,confirmed:groups.confirmed.length,missed:groups.missed.length})}</p>
-      {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,time:effort.time,each:workload(Math.round(leftSounds/left.length)).time})}</p>{/if}
+      {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,confirmed:t('wGroupConfirmed'),check:t('wGroupCheck'),time:effort.time,each:workload(Math.round(leftSounds/left.length)).time})}</p>{/if}
       <div class="actions">{#if next}<Button variant="primary" href={speciesHref(next)}>{fill('wNextOpen',{name:commonName(next.species,app.locale)||next.species.scientific_name})}</Button>{/if}
         <Button variant={next?'default':'primary'} href={reports}>{t('wExport')}</Button>
         {#if saved}<Button href={`${reports}${range?'&':'?'}saved=1`}>{fill('wSavedReports',{n:saved})}</Button>{/if}</div></section>{/if}
@@ -99,12 +103,12 @@
         {#if suggestFaster}{t('analysisFaster')} · <a href={`${resolve('/settings')}?return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('navSettings')}</a>{/if}</p>{/if}
     </section>
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindMissing')}</Button></div>
-      <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>{#if result.species.length&&!anyActivity}<p class="muted">{t('wActivityNoneAll')}</p>{/if}
+      <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>{#if aiNames}<p class="muted">{fill('wAINames',{list:aiNames})}</p>{/if}{#if result.species.length&&!anyActivity}<p class="muted">{t('wActivityNoneAll')}</p>{/if}
       {#if result.species.some(row=>activity(row.models)==='undecided')}<p class="muted">{t('wCutoffMeaning')}</p>{/if}
       {#if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
       {#each order as key}{@const rows=groups[key]}{#if rows.length}
-        {#if key==='few'||key==='rare'}<details class="group" open={folds[key]??stage===key} ontoggle={e=>fold(key,e.currentTarget.open)}><summary><h3>{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3></summary><p class="notice">{t(key==='few'?'wFewCaution':'wRareHint')}</p>{@render table(rows)}</details>
-        {:else}<h3 class="group">{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3>{#if key==='missed'}<p class="muted">{t('wMissedHint')}</p>{/if}{@render table(rows)}{/if}
+        {#if key==='few'||key==='rare'}<details class="group" open={folds[key]??stage===key} ontoggle={e=>fold(key,e.currentTarget.open)}><summary><h3>{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3></summary><p class="notice">{key==='few'?fill('wFewHint',{n:fewLine}):t('wRareHint')}</p>{@render table(rows)}</details>
+        {:else}<h3 class="group">{t(titles[key])} · {fill('wSpeciesCount',{n:rows.length})}</h3>{#if key==='missed'}<p class="muted">{t('wMissedHint')}</p>{:else if key==='check'}<p class="muted">{fill('wCheckHint',{n:fewLine})}</p>{/if}{@render table(rows)}{/if}
       {/if}{/each}
       {#if !result.species.length}<p>{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</p>{/if}
     </section>

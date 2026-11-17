@@ -85,7 +85,7 @@
   // A delete confirmation opens below the fold: bring it into view and move the keyboard there.
   const reveal=(node:HTMLElement)=>{node.scrollIntoView({block:'nearest',behavior:'smooth'});node.focus({preventScroll:true});};
   const others=$derived(ordered.filter(item=>item!==main&&!undetected(item)));
-  const answer2=$derived(!result?'':growing?`○ ${t('sqGrowing')}`:step===0&&settled==='not_started'?`− ${t('sqSkipped')}`
+  const answer2=$derived(!result?'':growing?`○ ${t('sqGrowing')}`:step===0&&settled==='not_started'?t('sqSkipped')
     :activityLine(result.checks));
   const check=createTask(async(item:Check)=>{
     if(!result)return;
@@ -133,7 +133,7 @@
   </div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if result}
-    {#if few}<p class="notice">{t('wFewCaution')}</p>{/if}
+    {#if few}<p class="notice">{fill('wFewCaution',{n:Math.max(0,...detected!.map(model=>model.candidate_windows??0))})}</p>{/if}
     {#if result.location_stale}<p class="notice" role="status">{t('location_reanalysis')}</p>{/if}
     <!-- Two questions as numbered steps: only the open one has its explanation and the page's one main button. -->
     <div class="steps">

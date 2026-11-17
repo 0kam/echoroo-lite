@@ -65,7 +65,7 @@
   {#if overview}
     <section class="panel">
       <h2>{overview.site.name}</h2>
-      <p>{dayRange(overview.start_date,overview.end_date)} · {overview.site.timezone}</p>
+      <p>{dayRange(overview.start_date,overview.end_date)} · {fill('rZone',{zone:overview.site.timezone==='Asia/Tokyo'?t('rZoneTokyo'):fill('rZoneLocal',{zone:overview.site.timezone})})}</p>
       <p>{fill('rRecordingsCount',{n:overview.records.toLocaleString(app.locale)})} · {fill('wTotalLength',{duration:duration(overview.recorded_seconds)})}</p>
       <h3>{t('wIncludeSpecies')} · {fill('wSpeciesCount',{n:selected.length})}</h3>
       {#if !selected.length}<p class={noSpecies?'field-error':'muted'} id="species-error">{t('rSaveIdle')}</p>{/if}
@@ -73,7 +73,7 @@
         {#if rows.length}<details open={opened(status)}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
           <Button size="sm" disabled={exportFiles.pending} onclick={()=>selected=all?selected.filter(item=>!ids.includes(item)):[...new Set([...selected,...ids])]}>{t(all?'rSelectNone':'rSelectAll')}</Button>
           {#if status==='unchecked'}<p class="notice">{t('rAiOnlyCaution')}</p>{/if}
-          {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending} aria-invalid={noSpecies||undefined} aria-describedby={noSpecies?'species-error':undefined}/>
+          {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} aria-label={commonName(row.species,app.locale)||row.species.scientific_name} disabled={exportFiles.pending} aria-invalid={noSpecies||undefined} aria-describedby={noSpecies?'species-error':undefined}/>
             <span>{commonName(row.species,app.locale)}<i class="scientific-name">{row.species.scientific_name}</i>
               <span class="muted">{presenceText(row.presence)} · {t('wActivity')}: {activityLine(row.models)}</span></span></label>{/each}
         </details>{/if}{/each}

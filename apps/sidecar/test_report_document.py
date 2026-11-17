@@ -1,7 +1,7 @@
 import unittest
 from copy import deepcopy
 
-from report_document import ai_state, blocks, duration_text, messages, schedule_svg, status, status_text
+from report_document import ai_state, blocks, heard_text, duration_text, messages, schedule_svg, status, status_text
 from workflow_export import quality_export
 
 
@@ -58,11 +58,18 @@ class ReportDocumentTest(unittest.TestCase):
 
     def test_unfinished_or_stale_checks_are_reference(self):
         t=messages('ja')
-        for stage,applicable,key in (('sample',True,'precision_in_progress'),('complete',False,'precision_stale')):
+        # A started check is named "checking" in the table as in the summary sentence; a stale one is counted by AI only.
+        for stage,applicable,key,badge in (('sample',True,'precision_in_progress','badge_in_progress'),('complete',False,'precision_stale','badge_reference')):
             snap=snapshot();snap['validation'].update(stage=stage,applicable=applicable)
             self.assertEqual(ai_state(snap),'reference')
             rendered=str(blocks(manifest(snap),[snap],{'per_species':[]}))
-            self.assertIn(t[key],rendered);self.assertIn(t['badge_reference'],rendered)
+            self.assertIn(t[key],rendered);self.assertIn(t[badge],rendered)
+
+    def test_heard_count_names_pages_only_when_several(self):
+        t=messages('ja')
+        self.assertEqual(heard_text({'evidence_count':15,'marked':1,'heard_in_checks':14,'voice_on_ai_page':0},t),
+                         '15 音（「声はあったか」の画面で 1、「AI の答えを確かめる」で 14）')
+        self.assertEqual(heard_text({'evidence_count':14,'marked':0,'heard_in_checks':14,'voice_on_ai_page':0},t),'14 音')
 
     def test_details_keep_uncertainty_without_score_groups(self):
         snap=snapshot(rare=True)
@@ -85,7 +92,7 @@ class ReportDocumentTest(unittest.TestCase):
         rendered=str(blocks(manifest(snap,'en'),[snap],{'per_species':[]}))
         self.assertIn('Of the sounds counted as "call present", about 50% were correct (probably between 30% and 70%; estimated from 60 sounds that people listened to)',rendered)
         self.assertIn(t['rule_checked'].format(score='0.40'),rendered)
-        self.assertIn('4 of the 100 3-second sounds examined (4.0%). Days with detections: 2',rendered)
+        self.assertIn('4 of 100 sounds examined, each 3 seconds long (4.0%). Days with detections: 2',rendered)
 
     def test_summary_states_how_sure_and_durations_read_as_words(self):
         snap=snapshot();t=messages('ja');report=manifest(snap);report['other_species']={'candidates':18,'heard':0}

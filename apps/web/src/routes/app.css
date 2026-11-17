@@ -81,6 +81,8 @@ a:focus-visible, button:focus-visible, .button:focus-visible, input:focus-visibl
 .segmented { display: inline-flex; border: 1px solid rgb(var(--stone-300)); border-radius: var(--button-radius); overflow: hidden; }
 .segmented button { min-height: 44px; padding: 4px 12px; border: 0; border-radius: 0; font-size: 14px; }
 .segmented button + button { border-left: 1px solid rgb(var(--stone-300)); }
+/* The group clips overflow (rounded ends), so the focus ring is drawn inside the button. */
+.segmented button:focus-visible { outline-offset: -4px; }
 .segmented button[aria-pressed="true"] { background: rgb(var(--primary-100)); color: rgb(var(--primary-700)); font-weight: 600; }
 .dark .segmented button[aria-pressed="true"] { background: rgb(var(--stone-300)); color: rgb(var(--primary-500)); }
 
