@@ -3,7 +3,7 @@
   import { checkText,fill,modelName } from './workflow';
   import { commonName } from './species';
   import { percent, type Cell, type Report } from './reports';
-  import { app, t } from './app.svelte';
+  import { app, t, day as dayText } from './app.svelte';
   import Button from './ui/Button.svelte';
   // Without `onselect` the cells are a picture only (the species page has no sound list, B4).
   let { report, onselect, compact=false }: { compact?:boolean; report: Report; onselect?: (cell: Cell) => void } = $props();
@@ -129,7 +129,7 @@
     {/each}
   {:else if days>1}{#each dateTicks as day}{@const p=point(inner+(day+.5)*ring,16.5)}
     <circle cx={p[0]} cy={p[1]} r="1.5" fill="#575279" pointer-events="none"/>
-    <text x={p[0]-7} y={p[1]-3} text-anchor="end" font-size={compact?22:12} fill="#575279" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{new Date(Date.parse(report.start_date)+(from+day)*86400000).toISOString().slice(0,10)}</text>
+    <text x={p[0]-7} y={p[1]-3} text-anchor="end" font-size={compact?22:12} fill="#575279" stroke="#fff" stroke-width="3" paint-order="stroke" pointer-events="none">{dayText(new Date(Date.parse(report.start_date)+(from+day)*86400000).toISOString())}</text>
   {/each}{/if}
   <!-- Which way the days run is a full sentence, too long for the centre, so it sits with the legend. -->
   <text x={cx} y={cy+(compact?8:5)} text-anchor="middle" font-size={compact?24:13} fill="#575279" pointer-events="none">{shown} {t('days')}</text>

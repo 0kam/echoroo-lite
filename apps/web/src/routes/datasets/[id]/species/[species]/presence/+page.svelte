@@ -37,6 +37,8 @@
   const other=(name:'ai'|'search')=>`${resolve(`/datasets/${id}/species/${speciesId}/presence`)}?${range}&source=${name}`;
   // "Listened to the top N": the longest run of played sounds from the top of the list.
   const listened=$derived(list?(()=>{const index=list.rows.findIndex(row=>!played.includes(key(row)));return index<0?list.rows.length:index;})():0);
+  // "Could not confirm" needs the top 10 sounds (or every sound, if fewer) to have been played.
+  const needed=$derived(list?Math.max(0,Math.min(10,list.rows.length)-listened):0);
   const anyMarked=$derived(!!list?.rows.some(row=>row.marked));
   const mark=createTask(async(row:PresenceRow)=>{
     await api('/presence/marks',{dataset_id:id,species_id:speciesId,recording_id:row.recording_id,start_s:row.start_s,end_s:row.end_s,run_id:row.run_id,marked:!row.marked});
@@ -77,7 +79,8 @@
       {#if !anyMarked&&list.rows.length}<div class="miss">
         <p>{listened?fill('pListened',{n:listened,order}):t('pListenedNone')}</p>
         {#if saved}<p role="status">✓ {fill('pMissSaved',{n:saved,order})}</p>
-        {:else if listened}<Button pending={recordMiss.pending} onclick={()=>recordMiss.run()}>{fill('pRecordMiss',{n:listened,order})}</Button>
+        {:else if needed}{#if listened}<p class="muted">{fill('pNeedMore',{n:needed})}</p>{/if}
+        {:else}<Button pending={recordMiss.pending} onclick={()=>recordMiss.run()}>{fill('pRecordMiss',{n:listened,order})}</Button>
           <p class="muted">{t('pMissKeep')}</p>{/if}</div>{/if}
       <p class="muted">{t('pEvidenceNote')}</p>
       <div class="actions"><Button variant="primary" href={back}>{t('wBackSpecies')}</Button></div>

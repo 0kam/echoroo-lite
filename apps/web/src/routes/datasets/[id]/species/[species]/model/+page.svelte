@@ -53,7 +53,7 @@
   // Nothing to rank by and nothing to make an AI from yet: the page only points to the search.
   const searchFirst=$derived(!!info&&!source&&!info.can_train&&!model);
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
-  const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23'}).format(new Date(row.local_time));
+  const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(row.local_time));
   const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
   const score=(value:number)=>{const text=value.toFixed(2);
     return source==='custom'?fill('mdScoreCustom',{value:text}):source==='search'?fill('pSimilarity',{value:text}):fill('mdScoreBuiltin',{model:modelName(info!.engine),value:text});};
@@ -99,7 +99,7 @@
       {:else}
         {#if !model&&info.needed}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
         <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelIntro(info.engine)})}</p>
-        <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p>
+        <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p><p class="muted">{t('mdEvidence')}</p>
         {#each batch as item (item.segment_id)}{@render row(item)}{:else}<p>{t('mdNoneLeft')}</p>{/each}
       {/if}
       {#if !searchFirst}<div class="footer">

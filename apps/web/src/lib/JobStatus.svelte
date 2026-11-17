@@ -31,6 +31,8 @@
     }
     return p.left === null ? null : Math.max(p.left - (now - p.at), 5000) / 1000;
   });
+  // The bar counts recordings × AIs, while the stage names only the AI working right now; name every AI so the share reads as the whole job.
+  const models = $derived([app.ai.main, ...app.ai.extra].map(id => app.ai.models.find(m => m.id === id)?.name ?? id));
   const cancel = createTask(async () => { await api(explore ? '/operations/cancel' : '/jobs/cancel', {}); notify('cancelRequested', 'info'); }, { toast: true });
 </script>
 
@@ -42,7 +44,7 @@
       : counted ? fill('jobLine', { status: t(job.status), progress: counted }) : t(active ? 'running' : job.status)}</strong>
     {#if active}<Button size="sm" pending={cancel.pending} onclick={() => cancel.run()}>{t(explore ? 'operationCancel' : 'cancel')}</Button>{/if}
   </div>
-  {#if active}<p class="muted">{t(job.stage)}{#if explore && counted}{' · '}{counted}{/if}{#if !explore && job.total}{' · '}{fill('jobPercent', { p: Math.floor(job.done / job.total * 100) })}{/if}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p>
+  {#if active}<p class="muted">{t(job.stage)}{#if explore && counted}{' · '}{counted}{/if}{#if !explore && job.total}{' · '}{fill(models.length > 1 ? 'jobPercentAll' : 'jobPercent', { p: Math.floor(job.done / job.total * 100), models: new Intl.ListFormat(app.locale).format(models) })}{/if}{#if left !== null}{' · '}{fill('jobTimeLeft', { time: roughTime(left) })}{/if}</p>
     <progress value={explore ? step + (counted ? job.done / job.total : 0) : job.done} max={explore ? 6 : job.total || 1}></progress>{/if}
   {#if job.error}<p class="error">{t(job.error)}</p>{/if}
 </div>

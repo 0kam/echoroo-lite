@@ -90,7 +90,7 @@
       {#if shownSimilar}{@const found = shownSimilar}<div class="notice" role="status"><p>{t('spSimilar')} {#if commonName(found, app.locale)}<strong>{commonName(found, app.locale)}</strong>{/if} <i>{found.scientific_name}</i></p>
         <p>{t('spSimilarHint')}</p><Button variant="primary" onclick={() => useExisting(found)}>{t('spChooseExisting')}</Button></div>{/if}
       <Button type="submit" variant={shownExisting || shownSimilar ? 'default' : 'primary'} pending={adding} {disabled}>{t('addSpecies')}</Button>
-      {#if !scientific.trim()}<p class={tried?'field-error':'muted'}>{missingText(['scientificName'])}</p>{/if}</form></div>{/if}
+      {#if !scientific.trim()&&!tried}<p class="muted">{missingText(['scientificName'])}</p>{/if}</form></div>{/if}
   {/if}
 {/if}
 {#if error}<p class="error" role="alert">{t(error)}</p>{/if}

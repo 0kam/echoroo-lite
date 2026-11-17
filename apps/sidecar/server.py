@@ -217,6 +217,11 @@ class PresenceMiss(ScopeRequest):
     listened: int = Field(ge=1, le=1000)
 
 
+class PresenceMissDelete(BaseModel):
+    dataset_id: int
+    species_id: str
+
+
 class ModelLabel(BaseModel):
     segment_id: int
     label: Literal['target', 'other'] | None
@@ -553,6 +558,11 @@ def create_app(root, models, token):
     def presence_miss(body: PresenceMiss):
         from presence import record_miss
         return record_miss(root, body)
+
+    @app.post('/presence/misses/delete')
+    def presence_miss_delete(body: PresenceMissDelete):
+        from presence import delete_misses
+        return delete_misses(root, body)
 
     @app.get('/datasets/{dataset_id}/species/{species_id}/custom-model')
     def custom_model_readiness(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None,

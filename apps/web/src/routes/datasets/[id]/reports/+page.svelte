@@ -43,15 +43,22 @@
   });
   const groups=[['confirmed','rGroupConfirmed'],['not_found','rGroupMissed'],['unchecked','rGroupAi']];
   const firstGroup=$derived(groups.find(([status])=>overview?.species.some(row=>row.presence.status===status))?.[0]);
+  // With no confirmed species the AI candidates are the likely choice, so their group opens too.
+  const opened=(status:string)=>status===firstGroup||status==='unchecked'&&!overview?.species.some(row=>row.presence.status==='confirmed');
   let tried=$state(false);
   const noSpecies=$derived(tried&&!selected.length),noFolder=$derived(tried&&!isTauri()&&!folder);
   const missing=$derived(missingText([!selected.length&&'wIncludeSpecies',!isTauri()&&!folder&&'exportFolder']));
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const when=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:overview?.site.timezone}).format(new Date(value.replace(' ','T')+'Z'));
+  // Which open button was pressed last, and whether it worked: the note appears beside that button.
+  let pressed=$state(''),openedKey=$state('');
   const openReport=createTask(async(exportId:number,kind:'document'|'folder')=>{
-    await api(`/workflow-exports/${exportId}/open?kind=${kind}`,{});
+    pressed=`${exportId}:${kind}`;openedKey='';
+    await api(`/workflow-exports/${exportId}/open?kind=${kind}`,{});openedKey=pressed;
   });
 </script>
+{#snippet openNote(exportId:number,kind:'document'|'folder')}{@const key=`${exportId}:${kind}`}{#if pressed===key&&!openReport.pending}
+  {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{:else if openedKey===key}<p role="status">✓ {t(`rOpened_${kind}`)}</p>{/if}{/if}{/snippet}
 <div class="page narrow report-page">
   <div class="crumbs"><a href={back}>{t('uBackResults')}</a></div>
   <div class="page-header"><div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('wExport')}</h1><p>{t('rExportIntro')}</p></div></div>
@@ -65,7 +72,7 @@
       {#if noSpecies}<p class="field-error" id="species-error">{t('rSaveIdle')}</p>{/if}
       {#each groups as [status,title]}{@const rows=overview.species.filter(row=>row.presence.status===status)}{@const ids=rows.map(row=>row.species.id)}{@const all=ids.every(item=>selected.includes(item))}
         <!-- The first group with species is open, so its choices (and "Select all") are visible even when nothing is confirmed yet. -->
-        {#if rows.length}<details open={status===firstGroup}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
+        {#if rows.length}<details open={opened(status)}><summary>{t(title)} · {fill('wSpeciesCount',{n:rows.length})}</summary>
           <Button size="sm" disabled={exportFiles.pending} onclick={()=>selected=all?selected.filter(item=>!ids.includes(item)):[...new Set([...selected,...ids])]}>{t(all?'rSelectNone':'rSelectAll')}</Button>
           {#if status==='unchecked'}<p class="notice">{t('rAiOnlyCaution')}</p>{/if}
           {#each rows as row}<label class="export-species"><input type="checkbox" bind:group={selected} value={row.species.id} disabled={exportFiles.pending} aria-invalid={noSpecies||undefined} aria-describedby={noSpecies?'species-error':undefined}/>
@@ -81,9 +88,9 @@
         {:else if output}<p><strong>{t('rCreated')}</strong> {t('rReady')}</p>
           <div class="actions"><Button pending={openReport.pending} onclick={()=>openReport.run(output!.id,'document')}>{t('rOpen')}</Button>
             <Button pending={openReport.pending} onclick={()=>openReport.run(output!.id,'folder')}>{t('rOpenFolder')}</Button></div>
+          {@render openNote(output.id,'document')}{@render openNote(output.id,'folder')}
           <p class="path">{output.folder_path}</p>
         {:else}<p>{t('rExportContents')}</p>{/if}
-        {#if openReport.error}<p class="error" role="alert">{t(openReport.error)}</p>{/if}
       </div>
       <Button variant={output?'default':'primary'} pending={exportFiles.pending} aria-describedby="export-reason" onclick={()=>{if(missing){tried=true;void focusMissing();}else exportFiles.run();}}>{t('rCreate')}</Button>
       <p class={tried&&missing?'field-error':'muted'} id="export-reason">{missing}</p>
@@ -94,11 +101,11 @@
         {#if from&&to}<p>{dayRange(from,to)}</p>{/if}
         {#if item.species?.length}<p>{new Intl.ListFormat(app.locale).format(item.species.map(s=>commonName(s,app.locale)||s.scientific_name))}</p>{/if}
         <small class="path">{item.folder_path??item.path}</small></div>
-      {#if item.folder_path}<Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{/if}
+      {#if item.folder_path}<div class="open"><Button pending={openReport.pending} onclick={()=>openReport.run(item.id,'document')}>{t('rOpen')}</Button>{@render openNote(item.id,'document')}</div>{/if}
     </div>{/each}</section>{/if}
     {#if earlier.length}<details><summary>{t('wEarlierReports')} · {earlier.length}</summary>{#each earlier as item}<p><a href={`${resolve(`/datasets/${id}/reports/${item.id}`)}?${query}`}>{item.species?(item.species.common_names&&commonName(item.species,app.locale))||item.species.scientific_name:t('species')} · {item.start_date&&item.end_date?dayRange(item.start_date,item.end_date):''} · {when(item.created_at)}</a></p>{/each}</details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('rLoading')}</p>{/if}
 </div>
 <style>h2{margin-bottom:12px}section>p,section>label{margin:16px 0}.busy{display:flex;align-items:center;gap:8px}
   .export-species{display:flex;align-items:center;gap:12px;min-height:44px;padding:16px 0;cursor:pointer;border-bottom:1px solid rgb(var(--stone-300));font-size:16px;font-weight:400}details{margin:8px 0}summary{padding:12px 0}section summary{font-size:18px;font-weight:600}h3{margin:24px 0 0}.export-species .muted{display:block}
-  .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}.history{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.history p{margin:0 0 8px}.history>:global(.button){flex:none}</style>
+  .path{overflow-wrap:anywhere;color:rgb(var(--stone-600));font-size:13px}.history{display:flex;align-items:center;gap:24px;justify-content:space-between;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}.history p{margin:0 0 8px}.history>.open{flex:none;max-width:50%;display:flex;flex-direction:column;align-items:flex-end}.open p{margin:8px 0 0}</style>

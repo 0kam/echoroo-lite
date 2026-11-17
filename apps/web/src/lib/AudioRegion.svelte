@@ -10,7 +10,8 @@
 <script lang="ts">
   import { api, mediaURL } from './api.svelte';
   import { onMount, untrack, type Snippet } from 'svelte';
-  import { app, t } from './app.svelte';
+  import { app, t, fileName } from './app.svelte';
+  import { fill } from './workflow';
   import Button from './ui/Button.svelte';
   import ScaleSwitch from './ui/ScaleSwitch.svelte';
   import { kHz, paint, type Spectrogram, type Tick } from './spectrogram';
@@ -38,6 +39,10 @@
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
   let playbackVersion = 0;
   let cancelMetadata: (() => void) | undefined;
+  // A short clip from a recording names its file and where it sits in it (whole seconds, h:mm:ss past an hour).
+  const at = (seconds: number) => { const s = Math.round(seconds), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, pad = (n: number) => String(n).padStart(2, '0');
+    return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`; };
+  const origin = $derived(fixedRange && source.kind === 'recording' && source.path ? fill('aFrom', { file: fileName(source.path), start: at(marked?.[0] ?? start), end: at(marked?.[1] ?? end) }) : '');
   const viewEnd = $derived(Math.min(source.seconds, viewStart + span));
   const percent = (time: number) => Math.max(0, Math.min(100, (time - viewStart) / (viewEnd - viewStart) * 100));
 
@@ -187,6 +192,7 @@
     onwaiting={() => { if (status === 'playing') status = 'loading'; }}
     onpause={() => { if (audio.paused && (status !== 'loading' || stopAt !== null)) { status = 'idle'; clearTimeout(stopTimer); } }} onended={stop} onseeked={scheduleStop} onratechange={scheduleStop}
     ontimeupdate={() => cursor = audio.currentTime}></audio>
+  {#if origin}<p class="origin">{origin}</p>{/if}
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
 </div>
 
@@ -199,7 +205,7 @@
   .region-controls .position { flex: 1; min-width: 140px; }
   .range-hint { align-self: center; flex-basis: 100%; }
   .spectrogram-grid { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 4px 8px; }
-  .unit { align-self: end; text-align: right; font-size: 11px; color: rgb(var(--stone-600)); }
+  .unit { align-self: end; text-align: right; font-size: 11px; line-height: 1.2; word-break: keep-all; color: rgb(var(--stone-600)); }
   .head { display: flex; justify-content: flex-end; min-height: 0; }
   .frequencies { position: relative; font-size: 12px; line-height: 1; color: rgb(var(--stone-600)); }
   .frequencies span { position: absolute; right: 0; transform: translateY(50%); font-variant-numeric: tabular-nums; }
@@ -222,5 +228,7 @@
   .dense .meta { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dense .axis-gap, .dense .time-axis { display: none; }
   .dense > .error { grid-column: 1 / -1; }
+  .origin { margin: 0; font-size: 12px; color: rgb(var(--stone-600)); overflow-wrap: anywhere; }
+  .dense > .origin { grid-column: 2; }
   .time-axis { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 12px; color: rgb(var(--stone-600)); }
 </style>

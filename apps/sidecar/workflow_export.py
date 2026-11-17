@@ -31,6 +31,14 @@ def digest(path):
     with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
 
+def folder_name(site,start,end,token):
+    """'里山の森_2025-07-11〜13_d3748e': readable, safe on Windows and macOS, unique by its suffix."""
+    name=''.join('_' if c in '<>:"/\\|?*' or ord(c)<32 or c.isspace() else c for c in site).strip('._ ')[:40] or 'echoroo'
+    start,end=str(start),str(end)
+    period=(start if start==end else f'{start}〜{end[8:]}' if start[:7]==end[:7] else f'{start}〜{end[5:]}' if start[:4]==end[:4] else f'{start}〜{end}')
+    return f'{name}_{period}_{token}'
+
+
 def quality_export(validation,result):
     """Flatten the one-stage check for CSV without hiding 90% intervals."""
     row={}
@@ -133,8 +141,10 @@ def export(root,body,cancel=None):
         if row['presence']['evidence']:other_species['heard']+=1
         elif found:other_species['candidate_species'].append({'species':row['species'],'windows':found})
     other_species['candidates']=len(other_species['candidate_species'])
-    token=uuid4().hex[:10];package_id=f'echoroo-{body.dataset_id}-{token}'
-    destination=parent/package_id;zip_path=parent/(package_id+'.zip')
+    while True:
+        package_id=folder_name(ctx['site']['name'],ctx['start_date'],ctx['end_date'],uuid4().hex[:6])
+        destination=parent/package_id;zip_path=parent/(package_id+'.zip')
+        if not destination.exists() and not zip_path.exists():break
     zone=ZoneInfo(ctx['site']['timezone']);index=[];species_rows=[];hourly=[];evidence=[];quality_rows=[];presence_rows=[]
     published_folder=published_zip=False
     try:
@@ -247,8 +257,12 @@ def export(root,body,cancel=None):
                     (folder/(filename+'.csv')).write_bytes(csv_bytes(values,fields or ['report_id']))
                 write_json(folder/'recordings.json',list(records.values()));write_json(folder/'quiz-results.json',quiz)
                 create_html(folder,manifest,snapshots,evidence,quiz,list(records.values()))
-                (folder/'README.txt').write_text('\n\n'.join([t['files_note'],t['evidence_note'],t['readme_methods_title'],t['methods_note'],
-                    t['precision_note'],t['validation_scope'].format(windows=lengths),t['region_source'],t['human_reference']]),encoding='utf-8')
+                # File names, the report ID and the format version are for whoever checks the files, not for the page.
+                files='\n'.join(f'{path}: {text}' for path,text in manifest['file_guide'])
+                (folder/'README.txt').write_text('\n\n'.join([t['files_note'],t['readme_files_title'],files,t['evidence_note'],t['readme_methods_title'],t['methods_note'],
+                    *([t['custom_models_note']] if any(s['engine']=='custom' for s in snapshots) else []),
+                    t['precision_note'],t['validation_scope'].format(windows=lengths),t['region_source'],t['human_reference'],
+                    t['reproduce_note'],f"{t['package_id']}: {package_id}\n{t['schema']}: {manifest['schema']}"]),encoding='utf-8')
                 shutil.copyfile(DATA/'echoroo.png',folder/'figures'/'echoroo.png')
                 shutil.copyfile(DATA/'fonts'/'OFL.txt',folder/'font-license.txt')
                 manifest['files']={p.relative_to(folder).as_posix():{'sha256':digest(p),'bytes':p.stat().st_size} for p in sorted(folder.rglob('*')) if p.is_file()}

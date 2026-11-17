@@ -49,7 +49,7 @@
   const anyActivity=$derived(!!result?.species.some(row=>activity(row.models)!=='not_started'));
   // Listening still needed for "when and how much" on the species worth checking (A2, B3: one AI each).
   const left=$derived([...groups.confirmed,...groups.check].map(row=>remainingSounds(row.models)).filter(Boolean));
-  const effort=$derived(workload(left.reduce((sum,sounds)=>sum+sounds,0)));
+  const leftSounds=$derived(left.reduce((sum,sounds)=>sum+sounds,0)),effort=$derived(workload(leftSounds));
   const days=$derived(result?Math.round((Date.parse(result.end_date)-Date.parse(result.start_date))/86400000)+1:0);
   const unanalysed=$derived(result?result.records-result.analysed_recordings:0);
   const estimate=$derived(result?analysisSeconds(result.pending_analysis):null);
@@ -80,7 +80,7 @@
     {#if result.species.length&&result.analysed_recordings===result.records&&!result.location_stale}<section class="panel next-step">
       <p class="status"><strong>{t(!next?'wNextExport':groups.confirmed.length?'wNextMore':'wNextListen')}</strong></p>
       <p>{fill('wProgress',{total:result.species.length,confirmed:groups.confirmed.length,missed:groups.missed.length})}</p>
-      {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,time:effort.time})}</p>{/if}
+      {#if left.length}<p class="muted">{fill('wWorkload',{n:left.length,time:effort.time,each:workload(Math.round(leftSounds/left.length)).time})}</p>{/if}
       <div class="actions">{#if next}<Button variant="primary" href={speciesHref(next)}>{fill('wNextOpen',{name:commonName(next.species,app.locale)||next.species.scientific_name})}</Button>{/if}
         <Button variant={next?'default':'primary'} href={reports}>{t('wExport')}</Button>
         {#if saved}<Button href={`${reports}${range?'&':'?'}saved=1`}>{fill('wSavedReports',{n:saved})}</Button>{/if}</div></section>{/if}

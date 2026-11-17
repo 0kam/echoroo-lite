@@ -81,7 +81,8 @@
             <h2>{t(`quiz_${feedback.status}`)}</h2>
             <p>{t('quizCorrectAnswer')}: <strong>{commonName(feedback.clip.species, app.locale)}</strong> · <i>{feedback.clip.species.scientific_name}</i></p>
             <p>{t('quizYourAnswer')}: {#if feedback.answer}{commonName(feedback.answer, app.locale)} · <i>{feedback.answer.scientific_name}</i>{:else}{t('quizUnknown')}{/if}</p>
-            <p>{t(`quizSound_${feedback.clip.metadata.sound_type}`)}</p>
+            <!-- "other" is the unset default, so only song and call are worth a sentence. -->
+            {#if feedback.clip.metadata.sound_type !== 'other'}<p>{t(`quizSound_${feedback.clip.metadata.sound_type}`)}</p>{/if}
             {#if feedback.clip.metadata.note}<p>{feedback.clip.metadata.note}</p>{/if}
             <p class="muted">{t('quizCredit')}: {credit.recordist || xc?.recordist || t('quizCreditMissing')}{#if url} · <a href={url} onclick={e => { e.preventDefault(); void openExternal(url); }}>{xcId ? `XC${xcId}` : url.replace(/^(https?:)?\/\//, '').split('/')[0]}</a>{/if}
               · {#if /^(https?:)?\/\//.test(license)}<a href={license} onclick={e => { e.preventDefault(); void openExternal(license); }}>{licenseName(license)}</a>{:else}{license || t('quizLicenseMissing')}{/if}</p>

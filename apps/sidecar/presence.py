@@ -143,6 +143,14 @@ def record_miss(root, body):
     return {'listened': body.listened}
 
 
+def delete_misses(root, body):
+    """Take back "could not confirm" for a species. The status reads every record at the site, so all of them go."""
+    with connect(root) as db:
+        deleted = db.execute('''DELETE FROM presence_misses WHERE species_id=? AND dataset_id IN
+            (SELECT id FROM datasets WHERE site_id=(SELECT site_id FROM datasets WHERE id=?))''', (body.species_id, body.dataset_id)).rowcount
+    return {'deleted': deleted}
+
+
 def empty():
     return {'status': 'unchecked', 'evidence': [], 'miss': None}
 

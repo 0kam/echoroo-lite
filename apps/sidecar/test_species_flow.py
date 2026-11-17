@@ -133,6 +133,11 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual(client.post('/presence/misses', json={**scope, 'source': 'search', 'listened': 8}).json(), {'listened': 8})
             presence = client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']
             self.assertEqual((presence['status'], presence['miss']['listened']), ('not_found', 8))
+            # Taking the record back returns the species to "not yet listened to".
+            client.post('/presence/misses', json={**scope, 'source': 'ai', 'listened': 10})
+            self.assertEqual(client.post('/presence/misses/delete', json={'dataset_id': 1, 'species_id': sid}).json(), {'deleted': 2})
+            self.assertEqual(client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']['status'], 'unchecked')
+            client.post('/presence/misses', json={**scope, 'source': 'search', 'listened': 8})
             mark(rows[0], True)
             self.assertEqual(client.get(f'/datasets/1/species/{sid}', params=scope).json()['presence']['status'], 'confirmed')
             # The AI list interleaves each model's ranking and says which model flagged a sound.

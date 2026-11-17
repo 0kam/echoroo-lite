@@ -89,6 +89,7 @@
   },{toast:true});
   const removeCheck=createTask(async(item:Check)=>{await api(`/validations/${item.validation!.id}/delete`,{});confirming='';cache.clear();await load();},{toast:true});
   const askSearchDelete=createTask(async()=>{preview=await api(`/search-runs/${result!.search!.id}/delete-preview`);confirming='search';},{toast:true});
+  const removeMiss=createTask(async()=>{await api('/presence/misses/delete',{dataset_id:id,species_id:speciesId});confirming='';cache.clear();await load();},{toast:true});
   const removeSearch=createTask(async()=>{await api(`/search-runs/${result!.search!.id}/delete`,{});confirming='';preview=null;cache.clear();engine='auto';modelId=0;await load();},{toast:true});
   // Sounds a person confirmed, in recording order; times are the site's, not the PC's.
   const heard=$derived(result?[...result.presence.evidence].sort((a,b)=>Date.parse(a.local_time)-Date.parse(b.local_time)):[]);
@@ -105,7 +106,7 @@
   {:else}<Button {variant} href={searchHref}>{t('sqSearchStart')}</Button>{/if}
 {/snippet}
 {#snippet checkRow(item:Check)}<div class="check-row">
-  <div class="check-name"><span><strong>{checkName(item)}</strong> <span class="muted">· {fill('wEvery',{n:windowSeconds(item.engine)})}</span></span><span>{undetected(item)?t('uNoDetection'):checkText(item.validation,item.growth)}</span></div>
+  <div class="check-name"><strong>{checkName(item)}</strong><span>{undetected(item)?t('uNoDetection'):checkText(item.validation,item.growth)}</span></div>
   {#if !undetected(item)}<Button pending={check.pending} onclick={()=>check.run(item)}>{item.validation&&!grownOf(item)?listenLabel(item.validation):t('cStart')}</Button>{/if}
 </div>{/snippet}
 {#snippet figure(data:SpeciesResult)}
@@ -159,7 +160,7 @@
           <p class="muted">{t('sqGrowingNote')}</p>
         {:else if mode==='check'&&main}
           {#if remaining}<p>{fill('sqCheckHint',{n:remaining,time:effort.time})}</p>{/if}
-          <p class="muted">{t('sqEvidence')} {fill('sqCheckAI',{model:main.engine==='custom'?checkName(main):modelIntro(main.engine)})} · {fill('wEvery',{n:windowSeconds(main.engine)})}</p>
+          <p class="muted">{t('sqEvidence')} {fill('sqCheckAI',{model:main.engine==='custom'?checkName(main):modelIntro(main.engine)})} {fill('wEveryNote',{n:windowSeconds(main.engine)})}</p>
           <Button variant="primary" pending={check.pending} onclick={()=>check.run(main)}>{t('sqCheckAnswers')}</Button>
         {:else if mode==='continue'&&main?.validation}
           <p>{fill('sqContinueHint',{n:remaining,time:effort.time})}</p><p class="muted">{t('sqEvidence')}</p>
@@ -174,7 +175,8 @@
         {:else if step===1&&settled==='not_started'}
           <p class="muted">{t(searchFirst?'sqLaterSearch':'sqLater')}</p>
           {#if !searchFirst&&required}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqFirstThis')}</Button>{/if}
-        {:else if step===0&&settled==='not_started'}<p class="muted">{t('sqSkippedNote')}</p>{/if}
+        {:else if step===0&&settled==='not_started'}<p class="muted">{t('sqSkippedNote')}</p>
+          {#if required&&!undetected(required)}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqCheckAnyway')}</Button>{/if}{/if}
         {#if step===2&&others.length}<details class="more"><summary>{t('sqOtherAIs')}</summary>{#each others as item (item.key)}{@render checkRow(item)}{/each}</details>{/if}
         <!-- The chart is the answer to ② once a cut-off is decided; before that it is only for reference. -->
         {#if settled==='decided'}{@render figure(result)}
@@ -184,7 +186,12 @@
     {#if step===0}<section class="panel done" aria-labelledby="done-title"><h2 id="done-title">{t('sqDone')}</h2>
       <p>{fill('sqDoneHint',{button:t('wExport')})}</p><Button variant="primary" href={back}>{t('uBackResults')}</Button></section>{/if}
     <!-- Deleting is kept away from the listening buttons, in one place at the bottom. -->
-    {#if result.search||result.checks.some(item=>item.validation)}<details class="more redo"><summary>{t('sqRedo')}</summary>
+    {#if result.search||result.presence.status==='not_found'||result.checks.some(item=>item.validation)}<details class="more redo"><summary>{t('sqRedo')}</summary>
+      {#if result.presence.status==='not_found'}<div class="stack">
+        <Button variant="danger" size="sm" onclick={()=>confirming=confirming==='miss'?'':'miss'}>{t('sqDeleteMiss')}</Button>
+        {#if confirming==='miss'}<div class="confirm" role="group" aria-label={t('sqDeleteMiss')}><p>{t('sqDeleteMissConfirm')}</p>
+          <div class="actions"><Button onclick={()=>confirming=''}>{t('mCancel')}</Button><Button variant="danger" pending={removeMiss.pending} onclick={()=>removeMiss.run()}>{t('sDeleteYes')}</Button></div></div>{/if}
+      </div>{/if}
       {#each result.checks.filter(item=>item.validation) as item (item.key)}<div class="stack">
         <Button variant="danger" size="sm" onclick={()=>confirming=confirming===item.key?'':item.key}>{t('sDeleteCheck')}：{checkName(item)}</Button>
         {#if confirming===item.key}<div class="confirm" role="group" aria-label={t('sDeleteCheck')}><p>{fill('sDeleteCheckConfirm',{model:checkName(item)})}</p>

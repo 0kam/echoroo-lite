@@ -63,7 +63,7 @@
     {#if noPath}<p class="field-error" id="quiz-path-error">{t('uEnterAudioPath')}</p>{/if}{/if}
   {#if source}
     <p class="muted">{name(source.path)}</p>
-    {#key playerKey}<AudioRegion {source} bind:start bind:end invalid={tried && !partOk ? fill('uClipLength', { max: 60 }) : ''} />{/key}
+    {#key playerKey}<AudioRegion {source} secondary bind:start bind:end invalid={tried && !partOk ? fill('uClipLength', { max: 60 }) : ''} />{/key}
     <details><summary>{t('quizCredit')}</summary><div class="form-grid">
       <label>{t('quizRecordist')}<input bind:value={credit.recordist} maxlength="200" /></label>
       <label>{t('quizSourceURL')}<input bind:value={credit.source_url} maxlength="1000" /></label>

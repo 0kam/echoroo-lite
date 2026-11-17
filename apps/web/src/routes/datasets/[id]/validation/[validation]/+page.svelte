@@ -63,7 +63,7 @@
       {#if site}<div class="site-name">{site.name}</div>{/if}
       {#if done||!started||found}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
       {:else}<h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>{/if}
-      <p>{fill('vModelTitle',{model:modelIntro(validation.engine)})} · {fill('wEvery',{n:validation.window_s})}</p></div></div>{/if}
+      <p>{fill('vModelTitle',{model:modelIntro(validation.engine)})}</p></div></div>{/if}
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
     {#if done}<section class="panel">{#if validation.early_stop}<h2>{t('vEarlyStopTitle')}</h2><p>{t('vEarlyStopText')}</p><p>{t('vEarlyStopUse')}</p>
       {:else}<h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>{/if}
@@ -76,6 +76,7 @@
         {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
     {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill(first?'wValidationPlanFirst':'wValidationPlan',{first:firstTotal,total:validation.counts.total,time:effort.time})}</p>
+      <p class="muted">{fill('wEveryNote',{n:validation.window_s})}</p>
       <p><strong>{t('refListenFirst')}</strong></p><Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
     {:else if found}<div class="with-examples"><section class="panel stack" role="status"><h2>{fill('vFoundTitle',{n:remaining})}</h2>
       <p>{fill('vFoundText',{m:firstTotal,k:firstHeard})}</p><p class="muted">{fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</p>

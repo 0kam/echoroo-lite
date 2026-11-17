@@ -160,9 +160,9 @@ class ReportDocumentTest(unittest.TestCase):
             'answered_at':'2026-11-16T15:29:00+00:00','session_id':2,'complete':False}]})
         rendered=str(content);reading=str(sections(content)['species'])
         self.assertIn('この種用に作ったAI（11/17作成）',rendered);self.assertNotIn('11/16',rendered)
-        self.assertIn('どの AI も 5 秒',reading);self.assertIn(t['reading_no_sum_same'],reading)
-        self.assertIn('2 回目・途中でやめた',rendered);self.assertIn('2026-11-17 00:29',rendered)
-        self.assertIn('この種の声 21 音、ほかの音 20 音',rendered)
+        self.assertIn('このレポートの AI は、どれも 5 秒',reading);self.assertIn(t['reading_no_sum'],reading)
+        self.assertIn('2 回目・途中でやめた',rendered);self.assertIn('2026年11月17日 0:29',rendered)
+        self.assertIn('「声あり」の音 21、「声なし」の音 20',rendered)
 
     def test_third_walkthrough_wording(self):
         t=messages('ja');snap=snapshot();snap['validation'].update(stage='sample',results={})
@@ -192,6 +192,25 @@ class ReportDocumentTest(unittest.TestCase):
         # The range note only accompanies a shown range.
         self.assertNotIn(t['range_note'],str(content))
         self.assertIn(t['range_note'],str(blocks(manifest(snapshot()),[snapshot()],{'per_species':[]})))
+
+    def test_fourth_walkthrough_wording(self):
+        from workflow_export import folder_name
+        t=messages('ja');snap=snapshot();snap['threshold']=.1;snap['validation'].update(stage='sample',results={})
+        snap['validation']['counts'].update(answered=5,bins=[{'heard':0,'not_heard':0,'unknown':5}])
+        report=manifest(snap);report['presence'][0].update(status='unchecked',evidence_count=0)
+        answers=[{'species_id':'sp','audio_role':'validation','validation_id':7,'verdict':'unknown','audio_file':f'audio/{i}.wav',
+                  'start_s':i,'end_s':i+3,'local_time':'2024-01-01T05:00:00+09:00'} for i in range(5)]
+        rendered=str(blocks(report,[snap],{'per_species':[]},answers))
+        # Answers that confirmed nothing are not "not listened yet", and the play link names what is inside.
+        self.assertIn('精度の確認で 5 音を聞いたが、まだ声を確かめられていない（すべて「判断できない」）',rendered)
+        self.assertNotIn(t['badge_unchecked'],rendered)
+        self.assertIn('答えた 5 音を聞く（すべて「判断できない」）',rendered)
+        # The method says which cut-off each result used.
+        self.assertIn(t['method_cutoff_default_all'],rendered);self.assertNotIn('の境目は、その答えから決めました',rendered)
+        rendered=str(blocks(manifest(snapshot()),[snapshot()],{'per_species':[]}))
+        self.assertIn('例鳥（BirdNET 2.4）の境目は、その答えから決めました',rendered);self.assertNotIn(t['method_cutoff_default_rest'],rendered)
+        self.assertEqual(folder_name('里山の森','2025-07-11','2025-07-13','d3748e'),'里山の森_2025-07-11〜13_d3748e')
+        self.assertEqual(folder_name(' a<b>:c/d ','2024-12-30','2025-01-02','x'),'a_b__c_d_2024-12-30〜2025-01-02_x')
 
     def test_schedule_draws_each_recording_at_its_local_time(self):
         t=messages('ja');report=manifest(snapshot())

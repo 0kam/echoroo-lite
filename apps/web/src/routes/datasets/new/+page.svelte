@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { isTauri } from '@tauri-apps/api/core';
@@ -31,6 +31,8 @@
 
   // The folder is checked as soon as it is chosen (and again if the time zone changes); there is no separate check button.
   let preview=$state<Preview|null>(null),scanning=$state(false),scanError=$state(''),scanVersion=0;
+  // After the person chooses a folder, its result (often "already added") is brought into view; restoring a draft does not scroll.
+  let reveal=false;
   async function scan(){
     const version=++scanVersion;preview=null;scanError='';register.error='';
     if(!folder){scanning=false;return;}
@@ -38,11 +40,11 @@
     scanning=true;
     try{const result=await api<Preview>('/imports/preview',{folder,site_id:body().site_id,timezone:scanZone});if(version===scanVersion)preview=result;}
     catch(e){if(version===scanVersion)scanError=e instanceof Error?e.message:'unknown_error';}
-    finally{if(version===scanVersion)scanning=false;}
+    finally{if(version===scanVersion){scanning=false;if(reveal){reveal=false;await tick();document.getElementById('check-add')?.scrollIntoView({block:'nearest'});}}}
   }
   $effect(()=>{if(!restored)return;void folder;void scanZone;untrack(()=>void scan());});
   // Choosing the same folder again re-reads it (e.g. after renaming files); the effect only runs when the value changes.
-  const setFolder=(value:string)=>{if(value!==folder)folder=value;else if(!scanning)void scan();};
+  const setFolder=(value:string)=>{reveal=true;if(value!==folder)folder=value;else if(!scanning)void scan();};
   const browse=createTask(async()=>{const picked=await chooseDirectory();if(picked)setFolder(picked);});
   const commitFolder=()=>setFolder(folderDraft.trim());
   const filenameExamples=['2MA04037_20240808_060000.wav','20240808T060000.wav','REC_2024-08-08_06-00-00_001.wav'];
@@ -93,7 +95,7 @@
       {#if tried&&!folder}<p class="field-error" id="folder-error">{t('uPickFolder')}</p>{/if}
       {#if browse.error}<p class="error" role="alert">{t(browse.error)}</p>{/if}
     </section>
-    <section class="panel step-card stack"><h2>{t('uCheckAndAdd')}</h2>
+    <section class="panel step-card stack" id="check-add"><h2>{t('uCheckAndAdd')}</h2>
       <div class="status-box" role="status" aria-live="polite">
         {#if register.pending}<p class="busy"><Spinner/> {t('uAdding')}</p><Button size="sm" pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>
         {:else if scanning}<p class="busy"><Spinner/> {t('uScanning')}</p><Button size="sm" pending={stopOperation.pending} onclick={()=>stopOperation.run()}>{t('operationCancel')}</Button>
