@@ -98,6 +98,8 @@ class SpeciesFlowCheck(unittest.TestCase):
                 (root/'models.json').write_text(json.dumps(data))
                 self.assertTrue(client.get(f"/custom-models/{model['id']}").json()['applicable'])
 
+    # About the material itself: no sounds are set aside for testing here (see test_test_sounds.py).
+    @patch('test_sounds.NEEDED', 10**6)
     def test_presence_search_custom_model_and_deletion(self):
         with site() as (root, client, species):
             sid = species['id']
@@ -306,6 +308,8 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             label(1, None)  # the answer taken back
             self.assertEqual(presence()['status'], 'unchecked')
 
+    # About the material itself: no sounds are set aside for testing here (see test_test_sounds.py).
+    @patch('test_sounds.NEEDED', 10**6)
     def test_builtin_batches_materials_and_rebuild(self):
         with site() as (root, client, species):
             sid = species['id']

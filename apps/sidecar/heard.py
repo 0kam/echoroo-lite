@@ -83,8 +83,8 @@ def _ai(root, dataset_id, species_ids):
             for taxon in species_ids}
 
 
-def _public(row, taxa, zone):
-    return {'id': row['id'], 'species': taxa[row['taxon_id']], 'verdict': row['verdict'], 'screen': row['source'],
+def _public(row, taxa, zone, test=()):
+    return {'id': row['id'], 'test': (row['taxon_id'], row['recording_id']) in test, 'species': taxa[row['taxon_id']], 'verdict': row['verdict'], 'screen': row['source'],
             'extra': bool(row['incidental']), 'recording_id': row['recording_id'], 'start_s': row['start_s'], 'end_s': row['end_s'],
             'created_at': row['created_at'], 'local_time': window_key(row, row['start_s'], zone)[1],
             'source': {'id': row['recording_id'], 'kind': 'recording', 'path': row['path'], 'seconds': row['seconds']}}
@@ -95,7 +95,9 @@ def records(root, dataset_id, species_id=None, verdict=None, screen=None, day=No
     with connect(root) as db:
         site = _site(db, dataset_id)
         zone, taxa = ZoneInfo(site['timezone']), _taxa(db)
-        rows = [_public(row, taxa, zone) for row in _current(db, dataset_id)]
+        # Test sounds (`test_sounds`): every answer of the species in a recording set aside for it.
+        test = {(r[0], r[1]) for r in db.execute('SELECT species_id,recording_id FROM test_recordings WHERE site_id=?', (site['id'],))}
+        rows = [_public(row, taxa, zone, test) for row in _current(db, dataset_id)]
     options = {'species': sorted({row['species']['id']: row['species'] for row in rows}.values(), key=lambda s: s['scientific_name']),
                'screens': sorted({row['screen'] for row in rows}), 'days': sorted({row['local_time'][:10] for row in rows})}
     rows = [row for row in rows if (species_id is None or row['species']['id'] == species_id) and (verdict is None or row['verdict'] == verdict)

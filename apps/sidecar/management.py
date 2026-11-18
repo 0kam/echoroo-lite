@@ -168,6 +168,7 @@ def delete(root, site_id, dataset_id, revision):
             AND json_extract(source_ref,'$.session_id') IN (SELECT value FROM json_each(?))''',(json.dumps(plan['validations']),))
         remove('validation_sessions','id',plan['validations'])
         remove('labels','recording_id',plan['recordings'])
+        remove('test_recordings','recording_id',plan['recordings'])
         remove('custom_models','id',plan['custom_models'])
         remove('search_hits','run_id',plan['searches'])
         db.execute('''DELETE FROM labels WHERE source='species_mark' AND json_extract(source_ref,'$.run_id') IN (SELECT value FROM json_each(?))''',

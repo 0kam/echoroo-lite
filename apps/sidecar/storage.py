@@ -220,6 +220,8 @@ def initialize(root):
         labels.upgrade(db)
         import rollups
         db.executescript(rollups.SCHEMA)
+        import test_sounds
+        db.executescript(test_sounds.SCHEMA)
         merge_labels(db)
         if columns(db, 'custom_models_v6'):
             fields = 'id,dataset_id,species_id,run_id,snapshot,artifact_path,artifact_sha256,scores_path,scores_sha256,created_at'
