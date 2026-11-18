@@ -138,6 +138,22 @@ class HeardTest(unittest.TestCase):
             self.assertEqual(client.post('/heard/others', json={**body, 'species_id': warbler, 'on': True}).status_code, 400)
             self.assertEqual(client.post('/heard/others', json={**body, 'end_s': 500, 'species_id': tit, 'on': True}).status_code, 400)
 
+    def test_an_answer_on_the_sound_map_is_kept_apart_from_the_sounds_ticked_for_export(self):
+        with tempfile.TemporaryDirectory() as temp:
+            client = self.site(temp)
+            warbler = self.species(client, 'Horornis diphone')
+            at = dict(recording_id=1, start_s=0, end_s=5)
+            self.assertEqual(client.get('/datasets/1/heard/sound', params={**at, 'blank': True}).json()['now'], [])
+            answer = lambda verdict: client.post('/heard/map-answer', json=dict(dataset_id=1, species_id=warbler, verdict=verdict, **at))
+            self.assertEqual([(r['verdict'], r['screen']) for r in answer('absent').json()['now']], [('absent', 'sound_map')])
+            self.assertEqual([r['verdict'] for r in answer('present').json()['now']], ['present'])
+            pick = dict(dataset_id=1, **at, species=None, background=[], sound_type='', quality='', others=False)
+            saved = client.put('/explore/picked', json=pick)
+            self.assertEqual((saved.status_code, saved.json()['species']), (200, None))
+            self.assertEqual(client.request('DELETE', '/explore/picked', params=dict(dataset=1, **at)).status_code, 200)
+            self.assertEqual([r['verdict'] for r in client.get('/datasets/1/heard/sound', params=at).json()['now']], ['present'])
+            self.assertEqual(answer('maybe').status_code, 422)
+
     def test_examples_for_a_search_avoid_mixed_sounds_and_spread_over_days(self):
         with tempfile.TemporaryDirectory() as temp:
             client = self.site(temp, ('20240808_060000.wav', '20240809_050000.wav'))

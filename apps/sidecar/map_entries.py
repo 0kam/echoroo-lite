@@ -15,7 +15,7 @@ from species import names_for
 from storage import CatalogError, connect
 
 SHARE = 0.7      # go into a child while it holds this share of the targets
-SMALLEST = 15    # never offer a group smaller than this
+SMALLEST = 15    # never offer a group smaller than this (see _smallest for maps of a few dozen sounds)
 GROUPS = 3
 NEIGHBOURS = 10  # sounds counted as "near" an example
 UNSURE_GROUP = 60  # groups ranked for "the AI is unsure" hold at most about this many sounds
@@ -51,13 +51,18 @@ def _count(node, flags):
     return int(flags[node['lo']:node['hi']].sum())
 
 
+def _smallest(nodes):
+    """SMALLEST, or less on a map so small that a sixth of it is under that: its few groups are all worth offering."""
+    return min(SMALLEST, max(5, (nodes[0]['hi'] - nodes[0]['lo']) // 6))
+
+
 def focus(nodes, targets):
     """The deepest group that still holds most of the targets: from the top, into the child with at least SHARE
     of the current group's targets, as long as that child is not smaller than SMALLEST."""
-    node = nodes[0]
+    node, smallest = nodes[0], _smallest(nodes)
     while True:
         here = _count(node, targets)
-        inside = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= SMALLEST]
+        inside = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= smallest]
         best = max(inside, key=lambda child: _count(child, targets), default=None)
         if not here or best is None or _count(best, targets) < SHARE * here:
             return node
@@ -68,8 +73,8 @@ def groups(nodes, targets):
     """Up to GROUPS groups to look at, most targets first: the parts of the focus group that hold targets, or the
     focus group itself when it has no parts of a useful size."""
     node = focus(nodes, targets)
-    parts = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= SMALLEST and _count(nodes[c], targets)]
-    chosen = sorted(parts, key=lambda part: (-_count(part, targets), part['node']))[:GROUPS] if len(parts) > 1 else [node]
+    parts = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= _smallest(nodes) and _count(nodes[c], targets)]
+    chosen = sorted(parts, key=lambda part: (-_count(part, targets), part['node']))[:GROUPS] or [node]
     return [part for part in chosen if _count(part, targets)]
 
 
@@ -79,7 +84,7 @@ def _frontier(nodes, limit):
     found, stack = [], [nodes[0]]
     while stack:
         node = stack.pop()
-        inside = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= SMALLEST]
+        inside = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= _smallest(nodes)]
         if node['hi'] - node['lo'] <= limit or not inside:
             found.append(node)
         else:
@@ -120,8 +125,18 @@ def by_species(root, dataset_id, species_id):
     with connect(root) as db:
         taxon = _species(db, species_id)
         points, nodes, answers = _load(db, run)
+        names = {r['id']: r['scientific_name'] for r in db.execute('SELECT id,scientific_name FROM species WHERE id IN (SELECT value FROM json_each(?))',
+                 (json.dumps(sorted({t for found in answers.values() for t, _ in found})),))} if taxon['rank'] == 'family' else {}
     name = taxon['scientific_name']
-    detected = np.array([any(n == name and score >= SCORE_THRESHOLD for n, score in p['candidates']) for p in points], dtype=bool)
+    if taxon['rank'] == 'family':
+        # "A bird of family X": any species of the family the AI detected or that was heard counts.
+        from taxa import family_of
+        mine = lambda n: family_of(n) == name
+    else:
+        mine = lambda n: n == name
+    detected = np.array([any(mine(n) and score >= SCORE_THRESHOLD for n, score in p['candidates']) for p in points], dtype=bool)
+    answers = {position: [(species_id if t == species_id or mine(names.get(t, '')) else t, verdict) for t, verdict in found]
+               for position, found in answers.items()}
     heard = np.zeros(len(points), dtype=bool)
     for position, found in answers.items():
         heard[position] = (species_id, 'present') in found
@@ -137,7 +152,8 @@ def by_examples(root, dataset_id, species_id):
     _, _, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
-    examples = search_examples(root, dataset_id, species_id)['examples']
+    chosen_examples = search_examples(root, dataset_id, species_id)
+    examples = chosen_examples['examples']
     with connect(root) as db:
         taxon = _species(db, species_id)
         points, nodes, answers = _load(db, run)
@@ -162,13 +178,15 @@ def by_examples(root, dataset_id, species_id):
     spots[placed] = True
     chosen = groups(nodes, near) if placed else []
     return {'species': names_for(taxon), 'examples': len(placed), 'example_positions': sorted(set(placed)),
+            'heard': chosen_examples['heard'], 'mixed': chosen_examples['mixed'],
             'groups': [_shape(g, examples=_count(g, spots), near=_count(g, near)) for g in chosen],
             'targets': np.flatnonzero(near).tolist(), 'marks': _marks(points, answers, species_id)}
 
 
 def unsure(root, dataset_id):
     """Entry C: groups with many sounds the AI could not settle: its first answer was a bird outside Japan (the
-    roll-ups), or its best Japan answer stayed under the display threshold. Groups nobody listened to come first."""
+    roll-ups), or its best Japan answer stayed under the display threshold. Groups with the most such sounds nobody
+    listened to come first."""
     _, _, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
@@ -181,23 +199,31 @@ def unsure(root, dataset_id):
         families = {r['scientific_name']: names_for(r) for r in db.execute(
             "SELECT * FROM species WHERE rank='family' AND scientific_name IN (SELECT value FROM json_each(?))",
             (json.dumps(sorted(set(outside.values()))),))}
-    away = np.array([(p['analysis_id'], round(p['start_s'], 3)) in outside for p in points], dtype=bool)
-    low = np.array([bool(p['candidates']) and max(score for _, score in p['candidates']) < SCORE_THRESHOLD for p in points], dtype=bool) & ~away
+    from taxa import japan_names
+    japan = japan_names()
+    # No Japan-checklist bird reaches the display threshold: either a bird from elsewhere does ("away"), or nothing does ("low").
+    weak = np.array([bool(p['candidates']) and all(score < SCORE_THRESHOLD for n, score in p['candidates'] if n in japan) for p in points], dtype=bool)
+    away = np.array([(p['analysis_id'], round(p['start_s'], 3)) in outside for p in points], dtype=bool) | \
+        weak & np.array([any(score >= SCORE_THRESHOLD for _, score in p['candidates']) for p in points], dtype=bool)
+    low = weak & ~away
     listened = np.zeros(len(points), dtype=bool)
     listened[list(answers)] = True
     targets = away | low
     found = []
     for node in _frontier(nodes, max(UNSURE_GROUP, len(points) // 20)):
         count = _count(node, targets)
-        if not count or node['hi'] - node['lo'] < SMALLEST and node['node']:
+        if not count:
             continue
         inside = [outside[(p['analysis_id'], round(p['start_s'], 3))] for p in points[node['lo']:node['hi']]
                   if (p['analysis_id'], round(p['start_s'], 3)) in outside]
         family = max(set(inside), key=inside.count) if inside else None
-        kind = 'family' if family and inside.count(family) * 2 > len(inside) and len(inside) >= _count(node, low) else \
-            'outside' if len(inside) >= _count(node, low) and inside else 'low'
-        found.append(_shape(node, unsure=count, outside=len(inside), low=_count(node, low), checked=_count(node, listened),
+        elsewhere = _count(node, away)
+        kind = 'family' if family and inside.count(family) * 2 > elsewhere and elsewhere >= _count(node, low) else \
+            'outside' if elsewhere >= _count(node, low) and elsewhere else 'low'
+        found.append(_shape(node, unsure=count, outside=elsewhere, low=_count(node, low), checked=_count(node, targets & listened),
+                            left=_count(node, targets & ~listened),
                             kind=kind, family=families.get(family) if kind == 'family' else None))
-    found.sort(key=lambda g: (g['checked'] > 0, -g['unsure'], g['node']))
-    return {'groups': found[:10], 'unsure': int(targets.sum()), 'targets': np.flatnonzero(targets).tolist(),
+    found.sort(key=lambda g: (-g['left'], g['node']))
+    return {'groups': found[:10], 'unsure': int(targets.sum()), 'outside': int(away.sum()), 'low': int(low.sum()),
+            'targets': np.flatnonzero(targets).tolist(),
             'marks': _marks(points, answers)}

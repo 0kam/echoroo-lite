@@ -44,6 +44,17 @@ class DrillDownTest(unittest.TestCase):
         self.assertEqual([g['node'] for g in map_entries.groups(nodes, self.flags(21, 22))], [4])
         self.assertEqual(map_entries.groups(nodes, self.flags()), [])
 
+    def test_a_small_map_offers_its_small_groups(self):
+        # 70 sounds: a group of 13 holds every target and is offered, where a large map would stop above it.
+        nodes = tree((0, None, 0, 70), (1, 0, 0, 33), (2, 0, 33, 57), (3, 0, 57, 70))
+        flags = np.zeros(70, dtype=bool); flags[[58, 59, 60]] = True
+        self.assertEqual([g['node'] for g in map_entries.groups(nodes, flags)], [3])
+        flags[[1]] = True
+        self.assertEqual([g['node'] for g in map_entries.groups(nodes, flags)], [3])
+        flags[[2, 40]] = True
+        self.assertEqual([g['node'] for g in map_entries.groups(nodes, flags)], [3, 1, 2])
+        self.assertEqual(sorted(g['node'] for g in map_entries._frontier(nodes, 60)), [1, 2, 3])
+
 
 class MapEntryApi(ExploreCheck):
     def test_entries_name_groups_targets_and_what_was_heard(self):
@@ -79,10 +90,14 @@ class MapEntryApi(ExploreCheck):
         self.assertEqual((none['examples'], none['groups'], none['targets']), (0, [], []))
 
         unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
-        low = [p['position'] for p in points if (c := __import__('json').loads(p['candidates'])) and max(s for _, s in c) < .1]
-        self.assertEqual(unsure['targets'], sorted(low))
-        self.assertEqual(unsure['unsure'], len(low))
-        self.assertEqual([g['checked'] > 0 for g in unsure['groups']], sorted(g['checked'] > 0 for g in unsure['groups']))
+        from taxa import japan_names
+        weak = [p['position'] for p in points if (c := __import__('json').loads(p['candidates']))
+                and all(s < .1 for n, s in c if n in japan_names())]
+        self.assertEqual(unsure['targets'], sorted(weak))
+        self.assertEqual((unsure['unsure'], unsure['outside'] + unsure['low']), (len(weak), len(weak)))
+        self.assertEqual([g['left'] for g in unsure['groups']], sorted((g['left'] for g in unsure['groups']), reverse=True))
+        for group in unsure['groups']:
+            self.assertEqual((group['unsure'], group['checked'] + group['left']), (group['outside'] + group['low'], group['unsure']))
         self.assertEqual(sorted(unsure['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
         self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1}).status_code, 400)
 
