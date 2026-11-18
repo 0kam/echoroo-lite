@@ -199,7 +199,8 @@ with ExitStack() as stack:
                 assert detail['width']>1000
                 answered=api(f"/validations/{check['id']}/answers",{'item_id':question['id'],'verdict':'unknown','version':question['version']})
                 # With a one-sound first block, a non-"Heard" answer ends the v2 check early by design.
-                assert answered['counts']['answered']==1 and answered['status'] in ('in_progress', 'undecided'), answered['status']
+                # A sound already answered on another screen (the mark above) counts as answered from the start.
+                assert answered['counts']['answered']==check['counts']['answered']+1 and answered['status'] in ('in_progress', 'undecided'), (answered['counts'], answered['status'])
                 print(f"Frozen per-model check, high-resolution spectrogram and saved answer passed in {time.perf_counter()-started:.2f}s.")
             started = time.perf_counter()
             overview = api(f"/datasets/{imported['dataset_id']}/overview")
