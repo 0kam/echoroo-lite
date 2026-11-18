@@ -217,6 +217,7 @@ def initialize(root):
                 embedding float[1536] distance_metric=cosine);
         """)
         db.executescript(labels.SCHEMA)
+        labels.upgrade(db)
         import rollups
         db.executescript(rollups.SCHEMA)
         merge_labels(db)

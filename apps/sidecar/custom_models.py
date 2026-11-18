@@ -20,7 +20,7 @@ from scipy.special import expit
 
 from models import feature_spec, main_engine, main_identity
 from reports import analysis_metadata, calendar_cells, effort, finalize_cells, window_in_scope, window_key
-from labels import FROM_ANSWER, TO_ANSWER, current, on_pieces, put, ref, remove
+from labels import FROM_ANSWER, TO_ANSWER, corrected, current, on_pieces, put, ref, remove
 from species import names_for
 from storage import CatalogError, checked_source, connect
 
@@ -154,25 +154,44 @@ def _piece(db, analyses, recording_id, start_s, end_s):
 ORIGINS = {'training': 'label', 'validation': 'check'}  # any other screen's answer counts as 'presence'
 
 
-def _materials(db, ctx, species_id):
+def _pieces(db, ctx):
+    """The 5-second pieces of the site's main analysis: {recording id: sorted (start, end, segment id)}."""
+    pieces = {}
+    for row in db.execute('''SELECT s.id,a.recording_id,s.start_s,s.end_s FROM segments s JOIN analyses a ON a.id=s.analysis_id
+            WHERE s.analysis_id IN (SELECT value FROM json_each(?)) AND ABS(s.end_s-s.start_s-5)<0.000001
+            ORDER BY a.recording_id,s.start_s''', (json.dumps([r['id'] for r in _main_analyses(db, ctx)]),)):
+        pieces.setdefault(row['recording_id'], []).append((row['start_s'], row['end_s'], row['id']))
+    return pieces
+
+
+def _materials(db, ctx, species_id, pieces=None):
     """Labelled 5-second pieces of the site's main analysis, from the species' current labels at the site
     (`labels.on_pieces`). Origin: 'label' (the species-AI page), 'check' (a check answer) or 'presence' (any other
     screen). A mark on a deleted or outdated search does not count, as on the species page."""
     from search_runs import site_run
     run = site_run(db, ctx['site']['id'], species_id)
-    analyses = {r['recording_id']: r['id'] for r in _main_analyses(db, ctx)}
-    pieces = {}
-    for row in db.execute('''SELECT s.id,a.recording_id,s.start_s,s.end_s FROM segments s JOIN analyses a ON a.id=s.analysis_id
-            WHERE s.analysis_id IN (SELECT value FROM json_each(?)) AND ABS(s.end_s-s.start_s-5)<0.000001
-            ORDER BY a.recording_id,s.start_s''', (json.dumps(list(analyses.values())),)):
-        pieces.setdefault(row['recording_id'], []).append((row['start_s'], row['end_s'], row['id']))
-    rows = [row for row in current(db, ctx['dataset']['id'], species_id, per_source=True) if not (
+    pieces = _pieces(db, ctx) if pieces is None else pieces
+    # An answer put right later (source 'review') replaces every screen's earlier answer on that interval.
+    rows = [row for row in corrected(current(db, ctx['dataset']['id'], species_id, per_source=True)) if not (
         row['source'] == 'species_mark' and ref(row).get('run_id') not in (None, run and run['id']))]
     # An answer given on the species-AI page is the more specific one and wins; it is what that page lists.
     found = on_pieces(rows, pieces, first='training')
     # Newest first, as the species-AI page lists its answers.
     return run, {segment: {'label': TO_ANSWER[row['verdict']], 'origin': ORIGINS.get(row['source'], 'presence')}
                  for segment, row in sorted(found.items(), key=lambda item: (item[1]['created_at'], item[1]['id']), reverse=True)}
+
+
+def material_status(root, ctx, species_ids):
+    """Whether a species AI can be made, for many species at once: {species id: {'positive','negative','needed'}}."""
+    with connect(root) as db:
+        pieces = _pieces(db, ctx)
+        result = {}
+        for species_id in species_ids:
+            found = _materials(db, ctx, species_id, pieces)[1].values()
+            positive, negative = (sum(v['label'] == label for v in found) for label in ('target', 'other'))
+            short = max(0, MIN_CLASS_EXAMPLES - positive) + max(0, MIN_CLASS_EXAMPLES - negative)
+            result[species_id] = {'positive': positive, 'negative': negative, 'needed': max(short, MIN_EXAMPLES - len(found))}
+    return result
 
 
 def boundary_ranks(total, known, shown, round_, size=10):

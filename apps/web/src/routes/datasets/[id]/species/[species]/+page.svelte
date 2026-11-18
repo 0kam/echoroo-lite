@@ -8,6 +8,7 @@
   import { commonName } from '$lib/species';
   import { modelIntro,activity,speciesGroup,activityLine,checkName,checkText,defaultModel,fill,listenLabel,presenceText,rangeQuery,remainingSounds,windowSeconds,workload,type Check,type Overview,type SpeciesResult,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
+  import HeardBox from '$lib/HeardBox.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReportView from '$lib/ReportView.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -190,6 +191,7 @@
         {:else if step===2&&result.checks.length}<details class="more"><summary>{t('sqReference')}</summary>{@render figure(result)}</details>{/if}
       </section>
     </div>
+    {#key speciesId}<HeardBox datasetId={id} {speciesId} timezone={result.site.timezone} hasSearch={!!result.search} {range} {searchHref} resultsHref={presenceHref('search')}/>{/key}
     {#if step===0}<section class="panel done" aria-labelledby="done-title"><h2 id="done-title">{t('sqDone')}</h2>
       <p>{fill('sqDoneHint',{button:t('wExport')})}</p><Button variant="primary" href={back}>{t('uBackResults')}</Button></section>{/if}
     <!-- Deleting is kept away from the listening buttons, in one place at the bottom. -->

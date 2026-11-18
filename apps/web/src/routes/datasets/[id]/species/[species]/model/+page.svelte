@@ -8,6 +8,7 @@
   import { commonName } from '$lib/species';
   import { fill,modelIntro,modelName,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
+  import OtherSpecies from '$lib/OtherSpecies.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -92,6 +93,7 @@
           <Button active={unsure.includes(item.segment_id)} aria-pressed={unsure.includes(item.segment_id)} pending={label.pending} disabled={next.pending||build.pending||(!item.label&&!played.includes(item.segment_id))} onclick={()=>notSure(item)}>{unsure.includes(item.segment_id)?'✓ ':''}{t('mdUnsure')}</Button>
           {#if !item.label&&!played.includes(item.segment_id)}<span class="muted">{t('pPlayFirst')}</span>{/if}</div>{/snippet}
       </AudioRegion>
+      <OtherSpecies datasetId={id} of={speciesId} recordingId={item.recording_id} start={item.start_s} end={item.end_s} screen="training" disabled={!item.label&&!played.includes(item.segment_id)}/>
     </article>{/snippet}
     {#if !folded}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
       <!-- Nothing to rank by is a step still to do, not an error. -->

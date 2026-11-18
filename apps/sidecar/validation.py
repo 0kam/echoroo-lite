@@ -437,13 +437,18 @@ def answer(root, sid, item_id, verdict, version=None, examples=None):
         from quiz import report_results
         put(db, row['species_id'], item['recording_id'], item['start_s'], item['end_s'], FROM_ANSWER[verdict], 'validation',
             {'session_id': sid, 'quiz_snapshot': report_results(db, [row['species_id']]), 'examples_snapshot': examples}, history=True)
-        others = db.execute('''SELECT DISTINCT v.id,v.snapshot FROM validation_sessions v JOIN validation_items i ON i.session_id=v.id
-            WHERE v.species_id=? AND i.recording_id=? AND i.start_s=? AND i.end_s=?''',
-            (row['species_id'], item['recording_id'], item['start_s'], item['end_s'])).fetchall()
-        for other in others:
-            other_snap = json.loads(other['snapshot']); _finish(root, db, other['id'], other_snap)
-            db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?', (json.dumps(other_snap, allow_nan=False), other['id']))
+        refresh(root, db, row['species_id'], item['recording_id'], item['start_s'], item['end_s'])
     return view_session(root, sid)
+
+
+def refresh(root, db, species_id, recording_id, start_s, end_s):
+    """Work out again every check of this species that asked about this sound, after its answer changed."""
+    others = db.execute('''SELECT DISTINCT v.id,v.snapshot FROM validation_sessions v JOIN validation_items i ON i.session_id=v.id
+        WHERE v.species_id=? AND i.recording_id=? AND i.start_s=? AND i.end_s=?''', (species_id, recording_id, start_s, end_s)).fetchall()
+    for other in others:
+        other_snap = json.loads(other['snapshot']); _finish(root, db, other['id'], other_snap)
+        db.execute('UPDATE validation_sessions SET snapshot=? WHERE id=?', (json.dumps(other_snap, allow_nan=False), other['id']))
+    return len(others)
 
 
 def extend(root, sid):

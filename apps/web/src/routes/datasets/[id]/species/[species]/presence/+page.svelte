@@ -8,6 +8,7 @@
   import { commonName } from '$lib/species';
   import { fill,presenceText,rangeQuery,type PresenceList,type PresenceRow } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
+  import OtherSpecies from '$lib/OtherSpecies.svelte';
   import ReferencePanel from '$lib/ReferencePanel.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -74,6 +75,7 @@
             onclick={()=>!row.marked&&warn&&caution!==key(row)?caution=key(row):mark.run(row)}>{row.marked?'✓ ':''}{t('pMark')}</Button>
             {#if !row.marked&&!played.includes(key(row))}<span class="muted">{t('pPlayFirst')}</span>{/if}{/snippet}
         </AudioRegion>
+        <OtherSpecies datasetId={id} of={speciesId} recordingId={row.recording_id} start={row.start_s} end={row.end_s} screen="species_mark" disabled={!played.includes(key(row))}/>
         {#if caution===key(row)&&!row.marked}<div class="notice caution" role="alert">{#if unusual}<p>{t('pUnusual')}</p>{/if}{#if named===false}<p>{t('pNoExamples')}</p>{/if}
           <div class="actions"><Button onclick={()=>caution=''}>{t('mCancel')}</Button><Button pending={mark.pending} onclick={()=>mark.run(row)}>{t(named===false?'pMarkAnyway':'pMarkCompared')}</Button></div></div>{/if}
       </article>{:else}<p>{t(source==='ai'&&list.run_id&&list.ai_covers===false?'pNoAiForSpecies':'pNoRows')}</p>{/each}
