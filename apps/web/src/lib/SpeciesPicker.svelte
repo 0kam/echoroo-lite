@@ -6,6 +6,7 @@
   import Button from './ui/Button.svelte';
   import Spinner from './ui/Spinner.svelte';
   import { fill, focusMissing, missingText } from './workflow';
+  // Two species can share a common name (カルガモ); the one not on the Japan checklist says so.
   // Case and spacing variants of one scientific name are the same species.
   const norm = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
   // `invalid`: a note shown under the name field when the page needs a species before it can go on.
@@ -83,7 +84,7 @@
   {#if busy}<p class="muted state"><Spinner size={12} /> {t('loading')}</p>{/if}
   {#if searched}
     <div class="name-matches">
-      {#each rows as row (row.id)}<button type="button" {disabled} onclick={() => choose(row)}>{commonName(row, app.locale) || t('commonNameMissing')} <i>{row.scientific_name}</i></button>
+      {#each rows as row (row.id)}<button type="button" {disabled} onclick={() => choose(row)}>{commonName(row, app.locale) || t('commonNameMissing')} <i>{row.scientific_name}</i>{#if !row.japan && rows.some(other => other.japan && commonName(other, app.locale) === commonName(row, app.locale))} <span class="muted">{t('spNotInJapan')}</span>{/if}</button>
       {:else}<p class="muted pad">{t('noSpeciesMatch')}</p>{/each}
     </div>
     <!-- Open at once: when nothing matches, adding the species is the next step. -->

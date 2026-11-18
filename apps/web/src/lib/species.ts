@@ -2,6 +2,7 @@ export type Species = {
   id: string;
   scientific_name: string;
   common_names: Record<string, string>;
+  japan?: boolean;
   custom_names: Record<string, string>;
 };
 

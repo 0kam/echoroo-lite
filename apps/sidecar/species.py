@@ -122,7 +122,8 @@ def list_species(root, query):
                      for text in names if query in text]
             if ranks and (target['id'] not in best or min(ranks) < best[target['id']][0]):
                 best[target['id']] = (min(ranks), target)
-        found = [(rank, names_for(row)) for rank, row in best.values()]
+        # `japan`: a Japan checklist bird, so a list showing two species of one name can say which is recorded here.
+        found = [(rank, {**names_for(row), 'japan': row['scientific_name'] in japan_names()}) for rank, row in best.values()]
         # Rank before limiting so an exact match cannot be hidden by the first 50 substrings. Where two species share a
         # name (カルガモ: Anas zonorhyncha here, A. poecilorhyncha in South Asia), the Japan checklist bird comes first.
         return [record for _, record in sorted(found, key=lambda item: (
