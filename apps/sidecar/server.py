@@ -265,7 +265,7 @@ class PresenceMissDelete(BaseModel):
 
 class ModelLabel(BaseModel):
     segment_id: int
-    label: Literal['target', 'other'] | None
+    label: Literal['target', 'other', 'unknown'] | None
 
 
 class EvidenceSelection(BaseModel):

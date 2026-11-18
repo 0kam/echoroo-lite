@@ -102,6 +102,14 @@ class HeardTest(unittest.TestCase):
             rows = {r['species']['scientific_name']: r for r in client.get('/datasets/1/heard').json()['rows']}
             self.assertEqual((rows['Picidae']['site']['present'], rows['Picidae']['ai']), (1, {'state': 'family'}))
             self.assertEqual(rows['Horornis diphone']['site'], {'present': 1, 'absent': 2, 'unknown': 0})
+            # A family answer named as a species is replaced by it, not turned into "family not heard".
+            picidae = next(r['id'] for r in client.get('/datasets/1/heard/records', params={'species_id': family['id']}).json()['rows'])
+            woodpecker = self.species(client, 'Dendrocopos major')
+            client.post('/heard/fix', json=dict(dataset_id=1, ids=[picidae], action='other', species_id=woodpecker))
+            rows = {r['species']['scientific_name']: r['site'] for r in client.get('/datasets/1/heard').json()['rows']}
+            self.assertNotIn('Picidae', rows)
+            self.assertEqual(rows['Dendrocopos major'], {'present': 1, 'absent': 0, 'unknown': 0})
+            self.assertEqual(client.get('/datasets/1/heard/species', params={'q': 'きつつきか'}).json()['families'][0]['scientific_name'], 'Picidae')
             client.post('/heard/fix', json=dict(dataset_id=1, ids=[current], action='delete'))
             self.assertEqual(client.get('/datasets/1/heard', params={'species_id': warbler}).json()['site'], {'present': 0, 'absent': 2, 'unknown': 0})
             with connect(self.data) as db:

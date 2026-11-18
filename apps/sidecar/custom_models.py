@@ -396,7 +396,8 @@ def names_for_id(root, species_id):
 
 
 def set_label(root, dataset_id, species_id, segment_id, label):
-    """Voice / no voice on one 5-second piece of this site; None clears it. A changed label keeps its place in the list."""
+    """Voice / no voice / cannot tell on one 5-second piece of this site; None clears it. A changed label keeps its
+    place in the list. "Cannot tell" is kept as a record but is no material for the AI."""
     with connect(root) as db:
         if not db.execute('''SELECT 1 FROM segments s JOIN analyses a ON a.id=s.analysis_id JOIN site_recordings r ON r.id=a.recording_id
                 WHERE r.scope_id=? AND s.id=? AND ABS(s.end_s-s.start_s-5)<0.000001''', (dataset_id, segment_id)).fetchone() \

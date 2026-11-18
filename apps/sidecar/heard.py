@@ -145,6 +145,7 @@ def fix(root, body):
         if len({row['taxon_id'] for row in rows}) != 1:
             raise CatalogError('invalid_input')
         taxon, other = rows[0]['taxon_id'], None
+        family = db.execute("SELECT rank='family' FROM species WHERE id=?", (taxon,)).fetchone()[0]
         if body.action in ('other', 'add'):
             found = db.execute('SELECT COALESCE(accepted_id,id) FROM species WHERE id=?', (body.species_id,)).fetchone()
             if found is None or found[0] == taxon:
@@ -153,19 +154,30 @@ def fix(root, body):
         checks = 0
         for row in rows:
             piece = (row['recording_id'], row['start_s'], row['end_s'])
-            if body.action == 'delete':
+            if body.action == 'delete' or body.action == 'other' and family:
+                # "A bird of family X" named as a species is that answer made exact, not a family that was absent.
                 db.execute('DELETE FROM labels WHERE taxon_id=? AND recording_id=? AND start_s=? AND end_s=?', (taxon, *piece))
+                if other:
+                    _heard(db, other, piece, {'instead_of': taxon})
             elif body.action == 'add':
-                put(db, other, *piece, 'present', 'review', {'with': taxon}, incidental=True, history=True)
+                _heard(db, other, piece, {'with': taxon}, True)
             else:
                 verdict = 'absent' if body.action == 'other' else body.action
                 if verdict != row['verdict']:
                     put(db, taxon, *piece, verdict, 'review', {'was': row['verdict'], 'screen': row['source']}, history=True)
                 if other:
-                    put(db, other, *piece, 'present', 'review', {'instead_of': taxon}, history=True)
+                    _heard(db, other, piece, {'instead_of': taxon})
             checks += refresh(root, db, taxon, *piece) + (refresh(root, db, other, *piece) if other else 0)
         db.execute('DELETE FROM workflow_cache')
     return {'changed': len(rows), 'checks': checks}
+
+
+def _heard(db, taxon, piece, note, incidental=False):
+    """Record `taxon` as heard in a sound, unless it already is: its record keeps the screen it was made on."""
+    now = db.execute(f'SELECT l.verdict FROM labels l WHERE l.taxon_id=? AND l.recording_id=? AND l.start_s=? AND l.end_s=? AND {LATEST}',
+                     (taxon, *piece)).fetchone()
+    if now is None or now[0] != 'present':
+        put(db, taxon, *piece, 'present', 'review', note, incidental=incidental, history=True)
 
 
 def _json(value):
@@ -221,6 +233,8 @@ def pick_species(root, query, dataset_id=None):
     # Birds of the Japan checklist first: a sound here is far more likely one of them than a namesake abroad.
     species = sorted(list_species(root, query), key=lambda row: not row['japan'])[:20]
     text = _kana(query.strip().casefold())
+    if text.endswith('カ') and len(text) > 2:
+        text = text[:-1] + '科'  # きつつきか -> キツツキ科
     wanted = []
     if text:
         # A family named like the query first (キツツキ -> キツツキ科), then the families of the first matches.
@@ -230,7 +244,7 @@ def pick_species(root, query, dataset_id=None):
             if any(text in name for name in names):
                 named.append((min((not name.startswith(text), len(name)) for name in names if text in name), family))
         wanted = [family for _, family in sorted(named)]
-    wanted += [family for family in dict.fromkeys(family_of(row['scientific_name']) for row in species[:3]) if family and family not in wanted]
+    wanted += [family for family in dict.fromkeys(family_of(row['scientific_name']) for row in species[:3] if row['japan']) if family and family not in wanted]
     with connect(root) as db:
         rows = {row['scientific_name']: names_for(row) for row in db.execute(
             "SELECT * FROM species WHERE rank='family' AND scientific_name IN (SELECT value FROM json_each(?))", (_json(wanted),))}

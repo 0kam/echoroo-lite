@@ -28,7 +28,8 @@
 </script>
 {#if counts && total}<section class="panel heard-box" aria-labelledby="heard-box-title"><h2 id="heard-box-title">{t('hdSpTitle')}</h2>
   <p>{fill('hdSpCounts', counts)}　<a href={`${resolve(`/datasets/${datasetId}/heard`)}?species=${speciesId}${range ? `&${range}` : ''}`}>{t('hdSpAll')}</a></p>
-  {#if !hasSearch && found && found.heard}<h3>{t('hdExTitle')}</h3>
+  {#if hasSearch}<p>{t('hdExDone')}　<a href={resultsHref}>{t('sListenSearch')}</a></p>
+  {:else if found && found.heard}<h3>{t('hdExTitle')}</h3>
     {#if examples.length}<p>{fill('hdExIntro', { heard: found.heard, n: examples.length })}</p>
       {#each examples as item (item.id)}<article class="example"><div class="example-head"><span>{time(item.local_time)}</span><span class="muted">{screenName(item.screen, item.extra)}</span>
         <Button size="sm" disabled={search.pending} onclick={() => left = [...left, item.id]}>{t('hdExRemove')}</Button></div>

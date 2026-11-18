@@ -30,15 +30,18 @@
   {#if busy}<p class="muted"><Spinner size={12} /> {t('loading')}</p>{/if}
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if found}
-    {#if species.length}<ul>{#each species as row (row.id)}<li><span><strong>{speciesName(row)}</strong> <i>{row.scientific_name}</i>
+    {#snippet familyRows()}{#if families.length}<h4>{t('hdFamilyHead')}</h4>
+      <ul>{#each families as row (row.id)}<li><span><strong>{familyLabel(row)}</strong> <i>{row.scientific_name}</i></span>
+        <Button size="sm" disabled={pending} onclick={() => onchoose({ ...row, rank: 'family' })}>{t('hdChoose')}</Button></li>{/each}</ul>{/if}{/snippet}
+    <!-- With no bird of the Japan checklist among the matches, the family is the likelier choice and comes first. -->
+    {#if !species.some(row => row.japan)}{@render familyRows()}{/if}
+    {#if species.length}{#if !species.some(row => row.japan) && families.length}<h4>{t('hdSpeciesHead')}</h4>{/if}<ul>{#each species as row (row.id)}<li><span><strong>{speciesName(row)}</strong> <i>{row.scientific_name}</i>
       {#if row.japan === false}<span class="mark">{t('hdNotJapan')}</span>{:else if row.rare}<span class="mark">{t('hdRare')}</span>{/if}</span>
       <Button size="sm" disabled={pending} onclick={() => onchoose(row)}>{t('hdChoose')}</Button></li>{/each}</ul>
-    {:else}<p class="muted">{t('noSpeciesMatch')}</p>{/if}
-    {#if families.length}<h4>{t('hdFamilyHead')}</h4>
-      <ul>{#each families as row (row.id)}<li><span><strong>{familyLabel(row)}</strong> <i>{row.scientific_name}</i></span>
-        <Button size="sm" disabled={pending} onclick={() => onchoose({ ...row, rank: 'family' })}>{t('hdChoose')}</Button></li>{/each}</ul>{/if}
+    {:else if !families.length}<p class="muted">{t('hdNoSpecies')}</p>{/if}
+    {#if species.some(row => row.japan)}{@render familyRows()}{/if}
   {/if}
 </div>
 <style>.choice{display:flex;flex-direction:column;gap:8px}.choice p,.choice h4{margin:0}ul{list-style:none;margin:0;padding:0;max-height:260px;overflow-y:auto;border:1px solid rgb(var(--stone-300));border-radius:8px}
-  li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px}li+li{border-top:1px solid rgb(var(--stone-300))}
+  li :global(.button){flex-shrink:0;white-space:nowrap}li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px}li+li{border-top:1px solid rgb(var(--stone-300))}
   .mark{display:inline-block;margin-left:8px;padding:0 8px;border:1px solid rgb(var(--stone-400));border-radius:999px;font-size:13px;white-space:nowrap}</style>

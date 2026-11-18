@@ -23,7 +23,10 @@
   let played=$state<number[]>([]),more=$state(false);
   // Sounds answered "Not sure": left without an answer, so they are never material for the AI and the next batch skips them.
   let unsure=$state<number[]>([]);
-  const notSure=async(row:LabelRow)=>{if(row.label)await label.run(row,row.label);if(!row.label)unsure=unsure.includes(row.segment_id)?unsure.filter(id=>id!==row.segment_id):[...unsure,row.segment_id];};
+  const notSure=async(row:LabelRow)=>{if(row.label)await label.run(row,row.label);if(row.label)return;const on=!unsure.includes(row.segment_id);
+    // "Not sure" is kept as a record too, so it shows among the sounds checked by ear; it is no material for the AI.
+    try{await api(`/datasets/${id}/species/${speciesId}/labels`,{segment_id:row.segment_id,label:on?'unknown':null});}catch{return;}
+    unsure=on?[...unsure,row.segment_id]:unsure.filter(id=>id!==row.segment_id);};
   const fetchState=(query='')=>api<SpeciesAI>(`/datasets/${id}/species/${speciesId}/custom-model?${range}${query}`);
   // Sounds shown and passed over are not offered again until the AI is made again.
   const next=createTask(async()=>{const value=await fetchState(`&batch=true${skipped.map(segment=>`&skip=${segment}`).join('')}`);

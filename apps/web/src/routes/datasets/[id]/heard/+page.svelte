@@ -24,7 +24,8 @@
   async function load(){try{const current=filters;
       const [counts,records]=await Promise.all([api<HeardSummary>(`/datasets/${id}/heard`),api<HeardList>(`/datasets/${id}/heard/records?${current}&limit=${shown}`)]);
       if(current!==filters)return;
-      summary=counts;list=records;selected=selected.filter(item=>records.rows.some(row=>row.id===item));
+      summary=counts;list=records;if(species&&!records.options.species.some(item=>item.id===species)){species='';return;}
+      selected=selected.filter(item=>records.rows.some(row=>row.id===item));
       if(open){const still=records.rows.find(row=>row.id===open!.id)??records.rows.find(row=>key(row)===key(open!));if(still)await openSound(still,true);else{open=null;sound=null;}}}
     catch(e){error=e instanceof Error?e.message:'unknown_error';}}
   $effect(()=>{void filters;void shown;untrack(()=>{void load();});});
@@ -44,12 +45,12 @@
     try{sound=await api<HeardSound>(`/datasets/${id}/heard/sound?recording_id=${row.recording_id}&start_s=${row.start_s}&end_s=${row.end_s}`);}
     catch{open=null;sound=null;}}
   // The dialog: which answers, and for the two choices that name a species, which one.
-  let dialog=$state<HTMLDialogElement>(),fixing=$state<HeardRecord[]>([]),picking=$state<''|'other'|'add'>('');
+  let dialog=$state<HTMLDialogElement>(),fixing=$state<HeardRecord[]>([]),picking=$state<''|'other'|'add'|'delete'>('');
   const fixName=$derived(fixing[0]?taxonName(fixing[0].species):'');
   function ask(records:HeardRecord[]){fixing=records;picking='';fix.error='';dialog?.showModal();}
   const fix=createTask(async(action:Verdict|'other'|'add'|'delete',taxon:Taxon|null=null)=>{
     const result=await api<{changed:number;checks:number}>('/heard/fix',{dataset_id:id,ids:fixing.map(row=>row.id),action,species_id:taxon?.id??null});
-    saved=fill(result.checks?'hdSavedChecks':'hdSaved',{n:result.changed});
+    saved=fill(action==='delete'?'hdDeleted':result.checks?'hdSavedChecks':'hdSaved',{n:result.changed});
     dialog?.close();selected=[];fixing=[];await load();
   });
   // "Back to this record": the earlier answer is given again.
@@ -96,13 +97,14 @@
       {#if list.rows.length}<div class="bar" role="group" aria-label={t('hdSelectGroup')}>
         {#if chosen.length&&chosenSpecies}<strong>{fill('hdSelected',{name:taxonName(chosenSpecies),n:chosen.length})}</strong>
           <Button variant="primary" onclick={()=>ask(chosen)}>{t('hdFixSelected')}</Button><Button onclick={()=>selected=[]}>{t('hdSelectNone')}</Button>
+          <span class="muted">{t('hdSelectSame')}</span>
         {:else}<span class="muted">{t('hdSelectHint')}</span>{/if}
         {#if oneSpecies&&chosen.length<list.rows.length}<Button onclick={()=>selected=list!.rows.map(row=>row.id)}>{t('hdSelectAll')}</Button>{/if}</div>{/if}
       {#each list.rows as row (row.id)}{@const other=!!chosenSpecies&&chosenSpecies.id!==row.species.id}<article class="record" class:selected={selected.includes(row.id)}>
         <div class="record-head"><label class="check" title={other?t('hdSelectSame'):undefined}><input type="checkbox" checked={selected.includes(row.id)} disabled={other} onchange={()=>toggle(row)}/>
             <strong>{fill('hdRecord',{name:taxonName(row.species),verdict:verdictText(row.verdict)})}</strong></label>
           <span>{time(row.local_time)}</span><span class="muted">{screenName(row.screen,row.extra)}</span>
-          <span class="buttons"><Button size="sm" active={open?.id===row.id} aria-expanded={open?.id===row.id} onclick={()=>openSound(row)}>{t(open?.id===row.id?'hdClose':'hdListen')}</Button>
+          <span class="buttons"><Button size="sm" active={open?.id===row.id} aria-expanded={open?.id===row.id} onclick={()=>openSound(row)}>{t(open?.id===row.id?'hdClose':'hdOpen')}</Button>
             <Button size="sm" onclick={()=>ask([row])}>{t('hdFix')}</Button></span></div>
         {#if open?.id===row.id&&sound}<div class="sound"><p class="muted">{fill('hdSoundAt',{file:fileName(sound.file),from:sound.start_s,to:sound.end_s})}</p>
           <AudioRegion source={sound.source} fixedRange compact start={sound.start_s} end={sound.end_s}/>
@@ -123,14 +125,16 @@
       {#each (['present','absent','unknown'] as const).filter(item=>fixing.some(row=>row.verdict!==item)) as item}
         <div class="option"><div><strong>{fill('hdFixTo',{name:fixName,verdict:verdictText(item)})}</strong>{#if item==='unknown'}<p class="muted">{t('hdFixUnknownNote')}</p>{/if}</div>
           <Button pending={fix.pending} onclick={()=>fix.run(item)}>{t('hdChoose')}</Button></div>{/each}
-      <div class="option"><div><strong>{fill('hdFixOther',{name:fixName})}</strong><p class="muted">{fill('hdFixOtherNote',{name:fixName})}</p></div>
+      <div class="option"><div><strong>{fill('hdFixOther',{name:fixName})}</strong><p class="muted">{fill(fixing[0].species.rank==='family'?'hdFixOtherFamily':'hdFixOtherNote',{name:fixName})}</p></div>
         <Button active={picking==='other'} aria-expanded={picking==='other'} disabled={fix.pending} onclick={()=>picking=picking==='other'?'':'other'}>{t('hdPickSpecies')}</Button></div>
       {#if picking==='other'}<div class="pick"><SpeciesChoice datasetId={id} exclude={[fixing[0].species.id]} pending={fix.pending} onchoose={taxon=>fix.run('other',taxon)}/></div>{/if}
       <div class="option"><div><strong>{fill('hdFixAdd',{name:fixName})}</strong><p class="muted">{fill('hdFixAddNote',{name:fixName})}</p></div>
         <Button active={picking==='add'} aria-expanded={picking==='add'} disabled={fix.pending} onclick={()=>picking=picking==='add'?'':'add'}>{t('hdAddSpecies')}</Button></div>
       {#if picking==='add'}<div class="pick"><SpeciesChoice datasetId={id} exclude={[fixing[0].species.id]} pending={fix.pending} onchoose={taxon=>fix.run('add',taxon)}/></div>{/if}
       <div class="option"><div><strong>{t('hdFixDelete')}</strong><p class="muted">{t('hdFixDeleteNote')}</p></div>
-        <Button variant="danger" pending={fix.pending} onclick={()=>fix.run('delete')}>{t('hdDelete')}</Button></div>
+        <Button active={picking==='delete'} aria-expanded={picking==='delete'} disabled={fix.pending} onclick={()=>picking=picking==='delete'?'':'delete'}>{t('hdDelete')}</Button></div>
+      {#if picking==='delete'}<div class="pick confirm" role="alert"><p>{fill('hdDeleteAsk',{n:fixing.length})}</p>
+        <div class="actions"><Button variant="danger" pending={fix.pending} onclick={()=>fix.run('delete')}>{t('hdDeleteYes')}</Button><Button disabled={fix.pending} onclick={()=>picking=''}>{t('mCancel')}</Button></div></div>{/if}
     </div>
     {#if fix.error}<p class="error" role="alert">{t(fix.error)}</p>{/if}
     <div class="actions"><Button disabled={fix.pending} onclick={()=>dialog?.close()}>{t('mCancel')}</Button></div>{/if}
@@ -138,7 +142,7 @@
 <style>.heard-page h2{margin:0 0 12px}.heard-page p{margin:8px 0}td.n,th.n{text-align:right;white-space:nowrap}table{table-layout:auto}td{vertical-align:middle}
   .link{background:none;border:0;padding:0;color:rgb(var(--primary-700));text-decoration:underline;cursor:pointer;font:inherit;font-weight:700;text-align:left}
   .scientific-name{display:block}.filters{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:12px}.filters label{display:flex;flex-direction:column;gap:4px}
-  .bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;position:sticky;top:0;z-index:2;padding:8px 0;background:rgb(var(--color-card-bg))}
+  .bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 0}
   .record{padding:10px 0;border-top:1px solid rgb(var(--stone-300))}.record.selected{border-left:4px solid rgb(var(--primary-700));padding-left:12px}
   .record-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}.check{display:flex;gap:8px;align-items:center;min-height:44px;cursor:pointer}.check input{width:20px;height:20px}
   .buttons{display:flex;gap:8px;margin-left:auto}.sound{margin:8px 0 4px 28px;display:flex;flex-direction:column;gap:8px}.sound h3{margin:8px 0 0;font-size:16px}
