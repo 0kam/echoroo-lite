@@ -10,6 +10,7 @@
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
   import TestSounds from '$lib/TestSounds.svelte';
+  import AiSharing from '$lib/AiSharing.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -134,6 +135,7 @@
       {#each answered.slice(0,answeredShown) as item (item.segment_id)}{@render row(item)}{/each}
       {#if answeredShown<answered.length}<Button onclick={()=>answeredShown+=10}>{t('pMore')}</Button>{/if}
     </details>{/if}
+    {#if !searchFirst||model}<AiSharing datasetId={id} {speciesId} {info} onchange={async()=>{skipped=[];await next.run();}}/>{/if}
     {#if model}<details class="more"><summary>{t('sMore')}</summary>
       <Button variant="danger" size="sm" onclick={()=>confirming=!confirming}>{t('mdDeleteAI')}</Button>
       {#if confirming}<div class="confirm"><p>{t('modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=false}>{t('mCancel')}</Button>

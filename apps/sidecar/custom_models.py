@@ -342,6 +342,8 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
     models = list_models(root, ctx, species_id, every=True)
     model = models[0] if models else None
     source, picks = None, []
+    import sharing
+    shared = sharing.state(root, ctx, species_id)
     with connect(root) as db:
         import test_sounds
         run, every = _labelled(db, ctx, species_id)
@@ -388,16 +390,19 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
         # Making the AI again from the very answers it was made from would change nothing but outdate its check.
         unchanged = bool(model and model['applicable']) and {(e['segment_id'], e['label']) for e in json.loads(db.execute(
             'SELECT snapshot FROM custom_models WHERE id=?', (model['id'],)).fetchone()[0])['training']['examples']} == \
-            {(segment, value['label']) for segment, value in labels.items()}
+            {(segment, value['label']) for segment, value in {**labels, **shared['material']}.items()}
     zone = ZoneInfo(ctx['site']['timezone'])
     for row in rows + answered:
         row['local_time'] = window_key(row, row['start_s'], zone)[1]
     negative = sum(value['label'] == 'other' for value in labels.values())
-    short = max(0, MIN_CLASS_EXAMPLES - positive) + max(0, MIN_CLASS_EXAMPLES - negative)
-    needed = max(short, MIN_EXAMPLES - len(labels))
-    reasons = [reason for reason, missing in [('custom_more_answers_needed', len(labels) < MIN_EXAMPLES),
-                                              ('custom_positive_examples_needed', positive < MIN_CLASS_EXAMPLES),
-                                              ('custom_negative_examples_needed', negative < MIN_CLASS_EXAMPLES),
+    # With other sites' answers as material too (`sharing`), they count towards what an AI needs.
+    more = shared['material'].values()
+    all_positive, all_negative = positive + sum(v['label'] == 'target' for v in more), negative + sum(v['label'] == 'other' for v in more)
+    short = max(0, MIN_CLASS_EXAMPLES - all_positive) + max(0, MIN_CLASS_EXAMPLES - all_negative)
+    needed = max(short, MIN_EXAMPLES - all_positive - all_negative)
+    reasons = [reason for reason, missing in [('custom_more_answers_needed', all_positive + all_negative < MIN_EXAMPLES),
+                                              ('custom_positive_examples_needed', all_positive < MIN_CLASS_EXAMPLES),
+                                              ('custom_negative_examples_needed', all_negative < MIN_CLASS_EXAMPLES),
                                               ('custom_no_new_answers', unchanged)] if missing]
     return {'species': names_for_id(root, species_id), 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'model': model, 'source': source, 'engine': main_engine(root),
@@ -405,6 +410,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
             'examples': {'positive_5s': positive, 'negative_5s': negative,
                          'other_answers': sum(value['origin'] != 'label' for value in labels.values())},
             'test': {'heard': tests.count('target'), 'not_heard': tests.count('other')},
+            'sharing': {k: shared[k] for k in ('all_sites', 'positive_5s', 'negative_5s', 'sites')},
             'requirements': {'positive_5s': MIN_CLASS_EXAMPLES, 'negative_5s': MIN_CLASS_EXAMPLES, 'total_5s': MIN_EXAMPLES},
             'can_train': not reasons, 'reasons': reasons}
 
@@ -454,7 +460,10 @@ def create(root, ctx, species_id, cancel=None):
     state = readiness(root, ctx, species_id)
     if not state['can_train']:
         raise CatalogError(state['reasons'][0])
-    previous = state['model']
+    # An AI taken in from a file is not made again in place: the one made here starts as a new AI beside it.
+    previous = None if state['model'] and state['model'].get('imported') else state['model']
+    import sharing
+    shared = sharing.state(root, ctx, species_id)
     with connect(root) as db:
         run, labels = _materials(db, ctx, species_id)
         analyses = _main_analyses(db, ctx)
@@ -476,6 +485,13 @@ def create(root, ctx, species_id, cancel=None):
             if row['segment_id'] in labels:
                 examples.append({**row, **labels[row['segment_id']]})
                 vectors.append(vector)
+    # Other sites' answers, when the species is set to use them: material only, never scored here.
+    for batch, matrix in _vector_batches(root, shared['analysis_ids']):
+        for row, vector in zip(batch, matrix):
+            if row['segment_id'] in shared['material']:
+                examples.append({**row, **shared['material'][row['segment_id']]})
+                vectors.append(vector)
+    elsewhere = [e for e in examples if 'site_id' in e]
     y = np.array([row['label'] == 'target' for row in examples], dtype=np.float64)
     if len(y) < MIN_EXAMPLES or y.sum() < MIN_CLASS_EXAMPLES or len(y) - y.sum() < MIN_CLASS_EXAMPLES:
         raise CatalogError('custom_more_answers_needed' if len(y) < MIN_EXAMPLES else
@@ -509,6 +525,8 @@ def create(root, ctx, species_id, cancel=None):
                      'negative_from_checks': sum(e['origin'] == 'check' and e['label'] == 'other' for e in examples),
                      'positive_from_checks': sum(e['origin'] == 'check' and e['label'] == 'target' for e in examples),
                      'positive_from_presence': sum(e['origin'] == 'presence' and e['label'] == 'target' for e in examples),
+                     'other_sites': {'positive_5s': sum(e['label'] == 'target' for e in elsewhere), 'negative_5s': sum(e['label'] == 'other' for e in elsewhere),
+                                     'sites': len({e['site_id'] for e in elsewhere})} if elsewhere else None,
                      'examples': examples},
         'analysis_ids': ids, 'inference': {'scored_5s': len(scored)}}
     folder = Path(root) / 'custom-models'
@@ -570,7 +588,7 @@ def _public(root, row, current_fingerprint=None):
         'growth': {'rounds': snap.get('rounds', []), 'state': growth_state(snap.get('rounds', []), snap['training']['positive_5s'])},
         'species': names_for_id(root, row['species_id']), 'scope': snap['scope'], 'feature': snap['feature'],
         'training': {k: v for k, v in snap['training'].items() if k != 'examples'}, 'inference': snap['inference'],
-        'analysis_ids': snap['analysis_ids'], 'applicable': scope_ok and files_ok and feature_ok,
+        'imported': snap.get('imported'), 'analysis_ids': snap['analysis_ids'], 'applicable': scope_ok and files_ok and feature_ok,
         'reason': 'custom_model_scope_changed' if not feature_ok else None if scope_ok and files_ok else 'custom_model_scope_changed' if not scope_ok else 'custom_model_files_missing',
         'artifact_sha256': row['artifact_sha256'], 'scores_sha256': row['scores_sha256']}
 
