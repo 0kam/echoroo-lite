@@ -69,7 +69,7 @@ def _rows(db, dataset_id):
     named = {}
     for label in db.execute('''SELECT l.recording_id,l.start_s,l.end_s,s.scientific_name,
             COALESCE(json_extract(l.source_ref,'$.background'),0) AS background FROM labels l JOIN species s ON s.id=l.taxon_id
-            WHERE l.source='sound_map' AND l.verdict='present' AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
+            WHERE l.source='sound_map' AND l.verdict='present' AND json_extract(l.source_ref,'$.answer') IS NULL AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
               -- put right later on the "sounds you checked" screen: no longer this pick's species
               AND NOT EXISTS (SELECT 1 FROM labels n WHERE n.taxon_id=l.taxon_id AND n.recording_id=l.recording_id
                 AND n.start_s=l.start_s AND n.end_s=l.end_s AND n.source='review' AND n.id>l.id)
@@ -139,7 +139,9 @@ def search_examples(root, dataset_id, scientific_name):
 
 
 def _forget(db, recording_id, start_s, end_s):
-    db.execute("DELETE FROM labels WHERE source='sound_map' AND recording_id=? AND start_s=? AND end_s=?", (recording_id, start_s, end_s))
+    # An answer given on the map's own card (heard.map_answer) is not part of the pick and stays.
+    db.execute('''DELETE FROM labels WHERE source='sound_map' AND recording_id=? AND start_s=? AND end_s=?
+        AND json_extract(source_ref,'$.answer') IS NULL''', (recording_id, start_s, end_s))
 
 
 def put(root, body):

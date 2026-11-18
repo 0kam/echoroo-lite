@@ -107,8 +107,9 @@ def records(root, dataset_id, species_id=None, verdict=None, screen=None, day=No
     return {'total': len(rows), 'rows': rows[offset:offset + limit], 'options': options, 'site': dict(site)}
 
 
-def sound(root, dataset_id, recording_id, start_s, end_s):
-    """One sound: what is recorded on it now, and every answer ever given on it (newest first)."""
+def sound(root, dataset_id, recording_id, start_s, end_s, blank=False):
+    """One sound: what is recorded on it now, and every answer ever given on it (newest first). With `blank` a sound
+    nobody answered yet is an empty answer, not an error."""
     with connect(root) as db:
         site = _site(db, dataset_id)
         zone, taxa = ZoneInfo(site['timezone']), _taxa(db)
@@ -116,6 +117,8 @@ def sound(root, dataset_id, recording_id, start_s, end_s):
             WHERE l.recording_id=? AND l.start_s=? AND l.end_s=? AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
             ORDER BY l.id DESC''', (recording_id, start_s, end_s, dataset_id))]
     if not rows:
+        if blank:
+            return {'now': [], 'history': []}
         raise CatalogError('not_found')
     newest = {}
     for row in rows:
@@ -224,6 +227,23 @@ def set_other(root, body):
         refresh(root, db, *piece)
         db.execute('DELETE FROM workflow_cache')
     return others(root, body.dataset_id, body.recording_id, body.start_s, body.end_s, body.of)
+
+
+def map_answer(root, body):
+    """An answer given on the sound map about one sound: `species_id` was heard in it, was not, or cannot be told.
+    Kept beside the answers of other screens (newest wins), and apart from the sounds ticked for export."""
+    with connect(root) as db:
+        db.execute('BEGIN IMMEDIATE')
+        _interval(db, body)
+        found = db.execute('SELECT COALESCE(accepted_id,id) FROM species WHERE id=?', (body.species_id,)).fetchone()
+        if found is None:
+            raise CatalogError('invalid_input')
+        piece = (found[0], body.recording_id, body.start_s, body.end_s)
+        put(db, *piece, body.verdict, 'sound_map', {'answer': True}, history=True)
+        from validation import refresh
+        refresh(root, db, *piece)
+        db.execute('DELETE FROM workflow_cache')
+    return sound(root, body.dataset_id, body.recording_id, body.start_s, body.end_s)
 
 
 def pick_species(root, query, dataset_id=None):

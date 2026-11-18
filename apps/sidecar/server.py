@@ -247,6 +247,15 @@ class HeardFix(BaseModel):
         return self
 
 
+class MapAnswer(BaseModel):
+    dataset_id: int
+    recording_id: int
+    start_s: float = Field(ge=0, allow_inf_nan=False)
+    end_s: float = Field(gt=0, allow_inf_nan=False)
+    species_id: str
+    verdict: Literal['present', 'absent', 'unknown']
+
+
 class OtherSpecies(BaseModel):
     dataset_id: int
     recording_id: int
@@ -482,6 +491,15 @@ def create_app(root, models, token):
                 raise HTTPException(404, 'not_found') from None
             raise
 
+    @app.get('/explore/entries/{entry}')
+    def explore_entry(entry: Literal['species', 'examples', 'unsure'], dataset: int = Query(ge=1), species_id: str | None = None):
+        import map_entries
+        if entry == 'unsure':
+            return map_entries.unsure(root, dataset)
+        if species_id is None:
+            raise CatalogError('invalid_input')
+        return (map_entries.by_species if entry == 'species' else map_entries.by_examples)(root, dataset, species_id)
+
     @app.get('/explore/points')
     def explore_points(dataset: int = Query(ge=1)):
         from explore import points_file
@@ -620,9 +638,9 @@ def create_app(root, models, token):
         return heard.records(root, dataset_id, species_id, verdict, screen, day.isoformat() if day else None, order, offset, limit)
 
     @app.get('/datasets/{dataset_id}/heard/sound')
-    def heard_sound(dataset_id: int, recording_id: int, start_s: float, end_s: float):
+    def heard_sound(dataset_id: int, recording_id: int, start_s: float, end_s: float, blank: bool = False):
         import heard
-        return heard.sound(root, dataset_id, recording_id, start_s, end_s)
+        return heard.sound(root, dataset_id, recording_id, start_s, end_s, blank)
 
     @app.post('/heard/fix')
     def heard_fix(body: HeardFix):
@@ -638,6 +656,11 @@ def create_app(root, models, token):
     def heard_set_other(body: OtherSpecies):
         import heard
         return heard.set_other(root, body)
+
+    @app.post('/heard/map-answer')
+    def heard_map_answer(body: MapAnswer):
+        import heard
+        return heard.map_answer(root, body)
 
     @app.get('/datasets/{dataset_id}/heard/species')
     def heard_pick_species(dataset_id: int, q: str = ''):
