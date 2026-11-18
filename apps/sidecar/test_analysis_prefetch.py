@@ -66,8 +66,8 @@ class PrefetchTest(unittest.TestCase):
                         native, rate = sf.read(row['path'], dtype='float32')
                         original_calls, streamed_calls = [], []
                         expected = analysis.infer_onnx(WaveSession(engine, original_calls), engine,
-                                                      analysis.resample(native, rate), 317)
-                        actual = analysis.infer_onnx(WaveSession(engine, streamed_calls), engine, read(row), 317)
+                                                      analysis.resample(native, rate), 14795)
+                        actual = analysis.infer_onnx(WaveSession(engine, streamed_calls), engine, read(row), 14795)
                         for first, second in zip(expected, actual):
                             self.assertEqual(fingerprint(np.asarray(first)), fingerprint(np.asarray(second)))
                         self.assertEqual([fingerprint(c[2]) for c in original_calls],
@@ -123,6 +123,6 @@ class PrefetchTest(unittest.TestCase):
             row = record(path)
             calls = []
             with self.assertRaisesRegex(CatalogError, 'cancelled'), analysis.prefetch_audio([row]) as read:
-                analysis.infer_onnx(CancellingSession('kinglet-s', calls), 'kinglet-s', read(row), 317, cancel)
+                analysis.infer_onnx(CancellingSession('kinglet-s', calls), 'kinglet-s', read(row), 14795, cancel)
             self.assertEqual(len(calls), 1)
             self.assertFalse(any(t.name.startswith('analysis-audio') for t in threading.enumerate()))

@@ -66,7 +66,36 @@ def load_onnx(models, engine):
     options = ort.SessionOptions()
     options.intra_op_num_threads = 8
     options.inter_op_num_threads = 1
-    return ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"]), file_sha256(path)
+    session = ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
+    if engine.startswith('kinglet-'):
+        session = KingletSession(session, Path(models) / REGISTRY[engine]['files'][1])
+    return session, file_sha256(path)
+
+
+def kinglet_head(path):
+    """W (classes, d), b and the scientific names of a Kinglet head: the whole Perch vocabulary."""
+    if not Path(path).is_file():
+        raise CatalogError("models_missing")
+    with np.load(path, allow_pickle=False) as head:
+        return head['W'].astype(np.float32), head['b'].astype(np.float32), [str(n) for n in head['labels']]
+
+
+class KingletSession:
+    """A Kinglet 0.4 trunk with its head: "logits" over every class and the unit-length "embedding".
+
+    The trunk gives "embedding" and "feature"; logits = feature @ W.T + b. The raw embedding is several times as
+    long as a Perch one and varies between windows, so it is always scaled to unit length (as Kinglet itself does).
+    """
+
+    def __init__(self, session, head):
+        self.session = session
+        self.weights, self.bias, _ = kinglet_head(head)
+
+    def run(self, outputs, feeds):
+        embedding, feature = self.session.run(['embedding', 'feature'], feeds)
+        result = dict(logits=feature @ self.weights.T + self.bias if 'logits' in outputs else None,
+                      embedding=embedding / np.maximum(np.linalg.norm(embedding, axis=1, keepdims=True), 1e-30))
+        return [result[name] for name in outputs]
 
 
 def load_perch(models):
@@ -148,16 +177,19 @@ def load_dense(models, engine):
     detector, sha = load_onnx(models, engine)
     path = Path(models) / REGISTRY[engine]['files'][1]
     v3 = engine == 'birdnet-v3'
-    with path.open(newline='', encoding='utf-8-sig') as stream:
-        rows = list(csv.DictReader(stream, delimiter=';' if v3 else ','))
     count = REGISTRY[engine]['species_count']
-    names = [r['sci_name' if v3 else 'scientific_name'] for r in rows]
-    if ([int(r['idx' if v3 else 'index']) for r in rows] != list(range(count))
-            or len(set(names)) != count):
+    if v3:
+        with path.open(newline='', encoding='utf-8-sig') as stream:
+            rows = list(csv.DictReader(stream, delimiter=';'))
+        names = [r['sci_name'] for r in rows]
+        if [int(r['idx']) for r in rows] != list(range(count)):
+            raise CatalogError('invalid_scores')
+    else:
+        names = kinglet_head(path)[2]
+    if len(names) != count or len(set(names)) != count:
         raise CatalogError('invalid_scores')
-    # Kinglet 0.2.0 knows only Japanese birds (a few under other names), so all of them are shown; worldwide
-    # models are shown through the same Japan filter.
-    allowed = names if engine.startswith('kinglet-') else [n for n, keep in zip(names, in_japan(names)) if keep]
+    # Every model answers over its whole vocabulary; the Japan checklist species are the ones shown.
+    allowed = [n for n, keep in zip(names, in_japan(names)) if keep]
     meta = dict(all_classes=True, model=REGISTRY[engine]['name'], model_sha256=sha,
                 classes_sha256=digest(path), window_s=window_s(engine),
                 score_type=REGISTRY[engine]['score_type'], species=allowed,
@@ -186,10 +218,11 @@ def infer_onnx(detector, engine, audio, count, cancel=None):
                 raise CatalogError('invalid_scores')
         else:
             logits, embedding = detector.run(['logits', 'embedding'], {'waveform': np.clip(waveform, -1, 1)})
-            if logits.shape != (len(waveform), count + 1):
+            if logits.shape != (len(waveform), count):
                 raise CatalogError('invalid_scores')
+            # Kinglet 0.4: a softmax over the whole Perch vocabulary, whose non-bird classes take the background.
             probabilities = np.exp(logits - logits.max(axis=1, keepdims=True))
-            scores = (probabilities / probabilities.sum(axis=1, keepdims=True))[:, :-1]
+            scores = probabilities / probabilities.sum(axis=1, keepdims=True)
         if scores.shape != (len(waveform), count) or not np.isfinite(scores).all():
             raise CatalogError('invalid_scores')
         if embedding is not None:

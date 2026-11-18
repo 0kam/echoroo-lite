@@ -63,7 +63,7 @@
 | AI | 特徴 |
 |---|---|
 | **Perch V2**（おすすめ・最初から選ばれています） | Google が作った鳥の声の AI。いちばん正確です。 |
-| **Kinglet-B / S / XS** | Perch 2.0 を元に、日本の鳥 317 種向けに小さくした AI（このアプリの作者が開発、[Kinglet](https://github.com/0kam/kinglet)）。Perch より約 2〜10 倍速く、精度は少し下がります。解析に時間がかかるパソコン向けです。 |
+| **Kinglet-B / S / XS** | Perch 2.0 を元に小さくした AI。Perch と同じ種を聞き分けます（このアプリの作者が開発、[Kinglet](https://github.com/0kam/kinglet)）。Perch より約 2〜10 倍速く、精度は少し下がります。解析に時間がかかるパソコン向けです。 |
 | **BirdNET 2.4** | 広く使われている鳥の声の AI。結果を比べたいときに追加します。 |
 | **BirdNET+ V3.0（試験版）** | BirdNET の次の世代の試験版。比べる用です。 |
 
@@ -93,7 +93,7 @@ Echoroo Lite is a desktop app that finds bird calls in recordings with AI, lets 
 - **Japan only, non-commercial only**: species lists and names are built for birds in Japan, and the app includes BirdNET 2.4 (CC BY-NC-SA 4.0).
 - **Steps**: add a folder of mono WAV/FLAC/MP3 files whose names include the start time (e.g. `SM2-NP-05_20250710_100000.wav`) → listen to the AI's top sounds to confirm each species → check the AI's answers (up to 60 sounds) to set the cut-off score for its time charts → export an HTML report with CSV and audio files.
 - **More**: find species the AIs do not cover from a reference call (similarity is not an identification probability), grow an AI for one species from about 20 answers, explore a sound map (experimental), and practise with a bird-call quiz.
-- **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models for 317 Japanese bird species), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
+- **AIs**: Perch V2 (default), [Kinglet](https://github.com/0kam/kinglet) B/S/XS (small models covering the same species as Perch), BirdNET 2.4 and BirdNET+ V3.0 preview for comparison.
 - **Requirements**: Windows 10/11 x64, macOS 12+ on Apple silicon, or Linux x86_64. 8 GB RAM recommended. Installers are unsigned.
 - **Internet**: only for the map, Xeno-Canto audio and checking for a new version at start-up. Nothing about you or your recordings is sent.
 - **License**: source code under Apache-2.0; the distributed app is for non-commercial use.
