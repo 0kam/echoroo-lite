@@ -8,6 +8,7 @@
   import { commonName } from '$lib/species';
   import { fill,modelIntro,modelName,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
+  import OtherSpecies from '$lib/OtherSpecies.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -22,7 +23,10 @@
   let played=$state<number[]>([]),more=$state(false);
   // Sounds answered "Not sure": left without an answer, so they are never material for the AI and the next batch skips them.
   let unsure=$state<number[]>([]);
-  const notSure=async(row:LabelRow)=>{if(row.label)await label.run(row,row.label);if(!row.label)unsure=unsure.includes(row.segment_id)?unsure.filter(id=>id!==row.segment_id):[...unsure,row.segment_id];};
+  const notSure=async(row:LabelRow)=>{if(row.label)await label.run(row,row.label);if(row.label)return;const on=!unsure.includes(row.segment_id);
+    // "Not sure" is kept as a record too, so it shows among the sounds checked by ear; it is no material for the AI.
+    try{await api(`/datasets/${id}/species/${speciesId}/labels`,{segment_id:row.segment_id,label:on?'unknown':null});}catch{return;}
+    unsure=on?[...unsure,row.segment_id]:unsure.filter(id=>id!==row.segment_id);};
   const fetchState=(query='')=>api<SpeciesAI>(`/datasets/${id}/species/${speciesId}/custom-model?${range}${query}`);
   // Sounds shown and passed over are not offered again until the AI is made again.
   const next=createTask(async()=>{const value=await fetchState(`&batch=true${skipped.map(segment=>`&skip=${segment}`).join('')}`);
@@ -92,6 +96,7 @@
           <Button active={unsure.includes(item.segment_id)} aria-pressed={unsure.includes(item.segment_id)} pending={label.pending} disabled={next.pending||build.pending||(!item.label&&!played.includes(item.segment_id))} onclick={()=>notSure(item)}>{unsure.includes(item.segment_id)?'✓ ':''}{t('mdUnsure')}</Button>
           {#if !item.label&&!played.includes(item.segment_id)}<span class="muted">{t('pPlayFirst')}</span>{/if}</div>{/snippet}
       </AudioRegion>
+      <OtherSpecies datasetId={id} of={speciesId} recordingId={item.recording_id} start={item.start_s} end={item.end_s} screen="training" disabled={!item.label&&!played.includes(item.segment_id)}/>
     </article>{/snippet}
     {#if !folded}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
       <!-- Nothing to rank by is a step still to do, not an error. -->

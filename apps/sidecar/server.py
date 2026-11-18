@@ -234,6 +234,30 @@ class RollupAnswer(BaseModel):
         return self
 
 
+class HeardFix(BaseModel):
+    dataset_id: int
+    ids: list[int] = Field(min_length=1, max_length=2000)
+    action: Literal['present', 'absent', 'unknown', 'other', 'add', 'delete']
+    species_id: str | None = None
+
+    @model_validator(mode='after')
+    def species_named(self):
+        if (self.action in ('other', 'add')) != (self.species_id is not None):
+            raise ValueError('species_id goes with "other" and "add"')
+        return self
+
+
+class OtherSpecies(BaseModel):
+    dataset_id: int
+    recording_id: int
+    start_s: float = Field(ge=0, allow_inf_nan=False)
+    end_s: float = Field(gt=0, allow_inf_nan=False)
+    of: str
+    species_id: str
+    screen: Literal['validation', 'training', 'species_mark']
+    on: bool
+
+
 class PresenceMissDelete(BaseModel):
     dataset_id: int
     species_id: str
@@ -241,7 +265,7 @@ class PresenceMissDelete(BaseModel):
 
 class ModelLabel(BaseModel):
     segment_id: int
-    label: Literal['target', 'other'] | None
+    label: Literal['target', 'other', 'unknown'] | None
 
 
 class EvidenceSelection(BaseModel):
@@ -582,6 +606,48 @@ def create_app(root, models, token):
     def rollup_answer(body: RollupAnswer):
         import rollups
         return rollups.answer(root, body)
+
+    @app.get('/datasets/{dataset_id}/heard')
+    def heard_summary(dataset_id: int, species_id: str | None = None):
+        import heard
+        return heard.summary(root, dataset_id, species_id)
+
+    @app.get('/datasets/{dataset_id}/heard/records')
+    def heard_records(dataset_id: int, species_id: str | None = None, verdict: Literal['present', 'absent', 'unknown'] | None = None,
+                      screen: str | None = None, day: date | None = None, order: Literal['new', 'old', 'time'] = 'new',
+                      offset: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=500)):
+        import heard
+        return heard.records(root, dataset_id, species_id, verdict, screen, day.isoformat() if day else None, order, offset, limit)
+
+    @app.get('/datasets/{dataset_id}/heard/sound')
+    def heard_sound(dataset_id: int, recording_id: int, start_s: float, end_s: float):
+        import heard
+        return heard.sound(root, dataset_id, recording_id, start_s, end_s)
+
+    @app.post('/heard/fix')
+    def heard_fix(body: HeardFix):
+        import heard
+        return heard.fix(root, body)
+
+    @app.get('/datasets/{dataset_id}/heard/others')
+    def heard_others(dataset_id: int, recording_id: int, start_s: float, end_s: float, of: str):
+        import heard
+        return heard.others(root, dataset_id, recording_id, start_s, end_s, of)
+
+    @app.post('/heard/others')
+    def heard_set_other(body: OtherSpecies):
+        import heard
+        return heard.set_other(root, body)
+
+    @app.get('/datasets/{dataset_id}/heard/species')
+    def heard_pick_species(dataset_id: int, q: str = ''):
+        import heard
+        return heard.pick_species(root, q, dataset_id)
+
+    @app.get('/datasets/{dataset_id}/species/{species_id}/heard-examples')
+    def heard_examples(dataset_id: int, species_id: str):
+        import heard
+        return heard.search_examples(root, dataset_id, species_id)
 
     @app.post('/presence/marks')
     def presence_mark(body: PresenceMark):

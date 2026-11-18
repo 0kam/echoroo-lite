@@ -40,6 +40,7 @@ def examples(root, species_id, dataset_id, validation_id=None):
         records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))}
         local = lambda record, start: window_key(record, start, zone)[1]
         named, search_named, confirmed = [], [], []
+        heard = current(db, dataset_id, species_id, 'present')
         for row in db.execute('''SELECT c.id AS clip_id,c.metadata,r.* FROM quiz_clips c JOIN audio_references r ON r.id=c.reference_id
                 WHERE c.species_id=? AND c.enabled=1 ORDER BY c.id''', (species_id,)):
             meta = json.loads(row['metadata'])
@@ -64,11 +65,14 @@ def examples(root, species_id, dataset_id, validation_id=None):
                          'license': credit.get('license', ''), 'url': credit.get('url', '')}
                 if row['kind'] == 'recording' and row['id'] in records:
                     label['local_time'] = local(records[row['id']], ref['query']['start_s'])
-                # A site-recording reference came from the sound map, where the name was typed, not checked by listening.
-                kind = 'unverified' if row['kind'] == 'recording' else 'named'
+                # A site-recording reference came from the sound map, where the name was typed, not checked by listening,
+                # unless the species is recorded as heard in that sound.
+                kind = 'named' if row['kind'] != 'recording' else 'confirmed' if any(
+                    h['recording_id'] == row['id'] and h['start_s'] < ref['query']['end_s'] and ref['query']['start_s'] < h['end_s']
+                    for h in heard) else 'unverified'
                 search_named.append(_example(kind, row, row['kind'], ref['query']['start_s'], ref['query']['end_s'], label))
         # Sounds a person said are this species, at this site, on any screen.
-        for row in current(db, dataset_id, species_id, 'present'):
+        for row in heard:
             if record := records.get(row['recording_id']):
                 origin = 'validation' if row['source'] == 'validation' else 'presence'
                 confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['end_s'],

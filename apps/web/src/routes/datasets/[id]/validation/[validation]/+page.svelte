@@ -7,6 +7,7 @@
   import { commonName } from '$lib/species';
   import { fill,modelIntro,rangeQuery,workload,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
+  import OtherSpecies from '$lib/OtherSpecies.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
   import ReferencePanel,{type ExampleRef} from '$lib/ReferencePanel.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -89,6 +90,7 @@
           {@const question=validation.question}
           <p class="muted">{t(first?'vOrderNote':'vMixedNote')}</p>
           {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`} onplaying={()=>{if(!played.includes(question.id))played=[...played,question.id];}}/>{/key}
+          <OtherSpecies datasetId={id} of={validation.species.id} recordingId={question.source.id} start={question.start_s} end={question.end_s} screen="validation" disabled={!canAnswer}/>
           <div class="actions answers" bind:offsetHeight={barHeight}>
             <div class="progress-row"><progress id="validation-progress" value={answered?question.review_position:validation.counts.answered} max={answered?question.review_total:inFirst?firstTotal:validation.counts.total}></progress>
               <label for="validation-progress">{answered?fill('vReviewProgress',{n:question.review_position,total:question.review_total}):fill(inFirst?'vProgressFirst':'vProgress',{answered:validation.counts.answered,first:firstTotal,total:validation.counts.total})}</label>

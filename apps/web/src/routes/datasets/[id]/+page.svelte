@@ -37,6 +37,8 @@
   $effect(()=>{const current=id;saved=0;api<unknown[]>(`/datasets/${current}/exports`).then(list=>{if(current===id)saved=list.length;},()=>{});});
   // Sounds the AI answered with a bird not recorded in Japan, by family; loaded behind the species list.
   let rollups=$state<RollupSummary|null>(null);
+  let heardTotal=$state(0);
+  $effect(()=>{const current=id;heardTotal=0;api<{total:number}>(`/datasets/${current}/heard/records?limit=1`).then(value=>{if(current===id)heardTotal=value.total;},()=>{});});
   $effect(()=>{const current=id,scope=result?rangeQuery(result.start_date,result.end_date):'',revision=result?.analysed_recordings;void revision;if(!scope)return;
     api<RollupSummary>(`/datasets/${current}/rollups?${scope}`).then(value=>{if(current===id)rollups=value;},()=>{});});
   const analyze=createTask(async()=>{await api('/jobs',{dataset_id:id,recording_id:null});await refreshCatalog();},{toast:true});
@@ -132,6 +134,7 @@
     <section class="panel stack"><h2>{t('sFindMissing')}</h2><p>{t('sFindMissingHint')}</p>
       <div><Button variant={!result.species.length&&!unanalysed?'primary':'default'} href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindByExample')}</Button></div></section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
     <!-- Off the main workflow: browsing sounds without the AI's species names. -->
+    {#if heardTotal}<section class="panel explore-entry"><Button href={`${resolve(`/datasets/${id}/heard`)}${range}`}>{fill('hdSiteLink',{n:heardTotal})} ›</Button><p class="muted">{t('hdIntro')}</p></section>{/if}
     <section class="panel explore-entry"><Button href={resolve(`/datasets/${id}/explore`)}>{t('eEntry')} ›</Button><p class="muted">{t('eEntryHint')}</p></section>
   {:else if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
 </div>

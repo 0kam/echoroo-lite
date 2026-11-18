@@ -6,7 +6,8 @@ target / other / unknown words where the screens still use them.
 """
 import json
 
-SOURCES = ('species_mark', 'validation', 'training', 'search', 'sound_map', 'rollup_fix', 'import')
+# 'review': an answer put right on the "sounds you checked by ear" screen; newer than what it corrects, so it is current.
+SOURCES = ('species_mark', 'validation', 'training', 'search', 'sound_map', 'rollup_fix', 'import', 'review')
 VERDICTS = ('present', 'absent', 'unknown')
 FROM_ANSWER = {'target': 'present', 'other': 'absent', 'unknown': 'unknown'}
 TO_ANSWER = {value: key for key, value in FROM_ANSWER.items()}
@@ -80,6 +81,29 @@ def on_pieces(rows, pieces, first=None):
                     or row['verdict'] == 'present' and start - 1e-6 <= row['start_s'] and row['end_s'] <= end + 1e-6:
                 found[key] = row
     return found
+
+
+def upgrade(db):
+    """Rebuild a labels table made before a source was added, so its CHECK accepts every source."""
+    sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='labels'").fetchone()
+    if sql is None or all(f"'{source}'" in sql[0] for source in SOURCES):
+        return
+    db.execute('DROP INDEX IF EXISTS label_key')
+    db.execute('DROP INDEX IF EXISTS label_recording')
+    db.execute('ALTER TABLE labels RENAME TO labels_old')
+    db.executescript(SCHEMA)
+    db.execute('INSERT INTO labels SELECT * FROM labels_old')
+    db.execute('DROP TABLE labels_old')
+
+
+def corrected(rows):
+    """`rows` without the answers a later correction (source 'review') on the same interval replaced."""
+    fixed = {}
+    for row in rows:
+        if row['source'] == 'review':
+            key = (row['taxon_id'], row['recording_id'], row['start_s'], row['end_s'])
+            fixed[key] = max(fixed.get(key, 0), row['id'])
+    return [row for row in rows if row['id'] >= fixed.get((row['taxon_id'], row['recording_id'], row['start_s'], row['end_s']), 0)]
 
 
 def ref(row):
