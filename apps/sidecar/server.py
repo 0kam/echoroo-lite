@@ -482,6 +482,15 @@ def create_app(root, models, token):
                 raise HTTPException(404, 'not_found') from None
             raise
 
+    @app.get('/explore/entries/{entry}')
+    def explore_entry(entry: Literal['species', 'examples', 'unsure'], dataset: int = Query(ge=1), species_id: str | None = None):
+        import map_entries
+        if entry == 'unsure':
+            return map_entries.unsure(root, dataset)
+        if species_id is None:
+            raise CatalogError('invalid_input')
+        return (map_entries.by_species if entry == 'species' else map_entries.by_examples)(root, dataset, species_id)
+
     @app.get('/explore/points')
     def explore_points(dataset: int = Query(ge=1)):
         from explore import points_file

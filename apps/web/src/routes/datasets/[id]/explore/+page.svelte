@@ -13,6 +13,7 @@
   import { fill,modelIntro } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
+  import MapEntries,{HEARD,NOT_HEARD,type MapOverlay} from '$lib/MapEntries.svelte';
   import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -182,6 +183,8 @@
   let view={k:1,tx:0,ty:0},drawn={k:1,tx:0,ty:0},drag:{x:number;y:number;tx:number;ty:number;moved:boolean}|null=null;
   // Where each child's numbered badge goes: the median of its points, in map coordinates.
   let marks:{x:number;y:number}[]=[];
+  // From the ways into the map: answers given by ear, the sounds the open way points at, and example sounds.
+  let overlay:MapOverlay={marks:[],targets:[],examples:[]};
   async function loadPoints(status:Status){
     pointsError='';
     try{const buffer=await api<ArrayBuffer>(`/explore/points?dataset=${id}`,undefined,'GET',true);
@@ -245,6 +248,14 @@
     marks.forEach((mark,index)=>{const cx=ox+(mark.x-x0)*sx,cy=oy-(mark.y-y0)*sy;
       context.beginPath();context.arc(cx,cy,11*ratio,0,2*Math.PI);context.fillStyle=palette[index%palette.length];context.fill();
       context.strokeStyle='#fff';context.stroke();context.fillStyle='#fff';context.fillText(String(index+1),cx,cy);});
+    // What a way into the map points at (thin rings), then what was heard by ear (filled dots) and example sounds (stars), over the groups' colours.
+    const at=(i:number)=>[ox+(points!.x[i]-x0)*sx,oy-(points!.y[i]-y0)*sy] as const;
+    context.lineWidth=1.5*ratio;context.strokeStyle=getComputedStyle(canvas).color;context.globalAlpha=.7;
+    for(const i of overlay.targets)if(i<points.n){const [cx,cy]=at(i);context.beginPath();context.arc(cx,cy,4.5*ratio,0,2*Math.PI);context.stroke();}
+    context.globalAlpha=1;context.strokeStyle='#fff';
+    for(const [i,state] of overlay.marks)if(i<points.n){const [cx,cy]=at(i);context.beginPath();context.arc(cx,cy,5*ratio,0,2*Math.PI);context.fillStyle=state===1?HEARD:NOT_HEARD;context.fill();context.stroke();}
+    context.font=`${16*ratio}px sans-serif`;context.fillStyle=HEARD;
+    for(const i of overlay.examples)if(i<points.n){const [cx,cy]=at(i);context.strokeText('★',cx,cy);context.fillText('★',cx,cy);}
     // A ring marks the sound shown under the map.
     if(pickAt>=0&&pickAt<points.n){context.beginPath();context.arc(ox+(points.x[pickAt]-x0)*sx,oy-(points.y[pickAt]-y0)*sy,7*ratio,0,2*Math.PI);
       context.lineWidth=2.5*ratio;context.strokeStyle=getComputedStyle(canvas).color;context.stroke();}
@@ -327,6 +338,7 @@
       {#if build.error==='no_search_embeddings'}<Button href={resolve(`/datasets/${id}`)}>{t('eBackToAnalyse')}</Button>{/if}</section>{/if}
     {#if node}
       <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelIntro(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
+      <MapEntries datasetId={id} node={node.node} {parent} go={target=>void go(target)} onoverlay={value=>{overlay=value;blit();}}/>
       <div class="explore">
         <section class="panel stack map-panel" aria-label={t('eMapHeading')}>
           {#if pointsError}<p class="error" role="alert">{t(pointsError)}</p>{/if}
