@@ -13,3 +13,8 @@ export async function openExternal(url: string) {
   if (isTauri()) await openUrl(url);
   else window.open(url, '_blank', 'noopener');
 }
+
+/** Lets the user choose one existing file with one of the given extensions. */
+export async function chooseFile(name: string, extensions: string[]) {
+  return open({ directory: false, multiple: false, defaultPath: await homeDir(), filters: [{ name, extensions }] });
+}

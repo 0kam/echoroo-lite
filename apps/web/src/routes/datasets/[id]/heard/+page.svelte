@@ -4,6 +4,7 @@
   import { untrack } from 'svelte';
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,fileName,siteOf } from '$lib/app.svelte';
+  import HeardTable from '$lib/HeardTable.svelte';
   import { screenName,taxonName,verdictText,type HeardList,type HeardRecord,type HeardSound,type HeardSummary,type Taxon,type Verdict } from '$lib/heard';
   import { fill } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
@@ -118,6 +119,7 @@
       <p class="muted">{fill('hdShown',{total:list.total,n:list.rows.length})}
         {#if list.rows.length<list.total}<Button onclick={()=>shown+=PAGE}>{fill('hdMore',{n:Math.min(PAGE,list.total-list.rows.length)})}</Button>{/if}</p>
     </section>
+    <HeardTable datasetId={id} onchange={load}/>
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
 <dialog bind:this={dialog} aria-labelledby="hd-fix-title" onclose={()=>{fixing=[];picking='';}}>

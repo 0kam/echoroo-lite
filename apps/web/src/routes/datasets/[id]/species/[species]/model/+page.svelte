@@ -10,6 +10,7 @@
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
   import TestSounds from '$lib/TestSounds.svelte';
+  import AiSharing from '$lib/AiSharing.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -74,7 +75,9 @@
       {#if info!.test&&info!.test.heard+info!.test.not_heard}<p class="muted">{fill('tsMaterialNote',{n:info!.test.heard+info!.test.not_heard})}</p>{/if}{/snippet}
     {#if !searchFirst}<section class="panel">
       {@render counts()}
-      <p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>
+      {#if model?.imported}<p class="info">{fill(model.imported.site?'shImportedFrom':'shImported',{site:model.imported.site??'',file:model.imported.file,date:made(model.created_at)})}{#if model.imported.warning}{' '}{fill('shWarnText',{from:modelName(model.imported.engine),here:modelName(info.engine)})}{/if} {t('shImportedBack')}</p>
+      {:else}<p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>{/if}
+      {#if model&&!model.imported&&model.training.other_sites}<p class="muted">{fill('shPooled',{n:model.training.other_sites.positive_5s+model.training.other_sites.negative_5s,sites:model.training.other_sites.sites})}</p>{/if}
       {#if model}<p class="muted">{t('mdStopRule')}</p>{/if}
       {#if model&&!model.applicable}<p class="info">{t(model.reason??'custom_model_scope_changed')}</p>{/if}
       <!-- Shown from the first time the AI is made again: before that there is nothing to compare it with. -->
@@ -134,9 +137,10 @@
       {#each answered.slice(0,answeredShown) as item (item.segment_id)}{@render row(item)}{/each}
       {#if answeredShown<answered.length}<Button onclick={()=>answeredShown+=10}>{t('pMore')}</Button>{/if}
     </details>{/if}
+    {#if !searchFirst||model}<AiSharing datasetId={id} {speciesId} {info} onchange={async()=>{skipped=[];await next.run();}}/>{/if}
     {#if model}<details class="more"><summary>{t('sMore')}</summary>
-      <Button variant="danger" size="sm" onclick={()=>confirming=!confirming}>{t('mdDeleteAI')}</Button>
-      {#if confirming}<div class="confirm"><p>{t('modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=false}>{t('mCancel')}</Button>
+      <Button variant="danger" size="sm" onclick={()=>confirming=!confirming}>{t(model.imported?'shDeleteImported':'mdDeleteAI')}</Button>
+      {#if confirming}<div class="confirm"><p>{t(model.imported?'shDeleteImportedConfirm':'modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=false}>{t('mCancel')}</Button>
         <Button variant="danger" pending={remove.pending} onclick={()=>remove.run(model.id)}>{t('modelDeleteYes')}</Button></div></div>{/if}
     </details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}

@@ -256,6 +256,28 @@ class MapAnswer(BaseModel):
     verdict: Literal['present', 'absent', 'unknown']
 
 
+class ModelSharing(BaseModel):
+    dataset_id: int = Field(ge=1)
+    species_id: str
+    all_sites: bool
+
+
+class ToFolder(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    folder: str = Field(min_length=1)
+    hide_site: bool = False
+
+
+class FromFile(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    dataset_id: int = Field(ge=1)
+    path: str = Field(min_length=1)
+    species_id: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    inspect: bool = False
+
+
 class OtherSpecies(BaseModel):
     dataset_id: int
     recording_id: int
@@ -717,6 +739,39 @@ def create_app(root, models, token):
             operation_cancel.clear()
             return create(root, context(root, body.dataset_id, body.start_date.isoformat(), body.end_date.isoformat()),
                           body.species_id, operation_cancel)
+
+    @app.post('/custom-models/sharing')
+    def custom_model_sharing(body: ModelSharing):
+        import sharing
+        return sharing.set_all_sites(root, body.dataset_id, body.species_id, body.all_sites)
+
+    @app.post('/custom-models/import')
+    def custom_model_import(body: FromFile):
+        import sharing
+        from results_workflow import context
+        if body.inspect:
+            return sharing.inspect(root, body.path)
+        with lock:
+            if worker and worker.is_alive():
+                raise HTTPException(409, 'job_busy')
+            ctx = context(root, body.dataset_id, body.start_date.isoformat() if body.start_date else None, body.end_date.isoformat() if body.end_date else None)
+            return sharing.import_model(root, ctx, body.path, body.species_id)
+
+    @app.post('/custom-models/{model_id}/export')
+    def custom_model_export(model_id: int, body: ToFolder):
+        import sharing
+        return sharing.export_model(root, model_id, body.folder, body.hide_site)
+
+    @app.post('/datasets/{dataset_id}/heard/export')
+    def heard_export(dataset_id: int, body: ToFolder):
+        import sharing
+        return sharing.export_heard(root, dataset_id, body.folder)
+
+    @app.post('/datasets/{dataset_id}/heard/import')
+    def heard_import(dataset_id: int, body: FromFile):
+        import sharing
+        with lock:
+            return sharing.import_heard(root, dataset_id, body.path)
 
     @app.get('/custom-models/{model_id}')
     def custom_model_detail(model_id: int):

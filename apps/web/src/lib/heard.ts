@@ -27,6 +27,6 @@ export const taxonName = (taxon: Taxon) => taxon.rank === 'family' ? familyLabel
 export const verdictText = (verdict: Verdict) => t(`hdV_${verdict}`);
 /** The screen an answer was recorded on, in that screen's own name. */
 export const screenName = (screen: string, extra = false) => {
-  const name = t(['species_mark', 'validation', 'training', 'sound_map', 'rollup_fix', 'review'].includes(screen) ? `hdScreen_${screen}` : 'hdScreen_other');
+  const name = t(['species_mark', 'validation', 'training', 'sound_map', 'rollup_fix', 'review', 'import'].includes(screen) ? `hdScreen_${screen}` : 'hdScreen_other');
   return extra && screen !== 'review' ? fill('hdScreenExtra', { screen: name }) : name;
 };
