@@ -135,7 +135,7 @@ def deletion_plan(db, site_id, dataset_id=None):
     # A stale confirmation must not silently delete newly added answers or records.
     revision = [db.execute('SELECT version FROM result_revision WHERE id=1').fetchone()[0],
                 *[db.execute(f'SELECT COALESCE(MAX(id),0) FROM {table}').fetchone()[0] for table in
-                  ('window_answers','presence_marks','presence_misses','model_labels','workflow_exports','custom_models')]]
+                  ('labels','presence_misses','workflow_exports','custom_models')]]
     plan['revision'] = hashlib.sha256(json.dumps([plan,revision],sort_keys=True).encode()).hexdigest()
     return plan
 
@@ -144,8 +144,8 @@ def preview_delete(root, site_id, dataset_id=None):
     with connect(root) as db:
         plan = deletion_plan(db,site_id,dataset_id)
         # The "heard" marks and "could not confirm" records that delete() removes, so the confirmation can name them.
-        marks = db.execute('''SELECT COUNT(*) FROM presence_marks WHERE recording_id IN (SELECT value FROM json_each(?))
-            OR run_id IN (SELECT value FROM json_each(?))''', (json.dumps(plan['recordings']), json.dumps(plan['searches']))).fetchone()[0]
+        marks = db.execute('''SELECT COUNT(*) FROM labels WHERE source='species_mark' AND (recording_id IN (SELECT value FROM json_each(?))
+            OR json_extract(source_ref,'$.run_id') IN (SELECT value FROM json_each(?)))''', (json.dumps(plan['recordings']), json.dumps(plan['searches']))).fetchone()[0]
         misses = 0 if plan['remaining_dataset_id'] is not None else db.execute(
             'SELECT COUNT(*) FROM presence_misses WHERE dataset_id IN (SELECT value FROM json_each(?))', (json.dumps(plan['datasets']),)).fetchone()[0]
     return {k: (len(v) if isinstance(v,list) else v) for k,v in plan.items() if k!='analyses'} | {'analyses':len(plan['analyses']),'marks':marks,'misses':misses}
@@ -164,18 +164,17 @@ def delete(root, site_id, dataset_id, revision):
         db.execute(f'DELETE FROM vectors WHERE rowid IN ({segments})', (json.dumps(aids),))
         # Human answers and marks about deleted recordings go with them; answers elsewhere stay.
         db.execute('DELETE FROM validation_items WHERE session_id IN (SELECT value FROM json_each(?))',(json.dumps(plan['validations']),))
-        db.execute('UPDATE window_answers SET session_id=NULL WHERE session_id IN (SELECT value FROM json_each(?))',(json.dumps(plan['validations']),))
+        db.execute('''UPDATE labels SET source_ref=json_set(source_ref,'$.session_id',NULL) WHERE source='validation'
+            AND json_extract(source_ref,'$.session_id') IN (SELECT value FROM json_each(?))''',(json.dumps(plan['validations']),))
         remove('validation_sessions','id',plan['validations'])
-        remove('window_answers','recording_id',plan['recordings'])
+        remove('labels','recording_id',plan['recordings'])
         remove('custom_models','id',plan['custom_models'])
-        for table in ('presence_marks','search_hits'):
-            remove(table,'run_id',plan['searches'])
-        remove('presence_marks','recording_id',plan['recordings'])
-        db.execute('DELETE FROM model_labels WHERE segment_id IN (SELECT id FROM segments WHERE analysis_id IN (SELECT value FROM json_each(?)))',(json.dumps(aids),))
+        remove('search_hits','run_id',plan['searches'])
+        db.execute('''DELETE FROM labels WHERE source='species_mark' AND json_extract(source_ref,'$.run_id') IN (SELECT value FROM json_each(?))''',
+                   (json.dumps(plan['searches']),))
         remove('search_runs','id',plan['searches'])
         if plan['remaining_dataset_id'] is None:
-            for table in ('presence_marks','presence_misses'):
-                remove(table,'dataset_id',plan['datasets'])
+            remove('presence_misses','dataset_id',plan['datasets'])
         remove('reports','id',plan['reports'])
         remove('workflow_exports','id',plan['exports'])
         for table in ('candidates','segments'):
@@ -185,7 +184,7 @@ def delete(root, site_id, dataset_id, revision):
         # A job anchored to the first import can also contain surviving recordings.
         db.execute('DELETE FROM jobs WHERE dataset_id IN (SELECT value FROM json_each(?)) AND id NOT IN (SELECT job_id FROM analyses)',(json.dumps(plan['datasets']),))
         if plan['remaining_dataset_id'] is not None:
-            for table in ('jobs','search_runs','validation_sessions','presence_marks','presence_misses','custom_models','reports','workflow_exports'):
+            for table in ('jobs','search_runs','validation_sessions','presence_misses','custom_models','reports','workflow_exports'):
                 db.execute(f'UPDATE {table} SET dataset_id=? WHERE dataset_id IN (SELECT value FROM json_each(?))',(plan['remaining_dataset_id'],json.dumps(plan['datasets'])))
         remove('datasets','id',plan['datasets'])
         if dataset_id is None:

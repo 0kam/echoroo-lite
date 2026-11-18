@@ -72,7 +72,7 @@ def context(root, dataset_id, first=None, last=None):
     with connect(root) as db:
         # MAX and COUNT together notice new rows and deleted ones (undone marks, deleted checks).
         revision=[tuple(db.execute(f'SELECT COALESCE(MAX(id),0),COUNT(*) FROM {table}').fetchone()) for table in
-                  ('search_runs','window_answers','validation_sessions','presence_marks','presence_misses','model_labels','custom_models')]
+                  ('search_runs','labels','validation_sessions','presence_misses','custom_models')]
         revision.append([tuple(r) for r in db.execute("SELECT id,json_extract(snapshot,'$.stage'),json_extract(snapshot,'$.method') FROM validation_sessions ORDER BY id")])
         # A species AI made again keeps its id; its files' digest tells the versions apart.
         revision.append([tuple(r) for r in db.execute('SELECT id,artifact_sha256 FROM custom_models ORDER BY id')])

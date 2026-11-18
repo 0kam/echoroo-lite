@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 from scipy.special import expit, logit
 
+from labels import FROM_ANSWER, LATEST, TO_ANSWER, put, remove
 from models import default_threshold
 from reports import analysis_metadata, classification_batches, classification_species_windows, strip_multiplier, window_in_scope
 from species import names_for
@@ -355,11 +356,16 @@ def start_session(root, body):
 
 
 def answered_items(db, sid, phase=None):
-    return [dict(r) for r in db.execute('''SELECT i.*,a.verdict,a.id AS answer_id,a.created_at AS answered_at,
-        a.quiz_snapshot,a.examples_snapshot FROM validation_items i JOIN validation_sessions v ON v.id=i.session_id
-        LEFT JOIN window_answers a ON a.id=(SELECT MAX(id) FROM window_answers w WHERE w.species_id=v.species_id
-            AND w.recording_id=i.recording_id AND w.start_s=i.start_s AND w.end_s=i.end_s)
+    """The session's sounds with the species' current label on each exact window, from any screen, as
+    target / other / unknown."""
+    rows = [dict(r) for r in db.execute(f'''SELECT i.*,l.verdict AS label_verdict,l.id AS answer_id,l.created_at AS answered_at,
+        json_extract(l.source_ref,'$.quiz_snapshot') AS quiz_snapshot,json_extract(l.source_ref,'$.examples_snapshot') AS examples_snapshot
+        FROM validation_items i JOIN validation_sessions v ON v.id=i.session_id
+        LEFT JOIN labels l ON l.taxon_id=v.species_id AND l.recording_id=i.recording_id AND l.start_s=i.start_s AND l.end_s=i.end_s AND {LATEST}
         WHERE i.session_id=? AND (? IS NULL OR i.phase=?) ORDER BY i.position''', (sid, phase, phase))]
+    for row in rows:
+        row['verdict'] = TO_ANSWER.get(row.pop('label_verdict'))
+    return rows
 
 
 def require_visible(root, snapshot):
@@ -429,9 +435,8 @@ def answer(root, sid, item_id, verdict, version=None, examples=None):
             raise CatalogError('validation_answer_order')
         checked_source(db.execute('SELECT * FROM recordings WHERE id=?', (item['recording_id'],)).fetchone())
         from quiz import report_results
-        db.execute('''INSERT INTO window_answers(species_id,recording_id,start_s,end_s,verdict,session_id,quiz_snapshot,examples_snapshot)
-            VALUES(?,?,?,?,?,?,?,?)''', (row['species_id'], item['recording_id'], item['start_s'], item['end_s'], verdict, sid,
-            json.dumps(report_results(db, [row['species_id']])), json.dumps(examples) if examples is not None else None))
+        put(db, row['species_id'], item['recording_id'], item['start_s'], item['end_s'], FROM_ANSWER[verdict], 'validation',
+            {'session_id': sid, 'quiz_snapshot': report_results(db, [row['species_id']]), 'examples_snapshot': examples}, history=True)
         others = db.execute('''SELECT DISTINCT v.id,v.snapshot FROM validation_sessions v JOIN validation_items i ON i.session_id=v.id
             WHERE v.species_id=? AND i.recording_id=? AND i.start_s=? AND i.end_s=?''',
             (row['species_id'], item['recording_id'], item['start_s'], item['end_s'])).fetchall()
@@ -475,14 +480,14 @@ def delete_sessions(db, ids):
     windows = db.execute('''SELECT DISTINCT v.species_id,i.recording_id,i.start_s,i.end_s FROM validation_items i
         JOIN validation_sessions v ON v.id=i.session_id WHERE v.id IN (SELECT value FROM json_each(?))''', (encoded,)).fetchall()
     db.execute('DELETE FROM validation_items WHERE session_id IN (SELECT value FROM json_each(?))', (encoded,))
-    db.execute('UPDATE window_answers SET session_id=NULL WHERE session_id IN (SELECT value FROM json_each(?))', (encoded,))
+    db.execute('''UPDATE labels SET source_ref=json_set(source_ref,'$.session_id',NULL) WHERE source='validation'
+        AND json_extract(source_ref,'$.session_id') IN (SELECT value FROM json_each(?))''', (encoded,))
     db.execute('DELETE FROM validation_sessions WHERE id IN (SELECT value FROM json_each(?))', (encoded,))
     for species_id, recording_id, start_s, end_s in windows:
         if not db.execute('''SELECT 1 FROM validation_items i JOIN validation_sessions v ON v.id=i.session_id
                 WHERE v.species_id=? AND i.recording_id=? AND i.start_s=? AND i.end_s=?''',
                 (species_id, recording_id, start_s, end_s)).fetchone():
-            db.execute('DELETE FROM window_answers WHERE species_id=? AND recording_id=? AND start_s=? AND end_s=?',
-                       (species_id, recording_id, start_s, end_s))
+            remove(db, species_id, recording_id, start_s, end_s, 'validation')
     db.execute('DELETE FROM workflow_cache')
     _delete_population_files(db, ids)
 

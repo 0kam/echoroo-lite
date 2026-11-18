@@ -12,7 +12,8 @@ from zoneinfo import ZoneInfo
 
 import soundfile as sf
 
-from storage import CatalogError, checked_source, connect
+import labels
+from storage import CatalogError, checked_source, connect, species_id
 
 
 XC_FIELDS = (
@@ -59,11 +60,23 @@ def _site(db, dataset_id):
 
 
 def _rows(db, dataset_id):
+    """The site's picks, each with its species and background species (scientific names) from its sound-map labels."""
     _site(db, dataset_id)
-    return db.execute('''SELECT p.*,r.path,r.recorded_at,r.timezone,r.seconds,r.sample_rate,
+    rows = [dict(r) for r in db.execute('''SELECT p.*,r.path,r.recorded_at,r.timezone,r.seconds,r.sample_rate,
         r.size,r.mtime_ns FROM picked_sounds p JOIN site_recordings r ON r.id=p.recording_id
         WHERE r.scope_id=? ORDER BY r.recorded_at,p.start_s,p.end_s,p.recording_id''',
-        (dataset_id,)).fetchall()
+        (dataset_id,))]
+    named = {}
+    for label in db.execute('''SELECT l.recording_id,l.start_s,l.end_s,s.scientific_name,
+            COALESCE(json_extract(l.source_ref,'$.background'),0) AS background FROM labels l JOIN species s ON s.id=l.taxon_id
+            WHERE l.source='sound_map' AND l.verdict='present' AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
+            ORDER BY l.id''', (dataset_id,)):
+        named.setdefault((label['recording_id'], label['start_s'], label['end_s']), []).append(label)
+    for row in rows:
+        found = named.get((row['recording_id'], row['start_s'], row['end_s']), [])
+        row['species'] = next((label['scientific_name'] for label in found if not label['background']), None)
+        row['background'] = json.dumps([label['scientific_name'] for label in found if label['background']], ensure_ascii=False)
+    return rows
 
 
 def _species_ids(db, rows):
@@ -122,7 +135,13 @@ def search_examples(root, dataset_id, scientific_name):
          'start_s': row['start_s'], 'end_s': row['end_s']} for row in rows]}
 
 
+def _forget(db, recording_id, start_s, end_s):
+    db.execute("DELETE FROM labels WHERE source='sound_map' AND recording_id=? AND start_s=? AND end_s=?", (recording_id, start_s, end_s))
+
+
 def put(root, body):
+    """Save a pick. Its species and each background species become "present" labels (source sound_map), so they
+    count as evidence, species-AI material and example calls like answers on any other screen."""
     with connect(root) as db:
         record = db.execute('SELECT * FROM site_recordings WHERE scope_id=? AND id=?',
                             (body.dataset_id, body.recording_id)).fetchone()
@@ -130,17 +149,18 @@ def put(root, body):
             raise CatalogError('not_found')
         if body.end_s > record['seconds'] + 1e-9:
             raise CatalogError('invalid_interval')
-        db.execute('''INSERT INTO picked_sounds
-            (recording_id,start_s,end_s,species,background,sound_type,quality,others)
-            VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(recording_id,start_s,end_s) DO UPDATE SET
-            species=excluded.species,background=excluded.background,sound_type=excluded.sound_type,
-            quality=excluded.quality,others=excluded.others,updated_at=CURRENT_TIMESTAMP''',
-            (body.recording_id, body.start_s, body.end_s, body.species,
-             json.dumps(body.background, ensure_ascii=False), body.sound_type, body.quality, body.others))
-        row = db.execute('''SELECT p.*,r.path,r.recorded_at,r.timezone,r.seconds FROM picked_sounds p
-            JOIN recordings r ON r.id=p.recording_id
-            WHERE p.recording_id=? AND p.start_s=? AND p.end_s=?''',
-            (body.recording_id, body.start_s, body.end_s)).fetchone()
+        db.execute('''INSERT INTO picked_sounds(recording_id,start_s,end_s,sound_type,quality,others)
+            VALUES(?,?,?,?,?,?) ON CONFLICT(recording_id,start_s,end_s) DO UPDATE SET
+            sound_type=excluded.sound_type,quality=excluded.quality,others=excluded.others,updated_at=CURRENT_TIMESTAMP''',
+            (body.recording_id, body.start_s, body.end_s, body.sound_type, body.quality, body.others))
+        _forget(db, body.recording_id, body.start_s, body.end_s)
+        names = [(body.species, False)] if body.species else []
+        names += [(name, True) for name in body.background if name and name != body.species]
+        for name, background in names:
+            labels.put(db, species_id(db, name), body.recording_id, body.start_s, body.end_s, 'present', 'sound_map',
+                       {'background': background}, history=True)
+        row = next(row for row in _rows(db, body.dataset_id) if (row['recording_id'], row['start_s'], row['end_s']) ==
+                   (body.recording_id, body.start_s, body.end_s))
         species_ids = _species_ids(db, [row])
     return _shape(row, species_ids)
 
@@ -151,6 +171,8 @@ def delete(root, dataset_id, recording_id, start_s, end_s):
         cursor = db.execute('''DELETE FROM picked_sounds WHERE recording_id=? AND start_s=? AND end_s=?
             AND recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)''',
             (recording_id, start_s, end_s, dataset_id))
+        if cursor.rowcount:
+            _forget(db, recording_id, start_s, end_s)
     return {'deleted': cursor.rowcount > 0}
 
 

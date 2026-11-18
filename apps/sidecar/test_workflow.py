@@ -82,8 +82,8 @@ class WorkflowCheck(unittest.TestCase):
                 save(root,job,record,'perch',{'model_sha256':'perch','candidate_filter':{'species':labels}},dict(
                     labels=labels+['Other'],logits=np.log(np.tile([.4,.3,.2,.1],(3,1)))),[])
                 with connect(root) as db:
-                    db.executemany('''INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s)
-                        VALUES(1,?,1,0,3)''',((taxon['id'],) for taxon in (usual,unusual,unmapped)))
+                    db.executemany('''INSERT INTO labels(taxon_id,recording_id,start_s,end_s,verdict,source)
+                        VALUES(?,1,0,3,'present','species_mark')''',((taxon['id'],) for taxon in (usual,unusual,unmapped)))
                 expected={usual['id']:'usual',unusual['id']:'unusual',unmapped['id']:None}
                 payload=client.get('/datasets/1/overview').json()
                 overview={row['species']['id']:row['region'] for row in payload['species']}
@@ -111,7 +111,7 @@ class WorkflowCheck(unittest.TestCase):
                 client.post('/imports',json=dict(folder=str(root),site_name='Site',dataset_name='Data',timezone='Asia/Tokyo',latitude=35,longitude=138))
                 species=client.get('/species?q=Horornis diphone').json()[0]
                 with connect(root) as db:
-                    db.execute('INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s) VALUES(1,?,1,0,3)',(species['id'],))
+                    db.execute("INSERT INTO labels(taxon_id,recording_id,start_s,end_s,verdict,source) VALUES(?,1,0,3,'present','species_mark')",(species['id'],))
                 row=next(row for row in client.get('/datasets/1/overview').json()['species'] if row['species']['id']==species['id'])
                 detail=client.get(f"/datasets/1/species/{species['id']}").json()
                 listed=client.get(f"/datasets/1/species/{species['id']}/presence",params={'source':'search'}).json()

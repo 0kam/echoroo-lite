@@ -63,7 +63,7 @@ class ExamplesCheck(unittest.TestCase):
                  'country': 'France', 'quality': 'B',
                  'license': '//creativecommons.org/licenses/by-nc-sa/4.0/', 'url': 'https://xeno-canto.org/1'}), reference['id']))
             # A sound confirmed on the presence list; newer than any check answer.
-            db.execute("INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,created_at) VALUES(1,?,1,300,305,'2999-01-01 00:00:00')",
+            db.execute("INSERT INTO labels(taxon_id,recording_id,start_s,end_s,verdict,source,created_at) VALUES(?,1,300,305,'present','species_mark','2999-01-01 00:00:00')",
                        (warbler['id'],))
         self.post('/quiz/clips', {'species_id': warbler['id'], 'source_kind': 'reference',
                                  'source_id': reference['id'], 'start_s': 10, 'end_s': 15})
@@ -90,7 +90,7 @@ class ExamplesCheck(unittest.TestCase):
                                                                'version': question['version'], 'examples_snapshot': refs})
         with connect(self.root) as db:
             db.execute('UPDATE quiz_clips SET enabled=0 WHERE id=?', (clip['id'],))
-            saved = db.execute('SELECT examples_snapshot FROM window_answers WHERE examples_snapshot IS NOT NULL').fetchall()
+            saved = db.execute("SELECT json_extract(source_ref,'$.examples_snapshot') FROM labels WHERE json_extract(source_ref,'$.examples_snapshot') IS NOT NULL").fetchall()
         self.assertEqual([json.loads(r[0]) for r in saved], [refs])
         self.assertEqual([e['label']['origin'] for e in self.examples(warbler)['examples']], ['quiz', 'xeno-canto', 'presence', 'validation'])
         self.assertNotIn('validation', [e['label']['origin'] for e in self.examples(warbler, validation_id=validation['id'])['examples']])

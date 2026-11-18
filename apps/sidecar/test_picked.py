@@ -110,9 +110,16 @@ class PickedCheck(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         item = response.json()
         self.assertEqual(item['species'], {'id': known['Horornis diphone'], 'scientific_name': 'Horornis diphone'})
+        # A name missing from the species list becomes a local species, so it can be a label like any other.
+        with connect(self.root) as db:
+            unknown = db.execute("SELECT id FROM species WHERE scientific_name='Unknown bird'").fetchone()[0]
+            saved = [tuple(r) for r in db.execute("SELECT taxon_id,verdict,json_extract(source_ref,'$.background') FROM labels "
+                                                  "WHERE source='sound_map' ORDER BY id")]
         self.assertEqual(item['background'], [
             {'id': known['Parus cinereus'], 'scientific_name': 'Parus cinereus'},
-            {'id': None, 'scientific_name': 'Unknown bird'}])
+            {'id': unknown, 'scientific_name': 'Unknown bird'}])
+        self.assertEqual(saved, [(known['Horornis diphone'], 'present', 0), (known['Parus cinereus'], 'present', 1),
+                                 (unknown, 'present', 1)])
         self.assertTrue(item['others'])
         # The range that will be exported comes with each sound, so the list page plays exactly that.
         self.assertEqual((item['clip_start_s'], item['clip_end_s']), (0, 7.5))

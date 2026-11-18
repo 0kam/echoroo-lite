@@ -40,8 +40,8 @@ class RegionCheck(unittest.TestCase):
 
     def test_season_changes_overview_revision_and_location_invalidates_cached_badges(self):
         with connect(self.root) as db:
-            db.executemany('''INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s)
-                VALUES(1,?,?,0,3)''', ((self.taxon['id'], rid) for rid in (1, 2)))
+            db.executemany('''INSERT INTO labels(taxon_id,recording_id,start_s,end_s,verdict,source)
+                VALUES(?,?,0,3,'present','species_mark')''', ((self.taxon['id'], rid) for rid in (1, 2)))
 
         def predict(key, latitude, longitude, week):
             return {self.name} if (latitude, longitude, week) == (35, 138, 29) else set()

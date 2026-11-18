@@ -562,7 +562,7 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual(client.get(f"/validations/{check['id']}").json(),{'detail':'not_found'})
                 self.assertEqual(client.post(f"/validations/{check['id']}/answers",json={'item_id':question['id'],'verdict':'other'}).json(),{'detail':'not_found'})
                 with connect(data) as db:
-                    self.assertEqual(db.execute('SELECT COUNT(*) FROM window_answers').fetchone()[0],1)
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM labels WHERE source='validation'").fetchone()[0],1)
                 self.assertEqual(client.post('/reports/detection',json={**body,'engine':'birdnet-v3','model_sha256':v3['metadata']['model_sha256'],'threshold':.1}).json(),{'detail':'not_found'})
                 self.assertEqual(client.get(f"/reports/{report['id']}").json(),{'detail':'not_found'})
                 presence=client.get(f"/datasets/1/species/{target['id']}/presence").json()
