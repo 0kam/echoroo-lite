@@ -241,7 +241,12 @@ def overview(root, dataset_id, first=None, last=None):
         missing = [r for r in records if engine in pending.get(r['id'], ())]
         if missing:
             estimates.append(dict(engine=engine, recordings=len(missing), seconds=sum(r['seconds'] for r in missing)))
-    return {**result, 'pending_analysis':estimates}
+    from analysis import partial_analyses
+    answers = settings(root).get('upgrade_answers', {})
+    # Asked once: after an answer, partial analyses are listed only if the user chose to redo them later.
+    partial = [dict(engine=engine, recordings=count) for engine, count in partial_analyses(root, records).items()
+               if engine in enabled_engines(root, directory) and engine not in answers]
+    return {**result, 'pending_analysis':estimates, 'partial_analysis': partial}
 
 
 def build_overview(root, dataset_id, ctx):

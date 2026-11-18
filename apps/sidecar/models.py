@@ -103,6 +103,14 @@ def settings(root):
         raise CatalogError('invalid_input') from None
 
 
+def answer_upgrade(root, engine, answer):
+    """Remember the user's one answer to "analyze the old results again with every class?"."""
+    if engine not in REGISTRY or answer not in ('redo', 'keep'):
+        raise ValueError(engine)
+    current = settings(root)
+    _write_settings(root, {**current, 'upgrade_answers': {**current.get('upgrade_answers', {}), engine: answer}})
+
+
 def _write_settings(root, data):
     path = Path(root) / 'models.json'
     temporary = path.with_name(path.name + '.' + uuid4().hex + '.tmp')

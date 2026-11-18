@@ -108,6 +108,21 @@ class AnalysisCostsTest(unittest.TestCase):
                     analysis.save(data,job,record,'perch',{},scores,[],[np.ones(1536)],db=db)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM vectors').fetchone()[0],1)
 
+    def _partial_birdnet_is_asked_once(self, client, data, directory):
+        # A BirdNET 2.4 result from before 0.3 kept only the site's species: ask once whether to analyze again.
+        with connect(data) as db:
+            db.execute("UPDATE analyses SET metadata=json_remove(metadata,'$.all_classes') WHERE engine='birdnet'")
+            records = [dict(r) for r in db.execute('SELECT * FROM recordings')]
+            site = dict(db.execute('SELECT * FROM sites').fetchone())
+        overview = client.get('/datasets/1/overview').json()
+        self.assertEqual((overview['pending_analysis'],overview['partial_analysis']),([],[dict(engine='birdnet',recordings=2)]))
+        self.assertEqual(analysis.plan(data,directory,records,site,('birdnet',)),{1:['birdnet'],2:['birdnet']})
+        self.assertEqual(client.post('/analysis-upgrade',json={'engine':'birdnet','answer':'keep'}).status_code,200)
+        self.assertEqual(client.get('/datasets/1/overview').json()['partial_analysis'],[])
+        self.assertEqual(client.post('/analysis-upgrade',json={'engine':'nope','answer':'keep'}).status_code,422)
+        with connect(data) as db:
+            db.execute("UPDATE analyses SET metadata=json_set(metadata,'$.all_classes',json('true')) WHERE engine='birdnet'")
+
     def test_shared_decode_matches_separate_engine_jobs_and_pending_pairs(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); directory = root/'models'; model_files(directory); v3_files(directory)
@@ -134,6 +149,11 @@ class AnalysisCostsTest(unittest.TestCase):
                     self.assertEqual(wait_job(client)['status'],'complete')
                     self.assertEqual((read.call_count,resample.call_count),(2,2))
                     self.assertEqual(bird_calls,[('<array>',486000,48000),('<array>',341775,44100)])
+                self.assertEqual(client.get('/datasets/1/overview').json()['partial_analysis'],[])
+                bird = next(r for r in client.get('/recordings/1/results').json() if r['engine']=='birdnet')
+                self.assertEqual({c['label'] for c in bird['candidates']},{'Horornis diphone_Japanese Bush Warbler'})
+                self.assertEqual(bird['rollups'],[])
+                self._partial_birdnet_is_asked_once(client,data,directory)
                 self.assertEqual(client.get('/datasets/1/overview').json()['pending_analysis'],[])
                 shared = saved_results(data)
                 # File changes without a catalog revision must still invalidate the estimate.

@@ -104,10 +104,13 @@ def fake_birdnet(directory, calls):
 
     class Session:
         def result(self, samples, rate):
-            starts = np.arange(0, len(samples)/rate, 3)
-            rows = np.array([(start, start+3, label, .8) for start in starts],
-                dtype=[('start_time','f8'),('end_time','f8'),('species_name','U128'),('confidence','f4')])
-            return SimpleNamespace(unprocessable_inputs=[], to_structured_array=lambda: rows)
+            # birdnet 1.1.1 with top_k=None: every class of every 3-s segment, in no set order.
+            classes = [label, 'Picus canus_Grey-headed Woodpecker', 'Dryocopus pileatus_Pileated Woodpecker']
+            segments = int(np.ceil(len(samples) / rate / 3))
+            ids = np.tile(np.array([2, 0, 1], dtype=np.uint16), (1, segments, 1))
+            probs = np.tile(np.array([.05, .8, .01], dtype=np.float32), (1, segments, 1))
+            return SimpleNamespace(unprocessable_inputs=[], species_ids=ids, species_probs=probs,
+                                   species_list=np.array(classes))
 
         def run(self, path):
             samples, rate = sf.read(path, dtype='float32')

@@ -66,6 +66,7 @@ class ImportRequest(BaseModel):
 class JobRequest(BaseModel):
     dataset_id: int
     recording_id: int | None = None
+    redo: list[str] = []  # engines whose partial (pre-0.3) analyses are done again
 
 
 class ExploreRequest(BaseModel):
@@ -940,18 +941,35 @@ def create_app(root, models, token):
                 if analysis['engine'] not in model_registry.selected_engines(root):
                     continue
                 meta = json.loads(analysis["metadata"])
+                seconds = db.execute("SELECT seconds FROM recordings WHERE id=?", (recording,)).fetchone()[0]
+                rollups = []
                 if analysis["engine"] == "perch":
-                    from predictions import perch_candidates
+                    from predictions import perch_display
                     candidate_filter = meta.get("candidate_filter")
-                    seconds = db.execute("SELECT seconds FROM recordings WHERE id=?", (recording,)).fetchone()[0]
-                    candidates, display = perch_candidates(analysis["scores_path"], seconds, analysis["id"], candidate_filter)
+                    candidates, rollups, display = perch_display(analysis["scores_path"], seconds, analysis["id"], candidate_filter)
                     meta = {**meta, **display}
                 else:
                     candidates = [dict(r) for r in db.execute(
                         "SELECT * FROM candidates WHERE analysis_id=? ORDER BY score DESC LIMIT 100", (analysis["id"],))]
-                output.append({**dict(analysis), "metadata": meta,
+                    if meta.get("all_classes"):
+                        from predictions import dense_rollups
+                        rollups = dense_rollups(analysis["scores_path"], seconds, analysis["engine"], meta.get("window_s", 5))
+                output.append({**dict(analysis), "metadata": meta, "rollups": rollups[:100],
                                "candidates": decorate_candidates(db, analysis["engine"], candidates)})
             return output
+
+    class UpgradeAnswer(BaseModel):
+        engine: str
+        answer: Literal['redo', 'keep']
+
+    @app.post("/analysis-upgrade")
+    def upgrade_answer(body: UpgradeAnswer):
+        from models import answer_upgrade
+        try:
+            answer_upgrade(root, body.engine, body.answer)
+        except ValueError:
+            raise HTTPException(422, "unknown_engine") from None
+        return {"engine": body.engine, "answer": body.answer}
 
     @app.post("/jobs")
     def start(body: JobRequest):
@@ -968,7 +986,7 @@ def create_app(root, models, token):
                 if not site or not records:
                     raise CatalogError("no_audio")
             from analysis import plan
-            pending = plan(root, models, records, dict(site))
+            pending = plan(root, models, records, dict(site), tuple(body.redo))
             records = [record for record in records if record['id'] in pending]
             if not records:
                 raise CatalogError('no_audio')
