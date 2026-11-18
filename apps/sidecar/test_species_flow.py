@@ -98,6 +98,8 @@ class SpeciesFlowCheck(unittest.TestCase):
                 (root/'models.json').write_text(json.dumps(data))
                 self.assertTrue(client.get(f"/custom-models/{model['id']}").json()['applicable'])
 
+    # About the material itself: no sounds are set aside for testing here (see test_test_sounds.py).
+    @patch('test_sounds.NEEDED', 10**6)
     def test_presence_search_custom_model_and_deletion(self):
         with site() as (root, client, species):
             sid = species['id']
@@ -306,6 +308,8 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             label(1, None)  # the answer taken back
             self.assertEqual(presence()['status'], 'unchecked')
 
+    # About the material itself: no sounds are set aside for testing here (see test_test_sounds.py).
+    @patch('test_sounds.NEEDED', 10**6)
     def test_builtin_batches_materials_and_rebuild(self):
         with site() as (root, client, species):
             sid = species['id']
@@ -367,7 +371,9 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             rebuilt = client.post('/custom-models', json=scope).json()
             self.assertEqual((rebuilt['id'], rebuilt['round']), (model['id'], 2))
             self.assertEqual(client.get(f"/validations/{custom['id']}").json()['model_reason'], 'custom_model_rebuilt')
-            self.assertNotEqual(client.post('/validations', json={**scope, 'model': 'custom', 'model_id': model['id']}).json()['id'], custom['id'])
+            fresh = client.post('/validations', json={**scope, 'model': 'custom', 'model_id': model['id']})
+            self.assertEqual(fresh.status_code, 200, fresh.text)
+            self.assertNotEqual(fresh.json()['id'], custom['id'])
             # A search made later did not make this AI, so deleting it neither warns about the AI nor deletes it.
             with patch('search_runs.load_perch', return_value=(Session(), 'perch-sha')):
                 run = client.post('/search-runs', json={'dataset_id': 1, 'species_id': sid,

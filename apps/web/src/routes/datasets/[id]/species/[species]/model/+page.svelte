@@ -9,6 +9,7 @@
   import { fill,modelIntro,modelName,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
+  import TestSounds from '$lib/TestSounds.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -69,7 +70,8 @@
   {#if info}
     {#snippet counts()}<p><strong>{fill('mdCounts',{positive:info!.examples.positive_5s,negative:info!.examples.negative_5s})}</strong>
       {#if info!.needed}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>
-      {#if info!.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info!.examples.other_answers})}</p>{/if}{/snippet}
+      {#if info!.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info!.examples.other_answers})}</p>{/if}
+      {#if info!.test&&info!.test.heard+info!.test.not_heard}<p class="muted">{fill('tsMaterialNote',{n:info!.test.heard+info!.test.not_heard})}</p>{/if}{/snippet}
     {#if !searchFirst}<section class="panel">
       {@render counts()}
       <p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>
@@ -86,9 +88,11 @@
           {#if grown!=='settled'}<Button href={back}>{t('mdFinish')}</Button>{:else if !more}<Button onclick={async()=>{more=true;await tick();toTop();}}>{t('mdGrowMore')}</Button>{/if}
         </div>{/if}
       {/if}
-    </section>{/if}
+    </section>
+    <TestSounds datasetId={id} {speciesId} name={commonName(info.species,app.locale)||info.species.scientific_name} query={range.toString()} timezone={site?.timezone}
+      version={`${model?.id}:${model?.round}:${info.examples.positive_5s}:${info.examples.negative_5s}:${info.test?.heard}:${info.test?.not_heard}`}/>{/if}
     {#snippet row(item:LabelRow)}<article class="row">
-      <div class="row-head"><span>{time(item)}</span>{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
+      <div class="row-head"><span>{time(item)}</span>{#if item.test}<span class="test">{t('tsBadgeHere')}</span>{/if}{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
       <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}
         onplaying={()=>{if(!played.includes(item.segment_id))played=[...played,item.segment_id];}}>
         {#snippet actions()}<div class="actions" role="group" aria-label={time(item)}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
@@ -137,7 +141,8 @@
     </details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>section p{margin:12px 0}.rounds{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;padding:0;list-style:none}
+<style>.test{padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;font-weight:600}
+  section p{margin:12px 0}.rounds{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;padding:0;list-style:none}
   .rounds li{padding:4px 10px;border:1px solid rgb(var(--stone-300));border-radius:8px;font-size:14px}.status-box{margin-bottom:12px}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
   .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.footer{border-top:1px solid rgb(var(--stone-300));padding-top:4px}
   details summary{min-height:44px;padding:10px 0;cursor:pointer}.confirm{margin-top:8px;padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}</style>

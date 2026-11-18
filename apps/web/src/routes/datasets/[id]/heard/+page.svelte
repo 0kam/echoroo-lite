@@ -103,15 +103,16 @@
       {#each list.rows as row (row.id)}{@const other=!!chosenSpecies&&chosenSpecies.id!==row.species.id}<article class="record" class:selected={selected.includes(row.id)}>
         <div class="record-head"><label class="check" title={other?t('hdSelectSame'):undefined}><input type="checkbox" checked={selected.includes(row.id)} disabled={other} onchange={()=>toggle(row)}/>
             <strong>{fill('hdRecord',{name:taxonName(row.species),verdict:verdictText(row.verdict)})}</strong></label>
-          <span>{time(row.local_time)}</span><span class="muted">{screenName(row.screen,row.extra)}</span>
+          <span>{time(row.local_time)}</span><span class="muted">{screenName(row.screen,row.extra)}</span>{#if row.test}<span class="test" title={t('tsBadgeHint')}>{t('tsBadge')}</span>{/if}
           <span class="buttons"><Button size="sm" active={open?.id===row.id} aria-expanded={open?.id===row.id} onclick={()=>openSound(row)}>{t(open?.id===row.id?'hdClose':'hdOpen')}</Button>
             <Button size="sm" onclick={()=>ask([row])}>{t('hdFix')}</Button></span></div>
         {#if open?.id===row.id&&sound}<div class="sound"><p class="muted">{fill('hdSoundAt',{file:fileName(sound.file),from:sound.start_s,to:sound.end_s})}</p>
           <AudioRegion source={sound.source} fixedRange compact start={sound.start_s} end={sound.end_s}/>
           {#if sound.now.length>1}<h3>{t('hdSoundNow')}</h3><ul>{#each sound.now as item (item.id)}<li>{fill('hdRecord',{name:taxonName(item.species),verdict:verdictText(item.verdict)})}
             {#if item.id!==row.id}<Button size="sm" onclick={()=>ask([item])}>{t('hdFix')}</Button>{/if}</li>{/each}</ul>{/if}
+          {#if sound.now.some(item=>item.test)}<p class="muted">{t('tsBadgeHint')}</p>{/if}
           <h3>{t('hdHistory')}</h3><ul>{#each sound.history as item (item.id)}<li><span class="muted">{when(item.created_at)}</span>
-            <span>{fill('hdRecord',{name:taxonName(item.species),verdict:verdictText(item.verdict)})}</span><span class="muted">{screenName(item.screen,item.extra)}</span>
+            <span>{fill('hdRecord',{name:taxonName(item.species),verdict:verdictText(item.verdict)})}</span><span class="muted">{screenName(item.screen,item.extra)}</span>{#if item.test}<span class="test" title={t('tsBadgeHint')}>{t('tsBadge')}</span>{/if}
             {#if item.current}<span class="muted">{t('hdNow')}</span>{:else if sound.history.find(now=>now.id===item.current_id)?.verdict!==item.verdict}<Button size="sm" pending={restore.pending} onclick={()=>restore.run(item)}>{t('hdRestore')}</Button>{/if}</li>{/each}</ul></div>{/if}
       </article>{:else}<p>{t(list.total||species||verdict||screen||day?'hdNoMatch':'hdEmpty')}</p>{/each}
       <p class="muted">{fill('hdShown',{total:list.total,n:list.rows.length})}
@@ -139,7 +140,8 @@
     {#if fix.error}<p class="error" role="alert">{t(fix.error)}</p>{/if}
     <div class="actions"><Button disabled={fix.pending} onclick={()=>dialog?.close()}>{t('mCancel')}</Button></div>{/if}
 </dialog>
-<style>.heard-page h2{margin:0 0 12px}.heard-page p{margin:8px 0}td.n,th.n{text-align:right;white-space:nowrap}table{table-layout:auto}td{vertical-align:middle}
+<style>.test{padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;font-weight:600;white-space:nowrap}
+  .heard-page h2{margin:0 0 12px}.heard-page p{margin:8px 0}td.n,th.n{text-align:right;white-space:nowrap}table{table-layout:auto}td{vertical-align:middle}
   .link{background:none;border:0;padding:0;color:rgb(var(--primary-700));text-decoration:underline;cursor:pointer;font:inherit;font-weight:700;text-align:left}
   .scientific-name{display:block}.filters{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:12px}.filters label{display:flex;flex-direction:column;gap:4px}
   .bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 0}

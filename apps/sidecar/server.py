@@ -695,6 +695,13 @@ def create_app(root, models, token):
         ctx = context(root, dataset_id, start_date.isoformat() if start_date else None, end_date.isoformat() if end_date else None)
         return readiness(root, ctx, species_id, batch, skip)
 
+    @app.get('/datasets/{dataset_id}/species/{species_id}/test-sounds')
+    def species_test_sounds(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None):
+        import test_sounds
+        from results_workflow import context
+        ctx = context(root, dataset_id, start_date.isoformat() if start_date else None, end_date.isoformat() if end_date else None)
+        return test_sounds.report(root, ctx, species_id)
+
     @app.post('/datasets/{dataset_id}/species/{species_id}/labels')
     def custom_model_label(dataset_id: int, species_id: str, body: ModelLabel):
         from custom_models import set_label

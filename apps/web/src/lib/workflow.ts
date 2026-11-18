@@ -34,12 +34,12 @@ export type CustomModel = {id:number;round:number;created_at:string;dataset_id:n
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
   training:{positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null;growth:Growth};
 /** A 5-second sound to answer on the species-AI page; `score` is null in the list of answered sounds. */
-export type LabelRow = {segment_id:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;
+export type LabelRow = {test?:boolean;segment_id:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;
   score:number|null;label:'target'|'other'|null};
 /** The species-AI page. `batch` and `source` come only when a round is asked for; source null = nothing to choose sounds by. */
 export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;source:'custom'|'search'|'builtin'|null;engine:string;
   batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number};
-  requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[]};
+  requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[];test?:{heard:number;not_heard:number}};
 export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;round?:number;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
   /** null: the applicable check ended undecided, so this AI's detections are not counted. */
   threshold?:number|null;validation:Validation|null};
