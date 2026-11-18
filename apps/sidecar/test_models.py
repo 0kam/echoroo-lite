@@ -17,28 +17,30 @@ import numpy as np
 import soundfile as sf
 from fastapi.testclient import TestClient
 
-from analysis import digest, infer_onnx
+from analysis import KingletSession, digest, infer_onnx
 from models import REGISTRY, default_threshold, settings, machine_fingerprint
 from server import create_app
 from species import bundled_names
+from taxa import in_japan
 from storage import CatalogError, connect
 
 
 def model_files(directory):
     names = ['Horornis diphone', 'Phoebastria albatrus']
     names += [name for name in bundled_names() if name not in names][:315]
+    # A Kinglet head covers the whole Perch vocabulary: the Japan species first here, then classes outside Japan.
+    vocabulary = np.array(names + [f'Outside{i}' for i in range(14795 - len(names))])
     for engine in ('perch', 'kinglet-b', 'kinglet-s', 'kinglet-xs'):
         model, labels = (directory / name for name in REGISTRY[engine]['files'])
         model.parent.mkdir(parents=True, exist_ok=True)
         model.write_bytes(engine.encode())
         labels.parent.mkdir(parents=True, exist_ok=True)
-        with labels.open('w', newline='', encoding='utf-8') as stream:
-            writer = csv.writer(stream)
-            if engine == 'perch':
-                writer.writerows([['label'], ['Horornis diphone'], ['Other']])
-            else:
-                writer.writerow(['index', 'ebird_code', 'scientific_name', 'japanese_name'])
-                writer.writerows((i, str(i), name, '') for i, name in enumerate(names))
+        if engine == 'perch':
+            with labels.open('w', newline='', encoding='utf-8') as stream:
+                csv.writer(stream).writerows([['label'], ['Horornis diphone'], ['Other']])
+        else:
+            np.savez(labels, W=np.zeros((14795, 2), dtype=np.float16), b=np.zeros(14795, dtype=np.float32),
+                     labels=vocabulary)
     return names
 
 
@@ -73,7 +75,8 @@ class FakeSession:
         assert outputs == ['logits', 'embedding'] or outputs == ['embedding'] and set(inputs) == {'waveform'}
         assert wave.dtype == np.float32 and wave.shape[1] == 160000
         assert np.max(np.abs(wave)) <= 1
-        logits = np.full((len(wave), 318), -8., dtype=np.float32)
+        logits = np.full((len(wave), 14795), -50., dtype=np.float32)
+        logits[:, :318] = -8
         logits[:, :2] = 2 if self.engine in ('kinglet-b', 'kinglet-s') else -4
         return [np.ones((len(wave),1536), dtype=np.float32) if name == 'embedding' else logits for name in outputs]
 
@@ -104,10 +107,13 @@ def fake_birdnet(directory, calls):
 
     class Session:
         def result(self, samples, rate):
-            starts = np.arange(0, len(samples)/rate, 3)
-            rows = np.array([(start, start+3, label, .8) for start in starts],
-                dtype=[('start_time','f8'),('end_time','f8'),('species_name','U128'),('confidence','f4')])
-            return SimpleNamespace(unprocessable_inputs=[], to_structured_array=lambda: rows)
+            # birdnet 1.1.1 with top_k=None: every class of every 3-s segment, in no set order.
+            classes = [label, 'Picus canus_Grey-headed Woodpecker', 'Dryocopus pileatus_Pileated Woodpecker']
+            segments = int(np.ceil(len(samples) / rate / 3))
+            ids = np.tile(np.array([2, 0, 1], dtype=np.uint16), (1, segments, 1))
+            probs = np.tile(np.array([.05, .8, .01], dtype=np.float32), (1, segments, 1))
+            return SimpleNamespace(unprocessable_inputs=[], species_ids=ids, species_probs=probs,
+                                   species_list=np.array(classes))
 
         def run(self, path):
             samples, rate = sf.read(path, dtype='float32')
@@ -169,39 +175,47 @@ def wait_job(client):
 
 
 class ModelsTest(unittest.TestCase):
-    def test_kinglet_softmax_includes_background_and_is_numerically_stable(self):
-        logits = np.full((2, 318), -1000., dtype=np.float32)
+    def test_kinglet_softmax_covers_every_class_and_is_numerically_stable(self):
+        logits = np.full((2, 14795), -1000., dtype=np.float32)
         logits[:, :2] = [1000., 999.]
         logits[:, -1] = 1002.
         logits[1] -= 2000.
         embedding = np.ones((2, 1536), dtype=np.float32)
-        expected = np.zeros((2, 317), dtype=np.float32)
+        expected = np.zeros((2, 14795), dtype=np.float32)
         expected[:, :2] = np.exp([-2., -3.]) / (1 + np.exp(-2.) + np.exp(-3.))
+        expected[:, -1] = 1 / (1 + np.exp(-2.) + np.exp(-3.))
         for engine in ('kinglet-b', 'kinglet-s', 'kinglet-xs'):
             with self.subTest(engine=engine):
                 detector = SimpleNamespace(run=lambda *args: (logits, embedding))
-                scores, vectors = infer_onnx(detector, engine, np.zeros(160001), 317)
+                scores, vectors = infer_onnx(detector, engine, np.zeros(160001), 14795)
                 self.assertEqual(scores.dtype, np.float32)
                 np.testing.assert_allclose(scores, expected, rtol=1e-6)
                 np.testing.assert_array_equal(vectors, embedding)
 
-    def test_kinglet_background_dominated_window_has_low_species_scores(self):
-        logits = np.full((1, 318), 2., dtype=np.float32)
-        logits[:, -1] = 12.
-        detector = SimpleNamespace(run=lambda *args: (logits, np.ones((1, 1536), dtype=np.float32)))
-        scores, _ = infer_onnx(detector, 'kinglet-s', np.zeros(160000), 317)
-        expected = np.exp(-10.) / (1 + 317 * np.exp(-10.))
-        np.testing.assert_allclose(scores, np.full((1, 317), expected), rtol=1e-6)
-        self.assertTrue(np.all(scores < default_threshold('kinglet-s')))
-        self.assertLess(scores.sum(), .02)
+    def test_kinglet_head_gives_logits_and_unit_length_embeddings(self):
+        with tempfile.TemporaryDirectory() as temp:
+            head = Path(temp) / 'head.npz'
+            weights = np.array([[1, 0], [0, 2], [1, 1]], dtype=np.float16)
+            np.savez(head, W=weights, b=np.array([0, 1, -1], dtype=np.float32), labels=np.array(['a', 'b', 'c']))
+            feature = np.array([[1, 2], [3, 4]], dtype=np.float32)
+            embedding = np.tile(np.array([[3.], [40.]], dtype=np.float32), (1, 1536))
+            calls = []
+            trunk = SimpleNamespace(run=lambda outputs, feeds: calls.append((outputs, feeds)) or [embedding, feature])
+            session = KingletSession(trunk, head)
+            logits, vectors = session.run(['logits', 'embedding'], {'waveform': 'wave'})
+            np.testing.assert_allclose(logits, [[1, 5, 2], [3, 9, 6]])
+            np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), 1, rtol=1e-6)
+            only, = session.run(['embedding'], {'waveform': 'wave'})
+            np.testing.assert_array_equal(only, vectors)
+            self.assertEqual(calls, [(['embedding', 'feature'], {'waveform': 'wave'})] * 2)
 
     def test_kinglet_rejects_invalid_logit_shapes(self):
         for engine in ('kinglet-b', 'kinglet-s', 'kinglet-xs'):
-            for shape in ((1, 318), (2, 317), (2, 319), (318,), (2, 318, 1)):
+            for shape in ((1, 14795), (2, 14794), (2, 14796), (14795,), (2, 14795, 1)):
                 with self.subTest(engine=engine, shape=shape):
                     detector = SimpleNamespace(run=lambda *args: (np.zeros(shape), np.ones((2, 1536))))
                     with self.assertRaisesRegex(CatalogError, 'invalid_scores'):
-                        infer_onnx(detector, engine, np.zeros(160001), 317)
+                        infer_onnx(detector, engine, np.zeros(160001), 14795)
 
     def test_registry_selection_migration_defaults_validation_and_persistence(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -282,12 +296,6 @@ class ModelsTest(unittest.TestCase):
         for engine in ('kinglet-b', 'kinglet-s', 'kinglet-xs'):
             with self.subTest(engine=engine), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp); directory = root/'models'; model_files(directory)
-                classes = directory/REGISTRY[engine]['files'][1]
-                with classes.open(newline='') as stream:
-                    rows = list(csv.DictReader(stream))
-                with classes.open('w', newline='') as stream:
-                    writer = csv.DictWriter(stream, fieldnames=list(reversed(rows[0])))
-                    writer.writeheader(); writer.writerows(rows)
                 audio = root/'audio'; audio.mkdir()
                 sf.write(audio/'20240808_060000.wav', np.full(32000*30, .25), 32000)
 
@@ -675,17 +683,17 @@ class ModelsTest(unittest.TestCase):
                 self.assertEqual(client.post('/jobs', json={'dataset_id':1}).json(), {'detail':'no_audio'})
                 self.assertEqual(client.get('/datasets/1/overview').json()['pending_analysis'],[])
                 result = next(r for r in client.get('/recordings/1/results').json() if r['engine']=='kinglet-s')
-                self.assertEqual(result['metadata']['species'], names)
+                self.assertEqual(result['metadata']['species'], [n for n, keep in zip(names, in_japan(names)) if keep])
                 self.assertEqual(result['metadata']['classes_sha256'], digest(directory / REGISTRY['kinglet-s']['files'][1]))
-                self.assertEqual(result['metadata']['score_type'], 'softmax_background_dropped')
+                self.assertEqual(result['metadata']['score_type'], 'softmax')
                 self.assertTrue(all(c['species_id'] for c in result['candidates']))
                 expected = 1 / (2 + 316 * np.exp(-10))
                 self.assertAlmostEqual(result['candidates'][0]['score'], expected, places=6)
                 with np.load(result['scores_path'], allow_pickle=False) as saved:
                     self.assertEqual(set(saved.files), {'scores','labels'})
-                    self.assertEqual(saved['scores'].shape, (3,317))
+                    self.assertEqual(saved['scores'].shape, (3,14795))
                     np.testing.assert_allclose(saved['scores'][:, :2], expected, rtol=1e-6)
-                    np.testing.assert_allclose(saved['scores'][:, 2:], expected * np.exp(-10), rtol=1e-6)
+                    np.testing.assert_allclose(saved['scores'][:, 2:318], expected * np.exp(-10), rtol=1e-6)
                 kinglet_wave = next(wave for engine, _, wave in calls if engine=='kinglet-s')
                 self.assertEqual(kinglet_wave.shape, (3,160000))
                 self.assertTrue(np.all(kinglet_wave[-1,32000:]==0))

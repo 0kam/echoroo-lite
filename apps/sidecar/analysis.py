@@ -18,6 +18,7 @@ from audio import resample
 from models import REGISTRY, available, default_threshold, enabled_engines, main_engine, window_s, configure_birdnet, file_sha256
 
 from species import birdnet_species_mapping
+from taxa import display, in_japan
 from storage import CatalogError, checked_source, connect
 
 log = logging.getLogger(__name__)
@@ -65,7 +66,36 @@ def load_onnx(models, engine):
     options = ort.SessionOptions()
     options.intra_op_num_threads = 8
     options.inter_op_num_threads = 1
-    return ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"]), file_sha256(path)
+    session = ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
+    if engine.startswith('kinglet-'):
+        session = KingletSession(session, Path(models) / REGISTRY[engine]['files'][1])
+    return session, file_sha256(path)
+
+
+def kinglet_head(path):
+    """W (classes, d), b and the scientific names of a Kinglet head: the whole Perch vocabulary."""
+    if not Path(path).is_file():
+        raise CatalogError("models_missing")
+    with np.load(path, allow_pickle=False) as head:
+        return head['W'].astype(np.float32), head['b'].astype(np.float32), [str(n) for n in head['labels']]
+
+
+class KingletSession:
+    """A Kinglet 0.4 trunk with its head: "logits" over every class and the unit-length "embedding".
+
+    The trunk gives "embedding" and "feature"; logits = feature @ W.T + b. The raw embedding is several times as
+    long as a Perch one and varies between windows, so it is always scaled to unit length (as Kinglet itself does).
+    """
+
+    def __init__(self, session, head):
+        self.session = session
+        self.weights, self.bias, _ = kinglet_head(head)
+
+    def run(self, outputs, feeds):
+        embedding, feature = self.session.run(['embedding', 'feature'], feeds)
+        result = dict(logits=feature @ self.weights.T + self.bias if 'logits' in outputs else None,
+                      embedding=embedding / np.maximum(np.linalg.norm(embedding, axis=1, keepdims=True), 1e-30))
+        return [result[name] for name in outputs]
 
 
 def load_perch(models):
@@ -92,15 +122,51 @@ def birdnet_available(models):
     return available(models, 'birdnet')
 
 
-def plan(root, models, records, site):
+def plan(root, models, records, site, redo=()):
     """Freeze missing recording/engine pairs before starting the worker."""
     if not available(models, main_engine(root)):
         raise CatalogError('models_missing')
-    return pending_pairs(root, models, records, site)
+    return pending_pairs(root, models, records, site, redo)
 
 
-def pending_pairs(root, models, records, site):
-    """The same read-only missing-pair calculation for jobs and time estimates."""
+# Analyses saved before 0.3 kept only the site's species (BirdNET 2.4); they are redone only when the user says so.
+UPGRADABLE = ('birdnet',)
+
+
+def redo_engines(root):
+    """Engines whose pre-0.3 analyses the user chose to do again; until then they count as missing."""
+    from models import settings
+    return tuple(engine for engine, answer in settings(root).get('upgrade_answers', {}).items()
+                 if answer == 'redo' and engine in UPGRADABLE)
+
+
+def upgrade_status(root, models):
+    """Per shown AI with pre-0.3 analyses left, over every site: recordings, their length, sites and the answer."""
+    from models import settings
+    answers = settings(root).get('upgrade_answers', {})
+    with connect(root) as db:
+        sites = [r[0] for r in db.execute('SELECT MIN(id) FROM datasets GROUP BY site_id')]
+        records = {dataset: [dict(r) for r in db.execute('SELECT id,seconds FROM site_recordings WHERE scope_id=?', (dataset,))]
+                   for dataset in sites}
+    found = {}
+    for dataset, rows in records.items():
+        lengths = {r['id']: r['seconds'] for r in rows}
+        for engine, ids in partial_analyses(root, rows, ids=True).items():
+            if engine not in enabled_engines(root, models):
+                continue
+            entry = found.setdefault(engine, dict(engine=engine, answer=answers.get(engine), sites=0, recordings=0,
+                                                  seconds=0., datasets=[]))
+            entry['sites'] += 1
+            entry['recordings'] += len(ids)
+            entry['seconds'] += sum(lengths[i] for i in ids)
+            entry['datasets'].append(dataset)
+    return list(found.values())
+
+
+def pending_pairs(root, models, records, site, redo=()):
+    """The same read-only missing-pair calculation for jobs and time estimates. Engines in `redo`, and those the
+    user chose to do again, also count analyses that kept only some classes as missing."""
+    redo = {*redo, *redo_engines(root)}
     engines = enabled_engines(root, models)
     if not engines or not records:
         return {}
@@ -129,6 +195,8 @@ def pending_pairs(root, models, records, site):
             if engine == 'birdnet':
                 if changed or any(key in meta for key in ('latitude', 'longitude')):
                     matches &= all(meta.get(key) == site[key] for key in ('latitude', 'longitude'))
+            if matches and engine in redo and engine in UPGRADABLE:
+                matches = bool(meta.get('all_classes'))
             if not matches:
                 missing.append(engine)
         if missing:
@@ -140,18 +208,20 @@ def load_dense(models, engine):
     detector, sha = load_onnx(models, engine)
     path = Path(models) / REGISTRY[engine]['files'][1]
     v3 = engine == 'birdnet-v3'
-    with path.open(newline='', encoding='utf-8-sig') as stream:
-        rows = list(csv.DictReader(stream, delimiter=';' if v3 else ','))
     count = REGISTRY[engine]['species_count']
-    names = [r['sci_name' if v3 else 'scientific_name'] for r in rows]
-    if ([int(r['idx' if v3 else 'index']) for r in rows] != list(range(count))
-            or len(set(names)) != count):
-        raise CatalogError('invalid_scores')
-    allowed = names
     if v3:
-        japan = {name.partition('_')[0] for name in candidate_filter()['species']}
-        allowed = [name for name in names if name in japan]
-    meta = dict(model=REGISTRY[engine]['name'], model_sha256=sha,
+        with path.open(newline='', encoding='utf-8-sig') as stream:
+            rows = list(csv.DictReader(stream, delimiter=';'))
+        names = [r['sci_name'] for r in rows]
+        if [int(r['idx']) for r in rows] != list(range(count)):
+            raise CatalogError('invalid_scores')
+    else:
+        names = kinglet_head(path)[2]
+    if len(names) != count or len(set(names)) != count:
+        raise CatalogError('invalid_scores')
+    # Every model answers over its whole vocabulary; the Japan checklist species are the ones shown.
+    allowed = [n for n, keep in zip(names, in_japan(names)) if keep]
+    meta = dict(all_classes=True, model=REGISTRY[engine]['name'], model_sha256=sha,
                 classes_sha256=digest(path), window_s=window_s(engine),
                 score_type=REGISTRY[engine]['score_type'], species=allowed,
                 stored_top_k=None, display_top_k=5, last_window='zero_pad',
@@ -179,10 +249,11 @@ def infer_onnx(detector, engine, audio, count, cancel=None):
                 raise CatalogError('invalid_scores')
         else:
             logits, embedding = detector.run(['logits', 'embedding'], {'waveform': np.clip(waveform, -1, 1)})
-            if logits.shape != (len(waveform), count + 1):
+            if logits.shape != (len(waveform), count):
                 raise CatalogError('invalid_scores')
+            # Kinglet 0.4: a softmax over the whole Perch vocabulary, whose non-bird classes take the background.
             probabilities = np.exp(logits - logits.max(axis=1, keepdims=True))
-            scores = (probabilities / probabilities.sum(axis=1, keepdims=True))[:, :-1]
+            scores = probabilities / probabilities.sum(axis=1, keepdims=True)
         if scores.shape != (len(waveform), count) or not np.isfinite(scores).all():
             raise CatalogError('invalid_scores')
         if embedding is not None:
@@ -257,6 +328,35 @@ def prefetch_audio(records):
                 future.cancel()
 
 
+def partial_analyses(root, records, ids=False):
+    """{engine: recordings} whose newest analysis kept only some classes, for the "analyze again?" question; with
+    `ids`, the recordings themselves."""
+    with connect(root) as db:
+        rows = db.execute(f'''SELECT engine,metadata,recording_id FROM analyses WHERE recording_id IN (SELECT value FROM json_each(?))
+            AND engine IN ({",".join("?" * len(UPGRADABLE))})
+            AND id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''',
+            (json.dumps([r['id'] for r in records]), *UPGRADABLE)).fetchall()
+    found = {}
+    for row in rows:
+        if not json.loads(row['metadata']).get('all_classes'):
+            found.setdefault(row['engine'], []).append(row['recording_id'])
+    return found if ids else {engine: len(recordings) for engine, recordings in found.items()}
+
+
+def birdnet_dense(result, seconds):
+    """BirdNET 2.4's all-class sigmoid scores of one recording as (3-s windows, classes), and the class names."""
+    ids, probs = np.asarray(result.species_ids)[0], np.asarray(result.species_probs)[0]
+    names = np.asarray(result.species_list).astype(str)
+    windows = min(ids.shape[0], max(1, math.ceil(seconds / 3 - 1e-9)))
+    if ids.ndim != 2 or ids.shape[1] != len(names) or probs.shape != ids.shape:
+        raise CatalogError("invalid_scores")
+    scores = np.zeros((windows, len(names)), dtype=np.float32)
+    scores[np.arange(windows)[:, None], ids[:windows].astype(np.int64)] = probs[:windows]
+    if not np.isfinite(scores).all() or np.any((scores < 0) | (scores > 1)):
+        raise CatalogError("invalid_scores")
+    return scores, names
+
+
 @lru_cache(maxsize=1)
 def candidate_filter():
     path = Path(__file__).parent / "data/japan-birds.json"
@@ -320,6 +420,7 @@ def prepare_models(models, engines, site, progress=None):
                      "geo_sha256": digest(geo.model_path), "latitude": site["latitude"],
                      "longitude": site["longitude"], "week": None, "geo_threshold": 0.03,
                      "species": species, "species_mapping_sha256": species_mapping_sha256(),
+                     "all_classes": True,
                      "score_type": "sigmoid_uncalibrated", "window_s": 3,
                      "stored_threshold": 0, "stored_top_k": None, "display_top_k": 5,
                      "display_threshold": default_threshold('birdnet')}
@@ -343,7 +444,7 @@ def prepare_models(models, engines, site, progress=None):
     if use_birdnet:
         progress("loading_birdnet", 0)
     bird_context = acoustic.predict_session(n_workers=1, batch_size=1, top_k=None, max_n_files=1,
-        default_confidence_threshold=0, custom_species_list=species) if acoustic else nullcontext()
+        default_confidence_threshold=0) if acoustic else nullcontext()
     # Reuse BirdNET's public session when this edition includes it.
     with bird_context as bird_session:
         if bird_session is not None:
@@ -396,19 +497,14 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None):
                         result = bird_session.run_arrays((native, rate))
                         if len(result.unprocessable_inputs):
                             raise CatalogError("unreadable_audio")
-                        rows = result.to_structured_array()
-                        if not np.isfinite(rows["confidence"]).all():
-                            raise CatalogError("invalid_scores")
-                        groups = {}
-                        for row in rows:
-                            start, end = float(row["start_time"]), min(float(row["end_time"]), record["seconds"])
-                            if row["confidence"] >= default_threshold('birdnet'):
-                                groups.setdefault(start, []).append((start, end, str(row["species_name"]), float(row["confidence"])))
-                        candidates = [row for group in groups.values() for row in sorted(group, key=lambda r: -r[3])[:5]]
+                        # Every class is kept; the site's species are chosen when the results are shown.
+                        scores, names = birdnet_dense(result, record["seconds"])
+                        candidates, _ = display(scores, names, allowed=np.isin(names, bird_meta["species"]),
+                                                score_type="sigmoid", threshold=default_threshold('birdnet'),
+                                                window_s=3, seconds=record["seconds"])
                         checked_source(record)
-                        save(root, job, record, "birdnet", bird_meta,
-                             {"start_s": rows["start_time"], "end_s": rows["end_time"],
-                              "labels": rows["species_name"].astype(str), "scores": rows["confidence"]}, candidates, db=job_db)
+                        save(root, job, record, "birdnet", bird_meta, {"scores": scores, "labels": names},
+                             candidates, db=job_db)
                         done += 1
                     del native
                     if cancel.is_set():
@@ -424,9 +520,8 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None):
                         candidates = []
                         if engine != 'perch':
                             included = included_labels[engine]
-                            candidates = [(i * 5, min((i + 1) * 5, record['seconds']), names[j], float(row[j]))
-                                          for i, row in enumerate(scores)
-                                          for j in included[np.argsort(-row[included], kind='stable')[:5]]]
+                            mask = np.zeros(len(names), dtype=bool); mask[included] = True
+                            candidates, _ = display(scores, names, allowed=mask, seconds=record['seconds'])
                         checked_source(record)
                         save(root, job, record, engine, meta,
                              {'logits' if engine == 'perch' else 'scores': scores, 'labels': np.array(names)},
@@ -439,6 +534,8 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None):
                     dataset_id = db.execute('SELECT dataset_id FROM jobs WHERE id=?', (job,)).fetchone()[0]
                 from results_workflow import overview
                 overview(root, dataset_id)
+                import rollups
+                rollups.scan(root, dataset_id)
             with job_db as db:
                 db.execute("UPDATE jobs SET status=?,stage='finished' WHERE id=?",
                            ("cancelled" if cancel.is_set() else "complete", job))

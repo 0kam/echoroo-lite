@@ -310,7 +310,8 @@ def read_classification_windows(analysis, seconds, allowed):
             labels = labels[included]
             scores = softmax(logits.astype(np.float64), axis=1)[:slots, included]
             present = np.ones(len(scores), dtype=bool)
-        elif analysis['engine'] != 'birdnet':
+        elif analysis['engine'] != 'birdnet' or 'start_s' not in saved.files:
+            # Dense all-class scores; BirdNET 2.4 saves them this way since 0.3 (earlier: one row per detection).
             labels, scores = saved['labels'], saved['scores']
             if (labels.ndim != 1 or scores.ndim != 2 or scores.shape[1] != len(labels)
                     or not np.isfinite(scores).all() or np.any((scores < 0) | (scores > 1))):
@@ -318,6 +319,10 @@ def read_classification_windows(analysis, seconds, allowed):
             included = np.isin(labels, allowed)
             labels, scores = labels[included], scores[:slots, included]
             present = np.ones(len(scores), dtype=bool)
+            if analysis['engine'] == 'birdnet':
+                known = np.array([canonical_scientific_name('birdnet', label) is not None for label in labels], dtype=bool)
+                labels = np.array([canonical_scientific_name('birdnet', label) for label in labels[known]])
+                scores = scores[:, known]
         else:
             raw_labels = saved['labels']
             labels = np.array(sorted(label for label in ({str(s) for s in raw_labels} & set(allowed))

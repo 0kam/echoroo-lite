@@ -249,9 +249,9 @@ export const en = {
   firstRunTitle: 'First, choose the AIs used for analysis', firstRunIntro: 'You can change this at any time in Settings.',
   firstRunStart: 'Start with these settings',
   modelHint_perch: 'Recommended. The most accurate. A bird-sound AI made by Google.',
-  'modelHint_kinglet-b': 'About 4 times faster than Perch, with accuracy closest to Perch among the Kinglet AIs. Made from Perch V2 for 317 bird species of Japan.',
-  'modelHint_kinglet-s': 'Smaller and faster than Kinglet-B, but slightly less accurate. Made from Perch V2 for 317 bird species of Japan.',
-  'modelHint_kinglet-xs': 'The smallest and fastest, but a little less accurate than Kinglet-S. Made from Perch V2 for 317 bird species of Japan.',
+  'modelHint_kinglet-b': 'About 4 times faster than Perch, with accuracy closest to Perch among the Kinglet AIs. Made from Perch V2; it knows the same species as Perch.',
+  'modelHint_kinglet-s': 'Smaller and faster than Kinglet-B, but slightly less accurate. Made from Perch V2; it knows the same species as Perch.',
+  'modelHint_kinglet-xs': 'The smallest and fastest, but a little less accurate than Kinglet-S. Made from Perch V2; it knows the same species as Perch.',
   modelHint_birdnet: 'A widely used bird-sound AI made by the Cornell Lab of Ornithology and Chemnitz University of Technology.',
   'modelHint_birdnet-v3': 'A trial version of the next generation of BirdNET. About 11,000 species worldwide.',
   modelsSaving: 'Saving…',
@@ -263,7 +263,7 @@ export const en = {
   licenseNonCommercial: 'This app uses the BirdNET 2.4 AI to identify bird sounds. Because its license allows only non-commercial use, this app is for non-commercial purposes such as research and education.',
   licenseBirdnet: 'BirdNET 2.4 models — Cornell Lab of Ornithology and Chemnitz University of Technology — CC BY-NC-SA 4.0.',
   licenseBirdnetV3: 'BirdNET+ V3.0 (preview) model — Cornell Lab of Ornithology and Chemnitz University of Technology — CC BY-SA 4.0. Powered by BirdNET. It must not be used for poaching or military purposes.',
-  licenseKinglet: 'Kinglet-B, Kinglet-S, and Kinglet-XS v0.2.0 models — distilled from Perch V2 — Apache License 2.0.',
+  licenseKinglet: 'Kinglet-B, Kinglet-S, and Kinglet-XS v0.4.0 models — distilled from Perch V2 — Apache License 2.0.',
 };
 export type Key = keyof typeof en;
 export const ja: Record<Key, string> = {
@@ -515,9 +515,9 @@ export const ja: Record<Key, string> = {
   firstRunTitle: 'はじめに、解析に使うAIを選びます', firstRunIntro: 'あとから設定でいつでも変えられます。',
   firstRunStart: 'この設定で始める',
   modelHint_perch: 'おすすめ。最も正確。Google が作った鳥の声のAI。',
-  'modelHint_kinglet-b': 'Perch の約4倍速い。正確さは Perch より少し下がるが、Kinglet の中ではいちばん正確。Perch V2 から作った、日本の鳥317種のAI。',
-  'modelHint_kinglet-s': 'Kinglet-B より小さく速いが、正確さはもう少し下がる。Perch V2 から作った、日本の鳥317種のAI。',
-  'modelHint_kinglet-xs': 'いちばん小さく速いが、正確さは Kinglet-S より少し下がる。Perch V2 から作った、日本の鳥317種のAI。',
+  'modelHint_kinglet-b': 'Perch の約4倍速い。正確さは Perch より少し下がるが、Kinglet の中ではいちばん正確。Perch V2 から作ったAI。Perch と同じ種を聞き分ける。',
+  'modelHint_kinglet-s': 'Kinglet-B より小さく速いが、正確さはもう少し下がる。Perch V2 から作ったAI。Perch と同じ種を聞き分ける。',
+  'modelHint_kinglet-xs': 'いちばん小さく速いが、正確さは Kinglet-S より少し下がる。Perch V2 から作ったAI。Perch と同じ種を聞き分ける。',
   modelHint_birdnet: '広く使われている鳥の声のAI。コーネル大学鳥類学研究所とケムニッツ工科大学が作った。',
   'modelHint_birdnet-v3': 'BirdNET の次の世代の試験版。世界の約1万1千種。',
   modelsSaving: '保存しています…',
@@ -529,5 +529,5 @@ export const ja: Record<Key, string> = {
   licenseNonCommercial: 'このアプリは、鳥の声の判定に BirdNET 2.4 という AI を使っています。この AI のライセンスが非商用に限られるため、このアプリも研究・教育などの非商用目的でのみ使えます。',
   licenseBirdnet: 'BirdNET 2.4 モデル — Cornell Lab of Ornithology・ケムニッツ工科大学 — CC BY-NC-SA 4.0。',
   licenseBirdnetV3: 'BirdNET+ V3.0（試験版）モデル — Cornell Lab of Ornithology・ケムニッツ工科大学 — CC BY-SA 4.0。Powered by BirdNET。密猟や軍事目的には使えません。',
-  licenseKinglet: 'Kinglet-B・Kinglet-S・Kinglet-XS v0.2.0 モデル — Perch V2 から蒸留 — Apache License 2.0。',
+  licenseKinglet: 'Kinglet-B・Kinglet-S・Kinglet-XS v0.4.0 モデル — Perch V2 から蒸留 — Apache License 2.0。',
 };

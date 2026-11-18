@@ -7,14 +7,18 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 
-KINGLET_BASE_URL = 'https://github.com/0kam/kinglet/releases/download/v0.2.0/'
+KINGLET_BASE_URL = 'https://github.com/0kam/kinglet/releases/download/v0.4.0/'
 KINGLET_ASSETS = (
-    ('kinglet-b-v0.2.0.onnx', 'bc9b324ba2aef2903436afb98f5dd9945270dd075ef82226c38284939a328cd7'),
-    ('kinglet-s-v0.2.0.onnx', 'f50bcca703d7c0f190ac430fd8d6b2fc64c50e83b402157a34f988fa90c974f6'),
-    ('kinglet-xs-v0.2.0.onnx', '0fb1543a3bf5528b440bcb223d4fe0af2d72c48b46723e2fa7eb35ef2dd7a203'),
-    ('kinglet-b-v0.2.0.classes.csv', '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
-    ('kinglet-s-v0.2.0.classes.csv', '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
-    ('kinglet-xs-v0.2.0.classes.csv', '1b58543e61ba505763c2f570e65ebccecf71d93f3a8177564d68738f85e6dcaa'),
+    ('kinglet-b-v0.4.0.onnx', '47a80ad1800bf77b343612e07c86d92e50d6551e5211d620515f06ec8cdbfdf3'),
+    ('kinglet-s-v0.4.0.onnx', 'a0baab1201014876e40bde6c9e64d28b880ffa215f0125842ea6066db96a1238'),
+    ('kinglet-xs-v0.4.0.onnx', '343447f39a8f79737a8426e8c48a482f5cfb3c5f60b44f9509638a4e718773b3'),
+)
+# A release head pack also carries calibration features that the app does not use (two thirds of its size), so
+# only its head is kept: (tier, sha256 of the release head pack, sha256 of the kept W, b and labels).
+KINGLET_HEADS = (
+    ('b', 'e2f4ceeca9fda2e203f5a4bc9a94aaa34b13863b9e4f4d1f3968faac9e904b74', '71955322ee39ba5001b313e148f352bdab6811493445f9ba3423ee848bb2a3aa'),
+    ('s', 'd1b7017c5ee8517293b9c47793a6e9f2c775d8af177aed61fb161467f5361d0c', '50a95373df06f56f9f4db22ae1c3f391a8545e17c97c5d8013d5ffc575e2edf9'),
+    ('xs', '52cc4ba828345f35b320494830ab53e938d26a7a253879aaf2a507d4d8c1ae2a', 'b3cc49171d18464b481f4aed94c88560cb8383f828d34308f822aa2eff520dcf'),
 )
 
 V3_ASSETS = (
@@ -50,6 +54,31 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def fetch(relative, url, expected, temporary):
+    """Download (or copy from the Kinglet handover folder) to `temporary` and check it."""
+    if relative.startswith('kinglet/') and args.kinglet_from:
+        source = args.kinglet_from / Path(relative).name
+        if digest(source) != expected:
+            raise RuntimeError(f'Model checksum mismatch: {source}')
+        shutil.copyfile(source, temporary)
+    else:
+        with urllib.request.urlopen(url, timeout=60) as source, temporary.open("wb") as target:
+            shutil.copyfileobj(source, target)
+    if digest(temporary) != expected:
+        raise RuntimeError(f"Model checksum mismatch: {relative}")
+
+
+def head_digest(path):
+    """One checksum of a kept Kinglet head, whatever wrote the .npz around it."""
+    import numpy as np
+    try:
+        with np.load(path, allow_pickle=False) as head:
+            parts = (head['W'].tobytes(), head['b'].tobytes(), '\n'.join(map(str, head['labels'])).encode())
+    except (OSError, KeyError, ValueError):
+        return None
+    return hashlib.sha256(b''.join(parts)).hexdigest()
+
+
 for relative, url, expected in assets:
     path = models / relative
     if path.is_file() and digest(path) == expected:
@@ -58,18 +87,30 @@ for relative, url, expected in assets:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".download")
     try:
-        if relative.startswith('kinglet/') and args.kinglet_from:
-            source = args.kinglet_from / path.name
-            if digest(source) != expected:
-                raise RuntimeError(f'Model checksum mismatch: {source}')
-            shutil.copyfile(source, temporary)
-        else:
-            with urllib.request.urlopen(url, timeout=60) as source, temporary.open("wb") as target:
-                shutil.copyfileobj(source, target)
-        if digest(temporary) != expected:
+        fetch(relative, url, expected, temporary)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f"Prepared and verified {relative}")
+
+for tier, pack_sha, head_sha in () if args.perch_only else KINGLET_HEADS:
+    import numpy as np
+    relative = f'kinglet/kinglet-{tier}-v0.4.0.head.npz'
+    path = models / relative
+    if path.is_file() and head_digest(path) == head_sha:
+        print(f"Verified {relative}")
+        continue
+    pack = path.with_name(f'kinglet-{tier}-v0.4.0.headpack.npz')
+    temporary = path.with_suffix('.download.npz')
+    try:
+        fetch('kinglet/' + pack.name, KINGLET_BASE_URL + pack.name, pack_sha, pack)
+        with np.load(pack, allow_pickle=False) as source:
+            np.savez(temporary, W=source['W'], b=source['b'], labels=source['labels'])
+        if head_digest(temporary) != head_sha:
             raise RuntimeError(f"Model checksum mismatch: {relative}")
         temporary.replace(path)
     finally:
+        pack.unlink(missing_ok=True)
         temporary.unlink(missing_ok=True)
     print(f"Prepared and verified {relative}")
 

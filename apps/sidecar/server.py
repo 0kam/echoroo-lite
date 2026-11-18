@@ -66,6 +66,7 @@ class ImportRequest(BaseModel):
 class JobRequest(BaseModel):
     dataset_id: int
     recording_id: int | None = None
+    redo: list[str] = []  # engines whose partial (pre-0.3) analyses are done again
 
 
 class ExploreRequest(BaseModel):
@@ -215,6 +216,22 @@ class PresenceMark(BaseModel):
 class PresenceMiss(ScopeRequest):
     source: Literal['ai', 'search']
     listened: int = Field(ge=1, le=1000)
+
+
+class RollupAnswer(BaseModel):
+    dataset_id: int
+    recording_id: int
+    start_s: float
+    end_s: float
+    family: str
+    kind: Literal['species', 'family', 'not_bird', 'unknown'] | None
+    species_id: str | None = None
+
+    @model_validator(mode='after')
+    def species_named(self):
+        if (self.kind == 'species') != (self.species_id is not None):
+            raise ValueError('species_id goes with kind "species"')
+        return self
 
 
 class PresenceMissDelete(BaseModel):
@@ -548,6 +565,23 @@ def create_app(root, models, token):
         from presence import candidates
         return candidates(root, dataset_id, species_id, source, start_date.isoformat() if start_date else None,
                           end_date.isoformat() if end_date else None)
+
+    @app.get('/datasets/{dataset_id}/rollups')
+    def rollup_summary(dataset_id: int, start_date: date | None = None, end_date: date | None = None):
+        import rollups
+        return rollups.summary(root, dataset_id, start_date.isoformat() if start_date else None,
+                               end_date.isoformat() if end_date else None)
+
+    @app.get('/datasets/{dataset_id}/rollups/{family}')
+    def rollup_family(dataset_id: int, family: str, start_date: date | None = None, end_date: date | None = None):
+        import rollups
+        return rollups.family_sounds(root, dataset_id, family, start_date.isoformat() if start_date else None,
+                                     end_date.isoformat() if end_date else None)
+
+    @app.post('/rollups/answers')
+    def rollup_answer(body: RollupAnswer):
+        import rollups
+        return rollups.answer(root, body)
 
     @app.post('/presence/marks')
     def presence_mark(body: PresenceMark):
@@ -940,53 +974,100 @@ def create_app(root, models, token):
                 if analysis['engine'] not in model_registry.selected_engines(root):
                     continue
                 meta = json.loads(analysis["metadata"])
+                seconds = db.execute("SELECT seconds FROM recordings WHERE id=?", (recording,)).fetchone()[0]
+                rollups = []
                 if analysis["engine"] == "perch":
-                    from predictions import perch_candidates
+                    from predictions import perch_display
                     candidate_filter = meta.get("candidate_filter")
-                    seconds = db.execute("SELECT seconds FROM recordings WHERE id=?", (recording,)).fetchone()[0]
-                    candidates, display = perch_candidates(analysis["scores_path"], seconds, analysis["id"], candidate_filter)
+                    candidates, rollups, display = perch_display(analysis["scores_path"], seconds, analysis["id"], candidate_filter)
                     meta = {**meta, **display}
                 else:
                     candidates = [dict(r) for r in db.execute(
                         "SELECT * FROM candidates WHERE analysis_id=? ORDER BY score DESC LIMIT 100", (analysis["id"],))]
-                output.append({**dict(analysis), "metadata": meta,
+                    if meta.get("all_classes"):
+                        from predictions import dense_rollups
+                        rollups = dense_rollups(analysis["scores_path"], seconds, analysis["engine"], meta.get("window_s", 5))
+                output.append({**dict(analysis), "metadata": meta, "rollups": rollups[:100],
                                "candidates": decorate_candidates(db, analysis["engine"], candidates)})
             return output
 
-    @app.post("/jobs")
-    def start(body: JobRequest):
+    class UpgradeAnswer(BaseModel):
+        engine: str
+        answer: Literal['redo', 'keep']
+
+    @app.get("/analysis-upgrade")
+    def upgrade_status():
+        from analysis import upgrade_status
+        return [{key: value for key, value in entry.items() if key != 'datasets'} for entry in upgrade_status(root, models)]
+
+    @app.post("/analysis-upgrade")
+    def upgrade_answer(body: UpgradeAnswer):
+        """Remember the answer. "redo" starts the analysis of every site with old results, one site after another;
+        whatever is left (another analysis is running, or this one is stopped) waits as unanalysed recordings."""
+        from analysis import upgrade_status
+        from models import answer_upgrade
+        try:
+            answer_upgrade(root, body.engine, body.answer)
+        except ValueError:
+            raise HTTPException(422, "unknown_engine") from None
+        started = []
+        if body.answer == 'redo':
+            datasets = [d for entry in upgrade_status(root, models) if entry['engine'] == body.engine for d in entry['datasets']]
+            try:
+                started = launch(datasets)
+            except (HTTPException, CatalogError):
+                pass
+        return {"engine": body.engine, "answer": body.answer, "jobs": started}
+
+    def launch(datasets, recording_id=None, redo=()):
+        """Queue one analysis job per dataset's site and run them in turn; returns the job ids."""
         nonlocal worker
+        from analysis import plan
         with lock:
             if worker and worker.is_alive():
                 raise HTTPException(409, "job_busy")
-            with connect(root) as db:
-                site = db.execute("SELECT s.* FROM sites s JOIN datasets d ON s.id=d.site_id WHERE d.id=?",
-                                  (body.dataset_id,)).fetchone()
-                records = [dict(r) for r in db.execute(
-                    "SELECT * FROM site_recordings WHERE scope_id=? AND (? IS NULL OR id=?) ORDER BY recorded_at",
-                    (body.dataset_id, body.recording_id, body.recording_id))]
+            plans = []
+            for dataset_id in datasets:
+                with connect(root) as db:
+                    site = db.execute("SELECT s.* FROM sites s JOIN datasets d ON s.id=d.site_id WHERE d.id=?",
+                                      (dataset_id,)).fetchone()
+                    records = [dict(r) for r in db.execute(
+                        "SELECT * FROM site_recordings WHERE scope_id=? AND (? IS NULL OR id=?) ORDER BY recorded_at",
+                        (dataset_id, recording_id, recording_id))]
                 if not site or not records:
-                    raise CatalogError("no_audio")
-            from analysis import plan
-            pending = plan(root, models, records, dict(site))
-            records = [record for record in records if record['id'] in pending]
-            if not records:
+                    continue
+                pending = plan(root, models, records, dict(site), tuple(redo))
+                records = [record for record in records if record['id'] in pending]
+                if records:
+                    plans.append((dataset_id, records, dict(site), pending))
+            if not plans:
                 raise CatalogError('no_audio')
             with connect(root) as db:
-                job = db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(?,'queued',?)",
-                                 (body.dataset_id, sum(map(len, pending.values())))).lastrowid
+                jobs = [db.execute("INSERT INTO jobs(dataset_id,status,total) VALUES(?,'queued',?)",
+                                   (dataset_id, sum(map(len, pending.values())))).lastrowid
+                        for dataset_id, _, _, pending in plans]
             cancel.clear()
+
             def work():
-                try:
-                    from analysis import run
-                    run(root, models, job, records, dict(site), cancel, pending)
-                except Exception:
-                    log.exception('Analysis job %s failed', job)
-                    with connect(root) as db:
-                        db.execute("UPDATE jobs SET status='failed',error='analysis_failed' WHERE id=?", (job,))
+                from analysis import run
+                for job, (_, records, site, pending) in zip(jobs, plans):
+                    if cancel.is_set():
+                        with connect(root) as db:
+                            db.execute("UPDATE jobs SET status='cancelled',stage='finished' WHERE id=?", (job,))
+                        continue
+                    try:
+                        run(root, models, job, records, site, cancel, pending)
+                    except Exception:
+                        log.exception('Analysis job %s failed', job)
+                        with connect(root) as db:
+                            db.execute("UPDATE jobs SET status='failed',error='analysis_failed' WHERE id=?", (job,))
             worker = threading.Thread(target=work)
             worker.start()
-        return {"id": job}
+        return jobs
+
+    @app.post("/jobs")
+    def start(body: JobRequest):
+        return {"id": launch([body.dataset_id], body.recording_id, body.redo)[0]}
 
     @app.post("/jobs/cancel")
     def stop():

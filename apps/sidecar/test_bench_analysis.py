@@ -24,8 +24,8 @@ class BenchmarkTest(unittest.TestCase):
             sf.write(path,np.zeros(32000*165,dtype=np.float32),32000)
             row=record(path); calls=[]
             with bench.instruments(bench.Stages(),'batch-16',root,root), analysis.prefetch_audio([row]) as read:
-                scores,_=analysis.infer_onnx(FakeSession('kinglet-xs',calls),'kinglet-xs',read(row),317)
-            self.assertEqual(scores.shape,(33,317))
+                scores,_=analysis.infer_onnx(FakeSession('kinglet-xs',calls),'kinglet-xs',read(row),14795)
+            self.assertEqual(scores.shape,(33,14795))
             self.assertEqual([len(c[2]) for c in calls],[16,16,1])
 
     def test_snapshot_covers_sparse_birdnet_top_one(self):

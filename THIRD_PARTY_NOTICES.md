@@ -28,14 +28,16 @@ are bundled in the app.
   its labels from [justinchuby/Perch-onnx](https://huggingface.co/justinchuby/Perch-onnx)
   and [cgeorgiaw/Perch](https://huggingface.co/cgeorgiaw/Perch). Licensed under
   Apache-2.0; the licence text is bundled as `licenses/APACHE-2.0.txt`.
-- **Kinglet-B, Kinglet-S and Kinglet-XS v0.2.0** — models distilled from
-  Perch 2.0 on public data, covering 317 Japanese bird species. Licensed under
-  Apache-2.0; covered by the bundled `licenses/APACHE-2.0.txt`. Unmodified default
-  ONNX weights and class lists from the
-  [v0.2.0 release](https://github.com/0kam/kinglet/releases/tag/v0.2.0) are bundled.
+- **Kinglet-B, Kinglet-S and Kinglet-XS v0.4.0** — models distilled from
+  Perch 2.0 on public data, covering the whole 14,795-class Perch vocabulary.
+  Licensed under Apache-2.0; covered by the bundled `licenses/APACHE-2.0.txt`.
+  The unmodified waveform-input ONNX trunks and the head (`W`, `b`, `labels`) of
+  each head pack from the
+  [v0.4.0 release](https://github.com/0kam/kinglet/releases/tag/v0.4.0) are bundled;
+  the calibration features in the head packs are left out.
   See the [model card](https://github.com/0kam/kinglet/blob/main/MODEL_CARD.md).
-  Scores are softmax probabilities over 318 classes with the background channel
-  dropped; the default detection threshold is 0.1.
+  Scores are softmax probabilities over all 14,795 classes; the default detection
+  threshold is 0.1.
 
 ## Taxonomy sources
 

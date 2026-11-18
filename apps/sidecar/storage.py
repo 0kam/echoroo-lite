@@ -217,6 +217,8 @@ def initialize(root):
                 embedding float[1536] distance_metric=cosine);
         """)
         db.executescript(labels.SCHEMA)
+        import rollups
+        db.executescript(rollups.SCHEMA)
         merge_labels(db)
         if columns(db, 'custom_models_v6'):
             fields = 'id,dataset_id,species_id,run_id,snapshot,artifact_path,artifact_sha256,scores_path,scores_sha256,created_at'

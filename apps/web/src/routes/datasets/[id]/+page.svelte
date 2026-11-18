@@ -11,6 +11,7 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
   import { createTask } from '$lib/ui/task.svelte';
+  import { familyLabel,speciesName,type RollupSummary } from '$lib/rollups';
   const id=$derived(Number(page.params.id));
   const job=$derived(activeJob());
   const siteJobs=$derived(app.jobs.filter(j=>app.datasets.find(d=>d.id===j.dataset_id)?.site_id===app.datasets.find(d=>d.id===id)?.site_id));
@@ -34,6 +35,10 @@
   // Saved reports are counted in the background; without an answer the link is simply not shown.
   let saved=$state(0);
   $effect(()=>{const current=id;saved=0;api<unknown[]>(`/datasets/${current}/exports`).then(list=>{if(current===id)saved=list.length;},()=>{});});
+  // Sounds the AI answered with a bird not recorded in Japan, by family; loaded behind the species list.
+  let rollups=$state<RollupSummary|null>(null);
+  $effect(()=>{const current=id,scope=result?rangeQuery(result.start_date,result.end_date):'',revision=result?.analysed_recordings;void revision;if(!scope)return;
+    api<RollupSummary>(`/datasets/${current}/rollups?${scope}`).then(value=>{if(current===id)rollups=value;},()=>{});});
   const analyze=createTask(async()=>{await api('/jobs',{dataset_id:id,recording_id:null});await refreshCatalog();},{toast:true});
   const range=$derived(result?`?${rangeQuery(result.start_date,result.end_date)}`:'');
   type Row=Overview['species'][number];
@@ -52,6 +57,8 @@
   const leftSounds=$derived(left.reduce((sum,sounds)=>sum+sounds,0)),effort=$derived(workload(leftSounds));
   const days=$derived(result?Math.round((Date.parse(result.end_date)-Date.parse(result.start_date))/86400000)+1:0);
   const unanalysed=$derived(result?result.records-result.analysed_recordings:0);
+  // Recordings analysed by an earlier version that the user chose to analyse again, when nothing else is left to analyse.
+  const redoLeft=$derived(result&&!unanalysed?Math.max(0,...result.pending_analysis.map(work=>work.recordings)):0);
   const estimate=$derived(result?analysisSeconds(result.pending_analysis):null);
   // Over 30 minutes, point to the faster Kinglet AIs unless one is already the main AI.
   const suggestFaster=$derived(estimate!=null&&estimate>1800&&!app.ai.main.startsWith('kinglet')&&app.ai.models.some(m=>m.id.startsWith('kinglet')&&m.available));
@@ -93,13 +100,16 @@
       <!-- While analysis runs, only the running state below is shown. -->
       {#if !jobHere}<span>{t(result.analysed_recordings===result.records?'wComplete':result.analysed_recordings?'wPartial':'cell_unanalysed')}</span>{/if}</div></div>
       {#if result.mixed_models}<p class="notice">{t('wModelVersions')}</p>{/if}
+      <!-- Old results the user chose to analyse again (UpgradeQuestion) wait here until that analysis has run. -->
+      {#if redoLeft&&!jobHere}<p class="notice">{fill('upLeft',{n:redoLeft})}</p>{/if}
+      {#if !jobHere&&siteJobs[0]?.status==='failed'&&(unanalysed>0||redoLeft)}<p class="error" role="alert">{t('upFailed')}</p>{/if}
       <!-- Before and during analysis the box is already there, so progress does not push the page around. -->
       {#if jobHere||unanalysed>0}<div class="status-box" role="status">
         {#if jobHere}<JobStatus job={jobHere}/>{:else}<p><strong>{fill('wAnalyzeNeeded',{n:unanalysed})}</strong></p><p class="muted">{t('analyzeAllHint')}</p>{/if}</div>{/if}
       <div class="actions">
-        {#if result.mixed_models||unanalysed>0}<Button variant={unanalysed>0?'primary':'default'} pending={analyze.pending} disabled={!!job} onclick={()=>analyze.run()}>{t('analyzeAll')}</Button>{/if}
+        {#if result.mixed_models||unanalysed>0||redoLeft}<Button variant={unanalysed>0?'primary':'default'} pending={analyze.pending} disabled={!!job} onclick={()=>analyze.run()}>{t('analyzeAll')}</Button>{/if}
         <Button href={`${resolve('/datasets/new')}?site=${result.site.id}&return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('uAddRecordings')}</Button><Button href={resolve(`/datasets/${id}/recordings`)}>{t('wViewRecordings')}</Button></div>
-      {#if (result.mixed_models||unanalysed>0)&&!job&&estimate!=null}<p class="muted">{fill('analysisEstimate',{time:roughTime(estimate)})}
+      {#if (result.mixed_models||unanalysed>0||redoLeft)&&!job&&estimate!=null}<p class="muted">{fill('analysisEstimate',{time:roughTime(estimate)})}
         {#if suggestFaster}{t('analysisFaster')} · <a href={`${resolve('/settings')}?return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('navSettings')}</a>{/if}</p>{/if}
     </section>
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindMissing')}</Button></div>
@@ -112,10 +122,17 @@
       {/if}{/each}
       {#if !result.species.length}<p>{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</p>{/if}
     </section>
+    {#if rollups?.families.length}<section class="panel" aria-labelledby="rollup-title"><h2 id="rollup-title">{t('ruBoxTitle')}</h2><p class="muted">{t('ruBoxHint')}</p>
+      <div class="table-wrap"><table class="rollups"><thead><tr><th>{t('ruColFamily')}</th><th>{t('ruColSounds')}</th><th>{t('ruColGuess')}</th><th></th></tr></thead><tbody>
+        {#each rollups.families as row (row.family.id)}<tr><td><strong>{familyLabel(row.family)}</strong><i class="scientific-name">{row.family.scientific_name}</i></td>
+          <td>{row.sounds>row.left?fill('ruSoundsChecked',{n:row.sounds.toLocaleString(app.locale),checked:row.sounds-row.left}):fill('ruSounds',{n:row.sounds.toLocaleString(app.locale)})}</td>
+          <td>{row.guesses.map(speciesName).join(app.locale==='ja'?'・':', ')}</td>
+          <td><Button href={`${resolve(`/datasets/${id}/rollups/${row.family.scientific_name}`)}${range}`}>{t('ruListen')}</Button></td></tr>{/each}
+      </tbody></table></div></section>{/if}
     <section class="panel stack"><h2>{t('sFindMissing')}</h2><p>{t('sFindMissingHint')}</p>
       <div><Button variant={!result.species.length&&!unanalysed?'primary':'default'} href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindByExample')}</Button></div></section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
     <!-- Off the main workflow: browsing sounds without the AI's species names. -->
     <section class="panel explore-entry"><Button href={resolve(`/datasets/${id}/explore`)}>{t('eEntry')} ›</Button><p class="muted">{t('eEntryHint')}</p></section>
   {:else if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
 </div>
-<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none}td a strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}table{table-layout:fixed}col.name{width:28%}col.state{width:22%}td{overflow-wrap:break-word}.explore-entry p{margin-top:8px}</style>
+<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none}td a strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}table{table-layout:fixed}col.name{width:28%}col.state{width:22%}table.rollups{table-layout:auto}table.rollups td:last-child{text-align:right}td{overflow-wrap:break-word}.explore-entry p{margin-top:8px}</style>

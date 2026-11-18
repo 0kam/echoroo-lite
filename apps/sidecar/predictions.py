@@ -1,31 +1,49 @@
-"""Project complete saved Perch logits into display scores and Japanese-bird candidates."""
+"""Turn saved all-class scores into display candidates and family roll-ups (one flow for every AI, see taxa.py)."""
 import numpy as np
 from scipy.special import softmax
 
+from models import default_threshold
 from storage import CatalogError
+from taxa import display
 
 
-def perch_candidates(path, seconds, analysis_id, candidate_filter):
+def _load(path, key):
     with np.load(path, allow_pickle=False) as data:
-        logits, labels = data["logits"], data["labels"]
-    if (logits.ndim != 2 or labels.ndim != 1 or logits.shape[1] != len(labels)
-            or not len(labels) or not np.isfinite(logits).all()):
+        values, labels = data[key], data["labels"]
+    if (values.ndim != 2 or labels.ndim != 1 or values.shape[1] != len(labels)
+            or not len(labels) or not np.isfinite(values).all()):
         raise CatalogError("invalid_scores")
+    return values, labels
+
+
+def perch_display(path, seconds, analysis_id, candidate_filter):
+    """Candidates (top 5 of the allowed species per window), roll-ups, and display metadata of a Perch analysis."""
+    logits, labels = _load(path, "logits")
     # Perch V2 was trained with a softmax head. Normalize over ALL classes before filtering.
     # Source: https://www.kaggle.com/models/google/bird-vocalization-classifier
     scores = softmax(logits.astype(np.float64), axis=1)
-    indices = np.arange(len(labels))
-    allowed = set((candidate_filter or {}).get("species", []))
-    indices = indices[np.isin(labels, list(allowed))]
-    selected = np.argsort(-scores[:, indices], axis=1, kind="stable")[:, :5]
-    candidates = []
-    for window, row in enumerate(selected):
-        for index in indices[row]:
-            candidates.append({"analysis_id": analysis_id,
-                "start_s": window * 5, "end_s": min((window + 1) * 5, seconds),
-                "label": str(labels[index]), "score": float(scores[window, index]),
-                "raw_score": float(logits[window, index])})
+    allowed = np.isin(labels, list((candidate_filter or {}).get("species", [])))
+    rows, rollups = display(scores, labels, allowed=allowed, score_type="softmax", seconds=seconds,
+                            rollup_threshold=default_threshold("perch"))
+    index_of = {str(label): index for index, label in enumerate(labels)}
+    candidates = [{"analysis_id": analysis_id, "start_s": start, "end_s": end, "label": label, "score": score,
+                   "raw_score": float(logits[int(start // 5), index_of[label]])} for start, end, label, score in rows]
     candidates.sort(key=lambda row: -row["score"])
-    return candidates[:100], {"display_score_type": "softmax_uncalibrated",
-                              "display_candidate_filter": "applied" if candidate_filter else "unavailable",
-                              "display_species_count": len(indices), "normalization_classes": len(labels)}
+    return candidates[:100], rollups, {"display_score_type": "softmax_uncalibrated",
+        "display_candidate_filter": "applied" if candidate_filter else "unavailable",
+        "display_species_count": int(allowed.sum()), "normalization_classes": len(labels)}
+
+
+def perch_candidates(path, seconds, analysis_id, candidate_filter):
+    candidates, _, meta = perch_display(path, seconds, analysis_id, candidate_filter)
+    return candidates, meta
+
+
+def dense_rollups(path, seconds, engine, window_s=5):
+    """Family roll-ups of an all-class analysis (Perch, Kinglet, BirdNET 3, all-class BirdNET 2.4)."""
+    scores, labels = _load(path, "logits" if engine == "perch" else "scores")
+    if engine == "perch":
+        scores = softmax(scores.astype(np.float64), axis=1)
+    score_type = "sigmoid" if engine in ("birdnet", "birdnet-v3") else "softmax"
+    return display(scores, labels, score_type=score_type, top_k=0, seconds=seconds, window_s=window_s,
+                   rollup_threshold=default_threshold(engine))[1]

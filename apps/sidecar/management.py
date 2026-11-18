@@ -177,7 +177,7 @@ def delete(root, site_id, dataset_id, revision):
             remove('presence_misses','dataset_id',plan['datasets'])
         remove('reports','id',plan['reports'])
         remove('workflow_exports','id',plan['exports'])
-        for table in ('candidates','segments'):
+        for table in ('candidates','segments','rollups','rollup_scans'):
             remove(table,'analysis_id',aids)
         remove('analyses','id',aids)
         remove('recordings','id',plan['recordings'])
