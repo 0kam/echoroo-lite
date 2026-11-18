@@ -100,7 +100,7 @@
   // Sounds a person confirmed, in recording order; times are the site's, not the PC's.
   const heard=$derived(result?[...result.presence.evidence].sort((a,b)=>Date.parse(a.local_time)-Date.parse(b.local_time)):[]);
   // Where each confirmed sound was answered, as one line.
-  const origins=$derived(new Intl.ListFormat(app.locale).format((['mark','check','label'] as const)
+  const origins=$derived(new Intl.ListFormat(app.locale).format((['mark','check','label','map'] as const)
     .map(origin=>[origin,heard.filter(item=>item.origin===origin).length] as const).filter(([,n])=>n).map(([origin,n])=>fill(`sqFrom_${origin}`,{n}))));
   let allHeard=$state(false);
   const heardTime=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:result?.site.timezone}).format(new Date(value));

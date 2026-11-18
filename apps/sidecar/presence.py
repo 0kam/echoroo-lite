@@ -1,15 +1,19 @@
 """Is the species here? A person listened and said "this is its call" at least once.
 
-Evidence is a marked sound from the candidate list, any "heard" check answer, or any "voice" answer on the species-AI page.
+Evidence is any current "present" label of the species at the site: a marked sound from the candidate list, a "heard"
+check answer, a "voice" answer on the species-AI page or a species given on the sound map.
 """
 import json
 from zoneinfo import ZoneInfo
 
 from reports import window_in_scope, window_key
+from labels import current, put, ref, remove
 from species import names_for
 from storage import CatalogError, connect
 
 LIST_SIZE = 100
+# Where a "present" answer was given, as the species page names it.
+ORIGINS = {'species_mark': 'mark', 'validation': 'check', 'training': 'label', 'sound_map': 'map'}
 
 
 def merge_candidates(rows):
@@ -122,11 +126,9 @@ def set_mark(root, body):
                 (body.run_id, body.species_id, body.start_s, body.end_s)).fetchone():
             raise CatalogError('not_found')
         if body.marked:
-            db.execute('''INSERT OR IGNORE INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,run_id)
-                VALUES(?,?,?,?,?,?)''', (body.dataset_id, body.species_id, body.recording_id, body.start_s, body.end_s, body.run_id))
+            put(db, body.species_id, body.recording_id, body.start_s, body.end_s, 'present', 'species_mark', {'run_id': body.run_id})
         else:
-            db.execute('DELETE FROM presence_marks WHERE species_id=? AND recording_id=? AND start_s=? AND end_s=?',
-                       (body.species_id, body.recording_id, body.start_s, body.end_s))
+            remove(db, body.species_id, body.recording_id, body.start_s, body.end_s, 'species_mark')
     return {'marked': body.marked}
 
 
@@ -159,46 +161,39 @@ def summaries(root, ctx, species_id=None):
     """Per species at this site and period: evidence sounds, the latest not-found record, and a status."""
     zone = ZoneInfo(ctx['site']['timezone'])
     result = {}
-    with connect(root) as db:
-        records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (ctx['dataset']['id'],))}
-        marks = db.execute('''SELECT m.species_id,m.recording_id,m.start_s,m.end_s,m.id,m.created_at,m.run_id FROM presence_marks m
-            JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''',
-            (ctx['site']['id'], species_id, species_id)).fetchall()
-        heard = db.execute('''SELECT DISTINCT v.model,v.species_id,i.recording_id,i.start_s,i.end_s,a.id,a.created_at,NULL AS run_id
-            FROM validation_items i JOIN validation_sessions v ON v.id=i.session_id JOIN datasets d ON d.id=v.dataset_id
-            JOIN window_answers a ON a.id=(SELECT MAX(id) FROM window_answers w
-                WHERE w.species_id=v.species_id AND w.recording_id=i.recording_id
-                  AND w.start_s=i.start_s AND w.end_s=i.end_s)
-            WHERE d.site_id=? AND (? IS NULL OR v.species_id=?) AND a.verdict='target' ORDER BY a.id''',
-            (ctx['site']['id'], species_id, species_id)).fetchall()
-        misses = db.execute('''SELECT m.* FROM presence_misses m JOIN datasets d ON d.id=m.dataset_id
-            WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''', (ctx['site']['id'], species_id, species_id)).fetchall()
-        # "Voice" answers the species-AI page lists (the site's main analysis), so an answer taken back there leaves the evidence too.
-        from custom_models import _main_analyses
-        labels = db.execute('''SELECT l.species_id,a.recording_id,s.start_s,s.end_s,l.id,NULL AS created_at,NULL AS run_id
-            FROM model_labels l JOIN segments s ON s.id=l.segment_id JOIN analyses a ON a.id=s.analysis_id
-            WHERE l.label='target' AND (? IS NULL OR l.species_id=?) AND a.id IN (SELECT value FROM json_each(?)) ORDER BY l.id''',
-            (species_id, species_id, json.dumps([a['id'] for a in _main_analyses(db, ctx)]))).fetchall()
     from models import selected_engines
     from custom_models import list_models
     from search_runs import site_run
     visible = set(selected_engines(root)) | {f"custom:{m['id']}" for m in list_models(root, ctx)}
-    heard = [r for r in heard if r['model'] in visible]
     with connect(root) as db:
-        marks = [r for r in marks if r['run_id'] is None or
-                 (run := site_run(db, ctx['site']['id'], r['species_id'])) and run['id'] == r['run_id']]
+        records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (ctx['dataset']['id'],))}
+        heard = current(db, ctx['dataset']['id'], species_id, 'present')
+        models = dict(db.execute('SELECT id,model FROM validation_sessions'))
+        runs = {}
+
+        def counts(row):
+            data = ref(row)
+            if row['source'] == 'species_mark' and data.get('run_id') is not None:
+                # A mark on a deleted or outdated search does not count.
+                if row['taxon_id'] not in runs:
+                    runs[row['taxon_id']] = site_run(db, ctx['site']['id'], row['taxon_id'])
+                return bool(runs[row['taxon_id']]) and runs[row['taxon_id']]['id'] == data['run_id']
+            # A check answer counts while its AI is shown.
+            model = models.get(data.get('session_id')) if row['source'] == 'validation' else None
+            return model is None or model in visible
+        heard = [row for row in heard if counts(row)]
+        misses = db.execute('''SELECT m.* FROM presence_misses m JOIN datasets d ON d.id=m.dataset_id
+            WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''', (ctx['site']['id'], species_id, species_id)).fetchall()
         misses = [r for r in misses if r['source'] != 'search' or site_run(db, ctx['site']['id'], r['species_id'])]
-    for origin, rows in (('mark', marks), ('check', heard), ('label', labels)):
-        for row in rows:
-            record = records.get(row['recording_id'])
-            if not record or not window_in_scope(record, row['start_s'], row['end_s'], zone, ctx['start_date'], ctx['end_date']):
-                continue
-            item = result.setdefault(row['species_id'], empty())
-            if any((e['recording_id'], e['start_s'], e['end_s']) == (row['recording_id'], row['start_s'], row['end_s']) for e in item['evidence']):
-                continue
-            item['evidence'].append({'recording_id': row['recording_id'], 'start_s': row['start_s'], 'end_s': row['end_s'], 'origin': origin,
-                'id': row['id'], 'created_at': row['created_at'], 'run_id': row['run_id'], 'source_path': record['path'],
-                'seconds': record['seconds'], 'local_time': window_key(record, row['start_s'], zone)[1]})
+    for row in heard:
+        record = records.get(row['recording_id'])
+        if not record or not window_in_scope(record, row['start_s'], row['end_s'], zone, ctx['start_date'], ctx['end_date']):
+            continue
+        item = result.setdefault(row['taxon_id'], empty())
+        item['evidence'].append({'recording_id': row['recording_id'], 'start_s': row['start_s'], 'end_s': row['end_s'],
+            'origin': ORIGINS.get(row['source'], 'mark'), 'id': row['id'], 'created_at': row['created_at'],
+            'run_id': ref(row).get('run_id'), 'source_path': record['path'],
+            'seconds': record['seconds'], 'local_time': window_key(record, row['start_s'], zone)[1]})
     for row in misses:
         result.setdefault(row['species_id'], empty())['miss'] = {'listened': row['listened'], 'source': row['source'], 'created_at': row['created_at']}
     for item in result.values():

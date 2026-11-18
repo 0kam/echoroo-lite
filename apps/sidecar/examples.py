@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from reports import window_key
 from species import ebird_codes
+from labels import current
 from storage import CatalogError, checked_source, connect
 
 LIMIT = 12
@@ -66,16 +67,12 @@ def examples(root, species_id, dataset_id, validation_id=None):
                 # A site-recording reference came from the sound map, where the name was typed, not checked by listening.
                 kind = 'unverified' if row['kind'] == 'recording' else 'named'
                 search_named.append(_example(kind, row, row['kind'], ref['query']['start_s'], ref['query']['end_s'], label))
-        for row in db.execute('''SELECT id,created_at,recording_id,start_s,end_s FROM presence_marks
-                WHERE species_id=? AND dataset_id IN (SELECT id FROM datasets WHERE site_id=?)''', (species_id, site['id'])):
+        # Sounds a person said are this species, at this site, on any screen.
+        for row in current(db, dataset_id, species_id, 'present'):
             if record := records.get(row['recording_id']):
+                origin = 'validation' if row['source'] == 'validation' else 'presence'
                 confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['end_s'],
-                                  {'origin': 'presence', 'id': row['id'], 'local_time': local(record, row['start_s'])})))
-        for row in db.execute('''SELECT a.id,a.created_at,a.recording_id,a.start_s,a.end_s FROM window_answers a
-                WHERE a.id IN (SELECT MAX(id) FROM window_answers WHERE species_id=? GROUP BY recording_id,start_s,end_s) AND a.verdict='target' ''', (species_id,)):
-            if record := records.get(row['recording_id']):
-                confirmed.append((row['created_at'], _example('confirmed', record, 'recording', row['start_s'], row['end_s'],
-                                  {'origin': 'validation', 'id': row['id'], 'local_time': local(record, row['start_s'])})))
+                                  {'origin': origin, 'id': row['id'], 'local_time': local(record, row['start_s'])})))
         in_quiz = bool(db.execute('SELECT 1 FROM quiz_clips WHERE species_id=? AND enabled=1', (species_id,)).fetchone())
     chosen = []
     confirmed.sort(key=lambda pair: (pair[0], pair[1]['label']['id']), reverse=True)

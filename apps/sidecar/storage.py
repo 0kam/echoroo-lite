@@ -5,15 +5,18 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import soundfile as sf
 import sqlite_vec
 
+import labels
+
 
 # Increment whenever the SQLite schema changes.
-SCHEMA_VERSION = 7
-MIGRATABLE_VERSIONS = (2, 3, 4, 5, 6)
+SCHEMA_VERSION = 8
+MIGRATABLE_VERSIONS = (2, 3, 4, 5, 6, 7)
 
 
 class CatalogError(Exception):
@@ -70,6 +73,9 @@ def initialize(root):
         # The old tables are renamed, recreated below and copied back, so a 0.2.0 catalogue keeps its rows.
         if 'run_id' in columns(db, 'model_labels'):
             db.execute('ALTER TABLE model_labels RENAME TO model_labels_v6')
+        # Schema 8: the sound map's species move to labels; the pick keeps only what its export needs.
+        if 'species' in columns(db, 'picked_sounds'):
+            db.execute('ALTER TABLE picked_sounds RENAME TO picked_sounds_v7')
         if columns(db, 'custom_models').get('run_id'):
             db.execute('ALTER TABLE custom_models RENAME TO custom_models_v6')
         db.executescript("""
@@ -85,13 +91,13 @@ def initialize(root):
                 timezone TEXT NOT NULL, recorded_at TEXT NOT NULL,
                 seconds REAL NOT NULL, sample_rate INTEGER NOT NULL,
                 size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL);
+            -- A sound picked on the sound map, with what only its export needs; its species are labels (source sound_map).
             CREATE TABLE IF NOT EXISTS picked_sounds (
                 recording_id INTEGER NOT NULL REFERENCES recordings ON DELETE CASCADE,
-                start_s REAL NOT NULL, end_s REAL NOT NULL, species TEXT,
+                start_s REAL NOT NULL, end_s REAL NOT NULL,
                 sound_type TEXT NOT NULL DEFAULT '' CHECK(sound_type IN ('','song','call')),
                 quality TEXT NOT NULL DEFAULT '' CHECK(quality IN ('','A','B','C','D','E')),
-                others INTEGER NOT NULL DEFAULT 0,
-                background TEXT NOT NULL DEFAULT '[]', exported_at TEXT,
+                others INTEGER NOT NULL DEFAULT 0, exported_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(recording_id,start_s,end_s));
@@ -167,30 +173,11 @@ def initialize(root):
                 position INTEGER NOT NULL, recording_id INTEGER NOT NULL REFERENCES recordings,
                 start_s REAL NOT NULL, end_s REAL NOT NULL, stratum TEXT NOT NULL, scores TEXT NOT NULL,
                 UNIQUE(session_id,phase,position), UNIQUE(session_id,recording_id,start_s,end_s));
-            -- One answer history per species and exact native window.
-            CREATE TABLE IF NOT EXISTS window_answers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, species_id TEXT NOT NULL REFERENCES species,
-                recording_id INTEGER NOT NULL REFERENCES recordings, start_s REAL NOT NULL, end_s REAL NOT NULL,
-                verdict TEXT NOT NULL CHECK(verdict IN ('target','other','unknown')),
-                session_id INTEGER REFERENCES validation_sessions, quiz_snapshot TEXT, examples_snapshot TEXT,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            CREATE INDEX IF NOT EXISTS window_answer_key ON window_answers(species_id,recording_id,start_s,end_s,id DESC);
-            -- "This is the species' call": presence evidence from a native AI window or 5 s search hit.
-            CREATE TABLE IF NOT EXISTS presence_marks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id INTEGER NOT NULL REFERENCES datasets,
-                species_id TEXT NOT NULL REFERENCES species, recording_id INTEGER NOT NULL REFERENCES recordings,
-                start_s REAL NOT NULL, end_s REAL NOT NULL, run_id INTEGER REFERENCES search_runs,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(species_id,recording_id,start_s,end_s));
             -- "Listened to the top N without confirming": kept even when a later mark confirms the species.
             CREATE TABLE IF NOT EXISTS presence_misses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id INTEGER NOT NULL REFERENCES datasets,
                 species_id TEXT NOT NULL REFERENCES species, source TEXT NOT NULL CHECK(source IN ('ai','search')),
                 listened INTEGER NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-            -- Species-AI material: voice / no voice on 5-second pieces of the main AI analysis.
-            CREATE TABLE IF NOT EXISTS model_labels (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, species_id TEXT NOT NULL REFERENCES species,
-                segment_id INTEGER NOT NULL REFERENCES segments,
-                label TEXT NOT NULL CHECK(label IN ('target','other')), UNIQUE(species_id,segment_id));
             -- One species AI per site, species and period; run_id is the search it was last made with, if any.
             CREATE TABLE IF NOT EXISTS custom_models (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,11 +216,8 @@ def initialize(root):
             CREATE VIRTUAL TABLE IF NOT EXISTS vectors USING vec0(
                 embedding float[1536] distance_metric=cosine);
         """)
-        if columns(db, 'model_labels_v6'):
-            # A label given to the same piece in two searches keeps the newer answer.
-            db.execute('''INSERT OR REPLACE INTO model_labels(species_id,segment_id,label) SELECT r.species_id,l.segment_id,l.label
-                FROM model_labels_v6 l JOIN search_runs r ON r.id=l.run_id ORDER BY l.id''')
-            db.execute('DROP TABLE model_labels_v6')
+        db.executescript(labels.SCHEMA)
+        merge_labels(db)
         if columns(db, 'custom_models_v6'):
             fields = 'id,dataset_id,species_id,run_id,snapshot,artifact_path,artifact_sha256,scores_path,scores_sha256,created_at'
             db.execute(f'INSERT OR IGNORE INTO custom_models({fields}) SELECT {fields} FROM custom_models_v6')
@@ -259,6 +243,60 @@ def initialize(root):
         except OSError:
             pass
     return True
+
+
+def merge_labels(db):
+    """Copy the four label tables of schema 7 and earlier into `labels`, then drop them.
+
+    Order sets which answer is current when two screens answered the same interval: checks, then "this is its call"
+    marks, then sound-map picks, then species-AI page labels, which the species AI already preferred.
+    """
+    answer = "CASE {0} WHEN 'target' THEN 'present' WHEN 'other' THEN 'absent' ELSE 'unknown' END"
+    if columns(db, 'window_answers'):
+        db.execute(f'''INSERT INTO labels(recording_id,start_s,end_s,taxon_id,verdict,source,source_ref,created_at)
+            SELECT recording_id,start_s,end_s,species_id,{answer.format('verdict')},'validation',
+              json_object('session_id',session_id,'quiz_snapshot',json(quiz_snapshot),'examples_snapshot',json(examples_snapshot)),created_at
+            FROM window_answers ORDER BY id''')
+        db.execute('DROP TABLE window_answers')
+    if columns(db, 'presence_marks'):
+        db.execute('''INSERT INTO labels(recording_id,start_s,end_s,taxon_id,verdict,source,source_ref,created_at)
+            SELECT recording_id,start_s,end_s,species_id,'present','species_mark',json_object('run_id',run_id),created_at
+            FROM presence_marks ORDER BY id''')
+        db.execute('DROP TABLE presence_marks')
+    if columns(db, 'picked_sounds_v7'):
+        rows = db.execute('SELECT * FROM picked_sounds_v7 ORDER BY created_at,recording_id,start_s').fetchall()
+        db.execute('''INSERT INTO picked_sounds(recording_id,start_s,end_s,sound_type,quality,others,exported_at,created_at,updated_at)
+            SELECT recording_id,start_s,end_s,sound_type,quality,others,exported_at,created_at,updated_at FROM picked_sounds_v7''')
+        for row in rows:
+            names = ([row['species']] if row['species'] else []) + json.loads(row['background'])
+            for index, name in enumerate(names):
+                taxon = species_id(db, name)
+                labels.put(db, taxon, row['recording_id'], row['start_s'], row['end_s'], 'present', 'sound_map',
+                           {'background': index > 0 or not row['species']}, history=True)
+        db.execute('DROP TABLE picked_sounds_v7')
+    if columns(db, 'model_labels_v6'):
+        # A label given to the same piece in two searches keeps the newer answer.
+        db.execute(f'''INSERT INTO labels(recording_id,start_s,end_s,taxon_id,verdict,source)
+            SELECT a.recording_id,s.start_s,s.end_s,r.species_id,{answer.format('l.label')},'training'
+            FROM model_labels_v6 l JOIN search_runs r ON r.id=l.run_id JOIN segments s ON s.id=l.segment_id
+            JOIN analyses a ON a.id=s.analysis_id ORDER BY l.id''')
+        db.execute('DROP TABLE model_labels_v6')
+    if columns(db, 'model_labels'):
+        db.execute(f'''INSERT INTO labels(recording_id,start_s,end_s,taxon_id,verdict,source)
+            SELECT a.recording_id,s.start_s,s.end_s,l.species_id,{answer.format('l.label')},'training'
+            FROM model_labels l JOIN segments s ON s.id=l.segment_id JOIN analyses a ON a.id=s.analysis_id ORDER BY l.id''')
+        db.execute('DROP TABLE model_labels')
+
+
+def species_id(db, scientific_name):
+    """The species row for a typed scientific name (any case), added as a local species when missing."""
+    accepted = 'COALESCE(accepted_id,id)' if 'accepted_id' in columns(db, 'species') else 'id'
+    row = db.execute(f'SELECT {accepted} FROM species WHERE lower(scientific_name)=lower(?)', (scientific_name,)).fetchone()
+    if row:
+        return row[0]
+    taxon = str(uuid4())
+    db.execute('INSERT INTO species(id,scientific_name) VALUES(?,?)', (taxon, scientific_name))
+    return taxon
 
 
 def columns(db, table):

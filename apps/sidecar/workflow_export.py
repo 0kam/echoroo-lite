@@ -214,7 +214,7 @@ def export(root,body,cancel=None):
                             answered.append({**answer,'audio_file':clip})
                             evidence.append({**common,**answer,'validation_id':v['id'],'start_s':start,'end_s':end,'local_time':window_key(record,start,zone)[1],
                                 'audio_file':clip,'audio_role':'validation','audio_reason':'included','status':answer['verdict']})
-                        history=[dict(r) for r in db.execute('''SELECT a.* FROM window_answers a WHERE a.species_id=? AND EXISTS
+                        history=[dict(r) for r in db.execute('''SELECT a.* FROM labels a WHERE a.taxon_id=? AND EXISTS
                             (SELECT 1 FROM validation_items i WHERE i.session_id=? AND i.recording_id=a.recording_id
                              AND i.start_s=a.start_s AND i.end_s=a.end_s) ORDER BY a.id''',(sid,v['id']))]
                         write_json(folder/'validation'/f"{v['id']}.json",{**dict(saved),'snapshot':{**json.loads(saved['snapshot']),'results':v['results']},

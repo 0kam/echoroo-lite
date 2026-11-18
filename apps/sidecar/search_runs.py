@@ -115,7 +115,8 @@ def deletion(db, run_id):
     if run is None:
         raise CatalogError('not_found')
     models = [r[0] for r in db.execute('SELECT id FROM custom_models WHERE run_id=? ORDER BY id', (run_id,))]
-    return run, {'marks': db.execute('SELECT COUNT(*) FROM presence_marks WHERE run_id=?', (run_id,)).fetchone()[0],
+    return run, {'marks': db.execute("""SELECT COUNT(*) FROM labels WHERE source='species_mark'
+                     AND json_extract(source_ref,'$.run_id')=?""", (run_id,)).fetchone()[0],
                  'custom_models': len(models), 'model_ids': models,
                  'checks': db.execute('SELECT COUNT(*) FROM validation_sessions WHERE model IN (SELECT value FROM json_each(?))',
                                       (json.dumps([f'custom:{m}' for m in models]),)).fetchone()[0]}
@@ -136,8 +137,8 @@ def delete_run(root, run_id):
         delete_model(root, model_id)
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
-        for table in ('presence_marks', 'search_hits'):
-            db.execute(f'DELETE FROM {table} WHERE run_id=?', (run_id,))
+        db.execute('DELETE FROM search_hits WHERE run_id=?', (run_id,))
+        db.execute("""DELETE FROM labels WHERE source='species_mark' AND json_extract(source_ref,'$.run_id')=?""", (run_id,))
         db.execute('''DELETE FROM presence_misses WHERE source='search' AND species_id=?
             AND dataset_id IN (SELECT id FROM datasets WHERE site_id=?)''', (run['species_id'], run['site_id']))
         db.execute('DELETE FROM search_runs WHERE id=?', (run_id,))

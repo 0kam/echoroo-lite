@@ -217,17 +217,22 @@ class SpeciesFlowCheck(unittest.TestCase):
             with connect(root) as db:
                 custom_windows = {tuple(r) for r in db.execute('SELECT recording_id,start_s,end_s FROM validation_items WHERE session_id=?',(check['id'],))}
                 perch_windows = {tuple(r) for r in db.execute('SELECT recording_id,start_s,end_s FROM validation_items WHERE session_id=?',(perch_check['id'],))}
-            self.assertEqual(perch_check['counts']['answered'], len(custom_windows & perch_windows))
+                # Any screen's answer on the same window counts: the other check's and the species-AI page's.
+                labelled = {tuple(r) for r in db.execute("SELECT recording_id,start_s,end_s FROM labels WHERE taxon_id=? AND verdict!='unknown'", (sid,))}
+            self.assertGreater(len(labelled & perch_windows), len(custom_windows & perch_windows))
+            self.assertEqual(perch_check['counts']['answered'], len(labelled & perch_windows))
             self.assertGreater(perch_check['counts']['answered'], 0)
             client.post(f"/validations/{perch_check['id']}/delete")
             self.assertEqual(client.get(f"/validations/{check['id']}").json()['status'],check['status'])
             # 5-second check answers are material: "heard" as voice, "not heard" as no voice; labels given here win.
             ready = client.get(url, params=dates).json()
             with connect(root) as db:
-                pieces = {tuple(r) for r in db.execute('''SELECT s.id,a.verdict FROM segments s JOIN analyses n ON n.id=s.analysis_id JOIN validation_items i
-                    ON i.recording_id=n.recording_id AND s.start_s=i.start_s AND s.end_s=i.end_s JOIN window_answers a
-                    ON a.recording_id=i.recording_id AND a.start_s=i.start_s AND a.end_s=i.end_s WHERE i.session_id=? AND a.verdict IN ('target','other')
-                    AND s.id NOT IN (SELECT segment_id FROM model_labels)''', (check['id'],))}
+                pieces = {(r[0], {'present': 'target', 'absent': 'other'}[r[1]]) for r in db.execute('''SELECT s.id,a.verdict FROM segments s
+                    JOIN analyses n ON n.id=s.analysis_id JOIN validation_items i
+                    ON i.recording_id=n.recording_id AND s.start_s=i.start_s AND s.end_s=i.end_s JOIN labels a
+                    ON a.recording_id=i.recording_id AND a.start_s=i.start_s AND a.end_s=i.end_s WHERE i.session_id=? AND a.source='validation'
+                    AND a.verdict IN ('present','absent') AND NOT EXISTS (SELECT 1 FROM labels t WHERE t.source='training'
+                    AND t.recording_id=a.recording_id AND t.start_s=a.start_s AND t.end_s=a.end_s)''', (check['id'],))}
             self.assertTrue({'target', 'other'} <= {verdict for _, verdict in pieces})
             self.assertEqual(ready['examples']['other_answers'], len({segment for segment, _ in pieces} | {ranked[0]}))
             self.assertEqual(ready['examples']['positive_5s'], 4 + len({segment for segment, verdict in pieces if verdict == 'target'} - {ranked[0]}))
@@ -261,8 +266,9 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual(client.post(f"/search-runs/{run['id']}/delete").status_code, 200)
             with connect(root) as db:
                 counts = [db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0] for t in
-                          ('search_runs', 'search_hits', 'presence_marks', 'custom_models', 'validation_sessions', 'window_answers', 'presence_misses')]
-                self.assertEqual(db.execute('SELECT COUNT(*) FROM model_labels').fetchone()[0], 19)
+                          ('search_runs', 'search_hits', "labels WHERE source='species_mark'", 'custom_models', 'validation_sessions',
+                           "labels WHERE source='validation'", 'presence_misses')]
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM labels WHERE source='training'").fetchone()[0], 19)
             self.assertEqual(counts, [0] * 7)
             self.assertFalse((root / 'custom-models' / str(model['id'])).exists())
             # The kept "voice" answers are still sounds a person confirmed.
@@ -327,8 +333,8 @@ class GrowWithoutSearchCheck(unittest.TestCase):
                 verdict = 'target' if check['question']['start_s'] % 30 == 0 else 'other'
                 check = client.post(f"/validations/{check['id']}/answers", json={'item_id': check['question']['id'], 'verdict': verdict}).json()
             with connect(root) as db:
-                heard = {tuple(r) for r in db.execute("SELECT recording_id,start_s FROM window_answers WHERE verdict='target'")} | {(2, 0.0)}
-                not_heard = {tuple(r) for r in db.execute("SELECT recording_id,start_s FROM window_answers WHERE verdict='other'")} - heard
+                heard = {tuple(r) for r in db.execute("SELECT recording_id,start_s FROM labels WHERE source='validation' AND verdict='present'")} | {(2, 0.0)}
+                not_heard = {tuple(r) for r in db.execute("SELECT recording_id,start_s FROM labels WHERE source='validation' AND verdict='absent'")} - heard
             ready = client.get(url, params={**dates, 'batch': True}).json()
             self.assertEqual((ready['examples']['positive_5s'], ready['examples']['negative_5s'], ready['examples']['other_answers']),
                              (len(heard), len(not_heard), len(heard) + len(not_heard)))
@@ -408,7 +414,7 @@ class GrowWithoutSearchCheck(unittest.TestCase):
                     'clips': [{'source_kind': 'recording', 'source_id': 1, 'start_s': 0, 'end_s': 5}]}).json()
             with connect(root) as db:
                 # The 0.2.0 (schema 6) definitions of the two changed tables.
-                db.executescript('''DROP TABLE model_labels; DROP TABLE custom_models;
+                db.executescript('''DROP TABLE IF EXISTS model_labels; DROP TABLE custom_models;
                     CREATE TABLE model_labels (
                         id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL REFERENCES search_runs,
                         segment_id INTEGER NOT NULL REFERENCES segments,
@@ -426,8 +432,9 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             self.assertTrue(initialize(root))
             with connect(root) as db:
                 self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], SCHEMA_VERSION)
-                self.assertEqual([tuple(r) for r in db.execute('SELECT species_id,segment_id,label FROM model_labels ORDER BY id')],
-                                 [(sid, 1, 'target'), (sid, 2, 'other')])
+                self.assertEqual([tuple(r) for r in db.execute('''SELECT l.taxon_id,s.id,l.verdict FROM labels l JOIN segments s
+                    ON s.start_s=l.start_s AND s.end_s=l.end_s JOIN analyses a ON a.id=s.analysis_id AND a.recording_id=l.recording_id
+                    WHERE l.source='training' ORDER BY l.id''')], [(sid, 1, 'present'), (sid, 2, 'absent')])
                 self.assertEqual(tuple(db.execute('SELECT id,run_id,snapshot,artifact_sha256 FROM custom_models').fetchone()), (5, run['id'], '{"a":1}', 'x'))
                 self.assertEqual((columns(db, 'custom_models')['run_id'], columns(db, 'model_labels_v6'), columns(db, 'custom_models_v6')), (0, {}, {}))
                 new = db.execute('''INSERT INTO custom_models(dataset_id,species_id,run_id,snapshot,artifact_path,artifact_sha256,scores_path,scores_sha256)
@@ -436,7 +443,7 @@ class GrowWithoutSearchCheck(unittest.TestCase):
                 self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertTrue(initialize(root))  # opening again changes nothing
             with connect(root) as db:
-                self.assertEqual(db.execute('SELECT COUNT(*) FROM model_labels').fetchone()[0], 2)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM labels WHERE source='training'").fetchone()[0], 2)
                 db.execute('DELETE FROM custom_models')  # the stand-in rows have no real snapshot
             ready = client.get(f'/datasets/1/species/{sid}/custom-model').json()
             self.assertEqual((ready['examples']['positive_5s'], ready['examples']['negative_5s']), (1, 1))

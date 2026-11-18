@@ -1,7 +1,6 @@
 """Small one-species classifiers over the main AI embeddings ("species AI").
 
-Material: 5-second pieces labelled "voice" / "no voice" on the species-AI page, "this is its call"
-marks and 5-second check answers. There is one species AI per site, species and period; making it
+Material: the species' labels from every screen, laid on 5-second pieces (`labels.on_pieces`). There is one species AI per site, species and period; making it
 again replaces it in place. It scores and is checked on every 5-second piece of the site.
 """
 import hashlib
@@ -21,6 +20,7 @@ from scipy.special import expit
 
 from models import feature_spec, main_engine, main_identity
 from reports import analysis_metadata, calendar_cells, effort, finalize_cells, window_in_scope, window_key
+from labels import FROM_ANSWER, TO_ANSWER, current, on_pieces, put, ref, remove
 from species import names_for
 from storage import CatalogError, checked_source, connect
 
@@ -151,33 +151,28 @@ def _piece(db, analyses, recording_id, start_s, end_s):
     return row and row[0]
 
 
+ORIGINS = {'training': 'label', 'validation': 'check'}  # any other screen's answer counts as 'presence'
+
+
 def _materials(db, ctx, species_id):
-    """Labelled 5-second pieces of the site's main analysis: labels given on the species-AI page (newest first),
-    "this is its call" marks, and check answers ("heard" = voice, "not heard" = no voice)."""
+    """Labelled 5-second pieces of the site's main analysis, from the species' current labels at the site
+    (`labels.on_pieces`). Origin: 'label' (the species-AI page), 'check' (a check answer) or 'presence' (any other
+    screen). A mark on a deleted or outdated search does not count, as on the species page."""
     from search_runs import site_run
     run = site_run(db, ctx['site']['id'], species_id)
     analyses = {r['recording_id']: r['id'] for r in _main_analyses(db, ctx)}
-    labels = {r['segment_id']: {'label': r['label'], 'origin': 'label'} for r in db.execute('''SELECT l.segment_id,l.label
-        FROM model_labels l JOIN segments s ON s.id=l.segment_id WHERE l.species_id=?
-          AND s.analysis_id IN (SELECT value FROM json_each(?)) ORDER BY l.id DESC''', (species_id, json.dumps(list(analyses.values()))))}
-    # Marks on a deleted or outdated search do not count, as on the species page.
-    marks = db.execute('''SELECT m.recording_id,m.start_s,m.end_s,'target' AS verdict FROM presence_marks m
-        JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=? AND m.species_id=? AND (m.run_id IS NULL OR m.run_id=?) ORDER BY m.id''',
-        (ctx['site']['id'], species_id, run['id'] if run else None)).fetchall()
-    checks = db.execute('''SELECT DISTINCT i.recording_id,i.start_s,i.end_s,a.verdict FROM validation_items i
-            JOIN validation_sessions v ON v.id=i.session_id JOIN datasets d ON d.id=v.dataset_id
-            JOIN window_answers a ON a.id=(SELECT MAX(id) FROM window_answers w
-                WHERE w.species_id=v.species_id AND w.recording_id=i.recording_id
-                  AND w.start_s=i.start_s AND w.end_s=i.end_s)
-            WHERE d.site_id=? AND v.species_id=? AND ABS(i.end_s-i.start_s-5)<0.000001 AND a.verdict IN ('target','other')''',
-            (ctx['site']['id'], species_id)).fetchall()
-    for origin, rows in (('presence', marks), ('check', checks)):
-        for row in rows:
-            segment = _piece(db, analyses, row['recording_id'], row['start_s'], row['end_s'])
-            if segment:
-                # A label given on the species-AI page is the more specific answer.
-                labels.setdefault(segment, {'label': row['verdict'], 'origin': origin})
-    return run, labels
+    pieces = {}
+    for row in db.execute('''SELECT s.id,a.recording_id,s.start_s,s.end_s FROM segments s JOIN analyses a ON a.id=s.analysis_id
+            WHERE s.analysis_id IN (SELECT value FROM json_each(?)) AND ABS(s.end_s-s.start_s-5)<0.000001
+            ORDER BY a.recording_id,s.start_s''', (json.dumps(list(analyses.values())),)):
+        pieces.setdefault(row['recording_id'], []).append((row['start_s'], row['end_s'], row['id']))
+    rows = [row for row in current(db, ctx['dataset']['id'], species_id, per_source=True) if not (
+        row['source'] == 'species_mark' and ref(row).get('run_id') not in (None, run and run['id']))]
+    # An answer given on the species-AI page is the more specific one and wins; it is what that page lists.
+    found = on_pieces(rows, pieces, first='training')
+    # Newest first, as the species-AI page lists its answers.
+    return run, {segment: {'label': TO_ANSWER[row['verdict']], 'origin': ORIGINS.get(row['source'], 'presence')}
+                 for segment, row in sorted(found.items(), key=lambda item: (item[1]['created_at'], item[1]['id']), reverse=True)}
 
 
 def boundary_ranks(total, known, shown, round_, size=10):
@@ -388,11 +383,12 @@ def set_label(root, dataset_id, species_id, segment_id, label):
                 WHERE r.scope_id=? AND s.id=? AND ABS(s.end_s-s.start_s-5)<0.000001''', (dataset_id, segment_id)).fetchone() \
                 or not db.execute('SELECT 1 FROM species WHERE id=?', (species_id,)).fetchone():
             raise CatalogError('not_found')
+        piece = db.execute('''SELECT a.recording_id,s.start_s,s.end_s FROM segments s JOIN analyses a ON a.id=s.analysis_id
+            WHERE s.id=?''', (segment_id,)).fetchone()
         if label is None:
-            db.execute('DELETE FROM model_labels WHERE species_id=? AND segment_id=?', (species_id, segment_id))
+            remove(db, species_id, *piece, 'training')
         else:
-            db.execute('''INSERT INTO model_labels(species_id,segment_id,label) VALUES(?,?,?)
-                ON CONFLICT(species_id,segment_id) DO UPDATE SET label=excluded.label''', (species_id, segment_id, label))
+            put(db, species_id, *piece, FROM_ANSWER[label], 'training')
         db.execute('DELETE FROM workflow_cache')
     return {'segment_id': segment_id, 'label': label}
 

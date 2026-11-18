@@ -11,6 +11,7 @@ import numpy as np
 import soundfile as sf
 from fastapi.testclient import TestClient
 
+import labels
 from server import create_app
 from storage import connect, initialize
 
@@ -59,11 +60,11 @@ class ManagementCheck(unittest.TestCase):
                     snap=json.dumps({'recording_ids':[rid],'analysis_ids':[aid]})
                     run=db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',(dataset,species,snap)).lastrowid
                     db.execute('INSERT INTO search_hits VALUES(?,?,.8,0,0)',(run,segment))
-                    db.execute("INSERT INTO model_labels(species_id,segment_id,label) VALUES(?,?,'target')",(species,segment))
-                    db.execute('INSERT INTO presence_marks(dataset_id,species_id,recording_id,start_s,end_s,run_id) VALUES(?,?,?,0,5,?)',(dataset,species,rid,run))
+                    labels.put(db,species,rid,0,5,'present','training')
+                    labels.put(db,species,rid,0,5,'present','species_mark',{'run_id':run})
                     validation=db.execute("INSERT INTO validation_sessions(dataset_id,species_id,model,fingerprint,snapshot) VALUES(?,?,'birdnet','test',?)",(dataset,species,snap)).lastrowid
                     db.execute("INSERT INTO validation_items(session_id,phase,position,recording_id,start_s,end_s,stratum,scores) VALUES(?,'sample',0,?,0,3,'0','{}')",(validation,rid))
-                    db.execute("INSERT INTO window_answers(species_id,recording_id,start_s,end_s,verdict,session_id) VALUES(?,?,0,3,'target',?)",(species,rid,validation))
+                    labels.put(db,species,rid,0,3,'present','validation',{'session_id':validation},history=True)
                     report=db.execute("INSERT INTO reports(dataset_id,kind,snapshot) VALUES(?,'detection',?)",(dataset,snap)).lastrowid
                     db.execute("INSERT INTO reports(dataset_id,kind,snapshot) VALUES(?,'detection',?)",(dataset,json.dumps({'base_report_id':report})))
                     exported=root/f'export-{rid}.zip';exported.write_bytes(b'original export')
@@ -103,7 +104,7 @@ class ManagementCheck(unittest.TestCase):
                     self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
                     self.assertEqual([r[0] for r in db.execute('SELECT id FROM site_recordings WHERE scope_id=2')],[2])
                     self.assertEqual(db.execute('SELECT dataset_id FROM jobs WHERE id=1').fetchone()[0],2)
-                    for table in ('search_runs','validation_sessions','custom_models','reports','workflow_exports','presence_marks'):
+                    for table in ('search_runs','validation_sessions','custom_models','reports','workflow_exports'):
                         self.assertEqual(db.execute(f'SELECT COUNT(*) FROM {table} WHERE dataset_id=1').fetchone()[0],0)
                         self.assertGreater(db.execute(f'SELECT COUNT(*) FROM {table} WHERE dataset_id=2').fetchone()[0],0)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM vectors').fetchone()[0],3)
@@ -147,7 +148,7 @@ class ManagementCheck(unittest.TestCase):
                 species=self.populate(root,client)
                 # Synthetic history is not a real validation session; remove it before building real overviews.
                 with connect(root) as db:
-                    for table in ('window_answers','validation_items','validation_sessions','presence_marks','model_labels','search_hits','search_runs'):
+                    for table in ('labels','validation_items','validation_sessions','search_hits','search_runs'):
                         db.execute(f'DELETE FROM {table}')
                     original_times=[tuple(r) for r in db.execute('SELECT original_time,timezone,recorded_at FROM recordings')]
                     saved_reports=[tuple(r) for r in db.execute('SELECT * FROM reports')]
@@ -193,7 +194,7 @@ class ManagementCheck(unittest.TestCase):
                 species=self.populate(root,client)
                 preview=client.get('/sites/1/delete-preview').json()
                 with connect(root) as db:
-                    db.execute("INSERT INTO window_answers(species_id,recording_id,start_s,end_s,verdict) VALUES(?,1,0,3,'other')",(species,))
+                    labels.put(db,species,1,0,3,'absent','validation',history=True)
                 self.assertEqual(client.post('/sites/1/delete',json={'revision':preview['revision']}).json()['detail'],'management_changed')
                 with connect(root) as db:
                     db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(3,?,?)',
