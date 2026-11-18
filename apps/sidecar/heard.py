@@ -118,6 +118,7 @@ def sound(root, dataset_id, recording_id, start_s, end_s, blank=False):
         rows = [dict(r) for r in db.execute('''SELECT l.*,r.path,r.seconds,r.recorded_at FROM labels l JOIN recordings r ON r.id=l.recording_id
             WHERE l.recording_id=? AND l.start_s=? AND l.end_s=? AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
             ORDER BY l.id DESC''', (recording_id, start_s, end_s, dataset_id))]
+        test = {(r[0], r[1]) for r in db.execute('SELECT species_id,recording_id FROM test_recordings WHERE site_id=?', (site['id'],))}
     if not rows:
         if blank:
             return {'now': [], 'history': []}
@@ -125,7 +126,7 @@ def sound(root, dataset_id, recording_id, start_s, end_s, blank=False):
     newest = {}
     for row in rows:
         newest.setdefault(row['taxon_id'], row['id'])
-    history = [{**_public(row, taxa, zone), 'current': newest[row['taxon_id']] == row['id'], 'current_id': newest[row['taxon_id']]} for row in rows]
+    history = [{**_public(row, taxa, zone, test), 'current': newest[row['taxon_id']] == row['id'], 'current_id': newest[row['taxon_id']]} for row in rows]
     return {'site': dict(site), 'file': rows[0]['path'], 'recording_id': recording_id, 'start_s': start_s, 'end_s': end_s,
             'local_time': history[0]['local_time'], 'source': history[0]['source'],
             'now': [row for row in history if row['current']], 'history': history}

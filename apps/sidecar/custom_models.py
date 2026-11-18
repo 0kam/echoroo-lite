@@ -351,6 +351,10 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
         positive = sum(value['label'] == 'target' for value in labels.values())
         # A test sound is answered too: it is not asked again, though it is no material.
         leave = {**dict.fromkeys(skip), **{segment: value['label'] for segment, value in every.items()}}
+        # Sounds of a test recording are not offered here: chosen by the very AI they test, they would flatter or damn it.
+        if batch and set_aside:
+            leave = {**{r[0]: None for r in db.execute('''SELECT s.id FROM segments s JOIN analyses a ON a.id=s.analysis_id
+                WHERE a.recording_id IN (SELECT value FROM json_each(?))''', (json.dumps(sorted(set_aside)),))}, **leave}
         if batch:
             if model and model['applicable']:
                 source = 'custom'
@@ -375,8 +379,12 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
                             break
                     picks = [ranked[r] for r in ranks]
         rows = [{**row, 'label': None} for row in _rows(db, picks)]
-        answered = [{**row, 'label': labels[row['segment_id']]['label']}
-                    for row in _rows(db, [(segment, None) for segment, value in labels.items() if value['origin'] == 'label'])]
+        # Answers in a test recording are listed too, so they can be taken back here; `test` marks them and the
+        # offered sounds that would become test sounds.
+        answered = [{**row, 'label': every[row['segment_id']]['label']}
+                    for row in _rows(db, [(segment, None) for segment, value in every.items() if value['origin'] == 'label'])]
+        for row in rows + answered:
+            row['test'] = row['recording_id'] in set_aside
         # Making the AI again from the very answers it was made from would change nothing but outdate its check.
         unchanged = bool(model and model['applicable']) and {(e['segment_id'], e['label']) for e in json.loads(db.execute(
             'SELECT snapshot FROM custom_models WHERE id=?', (model['id'],)).fetchone()[0])['training']['examples']} == \
@@ -515,7 +523,8 @@ def create(root, ctx, species_id, cancel=None):
             analysis_ids=np.asarray([r['analysis_id'] for r in rows], dtype=np.int64),
             recording_ids=np.asarray([r['recording_id'] for r in rows], dtype=np.int64),
             start_s=np.asarray([r['start_s'] for r in rows]), end_s=np.asarray([r['end_s'] for r in rows]), scores=np.asarray(scored))
-        test_sounds.keep_round(temporary, folder / str(previous['id']) if previous else None, snapshot['round'], weights, intercept)
+        test_sounds.keep_round(temporary, folder / str(previous['id']) if previous else None, snapshot['round'], weights, intercept,
+                                [e['recording_id'] for e in examples])
         artifact, scores = _digest(temporary / 'model.npz'), _digest(temporary / 'scores.npz')
         with connect(root) as db:
             model_id = previous['id'] if previous else db.execute('''INSERT INTO custom_models(dataset_id,species_id,run_id,snapshot,

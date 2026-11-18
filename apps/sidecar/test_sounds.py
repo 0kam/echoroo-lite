@@ -1,8 +1,10 @@
 """Test sounds: answers set aside per species and site, never used as material, to compare each round of a species AI.
 
 The split is by recording, so calls of one morning do not land on both sides: every answer of the species in a
-"test recording" is a test sound, also answers given later. Recordings are set aside when the AI is made, only
-for a species with enough "heard" sounds, and only as far as the AI can still be made from the rest.
+"test recording" is a test sound, also answers given later. Recordings are set aside once, the first time the AI
+is made for a species with enough "heard" sounds, and only as far as the AI can still be made from the rest. The
+set is then frozen: adding recordings later would test earlier rounds on sounds they were made from. A round made
+before the split, from sounds that are test sounds now, gets no score.
 """
 import hashlib
 import json
@@ -36,9 +38,9 @@ def choose(db, site_id, species_id, labelled, minimum, minimum_each):
     'recording_id'}} of the species at the site. Recordings with check answers go first (they were chosen by the
     built-in AI's score, not by the species AI), then a fixed shuffle. A recording is skipped when the rest would no
     longer make an AI (`minimum` answers, `minimum_each` of each kind). Returns the recordings newly set aside."""
-    if sum(v['label'] == 'target' for v in labelled.values()) < NEEDED:
-        return []
     test = recordings(db, site_id, species_id)
+    if test or sum(v['label'] == 'target' for v in labelled.values()) < NEEDED:
+        return []
     per = {}
     for value in labelled.values():
         counts = per.setdefault(value['recording_id'], {'target': 0, 'other': 0, 'check': 0})
@@ -61,27 +63,30 @@ def choose(db, site_id, species_id, labelled, minimum, minimum_each):
     return added
 
 
-def keep_round(folder, previous, number, weights, intercept):
+def keep_round(folder, previous, number, weights, intercept, trained_on=()):
     """Keep this round's weights beside the model, with those of the rounds before, so that every round can be
-    scored again on test sounds answered later."""
+    scored again on test sounds answered later. `trained_on`: the recordings its material came from."""
     rounds = Path(folder) / 'rounds'
     rounds.mkdir()
     if previous is not None and (Path(previous) / 'rounds').is_dir():
         for path in (Path(previous) / 'rounds').glob('round-*.npz'):
             (rounds / path.name).write_bytes(path.read_bytes())
-    np.savez_compressed(rounds / f'round-{number}.npz', weights=weights, intercept=np.array(intercept))
+    np.savez_compressed(rounds / f'round-{number}.npz', weights=weights, intercept=np.array(intercept),
+                        trained_on=np.asarray(sorted(set(trained_on)), dtype=np.int64))
 
 
 def _rounds(folder, current):
-    """{round: (weights, intercept)}; an AI made before rounds were kept has only its current one."""
+    """{round: (weights, intercept, recordings its material came from or None when not kept)}; an AI made before
+    rounds were kept has only its current one."""
     found = {}
     for path in sorted((Path(folder) / 'rounds').glob('round-*.npz')) if (Path(folder) / 'rounds').is_dir() else []:
         with np.load(path, allow_pickle=False) as saved:
-            found[int(path.stem.split('-')[1])] = (saved['weights'], float(saved['intercept']))
+            found[int(path.stem.split('-')[1])] = (saved['weights'], float(saved['intercept']),
+                                                   set(saved['trained_on'].tolist()) if 'trained_on' in saved else None)
     model = Path(folder) / 'model.npz'
     if current not in found and model.is_file():
         with np.load(model, allow_pickle=False) as saved:
-            found[current] = (saved['weights'], float(saved['intercept']))
+            found[current] = (saved['weights'], float(saved['intercept']), None)
     return dict(sorted(found.items()))
 
 
@@ -100,6 +105,8 @@ def report(root, ctx, species_id):
             r.recorded_at,v.embedding FROM segments s JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
             JOIN vectors v ON v.rowid=s.id WHERE s.id IN (SELECT value FROM json_each(?))''', (json.dumps(list(sounds)),))}
     heard_all = sum(v['label'] == 'target' for v in labelled.values())
+    files = sorted(Path(r['path']).name for r in rows.values() if r['recording_id'] in test)
+    files = sorted(set(files))
     sounds = {segment: value for segment, value in sounds.items() if segment in rows}
     heard = [s for s, v in sounds.items() if v['label'] == 'target']
     absent = [s for s, v in sounds.items() if v['label'] == 'other']
@@ -107,21 +114,28 @@ def report(root, ctx, species_id):
         return {'state': 'none', 'heard': heard_all, 'needed': NEEDED}
     models = list_models(root, ctx, species_id, every=True)
     model = models[0] if models else None
-    result = {'state': 'ready', 'sounds': {'heard': len(heard), 'not_heard': len(absent)}, 'rounds': [], 'aim': HEARD,
+    result = {'state': 'ready', 'sounds': {'heard': len(heard), 'not_heard': len(absent)}, 'rounds': [], 'aim': HEARD, 'threshold': FOUND,
+              'recordings': files,
               'missed': [], 'false': [], 'new': []}
     if model is None:
         return result
     order = heard + absent
     matrix = _normalise(np.stack([np.frombuffer(rows[s]['embedding'], dtype='<f4') for s in order]))
     said = {}
-    for number, (weights, intercept) in _rounds(Path(root) / 'custom-models' / str(model['id']), model['round']).items():
+    scores = {}
+    for number, (weights, intercept, trained_on) in _rounds(Path(root) / 'custom-models' / str(model['id']), model['round']).items():
         if len(weights) != matrix.shape[1]:
             continue
-        said[number] = dict(zip(order, (expit(matrix @ weights + intercept) >= FOUND).tolist()))
+        if trained_on is not None and trained_on & test:
+            # Made before the split, from sounds that are test sounds now: a score on them would flatter it.
+            result['rounds'].append({'round': number, 'found': None, 'false': None, 'current': number == model['round'], 'made_from_test': True})
+            continue
+        scores[number] = dict(zip(order, expit(matrix @ weights + intercept).tolist()))
+        said[number] = {s: value >= FOUND for s, value in scores[number].items()}
         result['rounds'].append({'round': number, 'found': sum(said[number][s] for s in heard), 'false': sum(said[number][s] for s in absent),
-                                 'current': number == model['round']})
+                                 'current': number == model['round'], 'made_from_test': False})
     zone = ZoneInfo(ctx['site']['timezone'])
-    shape = lambda s: {'segment_id': s, 'recording_id': rows[s]['recording_id'], 'start_s': rows[s]['start_s'], 'end_s': rows[s]['end_s'],
+    shape = lambda s: {'segment_id': s, 'score': round(scores[model['round']][s], 2), 'recording_id': rows[s]['recording_id'], 'start_s': rows[s]['start_s'], 'end_s': rows[s]['end_s'],
                        'path': rows[s]['path'], 'seconds': rows[s]['seconds'], 'local_time': window_key(rows[s], rows[s]['start_s'], zone)[1]}
     now = said.get(model['round'])
     if now:

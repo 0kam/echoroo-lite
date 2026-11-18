@@ -10,7 +10,7 @@ export type Counts = Record<Verdict, number>;
 export type AiState = { state: 'made'; round: number; usable: boolean } | { state: 'ready' | 'needed'; needed: number } | { state: 'family' };
 export type HeardSummary = { rows: { species: Taxon; site: Counts; all: Counts; ai: AiState | null }[];
   total: { site: number; all: number }; requirements: { total: number; each: number } };
-export type HeardRecord = { id: number; species: Taxon; verdict: Verdict; screen: string; extra: boolean; recording_id: number;
+export type HeardRecord = { id: number; test?: boolean; species: Taxon; verdict: Verdict; screen: string; extra: boolean; recording_id: number;
   start_s: number; end_s: number; created_at: string; local_time: string; source: AudioSource };
 export type HeardList = { total: number; rows: HeardRecord[]; site: { name: string; timezone: string };
   options: { species: Taxon[]; screens: string[]; days: string[] } };

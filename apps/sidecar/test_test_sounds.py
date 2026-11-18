@@ -37,9 +37,14 @@ class TestSoundsCheck(unittest.TestCase):
             self.assertEqual((again['round'], again['training']['positive_5s'], again['training']['negative_5s']), (2, 9, 15))
             report = client.get(url).json()
             self.assertEqual((report['state'], report['sounds'], report['aim']), ('ready', {'heard': 9, 'not_heard': 15}, 10))
-            # Both rounds are scored on the same sounds; the first was made before any were set aside.
-            self.assertEqual([(r['round'], r['found'], r['false'], r['current']) for r in report['rounds']],
-                             [(1, 9, 0, False), (2, 9, 0, True)])
+            # The first round was made before any were set aside, from sounds that are test sounds now: it gets no score.
+            self.assertEqual([(r['round'], r['found'], r['false'], r['current'], r['made_from_test']) for r in report['rounds']],
+                             [(1, None, None, False, True), (2, 9, 0, True, False)])
+            self.assertEqual((report['threshold'], len(report['recordings'])), (0.5, 3))
+            # No sound of a test recording is offered on the species-AI page: the AI under test would be choosing them.
+            state = client.get(f'/datasets/1/species/{sid}/custom-model', params={'start_date': '2024-08-01', 'end_date': '2024-08-06', 'batch': True}).json()
+            self.assertFalse({row['recording_id'] for row in state['batch']} & test)
+            self.assertFalse(any(row['test'] for row in state['batch']))
             self.assertEqual((report['missed'], report['false'], report['new']), ([], [], []))
             ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={'batch': True}).json()
             self.assertEqual((ready['test'], ready['examples']['positive_5s']), ({'heard': 9, 'not_heard': 15}, 9))
@@ -53,7 +58,7 @@ class TestSoundsCheck(unittest.TestCase):
                 labels.put(db, sid, outside, 40, 45, 'absent', 'species_mark')
             report = client.get(url).json()
             self.assertEqual(report['sounds'], {'heard': 10, 'not_heard': 15})
-            self.assertEqual([(r['round'], r['found']) for r in report['rounds']], [(1, 9), (2, 9)])
+            self.assertEqual([(r['round'], r['found']) for r in report['rounds']], [(1, None), (2, 9)])
             self.assertEqual([(m['recording_id'], m['start_s']) for m in report['missed']], [(inside, 40)])
             third = client.post('/custom-models', json=scope).json()
             self.assertEqual((third['round'], third['training']['positive_5s'], third['training']['negative_5s']), (3, 9, 16))
