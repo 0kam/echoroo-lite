@@ -11,7 +11,9 @@
   let { settings=false }:{ settings?:boolean }=$props();
   let entries=$state<Entry[]>([]),dialog=$state<HTMLDialogElement>();
   const asked=$derived(entries.find(entry=>entry.answer===null));
-  const kept=$derived(entries.filter(entry=>entry.answer==='keep'));
+  // Results kept for now, and results whose analysis was started again but has not finished (stopped, failed, or waiting).
+  const kept=$derived(entries.filter(entry=>entry.answer!==null));
+  const busy=$derived(app.jobs.some(job=>job.status==='queued'||job.status==='running'));
   async function load(){try{entries=await api<Entry[]>('/analysis-upgrade');}catch{/* Without an answer nothing is asked. */}}
   // Asked again after recordings are added or removed and after each analysis ends.
   $effect(()=>{void app.recordingsVersion;void app.jobs.map(job=>`${job.id}:${job.status}`).join(',');void load();});
@@ -23,9 +25,9 @@
     if(answer==='redo'){await refreshCatalog();notify(result.jobs.length?'upStarted':'upWaiting',result.jobs.length?'success':'info');}
   },{toast:true});
 </script>
-{#if settings}{#each kept as entry (entry.engine)}<div class="notice"><p>{fill('upSettings',{model:modelName(entry.engine),sites:entry.sites,n:entry.recordings})}</p>
+{#if settings}{#each kept as entry (entry.engine)}<div class="notice"><p>{fill(entry.answer==='redo'?'upSettingsRedo':'upSettings',{model:modelName(entry.engine),sites:entry.sites,n:entry.recordings})}</p>
   <p class="muted">{t('upTime')}: {estimate(entry)}　{t('upKeep')}</p>
-  <Button pending={reply.pending} onclick={()=>reply.run(entry,'redo')}>{t('upRedo')}</Button></div>{/each}
+  <Button pending={reply.pending} disabled={busy} onclick={()=>reply.run(entry,'redo')}>{t('upRedo')}</Button></div>{/each}
 {:else}<dialog bind:this={dialog} oncancel={event=>event.preventDefault()} aria-labelledby="upgrade-title">
   {#if asked}<h2 id="upgrade-title">{t('upTitle')}</h2>
     <p>{fill('upBody',{model:modelName(asked.engine)})}</p>

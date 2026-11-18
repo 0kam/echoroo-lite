@@ -117,8 +117,13 @@ def names_for(row):
             "name_sources": {lang: "user" if lang in custom else "bundled" if lang in bundled else 'quiz' for lang in defaults.keys() | custom.keys()}}
 
 
+def _kana(text):
+    """Hiragana as katakana, so うぐいす finds ウグイス."""
+    return ''.join(chr(ord(c) + 0x60) if 'ぁ' <= c <= 'ゖ' else c for c in text)
+
+
 def list_species(root, query):
-    query = query.strip().casefold()
+    query = _kana(query.strip().casefold())
     if not query:
         return []
     # ponytail: a 16k-name in-memory scan; add an FTS index if the catalog grows substantially.
@@ -129,7 +134,7 @@ def list_species(root, query):
         for row in rows:
             # Another name is found by its own spelling but listed once, as the species it names.
             target = by_id.get(row['accepted_id']) or row
-            names = [text.casefold() for text in [row['scientific_name'], *names_for(row)['common_names'].values()]]
+            names = [_kana(text.casefold()) for text in [row['scientific_name'], *names_for(row)['common_names'].values()]]
             ranks = [(0 if text == query else 1 if text.startswith(query) else 2, len(text))
                      for text in names if query in text]
             if ranks and (target['id'] not in best or min(ranks) < best[target['id']][0]):

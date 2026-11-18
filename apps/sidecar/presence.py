@@ -13,7 +13,8 @@ from storage import CatalogError, connect
 
 LIST_SIZE = 100
 # Where a "present" answer was given, as the species page names it.
-ORIGINS = {'species_mark': 'mark', 'validation': 'check', 'training': 'label', 'sound_map': 'map'}
+ORIGINS = {'species_mark': 'mark', 'validation': 'check', 'training': 'label', 'sound_map': 'map',
+           'rollup_fix': 'rollup'}
 
 
 def merge_candidates(rows):

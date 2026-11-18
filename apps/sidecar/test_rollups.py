@@ -75,9 +75,10 @@ class RollupTest(unittest.TestCase):
                     return client.get('/datasets/1/rollups/Picidae').json()['sounds']
 
                 sounds = answer(0, 'species', kogera['id'])
-                # Answered sounds go to the end; the species heard is evidence like any other "heard".
-                self.assertEqual([(s['start_s'], s['answer'] and s['answer']['kind']) for s in sounds], [(15, None), (0, 'species')])
-                self.assertEqual(sounds[1]['answer']['species']['id'], kogera['id'])
+                # Sounds keep their recording order; the species heard is evidence like any other "heard".
+                self.assertEqual([(s['start_s'], s['answer'] and s['answer']['kind']) for s in sounds], [(0, 'species'), (15, None)])
+                self.assertEqual(sounds[0]['answer']['species']['id'], kogera['id'])
+                self.assertEqual([s['scientific_name'] for s in client.get('/species?q=こげら').json()][:1], ['Yungipicus kizuki'])
                 overview = client.get('/datasets/1/overview').json()
                 row = next(s for s in overview['species'] if s['species']['id'] == kogera['id'])
                 self.assertEqual(row['presence']['status'], 'confirmed')

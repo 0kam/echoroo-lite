@@ -102,6 +102,7 @@
       {#if result.mixed_models}<p class="notice">{t('wModelVersions')}</p>{/if}
       <!-- Old results the user chose to analyse again (UpgradeQuestion) wait here until that analysis has run. -->
       {#if redoLeft&&!jobHere}<p class="notice">{fill('upLeft',{n:redoLeft})}</p>{/if}
+      {#if !jobHere&&siteJobs[0]?.status==='failed'&&(unanalysed>0||redoLeft)}<p class="error" role="alert">{t('upFailed')}</p>{/if}
       <!-- Before and during analysis the box is already there, so progress does not push the page around. -->
       {#if jobHere||unanalysed>0}<div class="status-box" role="status">
         {#if jobHere}<JobStatus job={jobHere}/>{:else}<p><strong>{fill('wAnalyzeNeeded',{n:unanalysed})}</strong></p><p class="muted">{t('analyzeAllHint')}</p>{/if}</div>{/if}

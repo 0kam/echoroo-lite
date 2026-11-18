@@ -73,7 +73,7 @@ def display(scores, labels, *, allowed=None, score_type='softmax', top_k=5, thre
     `scores` is (windows, classes) of probabilities: softmax (sums to 1 over all classes) or sigmoid (independent).
     `allowed` masks the classes that may be shown as species (default: the Japan checklist). Returns
     (candidates, rollups); each candidate is (start_s, end_s, label, score) and each roll-up a dict naming the family,
-    its score and the out-of-Japan class the AI put first. A window is rolled up when its best class over all classes
+    its score, the out-of-Japan class the AI put first and its best Japan-checklist class. A window is rolled up when its best class over all classes
     is a bird outside Japan and the family's score (summed for softmax, the highest for sigmoid) reaches
     `rollup_threshold` (default `threshold`, else nothing is held back).
     """
@@ -93,10 +93,14 @@ def display(scores, labels, *, allowed=None, score_type='softmax', top_k=5, thre
                 candidates.append((start, end, labels[index], float(row[index])))
         best = int(np.argmax(row))
         family = families[best]
-        if japan[best] or not family:
+        # A last piece shorter than half a window is mostly padding: too little to ask a person about.
+        if japan[best] or not family or end - start < window_s / 2:
             continue
         score = float(row[members[family]].sum() if score_type == 'softmax' else row[members[family]].max())
         if rollup_threshold is None or score >= rollup_threshold:
+            # The AI's best answer among the Japan checklist species, offered beside the family's species.
+            home = int(np.flatnonzero(japan)[np.argmax(row[japan])]) if japan.any() else None
             rollups.append({'start_s': start, 'end_s': end, 'family': family_names(family), 'score': score,
-                            'top_label': labels[best], 'top_score': float(row[best])})
+                            'top_label': labels[best], 'top_score': float(row[best]),
+                            'japan_label': None if home is None else labels[home]})
     return candidates, rollups
