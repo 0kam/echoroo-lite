@@ -32,7 +32,7 @@ export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|n
   site:{id:number;name:string;timezone:string};presence:Presence;region?:Region};
 export type CustomModel = {imported?:{file:string;engine:string;warning:string|null;site:string|null}|null;id:number;round:number;created_at:string;dataset_id:number;run_id:number|null;species:Species;
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
-  training:{positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null;growth:Growth};
+  training:{other_sites?:{positive_5s:number;negative_5s:number;sites:number}|null;positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null;growth:Growth};
 /** A 5-second sound to answer on the species-AI page; `score` is null in the list of answered sounds. */
 export type LabelRow = {test?:boolean;segment_id:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;
   score:number|null;label:'target'|'other'|null};

@@ -85,7 +85,7 @@ class SharingCheck(unittest.TestCase):
                              ('echoroo-species-ai', 1, 'Horornis diphone', None, 9))
             self.assertLess(Path(path).stat().st_size, 20000)
             seen = client.post('/custom-models/import', json={'dataset_id': 1, 'path': path, 'inspect': True}).json()
-            self.assertEqual((seen['species']['id'], seen['warning'], seen['training'], seen['site']), (sid, None, {'positive_5s': 9, 'negative_5s': 15}, None))
+            self.assertEqual((seen['species']['id'], seen['warning'], seen['training'], seen['site']), (sid, None, {'positive_5s': 9, 'negative_5s': 15, 'other_sites': None}, None))
             taken = client.post('/custom-models/import', json={'dataset_id': 1, 'path': path, 'species_id': sid, **SCOPE}).json()
             self.assertNotEqual(taken['id'], made['id'])
             self.assertEqual((taken['applicable'], taken['imported']['warning'], taken['inference']['scored_5s']), (True, None, 108))
@@ -105,7 +105,7 @@ class SharingCheck(unittest.TestCase):
             other = {**data, 'feature': {**data['feature'], 'engine': 'kinglet-s', 'model_sha256': 'x', 'spec': 'kinglet-s_embedding_1536_l2_v1'}}
             (out / 'other.json').write_text(json.dumps(other), encoding='utf-8')
             self.assertEqual(client.post('/custom-models/import', json={'dataset_id': 1, 'path': str(out / 'other.json'), 'inspect': True}).json()['warning'], 'ai_file_other_engine')
-            for name, changed, error in (('newer', {**data, 'version': 2}, 'ai_file_newer'), ('short', {**data, 'weights': 'AAAA'}, 'ai_file_invalid'),
+            for name, changed, error in (('newer', {**data, 'version': 2}, 'ai_file_newer'), ('engine', {**data, 'feature': {**data['feature'], 'engine': 'birdnet', 'spec': 'birdnet_embedding_1536_l2_v1'}}, 'ai_file_invalid'), ('short', {**data, 'weights': 'AAAA'}, 'ai_file_invalid'),
                                          ('species', {**data, 'species': {'scientific_name': 'Nemo nemo'}}, 'ai_file_species_unknown')):
                 (out / f'{name}.json').write_text(json.dumps(changed), encoding='utf-8')
                 refused = client.post('/custom-models/import', json={'dataset_id': 1, 'path': str(out / f'{name}.json'), 'inspect': True})
@@ -126,17 +126,26 @@ class SharingCheck(unittest.TestCase):
                              ('20240801_060000.wav', '2024-08-01T06:00:00+09:00', 'Horornis diphone', 'present', 'ウグイス'))
             # Taken in where the answers already are: nothing changes.
             self.assertEqual(client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': made['path']}).json(),
-                             {'added': 0, 'same': 8, 'no_recording': 0, 'no_species': 0, 'invalid': 0})
+                             {'added': 0, 'different': 0, 'same': 8, 'no_recording': 0, 'no_species': 0, 'invalid': 0})
             # After the answers are gone (another PC with the same recordings), they come back; odd rows are counted.
             with connect(root) as db:
                 db.execute('DELETE FROM labels')
-            rows = table + [{**table[0], 'file': 'nowhere.wav'}, {**table[0], 'scientific_name': 'Nemo nemo'}, {**table[0], 'verdict': 'maybe'}]
+            table[1]['file'] = table[1]['file'].upper()  # file names are compared without case
+            rows = table + [{**table[0], 'file': 'nowhere.wav'}, {**table[0], 'recording_start': '2023-01-01T06:00:00+09:00'}, {**table[0], 'scientific_name': 'Nemo nemo'}, {**table[0], 'verdict': 'maybe'}]
             with open(out / 'in.csv', 'w', encoding='utf-8', newline='') as stream:
                 writer = csv.DictWriter(stream, fieldnames=list(table[0])); writer.writeheader(); writer.writerows(rows)
             self.assertEqual(client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': str(out / 'in.csv')}).json(),
-                             {'added': 8, 'same': 0, 'no_recording': 1, 'no_species': 1, 'invalid': 1})
+                             {'added': 8, 'different': 0, 'same': 0, 'no_recording': 2, 'no_species': 1, 'invalid': 1})
             heard = client.get('/datasets/1/heard').json()
             self.assertEqual((heard['rows'][0]['site'], heard['total']['site']), ({'present': 3, 'absent': 5, 'unknown': 0}, 8))
+            # An answer that differs from the one here is left out and counted.
+            with open(out / 'flip.csv', 'w', encoding='utf-8', newline='') as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(table[0])); writer.writeheader(); writer.writerow({**table[0], 'verdict': 'absent'})
+            self.assertEqual(client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': str(out / 'flip.csv')}).json(),
+                             {'added': 0, 'different': 1, 'same': 0, 'no_recording': 0, 'no_species': 0, 'invalid': 0})
+            self.assertEqual(client.get('/datasets/1/heard').json()['rows'][0]['site'], {'present': 3, 'absent': 5, 'unknown': 0})
+            self.assertEqual(client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': str(out / 'none.csv')}).json()['detail'], 'file_missing')
+            self.assertEqual(client.post('/custom-models/import', json={'dataset_id': 1, 'path': str(out / 'none.json'), 'inspect': True}).json()['detail'], 'file_missing')
             (out / 'bad.csv').write_text('a,b\n1,2\n', encoding='utf-8')
             self.assertEqual(client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': str(out / 'bad.csv')}).json()['detail'], 'heard_file_invalid')
 

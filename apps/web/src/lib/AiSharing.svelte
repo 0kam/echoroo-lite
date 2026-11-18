@@ -9,7 +9,7 @@
   import { fill, modelName, type SpeciesAI } from './workflow';
   // Material from other sites, and the species AI as one file to hand to another PC or person.
   type Seen = { species: Species; engine: string; main_engine: string; warning: string | null; round: number; made_at: string | null;
-    training: { positive_5s: number; negative_5s: number }; site: string | null;
+    training: { positive_5s: number; negative_5s: number; other_sites: { positive_5s: number; negative_5s: number; sites: number } | null }; site: string | null;
     tests: { sounds: { heard: number; not_heard: number }; rounds: { round: number; found: number | null; false: number | null; current: boolean }[] } | null };
   let { datasetId, speciesId, info, onchange }: { datasetId: number; speciesId: string; info: SpeciesAI; onchange: () => void | Promise<void> } = $props();
   const sharing = $derived(info.sharing), model = $derived(info.model);
@@ -36,7 +36,6 @@
 </section>{/if}
 <details class="panel share"><summary>{t('shPass')}</summary>
   <p class="muted">{t('shPassNote')}</p>
-  {#if model?.imported}<p class="info">{fill(model.imported.site ? 'shImportedFrom' : 'shImported', { site: model.imported.site ?? '', file: model.imported.file })}{#if model.imported.warning}{' '}{fill('shWarnText', { from: modelName(model.imported.engine), here: modelName(info.engine) })}{/if}</p>{/if}
   <h3>{t('shOut')}</h3>
   {#if model}
     <label class="check"><input type="checkbox" bind:checked={hide} /> {t('shHide')}</label>
@@ -53,7 +52,7 @@
     {#if seen.species.id !== speciesId}<strong>{t('shCannot')}</strong><p>{fill('ai_file_other_species_named', { name: name(seen.species) })}</p>
     {:else}
       <strong>{t(seen.warning ? 'shWarnTitle' : 'shSeenTitle')}</strong>
-      <p>{fill('shSeen', { name: name(seen.species), positive: seen.training.positive_5s, negative: seen.training.negative_5s, n: seen.round })}{#if seen.site}{' '}{fill('shSeenSite', { site: seen.site })}{/if}
+      <p>{fill('shSeen', { name: name(seen.species), positive: seen.training.positive_5s, negative: seen.training.negative_5s, n: seen.round })}{#if seen.training.other_sites}{' '}{fill('shSeenPooled', { n: seen.training.other_sites.positive_5s + seen.training.other_sites.negative_5s })}{/if}{#if seen.site}{' '}{fill('shSeenSite', { site: seen.site })}{/if}
         {#if score && seen.tests}{' '}{fill('shSeenTests', { heard: seen.tests.sounds.heard, found: score.found ?? 0, not_heard: seen.tests.sounds.not_heard, false: score.false ?? 0 })}{/if}</p>
       {#if seen.warning}<p>{fill('shWarnText', { from: modelName(seen.engine), here: modelName(seen.main_engine) })}</p>{/if}
       <p class="muted">{t('shSeenNote')}</p>

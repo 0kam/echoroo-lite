@@ -28,6 +28,7 @@ SCHEMA = '''
 '''
 FORMAT, VERSION = 'echoroo-species-ai', 1
 SPEC_END = '_embedding_1536_l2_v1'
+FAMILY = ('perch', 'kinglet')
 COLUMNS = ('file', 'recording_start', 'start_s', 'end_s', 'scientific_name', 'name', 'verdict', 'screen')
 
 
@@ -129,6 +130,8 @@ def export_model(root, model_id, folder, hide_site=False):
 def _read(root, path):
     """The checked contents of an AI file: (data, weights, species row, warning)."""
     from models import feature_spec, main_engine, main_identity
+    if not Path(path).is_file():
+        raise CatalogError('file_missing')
     try:
         if Path(path).stat().st_size > 5_000_000:
             raise CatalogError('ai_file_invalid')
@@ -147,7 +150,9 @@ def _read(root, path):
         counts = {k: int(data['training'][k]) for k in ('positive_5s', 'negative_5s')}
     except (KeyError, TypeError, ValueError) as error:
         raise CatalogError('ai_file_invalid') from error
-    if len(weights) != 1536 or not np.isfinite(weights).all() or not np.isfinite(intercept) or not spec.endswith(SPEC_END):
+    # Only the Perch family shares the sound description these weights apply to; a 5-second window is the only one made.
+    if len(weights) != 1536 or not np.isfinite(weights).all() or not np.isfinite(intercept) or abs(intercept) > 1e4 \
+            or not engine.startswith(FAMILY) or spec != f'{engine}{SPEC_END}' or feature.get('window_s') != 5:
         raise CatalogError('ai_file_invalid')
     with connect(root) as db:
         species = db.execute('''SELECT * FROM species WHERE id=(SELECT COALESCE(accepted_id,id) FROM species
@@ -155,8 +160,8 @@ def _read(root, path):
     if species is None:
         raise CatalogError('ai_file_species_unknown')
     here, here_sha = main_identity(root)
-    if not feature_spec(here).endswith(SPEC_END):
-        raise CatalogError('ai_file_invalid')
+    if not here.startswith(FAMILY):
+        raise CatalogError('ai_file_main_engine')
     warning = None if engine == here and (here_sha is None or sha == here_sha) else 'ai_file_other_engine'
     return data, weights, intercept, species, counts, warning
 
@@ -167,7 +172,8 @@ def inspect(root, path):
     from species import names_for
     data, _, _, species, counts, warning = _read(root, path)
     return {'species': names_for(species), 'engine': data['feature']['engine'], 'main_engine': main_engine(root), 'warning': warning,
-            'round': data.get('round', 1), 'made_at': data.get('made_at'), 'training': counts, 'tests': data.get('tests'),
+            'round': data.get('round', 1), 'made_at': data.get('made_at'), 'tests': data.get('tests'),
+            'training': {**counts, 'other_sites': (data.get('training') or {}).get('other_sites')},
             'site': (data.get('site') or {}).get('name')}
 
 
@@ -199,7 +205,7 @@ def import_model(root, ctx, path, species_id=None):
         'round': int(data.get('round', 1)), 'rounds': [],
         'scope': {'site_id': ctx['site']['id'], 'start_date': ctx['start_date'], 'end_date': ctx['end_date'], 'recording_ids': sorted(records)},
         'feature': {'engine': engine, 'model_sha256': shas.pop(), 'spec': feature_spec(engine), 'window_s': 5},
-        'training': {**counts, 'l2': None, 'calibrated': None, 'examples': []},
+        'training': {**counts, 'l2': None, 'calibrated': None, 'examples': [], 'other_sites': (data.get('training') or {}).get('other_sites')},
         'imported': {'file': Path(path).name, 'engine': data['feature']['engine'], 'warning': warning, 'made_at': data.get('made_at'),
                      'site': (data.get('site') or {}).get('name'), 'tests': data.get('tests')},
         'analysis_ids': [a['id'] for a in analyses], 'inference': {'scored_5s': len(scored)}}
@@ -228,6 +234,11 @@ def import_model(root, ctx, path, species_id=None):
     return get_model(root, model_id)
 
 
+def _start(recorded_at, zone):
+    start = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+    return (start if start.tzinfo else start.replace(tzinfo=timezone.utc)).astimezone(zone)
+
+
 def export_heard(root, dataset_id, folder):
     """Write the site's current answers as a CSV table into `folder`: file name, time, species and what was heard."""
     from labels import current
@@ -254,8 +265,7 @@ def export_heard(root, dataset_id, folder):
             writer.writerow(COLUMNS)
             for row in sorted(rows, key=lambda r: (records[r['recording_id']]['recorded_at'], r['start_s'], r['taxon_id'])):
                 record, taxon = records[row['recording_id']], species[row['taxon_id']]
-                start = datetime.fromisoformat(record['recorded_at'].replace('Z', '+00:00'))
-                start = (start if start.tzinfo else start.replace(tzinfo=timezone.utc)).astimezone(zone)
+                start = _start(record['recorded_at'], zone)
                 writer.writerow([Path(record['path']).name, start.isoformat(timespec='seconds'), f"{row['start_s']:g}", f"{row['end_s']:g}",
                                  taxon['scientific_name'], names[row['taxon_id']], row['verdict'], row['source']])
     except OSError as error:
@@ -265,25 +275,33 @@ def export_heard(root, dataset_id, folder):
 
 def import_heard(root, dataset_id, path):
     """Take answers in from a table written by `export_heard` (or by hand in the same columns). A row is matched to
-    a recording of the site by its file name; rows for a recording or species not found here are counted and left out."""
+    a recording of the site by its file name; rows for a recording or species not found here are counted and left out.
+    A sound that already has an answer for the species here keeps it: a different answer in the table is counted and left out."""
     from labels import LATEST, VERDICTS, put
+    if not Path(path).is_file():
+        raise CatalogError('file_missing')
     try:
         if Path(path).stat().st_size > 50_000_000:
             raise CatalogError('heard_file_invalid')
-        with open(path, encoding='utf-8-sig', newline='') as stream:
-            table = list(csv.DictReader(stream))
+        raw = Path(path).read_bytes()
+        try:
+            text = raw.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text = raw.decode('cp932')  # a table saved again from Excel in Japan
+        table = list(csv.DictReader(text.splitlines()))
     except (OSError, ValueError, csv.Error) as error:
         raise CatalogError('heard_file_invalid') from error
     if not table or not {'file', 'start_s', 'end_s', 'scientific_name', 'verdict'} <= set(table[0]):
         raise CatalogError('heard_file_invalid')
-    result = {'added': 0, 'same': 0, 'no_recording': 0, 'no_species': 0, 'invalid': 0}
+    result = {'added': 0, 'different': 0, 'same': 0, 'no_recording': 0, 'no_species': 0, 'invalid': 0}
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
         if not db.execute('SELECT 1 FROM datasets WHERE id=?', (dataset_id,)).fetchone():
             raise CatalogError('not_found')
         by_name = {}
-        for record in db.execute('SELECT id,path,seconds FROM site_recordings WHERE scope_id=?', (dataset_id,)):
-            by_name.setdefault(Path(record['path']).name, []).append(record)
+        zone = ZoneInfo(db.execute('SELECT s.timezone FROM sites s JOIN datasets d ON d.site_id=s.id WHERE d.id=?', (dataset_id,)).fetchone()[0])
+        for record in db.execute('SELECT id,path,seconds,recorded_at FROM site_recordings WHERE scope_id=?', (dataset_id,)):
+            by_name.setdefault(Path(record['path']).name.casefold(), []).append(record)
         species = {r['scientific_name']: r['id'] for r in db.execute('SELECT scientific_name,COALESCE(accepted_id,id) AS id FROM species')}
         touched = set()
         for line in table:
@@ -292,7 +310,14 @@ def import_heard(root, dataset_id, path):
             except (TypeError, ValueError, AttributeError):
                 result['invalid'] += 1
                 continue
-            found = by_name.get(Path(str(line['file']).replace('\\', '/')).name, [])
+            found = by_name.get(Path(str(line['file']).replace('\\', '/')).name.casefold(), [])
+            if (line.get('recording_start') or '').strip():
+                # The start time, when the table has it, tells apart recordings of the same file name and catches another site's file.
+                try:
+                    wanted = datetime.fromisoformat(line['recording_start'].strip())
+                    found = [r for r in found if abs((_start(r['recorded_at'], zone) - (wanted if wanted.tzinfo else wanted.replace(tzinfo=zone))).total_seconds()) < 1]
+                except ValueError:
+                    found = []
             taxon = species.get(str(line['scientific_name']).strip())
             if verdict not in VERDICTS or not 0 <= start < end:
                 result['invalid'] += 1
@@ -303,8 +328,9 @@ def import_heard(root, dataset_id, path):
             else:
                 piece = (taxon, found[0]['id'], start, end)
                 now = db.execute(f'SELECT l.verdict FROM labels l WHERE l.taxon_id=? AND l.recording_id=? AND l.start_s=? AND l.end_s=? AND {LATEST}', piece).fetchone()
-                if now is not None and now[0] == verdict:
-                    result['same'] += 1
+                if now is not None:
+                    # An answer already here is never replaced by a table: a different one is counted and left out.
+                    result['same' if now[0] == verdict else 'different'] += 1
                 else:
                     put(db, *piece, verdict, 'import', {'file': Path(path).name}, history=True)
                     touched.add(piece)

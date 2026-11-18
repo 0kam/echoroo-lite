@@ -7,7 +7,7 @@
   import { createTask } from './ui/task.svelte';
   import { fill } from './workflow';
   // The answers given by ear as a table (CSV): out to a folder, or in from a file on a PC that has the same recordings.
-  type Result = { added: number; same: number; no_recording: number; no_species: number; invalid: number };
+  type Result = { added: number; different: number; same: number; no_recording: number; no_species: number; invalid: number };
   let { datasetId, onchange }: { datasetId: number; onchange: () => void | Promise<void> } = $props();
   let folder = $state(''), file = $state(''), saved = $state<{ path: string; rows: number } | null>(null), result = $state<Result | null>(null);
   const out = createTask(async () => { saved = null;
@@ -26,7 +26,7 @@
   {#if out.error}<p class="error" role="alert">{t(out.error)}</p>{/if}
   {#if !isTauri()}<label>{t('shFilePath')}<input bind:value={file} disabled={take.pending} /></label>{/if}
   <div class="actions"><Button pending={take.pending} disabled={!isTauri() && !file} onclick={() => take.run()}>{t('shTableIn')}</Button></div>
-  {#if result}<p class="info" role="status">{fill('shTableTaken', { added: result.added, same: result.same })}{#if left}{' '}{fill('shTableLeft', { n: left, recording: result.no_recording, species: result.no_species, invalid: result.invalid })}{/if}</p>{/if}
+  {#if result}<p class="info" role="status">{fill('shTableTaken', { added: result.added, same: result.same })}{#if result.different}{' '}{fill('shTableDifferent', { n: result.different })}{/if}{#if left}{' '}{fill('shTableLeft', { n: left, recording: result.no_recording, species: result.no_species, invalid: result.invalid })}{/if}</p>{/if}
   {#if take.error}<p class="error" role="alert">{t(take.error)}</p>{/if}
 </details>
 <style>.table p{margin:12px 0}summary{min-height:44px;padding:10px 0;cursor:pointer}.table input{display:block;width:100%;max-width:560px}.table .actions{margin:8px 0}</style>
