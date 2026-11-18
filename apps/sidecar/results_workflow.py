@@ -243,7 +243,7 @@ def overview(root, dataset_id, first=None, last=None):
             estimates.append(dict(engine=engine, recordings=len(missing), seconds=sum(r['seconds'] for r in missing)))
     from analysis import partial_analyses
     answers = settings(root).get('upgrade_answers', {})
-    # Asked once: after an answer, partial analyses are listed only if the user chose to redo them later.
+    # Asked once. After "redo" the old analyses count as unanalysed recordings (pending_analysis) instead.
     partial = [dict(engine=engine, recordings=count) for engine, count in partial_analyses(root, records).items()
                if engine in enabled_engines(root, directory) and engine not in answers]
     return {**result, 'pending_analysis':estimates, 'partial_analysis': partial}

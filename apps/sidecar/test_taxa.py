@@ -19,7 +19,8 @@ class TaxaCheck(unittest.TestCase):
         self.assertEqual(family_of('Dryocopus javensis'), 'Picidae')
         self.assertIsNone(family_of('Acheta domesticus'))  # a cricket is never rolled up
         self.assertEqual(family_names('Picidae'), {'scientific_name': 'Picidae', 'ja': 'キツツキ科'})
-        self.assertEqual(family_names('Furnariidae'), {'scientific_name': 'Furnariidae'})  # not in Japan
+        self.assertEqual(family_names('Furnariidae'), {'scientific_name': 'Furnariidae', 'ja': 'カマドドリ科'})  # not in Japan
+        self.assertEqual(family_names('Pellorneidae'), {'scientific_name': 'Pellorneidae'})  # no Japanese name yet
         self.assertEqual(list(in_japan(['Parus minor_Japanese Tit', 'Phoebastria albatrus', 'Picus canus',
                                         'Dryocopus pileatus'])), [True, True, True, False])
 

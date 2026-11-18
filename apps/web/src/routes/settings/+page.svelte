@@ -5,6 +5,7 @@
   import UpdateControl from '$lib/UpdateControl.svelte';
   import { checkForUpdate, update } from '$lib/update.svelte';
   import ModelChoice from '$lib/ModelChoice.svelte';
+  import UpgradeQuestion from '$lib/UpgradeQuestion.svelte';
   import SpeciesNames from '$lib/SpeciesNames.svelte';
   import XenoCantoKey from '$lib/XenoCantoKey.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -18,6 +19,7 @@
   <section class="panel" aria-labelledby="models-title">
     <h2 id="models-title">{t('modelsTitle')}</h2>
     <ModelChoice />
+    <UpgradeQuestion settings />
   </section>
   <SpeciesNames />
   <section class="panel"><h2>{t('xenoCanto')}</h2><XenoCantoKey />{#if origin}<p><Button href={appHref(origin)}>{t('wReturn')}</Button></p>{/if}</section>

@@ -181,7 +181,9 @@ def summaries(root, ctx, species_id=None):
             # A check answer counts while its AI is shown.
             model = models.get(data.get('session_id')) if row['source'] == 'validation' else None
             return model is None or model in visible
-        heard = [row for row in heard if counts(row)]
+        # An answer that stops at the family ("〇〇科の一種") is not evidence of any species.
+        families = {r[0] for r in db.execute("SELECT id FROM species WHERE rank='family'")}
+        heard = [row for row in heard if row['taxon_id'] not in families and counts(row)]
         misses = db.execute('''SELECT m.* FROM presence_misses m JOIN datasets d ON d.id=m.dataset_id
             WHERE d.site_id=? AND (? IS NULL OR m.species_id=?) ORDER BY m.id''', (ctx['site']['id'], species_id, species_id)).fetchall()
         misses = [r for r in misses if r['source'] != 'search' or site_run(db, ctx['site']['id'], r['species_id'])]

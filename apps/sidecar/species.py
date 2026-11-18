@@ -70,9 +70,15 @@ def initialize_species(root):
         if 'accepted_id' not in {r['name'] for r in db.execute('PRAGMA table_info(species)')}:
             # The species this row is another name of; NULL for a species in its own right.
             db.execute('ALTER TABLE species ADD COLUMN accepted_id TEXT REFERENCES species')
+        if 'rank' not in {r['name'] for r in db.execute('PRAGMA table_info(species)')}:
+            # 'family' rows ("〇〇科の一種") hold answers that stop at the family; they are never listed as species.
+            db.execute("ALTER TABLE species ADD COLUMN rank TEXT NOT NULL DEFAULT 'species'")
         existing = {r[0] for r in db.execute("SELECT scientific_name FROM species")}
         db.executemany("INSERT INTO species(id,scientific_name) VALUES(?,?)",
                        ((str(uuid4()), name) for name in bundled_names() if name not in existing))
+        from taxa import families
+        db.executemany("INSERT INTO species(id,scientific_name,rank) VALUES(?,?,'family')",
+                       ((str(uuid4()), name) for name in families() if name not in existing))
         ids = {r['scientific_name']: r['id'] for r in db.execute('SELECT id,scientific_name FROM species')}
         for alias, accepted in aliases().items():
             if alias not in ids or accepted not in ids:
@@ -98,6 +104,12 @@ def accepted(db, species_id):
 
 def names_for(row):
     custom = json.loads(row["names"])
+    if 'rank' in row.keys() and row['rank'] == 'family':
+        from taxa import family_names
+        bundled = {lang: name for lang, name in family_names(row['scientific_name']).items() if lang != 'scientific_name'}
+        return {"id": row["id"], "scientific_name": row["scientific_name"], "rank": "family",
+                "common_names": {**bundled, **custom}, "custom_names": custom,
+                "name_sources": {lang: "user" if lang in custom else "bundled" for lang in bundled.keys() | custom.keys()}}
     bundled = bundled_names().get(row["scientific_name"], {})
     defaults = {**additional_names().get(row['scientific_name'], {}), **bundled}
     return {"id": row["id"], "scientific_name": row["scientific_name"],
@@ -111,7 +123,7 @@ def list_species(root, query):
         return []
     # ponytail: a 16k-name in-memory scan; add an FTS index if the catalog grows substantially.
     with connect(root) as db:
-        rows = db.execute("SELECT * FROM species ORDER BY scientific_name").fetchall()
+        rows = db.execute("SELECT * FROM species WHERE rank='species' ORDER BY scientific_name").fetchall()
         by_id = {row['id']: row for row in rows}
         best = {}
         for row in rows:

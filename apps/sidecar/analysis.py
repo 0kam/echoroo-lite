@@ -133,9 +133,40 @@ def plan(root, models, records, site, redo=()):
 UPGRADABLE = ('birdnet',)
 
 
+def redo_engines(root):
+    """Engines whose pre-0.3 analyses the user chose to do again; until then they count as missing."""
+    from models import settings
+    return tuple(engine for engine, answer in settings(root).get('upgrade_answers', {}).items()
+                 if answer == 'redo' and engine in UPGRADABLE)
+
+
+def upgrade_status(root, models):
+    """Per shown AI with pre-0.3 analyses left, over every site: recordings, their length, sites and the answer."""
+    from models import settings
+    answers = settings(root).get('upgrade_answers', {})
+    with connect(root) as db:
+        sites = [r[0] for r in db.execute('SELECT MIN(id) FROM datasets GROUP BY site_id')]
+        records = {dataset: [dict(r) for r in db.execute('SELECT id,seconds FROM site_recordings WHERE scope_id=?', (dataset,))]
+                   for dataset in sites}
+    found = {}
+    for dataset, rows in records.items():
+        lengths = {r['id']: r['seconds'] for r in rows}
+        for engine, ids in partial_analyses(root, rows, ids=True).items():
+            if engine not in enabled_engines(root, models):
+                continue
+            entry = found.setdefault(engine, dict(engine=engine, answer=answers.get(engine), sites=0, recordings=0,
+                                                  seconds=0., datasets=[]))
+            entry['sites'] += 1
+            entry['recordings'] += len(ids)
+            entry['seconds'] += sum(lengths[i] for i in ids)
+            entry['datasets'].append(dataset)
+    return list(found.values())
+
+
 def pending_pairs(root, models, records, site, redo=()):
-    """The same read-only missing-pair calculation for jobs and time estimates. Engines in `redo` also count
-    analyses that kept only some classes as missing."""
+    """The same read-only missing-pair calculation for jobs and time estimates. Engines in `redo`, and those the
+    user chose to do again, also count analyses that kept only some classes as missing."""
+    redo = {*redo, *redo_engines(root)}
     engines = enabled_engines(root, models)
     if not engines or not records:
         return {}
@@ -297,18 +328,19 @@ def prefetch_audio(records):
                 future.cancel()
 
 
-def partial_analyses(root, records):
-    """{engine: recordings} whose newest analysis kept only some classes, for the "analyze again?" question."""
+def partial_analyses(root, records, ids=False):
+    """{engine: recordings} whose newest analysis kept only some classes, for the "analyze again?" question; with
+    `ids`, the recordings themselves."""
     with connect(root) as db:
-        rows = db.execute(f'''SELECT engine,metadata FROM analyses WHERE recording_id IN (SELECT value FROM json_each(?))
+        rows = db.execute(f'''SELECT engine,metadata,recording_id FROM analyses WHERE recording_id IN (SELECT value FROM json_each(?))
             AND engine IN ({",".join("?" * len(UPGRADABLE))})
             AND id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)''',
             (json.dumps([r['id'] for r in records]), *UPGRADABLE)).fetchall()
     found = {}
     for row in rows:
         if not json.loads(row['metadata']).get('all_classes'):
-            found[row['engine']] = found.get(row['engine'], 0) + 1
-    return found
+            found.setdefault(row['engine'], []).append(row['recording_id'])
+    return found if ids else {engine: len(recordings) for engine, recordings in found.items()}
 
 
 def birdnet_dense(result, seconds):
@@ -502,6 +534,8 @@ def run(root, models, job, records, site, cancel, pending=None, loaded=None):
                     dataset_id = db.execute('SELECT dataset_id FROM jobs WHERE id=?', (job,)).fetchone()[0]
                 from results_workflow import overview
                 overview(root, dataset_id)
+                import rollups
+                rollups.scan(root, dataset_id)
             with job_db as db:
                 db.execute("UPDATE jobs SET status=?,stage='finished' WHERE id=?",
                            ("cancelled" if cancel.is_set() else "complete", job))

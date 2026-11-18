@@ -23,7 +23,9 @@
 },
 "families": {
 "Acanthisittidae": {},
-"Acanthizidae": {},
+"Acanthizidae": {
+"ja": "トゲハシムシクイ科"
+},
 "Accipitridae": {
 "ja": "タカ科"
 },
@@ -68,12 +70,18 @@
 "ja": "レンジャク科"
 },
 "Brachypteraciidae": {},
-"Bucconidae": {},
-"Bucerotidae": {},
+"Bucconidae": {
+"ja": "オオガシラ科"
+},
+"Bucerotidae": {
+"ja": "サイチョウ科"
+},
 "Bucorvidae": {},
 "Buphagidae": {},
 "Burhinidae": {},
-"Cacatuidae": {},
+"Cacatuidae": {
+"ja": "オウム科"
+},
 "Calcariidae": {
 "ja": "ツメナガホオジロ科"
 },
@@ -87,7 +95,9 @@
 "Caprimulgidae": {
 "ja": "ヨタカ科"
 },
-"Cardinalidae": {},
+"Cardinalidae": {
+"ja": "ショウジョウコウカンチョウ科"
+},
 "Cariamidae": {},
 "Casuariidae": {},
 "Cathartidae": {},
@@ -124,13 +134,19 @@
 "Corvidae": {
 "ja": "カラス科"
 },
-"Cotingidae": {},
-"Cracidae": {},
+"Cotingidae": {
+"ja": "カザリドリ科"
+},
+"Cracidae": {
+"ja": "ホウカンチョウ科"
+},
 "Cuculidae": {
 "ja": "カッコウ科"
 },
 "Dasyornithidae": {},
-"Dicaeidae": {},
+"Dicaeidae": {
+"ja": "ハナドリ科"
+},
 "Dicruridae": {
 "ja": "オウチュウ科"
 },
@@ -162,15 +178,21 @@
 "Fringillidae": {
 "ja": "アトリ科"
 },
-"Furnariidae": {},
-"Galbulidae": {},
+"Furnariidae": {
+"ja": "カマドドリ科"
+},
+"Galbulidae": {
+"ja": "キリハシ科"
+},
 "Gaviidae": {
 "ja": "アビ科"
 },
 "Glareolidae": {
 "ja": "ツバメチドリ科"
 },
-"Grallariidae": {},
+"Grallariidae": {
+"ja": "ジアリドリ科"
+},
 "Gruidae": {
 "ja": "ツル科"
 },
@@ -189,7 +211,9 @@
 "Hylocitreidae": {},
 "Hypocoliidae": {},
 "Ibidorhynchidae": {},
-"Icteridae": {},
+"Icteridae": {
+"ja": "ムクドリモドキ科"
+},
 "Icteriidae": {},
 "Ifritidae": {},
 "Indicatoridae": {},
@@ -213,24 +237,38 @@
 "Lybiidae": {},
 "Machaerirhynchidae": {},
 "Macrosphenidae": {},
-"Malaconotidae": {},
-"Maluridae": {},
-"Megalaimidae": {},
-"Megapodiidae": {},
+"Malaconotidae": {
+"ja": "ヤブモズ科"
+},
+"Maluridae": {
+"ja": "オーストラリアムシクイ科"
+},
+"Megalaimidae": {
+"ja": "ゴシキドリ科"
+},
+"Megapodiidae": {
+"ja": "ツカツクリ科"
+},
 "Melampittidae": {},
 "Melanocharitidae": {},
 "Melanopareiidae": {},
-"Meliphagidae": {},
+"Meliphagidae": {
+"ja": "ミツスイ科"
+},
 "Menuridae": {},
 "Meropidae": {
 "ja": "ハチクイ科"
 },
 "Mesitornithidae": {},
-"Mimidae": {},
+"Mimidae": {
+"ja": "マネシツグミ科"
+},
 "Mitrospingidae": {},
 "Modulatricidae": {},
 "Mohouidae": {},
-"Momotidae": {},
+"Momotidae": {
+"ja": "ハチクイモドキ科"
+},
 "Monarchidae": {
 "ja": "カササギヒタキ科"
 },
@@ -240,8 +278,12 @@
 "Muscicapidae": {
 "ja": "ヒタキ科"
 },
-"Musophagidae": {},
-"Nectariniidae": {},
+"Musophagidae": {
+"ja": "エボシドリ科"
+},
+"Nectariniidae": {
+"ja": "タイヨウチョウ科"
+},
 "Neosittidae": {},
 "Nesospingidae": {},
 "Nicatoridae": {},
@@ -264,14 +306,18 @@
 "ja": "ノガン科"
 },
 "Oxyruncidae": {},
-"Pachycephalidae": {},
+"Pachycephalidae": {
+"ja": "モズヒタキ科"
+},
 "Pandionidae": {
 "ja": "ミサゴ科"
 },
 "Panuridae": {
 "ja": "ヒゲガラ科"
 },
-"Paradisaeidae": {},
+"Paradisaeidae": {
+"ja": "フウチョウ科"
+},
 "Paramythiidae": {},
 "Pardalotidae": {},
 "Paridae": {
@@ -291,7 +337,9 @@
 "ja": "ペリカン科"
 },
 "Pellorneidae": {},
-"Petroicidae": {},
+"Petroicidae": {
+"ja": "オーストラリアヒタキ科"
+},
 "Peucedramidae": {},
 "Phaenicophilidae": {},
 "Phaethontidae": {
@@ -313,7 +361,9 @@
 "Picidae": {
 "ja": "キツツキ科"
 },
-"Pipridae": {},
+"Pipridae": {
+"ja": "マイコドリ科"
+},
 "Pittidae": {
 "ja": "ヤイロチョウ科"
 },
@@ -326,11 +376,15 @@
 "Pluvianellidae": {},
 "Pluvianidae": {},
 "Pnoepygidae": {},
-"Podargidae": {},
+"Podargidae": {
+"ja": "ガマグチヨタカ科"
+},
 "Podicipedidae": {
 "ja": "カイツブリ科"
 },
-"Polioptilidae": {},
+"Polioptilidae": {
+"ja": "ブユムシクイ科"
+},
 "Pomatostomidae": {},
 "Procellariidae": {
 "ja": "ミズナギドリ科"
@@ -351,14 +405,18 @@
 "ja": "サケイ科"
 },
 "Ptiliogonatidae": {},
-"Ptilonorhynchidae": {},
+"Ptilonorhynchidae": {
+"ja": "ニワシドリ科"
+},
 "Pycnonotidae": {
 "ja": "ヒヨドリ科"
 },
 "Rallidae": {
 "ja": "クイナ科"
 },
-"Ramphastidae": {},
+"Ramphastidae": {
+"ja": "オオハシ科"
+},
 "Recurvirostridae": {
 "ja": "セイタカシギ科"
 },
@@ -370,8 +428,12 @@
 },
 "Rhagologidae": {},
 "Rheidae": {},
-"Rhinocryptidae": {},
-"Rhipiduridae": {},
+"Rhinocryptidae": {
+"ja": "オタテドリ科"
+},
+"Rhipiduridae": {
+"ja": "オウギビタキ科"
+},
 "Rhodinocichlidae": {},
 "Rhynochetidae": {},
 "Rostratulidae": {
@@ -391,7 +453,9 @@
 "Sittidae": {
 "ja": "ゴジュウカラ科"
 },
-"Spheniscidae": {},
+"Spheniscidae": {
+"ja": "ペンギン科"
+},
 "Spindalidae": {},
 "Steatornithidae": {},
 "Stenostiridae": {},
@@ -413,7 +477,9 @@
 "ja": "ズグロムシクイ科"
 },
 "Teretistridae": {},
-"Thamnophilidae": {},
+"Thamnophilidae": {
+"ja": "アリドリ科"
+},
 "Thinocoridae": {},
 "Thraupidae": {
 "ja": "フウキンチョウ科"
@@ -422,22 +488,32 @@
 "ja": "トキ科"
 },
 "Tichodromidae": {},
-"Timaliidae": {},
-"Tinamidae": {},
+"Timaliidae": {
+"ja": "チメドリ科"
+},
+"Tinamidae": {
+"ja": "シギダチョウ科"
+},
 "Tityridae": {},
 "Todidae": {},
-"Trochilidae": {},
+"Trochilidae": {
+"ja": "ハチドリ科"
+},
 "Troglodytidae": {
 "ja": "ミソサザイ科"
 },
-"Trogonidae": {},
+"Trogonidae": {
+"ja": "キヌバネドリ科"
+},
 "Turdidae": {
 "ja": "ツグミ科"
 },
 "Turnicidae": {
 "ja": "ミフウズラ科"
 },
-"Tyrannidae": {},
+"Tyrannidae": {
+"ja": "タイランチョウ科"
+},
 "Tytonidae": {
 "ja": "メンフクロウ科"
 },
@@ -445,11 +521,15 @@
 "ja": "ヤツガシラ科"
 },
 "Urocynchramidae": {},
-"Vangidae": {},
+"Vangidae": {
+"ja": "オオハシモズ科"
+},
 "Viduidae": {
 "ja": "テンニンチョウ科"
 },
-"Vireonidae": {},
+"Vireonidae": {
+"ja": "モズモドキ科"
+},
 "Zeledoniidae": {},
 "Zosteropidae": {
 "ja": "メジロ科"

@@ -40,8 +40,10 @@ def perch_candidates(path, seconds, analysis_id, candidate_filter):
 
 
 def dense_rollups(path, seconds, engine, window_s=5):
-    """Family roll-ups of a dense-score analysis (BirdNET 3, Kinglet, all-class BirdNET 2.4)."""
-    scores, labels = _load(path, "scores")
+    """Family roll-ups of an all-class analysis (Perch, Kinglet, BirdNET 3, all-class BirdNET 2.4)."""
+    scores, labels = _load(path, "logits" if engine == "perch" else "scores")
+    if engine == "perch":
+        scores = softmax(scores.astype(np.float64), axis=1)
     score_type = "sigmoid" if engine in ("birdnet", "birdnet-v3") else "softmax"
     return display(scores, labels, score_type=score_type, top_k=0, seconds=seconds, window_s=window_s,
                    rollup_threshold=default_threshold(engine))[1]

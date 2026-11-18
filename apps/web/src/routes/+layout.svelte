@@ -6,6 +6,7 @@
   import { app, t, activeJob, datasetOf, siteOf, setLocale, rememberDataset, restorePreferences, startSession, type Job } from '$lib/app.svelte';
   import ModelChoice from '$lib/ModelChoice.svelte';
   import UpdateControl from '$lib/UpdateControl.svelte';
+  import UpgradeQuestion from '$lib/UpgradeQuestion.svelte';
   import { fill } from '$lib/workflow';
   import { checkForUpdate, update } from '$lib/update.svelte';
   import ActivityBar from '$lib/ui/ActivityBar.svelte';
@@ -89,6 +90,7 @@
       {#if app.connectionError}<p class="error connection" role="alert">{t(app.connectionError)}</p>{/if}
       {#if app.ai.confirmed}
         {#key page.url.hash}{@render children()}{/key}
+        <UpgradeQuestion />
       {:else}
         <!-- First run: the AI choice comes before everything else; saving it sets `confirmed`. -->
         <div class="page narrow">

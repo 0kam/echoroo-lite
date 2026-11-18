@@ -120,8 +120,28 @@ class AnalysisCostsTest(unittest.TestCase):
         self.assertEqual(client.post('/analysis-upgrade',json={'engine':'birdnet','answer':'keep'}).status_code,200)
         self.assertEqual(client.get('/datasets/1/overview').json()['partial_analysis'],[])
         self.assertEqual(client.post('/analysis-upgrade',json={'engine':'nope','answer':'keep'}).status_code,422)
+        # The old results stay listed for the settings page, and "redo" analyses every site that has them.
+        self.assertEqual(client.get('/analysis-upgrade').json(),
+                         [dict(engine='birdnet',answer='keep',sites=1,recordings=2,seconds=17.875)])
+        self.assertEqual(client.get('/datasets/1/overview').json()['pending_analysis'],[])
         with connect(data) as db:
+            last = db.execute('SELECT MAX(id) FROM analyses').fetchone()[0]
+        started = client.post('/analysis-upgrade',json={'engine':'birdnet','answer':'redo'}).json()
+        self.assertEqual(len(started['jobs']),1)
+        self.assertEqual(wait_job(client)['status'],'complete')
+        self.assertEqual(client.get('/analysis-upgrade').json(),[])
+        with connect(data) as db:
+            again = db.execute('SELECT engine,recording_id,metadata,scores_path FROM analyses WHERE id>? ORDER BY id',(last,)).fetchall()
+            self.assertEqual([(r['engine'],r['recording_id']) for r in again],[('birdnet',1),('birdnet',2)])
+            self.assertTrue(all(json.loads(r['metadata'])['all_classes'] for r in again))
+            # Back to the state before the question, for the checks that follow.
+            for table in ('candidates','rollups','rollup_scans'):
+                db.execute(f'DELETE FROM {table} WHERE analysis_id>?',(last,))
+            db.execute('DELETE FROM analyses WHERE id>?',(last,))
+            db.execute('DELETE FROM jobs WHERE id=?',(started['jobs'][0],))
             db.execute("UPDATE analyses SET metadata=json_set(metadata,'$.all_classes',json('true')) WHERE engine='birdnet'")
+        for row in again:
+            Path(row['scores_path']).unlink()
 
     def test_shared_decode_matches_separate_engine_jobs_and_pending_pairs(self):
         with tempfile.TemporaryDirectory() as temp:

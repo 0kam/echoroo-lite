@@ -29,6 +29,11 @@ def family_of(name):
     return species.get(name) or (genus.get(name.split()[0]) if ' ' in name else None)
 
 
+def families():
+    """Scientific names of every bird family."""
+    return sorted(set(_families()[0].values()) | set(_families()[2]))
+
+
 def family_names(family):
     return {'scientific_name': family, **_families()[2].get(family, {})}
 
