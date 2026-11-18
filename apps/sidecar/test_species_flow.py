@@ -371,7 +371,9 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             rebuilt = client.post('/custom-models', json=scope).json()
             self.assertEqual((rebuilt['id'], rebuilt['round']), (model['id'], 2))
             self.assertEqual(client.get(f"/validations/{custom['id']}").json()['model_reason'], 'custom_model_rebuilt')
-            self.assertNotEqual(client.post('/validations', json={**scope, 'model': 'custom', 'model_id': model['id']}).json()['id'], custom['id'])
+            fresh = client.post('/validations', json={**scope, 'model': 'custom', 'model_id': model['id']})
+            self.assertEqual(fresh.status_code, 200, fresh.text)
+            self.assertNotEqual(fresh.json()['id'], custom['id'])
             # A search made later did not make this AI, so deleting it neither warns about the AI nor deletes it.
             with patch('search_runs.load_perch', return_value=(Session(), 'perch-sha')):
                 run = client.post('/search-runs', json={'dataset_id': 1, 'species_id': sid,
