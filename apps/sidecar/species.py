@@ -50,6 +50,13 @@ def aliases():
             if other and other != row['perch_scientific_name']}
 
 
+@lru_cache(maxsize=1)
+def japan_names():
+    """Scientific names of the Japan checklist birds, as the app files them."""
+    data = json.loads((Path(__file__).parent / 'data/japan-birds.json').read_text(encoding='utf-8'))
+    return frozenset(row['perch_scientific_name'] for row in data['mappings'])
+
+
 # Tables that point at a species; an alias's rows move to the species it names.
 SPECIES_COLUMNS = (('labels', 'taxon_id'), ('validation_sessions', 'species_id'), ('presence_misses', 'species_id'),
                    ('custom_models', 'species_id'), ('quiz_clips', 'species_id'), ('search_runs', 'species_id'))
@@ -116,8 +123,10 @@ def list_species(root, query):
             if ranks and (target['id'] not in best or min(ranks) < best[target['id']][0]):
                 best[target['id']] = (min(ranks), target)
         found = [(rank, names_for(row)) for rank, row in best.values()]
-        # Rank before limiting so an exact match cannot be hidden by the first 50 substrings.
-        return [record for _, record in sorted(found, key=lambda item: (item[0], item[1]["scientific_name"]))[:50]]
+        # Rank before limiting so an exact match cannot be hidden by the first 50 substrings. Where two species share a
+        # name (カルガモ: Anas zonorhyncha here, A. poecilorhyncha in South Asia), the Japan checklist bird comes first.
+        return [record for _, record in sorted(found, key=lambda item: (
+            item[0], item[1]["scientific_name"] not in japan_names(), item[1]["scientific_name"]))[:50]]
 
 
 def save_species(root, scientific_name, names):
