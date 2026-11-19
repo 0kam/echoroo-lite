@@ -32,6 +32,11 @@ def sections(content):
 
 
 class ReportDocumentTest(unittest.TestCase):
+    def test_every_evidence_origin_is_named(self):
+        from presence import ORIGINS
+        for locale in ('ja', 'en'):
+            self.assertLessEqual({'origin_' + o for o in {*ORIGINS.values(), 'check'}}, set(messages(locale)))
+
     def test_new_statuses(self):
         self.assertEqual(status(snapshot()),'decided')
         undecided=snapshot('undecided');self.assertEqual(status(undecided),'undecided')
