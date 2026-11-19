@@ -175,6 +175,22 @@ class AnalysisCostsTest(unittest.TestCase):
                 self.assertEqual(bird['rollups'],[])
                 self._partial_birdnet_is_asked_once(client,data,directory)
                 self.assertEqual(client.get('/datasets/1/overview').json()['pending_analysis'],[])
+                # A Kinglet 0.2.0 result (another model file, Japan's species only) is unanalysed and asked about once.
+                with connect(data) as db:
+                    kept = {r[0]: r[1] for r in db.execute("SELECT id,metadata FROM analyses WHERE engine='kinglet-s'")}
+                    db.execute("""UPDATE analyses SET metadata=json_set(json_remove(metadata,'$.all_classes'),'$.model_sha256','old')
+                        WHERE engine='kinglet-s'""")
+                overview = client.get('/datasets/1/overview').json()
+                self.assertEqual((overview['pending_analysis'],overview['partial_analysis']),
+                                 ([dict(engine='kinglet-s',recordings=2,seconds=17.875)],[dict(engine='kinglet-s',recordings=2)]))
+                self.assertEqual(client.post('/analysis-upgrade',json={'engine':'kinglet-s','answer':'keep'}).status_code,200)
+                self.assertEqual(client.get('/datasets/1/overview').json()['partial_analysis'],[])
+                self.assertEqual(client.get('/analysis-upgrade').json(),
+                                 
+                                 [dict(engine='kinglet-s',answer='keep',sites=1,recordings=2,seconds=17.875)])
+                with connect(data) as db:
+                    db.executemany('UPDATE analyses SET metadata=? WHERE id=?',[(meta,key) for key,meta in kept.items()])
+                self.assertEqual(client.get('/datasets/1/overview').json()['pending_analysis'],[])
                 shared = saved_results(data)
                 # File changes without a catalog revision must still invalidate the estimate.
                 classes = directory/REGISTRY['kinglet-s']['files'][1]
