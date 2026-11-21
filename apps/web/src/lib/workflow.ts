@@ -39,7 +39,9 @@ export type LabelRow = {test?:boolean;segment_id:number;start_s:number;end_s:num
 /** The species-AI page. `batch` and `source` come only when a round is asked for; source null = nothing to choose sounds by. */
 export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;source:'custom'|'search'|'builtin'|null;engine:string;
   batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number};
-  requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[];test?:{heard:number;not_heard:number};sharing?:{all_sites:boolean;positive_5s:number;negative_5s:number;sites:number}};
+  requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[];
+  /** Test sounds come first: 'collecting' until they are frozen ('fixed') or given up ('skipped'); `test` counts them and names the aims. */
+  phase:'collecting'|'fixed'|'skipped';test:{heard:number;not_heard:number;answered:number;aim_heard:number;aim_not_heard:number;ask_after:number;complete:boolean};sharing?:{all_sites:boolean;positive_5s:number;negative_5s:number;sites:number}};
 export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;round?:number;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
   /** null: the applicable check ended undecided, so this AI's detections are not counted. */
   threshold?:number|null;validation:Validation|null};

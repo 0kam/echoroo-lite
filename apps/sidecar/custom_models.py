@@ -348,13 +348,17 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
         import test_sounds
         run, every = _labelled(db, ctx, species_id)
         set_aside = test_sounds.recordings(db, ctx['site']['id'], species_id)
+        # While the test sounds are being made, every sound may be offered: answering it makes its recording a test recording.
+        stage = test_sounds.phase(db, ctx['site']['id'], species_id)
+        collecting = stage == 'collecting'
         labels = {segment: value for segment, value in every.items() if value['recording_id'] not in set_aside}
-        tests = [value['label'] for value in every.values() if value['recording_id'] in set_aside]
+        test = test_sounds.progress(db, ctx, species_id, every, set_aside)
         positive = sum(value['label'] == 'target' for value in labels.values())
+        need_voice = test['heard'] < test['aim_heard'] if collecting else positive < MIN_CLASS_EXAMPLES
         # A test sound is answered too: it is not asked again, though it is no material.
         leave = {**dict.fromkeys(skip), **{segment: value['label'] for segment, value in every.items()}}
         # Sounds of a test recording are not offered here: chosen by the very AI they test, they would flatter or damn it.
-        if batch and set_aside:
+        if batch and set_aside and not collecting:
             leave = {**{r[0]: None for r in db.execute('''SELECT s.id FROM segments s JOIN analyses a ON a.id=s.analysis_id
                 WHERE a.recording_id IN (SELECT value FROM json_each(?))''', (json.dumps(sorted(set_aside)),))}, **leave}
         if batch:
@@ -366,7 +370,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
                 total = db.execute('SELECT COUNT(*) FROM search_hits WHERE run_id=?', (run['id'],)).fetchone()[0]
                 known = {rank: leave[segment] for segment, rank in db.execute(
                     f'SELECT segment_id,rank FROM ({RANKED}) WHERE segment_id IN (SELECT value FROM json_each(?))', (run['id'], json.dumps(list(leave))))}
-                ranks = bracket_ranks(total, known, positive < MIN_CLASS_EXAMPLES)
+                ranks = bracket_ranks(total, known, need_voice)
                 picks = [tuple(r) for r in db.execute(f'SELECT segment_id,similarity FROM ({RANKED}) WHERE rank IN (SELECT value FROM json_each(?)) ORDER BY rank',
                                                       (run['id'], json.dumps(ranks)))]
             else:
@@ -376,7 +380,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
                     # Sounds scored 0.00 are left for last: first the scored ones and a few below them, then all.
                     for span in (scored_span([score for _, score in ranked]), len(ranked)):
                         known = {rank: leave[segment] for rank, (segment, _) in enumerate(ranked[:span]) if segment in leave}
-                        ranks = bracket_ranks(span, known, positive < MIN_CLASS_EXAMPLES)
+                        ranks = bracket_ranks(span, known, need_voice)
                         if len(ranks) == BATCH:
                             break
                     picks = [ranked[r] for r in ranks]
@@ -400,7 +404,8 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
     all_positive, all_negative = positive + sum(v['label'] == 'target' for v in more), negative + sum(v['label'] == 'other' for v in more)
     short = max(0, MIN_CLASS_EXAMPLES - all_positive) + max(0, MIN_CLASS_EXAMPLES - all_negative)
     needed = max(short, MIN_EXAMPLES - all_positive - all_negative)
-    reasons = [reason for reason, missing in [('custom_more_answers_needed', all_positive + all_negative < MIN_EXAMPLES),
+    reasons = [reason for reason, missing in [('custom_test_sounds_first', collecting),
+                                              ('custom_more_answers_needed', all_positive + all_negative < MIN_EXAMPLES),
                                               ('custom_positive_examples_needed', all_positive < MIN_CLASS_EXAMPLES),
                                               ('custom_negative_examples_needed', all_negative < MIN_CLASS_EXAMPLES),
                                               ('custom_no_new_answers', unchanged)] if missing]
@@ -409,7 +414,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
             'batch': rows if batch else None, 'answered': answered, 'needed': needed,
             'examples': {'positive_5s': positive, 'negative_5s': negative,
                          'other_answers': sum(value['origin'] != 'label' for value in labels.values())},
-            'test': {'heard': tests.count('target'), 'not_heard': tests.count('other')},
+            'phase': stage, 'test': test,
             'sharing': {k: shared[k] for k in ('all_sites', 'positive_5s', 'negative_5s', 'sites')},
             'requirements': {'positive_5s': MIN_CLASS_EXAMPLES, 'negative_5s': MIN_CLASS_EXAMPLES, 'total_5s': MIN_EXAMPLES},
             'can_train': not reasons, 'reasons': reasons}
@@ -426,6 +431,7 @@ def names_for_id(root, species_id):
 def set_label(root, dataset_id, species_id, segment_id, label):
     """Voice / no voice / cannot tell on one 5-second piece of this site; None clears it. A changed label keeps its
     place in the list. "Cannot tell" is kept as a record but is no material for the AI."""
+    import test_sounds
     with connect(root) as db:
         if not db.execute('''SELECT 1 FROM segments s JOIN analyses a ON a.id=s.analysis_id JOIN site_recordings r ON r.id=a.recording_id
                 WHERE r.scope_id=? AND s.id=? AND ABS(s.end_s-s.start_s-5)<0.000001''', (dataset_id, segment_id)).fetchone() \
@@ -437,6 +443,8 @@ def set_label(root, dataset_id, species_id, segment_id, label):
             remove(db, species_id, *piece, 'training')
         else:
             put(db, species_id, *piece, FROM_ANSWER[label], 'training')
+            # ponytail: an answer taken back leaves its recording a test recording; drop it there if empty test recordings ever matter.
+            test_sounds.add(db, db.execute('SELECT site_id FROM datasets WHERE id=?', (dataset_id,)).fetchone()[0], species_id, piece[0])
         db.execute('DELETE FROM workflow_cache')
     return {'segment_id': segment_id, 'label': label}
 
@@ -454,9 +462,6 @@ def create(root, ctx, species_id, cancel=None):
     import test_sounds
     engine = main_engine(root)
     spec = feature_spec(engine)
-    with connect(root) as db:
-        # Sounds to test every round with are set aside before the material is counted.
-        test_sounds.choose(db, ctx['site']['id'], species_id, _labelled(db, ctx, species_id)[1], MIN_EXAMPLES, MIN_CLASS_EXAMPLES)
     state = readiness(root, ctx, species_id)
     if not state['can_train']:
         raise CatalogError(state['reasons'][0])

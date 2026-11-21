@@ -129,8 +129,10 @@ def plan(root, models, records, site, redo=()):
     return pending_pairs(root, models, records, site, redo)
 
 
-# Analyses saved before 0.3 kept only the site's species (BirdNET 2.4); they are redone only when the user says so.
-UPGRADABLE = ('birdnet',)
+# Analyses saved before 0.3 kept only some classes: BirdNET 2.4 the site's species, Kinglet 0.2.0 Japan's 317 species.
+# The user is asked once whether to analyse them again. Old BirdNET results stay in use until then; old Kinglet results
+# come from another model file, so they already count as unanalysed and the answer only decides when that starts.
+UPGRADABLE = ('birdnet', 'kinglet-b', 'kinglet-s', 'kinglet-xs')
 
 
 def redo_engines(root):

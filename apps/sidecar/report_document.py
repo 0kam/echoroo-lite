@@ -115,7 +115,7 @@ def badge(snap,t):
 
 def heard_text(row,t):
     """'15 sounds', plus where they were answered when that was on more than one page (so 15 is not read against a check's 14)."""
-    parts=[t['from_'+key].format(count=number(row.get(field) or 0)) for key,field in (('mark','marked'),('check','heard_in_checks'),('label','voice_on_ai_page')) if row.get(field)]
+    parts=[t['from_'+key].format(count=number(row.get(field) or 0)) for key,field in (('mark','marked'),('check','heard_in_checks'),('label','voice_on_ai_page'),('map','heard_on_map'),('rollup','heard_in_family_rows')) if row.get(field)]
     return count_of(t,'sounds_count',row['evidence_count'])+(t['heard_from'].format(list=t['list_sep'].join(parts)) if len(parts)>1 else '')
 
 

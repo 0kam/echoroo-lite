@@ -115,8 +115,12 @@ def summary(root, dataset_id, first=None, last=None):
             key = (sound['top_engine'], sound['top_label'])
             counts[key] = counts.get(key, 0) + 1
         for family, row in rows.items():
-            best = sorted(guesses[family], key=lambda key: -guesses[family][key])[:2]
-            row['guesses'] = [_guess(db, {'top_engine': engine, 'top_label': label}) for engine, label in best]
+            # Two AIs naming the same species count as one guess.
+            named = {}
+            for (engine, label), count in guesses[family].items():
+                guess = _guess(db, {'top_engine': engine, 'top_label': label})
+                named.setdefault(guess['scientific_name'], [guess, 0])[1] += count
+            row['guesses'] = [guess for guess, _ in sorted(named.values(), key=lambda pair: -pair[1])[:2]]
     return {'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'families': sorted(rows.values(), key=lambda r: (-r['sounds'], r['family']['scientific_name']))}
 
