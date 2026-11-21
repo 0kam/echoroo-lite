@@ -9,7 +9,7 @@ import soundfile as sf
 
 import labels
 from storage import connect
-from test_species_flow import E0, E1, site
+from test_species_flow import E0, E1, no_tests, site
 
 SCOPE = {'start_date': '2024-08-01', 'end_date': '2024-08-06'}
 
@@ -53,6 +53,7 @@ class SharingCheck(unittest.TestCase):
     def test_other_sites_answers_become_material_only_when_chosen(self):
         with site() as (root, client, species):
             sid = species['id']
+            no_tests(client, sid)
             dataset, recordings = second_site(root, client)
             answer(root, sid, [1])            # 8 answers here: too few alone
             answer(root, sid, recordings)     # 16 at the other site
@@ -76,6 +77,7 @@ class SharingCheck(unittest.TestCase):
     def test_a_species_ai_goes_out_as_one_file_and_comes_in_as_a_new_ai(self):
         with site() as (root, client, species):
             sid = species['id']
+            no_tests(client, sid)
             answer(root, sid, [1, 2, 3])
             made = client.post('/custom-models', json={'dataset_id': 1, 'species_id': sid, **SCOPE}).json()
             out = root / 'out'; out.mkdir()

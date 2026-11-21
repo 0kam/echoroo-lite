@@ -190,6 +190,7 @@ def delete(root, site_id, dataset_id, revision):
         remove('datasets','id',plan['datasets'])
         if dataset_id is None:
             db.execute('DELETE FROM species_ai_options WHERE site_id=?',(site_id,))
+            db.execute('DELETE FROM test_phases WHERE site_id=?',(site_id,))
             db.execute('DELETE FROM changed_locations WHERE site_id=?',(site_id,))
             db.execute('DELETE FROM sites WHERE id=?',(site_id,))
         db.execute('DELETE FROM workflow_cache')
