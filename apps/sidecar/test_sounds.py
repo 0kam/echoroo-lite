@@ -4,7 +4,8 @@ The split is by recording, so calls of one morning do not land on both sides: ev
 "test recording" is a test sound, also answers given later. Test sounds are made first (phase 'collecting'): a
 recording becomes a test recording when a sound in it is answered on the species-AI page, and recordings with a check
 answer count too. Growing starts only when the set is frozen ('fixed': adding recordings later would test earlier
-rounds on sounds they were made from) or given up ('skipped': the answers go back to the material).
+rounds on sounds they were made from), early with the sounds found so far when the species calls rarely. 'skipped'
+(no test sounds) is only the state of a species grown before test sounds came first.
 """
 import json
 from pathlib import Path
@@ -28,7 +29,8 @@ SCHEMA = '''
 '''
 HEARD = 10       # "heard" test sounds aimed for
 NOT_HEARD = 20   # "not heard" test sounds aimed for
-ASK_AFTER = 60   # answered test sounds after which growing without test sounds is offered
+ASK_AFTER = 60   # answered test sounds after which growing with the test sounds found so far is offered
+ENOUGH = 3       # "heard" test sounds below which growing cannot start
 FOUND = 0.5      # a species AI's score from which it says the voice is there
 
 
@@ -73,27 +75,25 @@ def progress(db, ctx, species_id, labelled, test):
     heard, not_heard = said.count('target'), said.count('other')
     unknown = sum(row['recording_id'] in test for row in current(db, ctx['dataset']['id'], species_id, 'unknown'))
     return {'heard': heard, 'not_heard': not_heard, 'answered': heard + not_heard + unknown, 'aim_heard': HEARD, 'aim_not_heard': NOT_HEARD,
-            'ask_after': ASK_AFTER, 'complete': heard >= HEARD and not_heard >= NOT_HEARD}
+            'ask_after': ASK_AFTER, 'enough': ENOUGH, 'complete': heard >= HEARD and not_heard >= NOT_HEARD}
 
 
-def set_phase(root, ctx, species_id, state):
-    """End the making of test sounds: 'fixed' freezes the test recordings (only once enough are answered), 'skipped'
-    gives them up, so their answers become material. Neither can be changed afterwards."""
+def freeze(root, ctx, species_id):
+    """End the making of test sounds and freeze the test recordings; growing starts. Refused below ENOUGH "heard"
+    test sounds (the page offers it before the aims are met only after ASK_AFTER answers or when nothing is left
+    to offer). It cannot be changed afterwards."""
     from custom_models import _labelled
     site_id = ctx['site']['id']
     with connect(root) as db:
         test = recordings(db, site_id, species_id)
         if phase(db, site_id, species_id) != 'collecting' or \
-                state == 'fixed' and not progress(db, ctx, species_id, _labelled(db, ctx, species_id)[1], test)['complete']:
+                progress(db, ctx, species_id, _labelled(db, ctx, species_id)[1], test)['heard'] < ENOUGH:
             raise CatalogError('test_phase_refused')
-        if state == 'fixed':
-            db.executemany('INSERT OR IGNORE INTO test_recordings(site_id,species_id,recording_id) VALUES(?,?,?)',
-                           [(site_id, species_id, recording) for recording in test])
-        else:
-            db.execute('DELETE FROM test_recordings WHERE site_id=? AND species_id=?', (site_id, species_id))
-        db.execute('INSERT INTO test_phases(site_id,species_id,state) VALUES(?,?,?)', (site_id, species_id, state))
+        db.executemany('INSERT OR IGNORE INTO test_recordings(site_id,species_id,recording_id) VALUES(?,?,?)',
+                       [(site_id, species_id, recording) for recording in test])
+        db.execute("INSERT INTO test_phases(site_id,species_id,state) VALUES(?,?,'fixed')", (site_id, species_id))
         db.execute('DELETE FROM workflow_cache')
-    return {'state': state}
+    return {'state': 'fixed'}
 
 
 def keep_round(folder, previous, number, weights, intercept, trained_on=()):

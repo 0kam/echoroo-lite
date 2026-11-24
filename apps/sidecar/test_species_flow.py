@@ -50,9 +50,11 @@ def site():
             yield root, client, species
 
 
-def no_tests(client, sid, dataset=1):
-    """Grow without test sounds: these checks are about the material itself (see test_test_sounds.py)."""
-    assert client.post(f'/datasets/{dataset}/species/{sid}/test-phase', json={'state': 'skipped'}).json() == {'state': 'skipped'}
+def no_tests(root, sid, site_id=1):
+    """Grow without test sounds, as a species grown before test sounds came first: these checks are about the
+    material itself (see test_test_sounds.py)."""
+    with connect(root) as db:
+        db.execute("INSERT INTO test_phases(site_id,species_id,state) VALUES(?,?,'skipped')", (site_id, sid))
 
 
 class SpeciesFlowCheck(unittest.TestCase):
@@ -72,7 +74,7 @@ class SpeciesFlowCheck(unittest.TestCase):
         for engine in ('perch','kinglet-s'):
             with self.subTest(engine=engine), site() as (root,client,species):
                 sid=species['id']
-                no_tests(client,sid)
+                no_tests(root, sid)
                 with connect(root) as db:
                     db.execute('UPDATE analyses SET engine=?',(engine,))
                 data=json.loads((root/'models.json').read_text())
@@ -107,7 +109,7 @@ class SpeciesFlowCheck(unittest.TestCase):
     def test_presence_search_custom_model_and_deletion(self):
         with site() as (root, client, species):
             sid = species['id']
-            no_tests(client, sid)
+            no_tests(root, sid)
             scope = {'dataset_id': 1, 'species_id': sid, 'start_date': '2024-08-01', 'end_date': '2024-08-06'}
             clip = {'source_kind': 'recording', 'source_id': 1, 'start_s': 0, 'end_s': 5}
             search = {'dataset_id': 1, 'species_id': sid, 'clips': [clip]}
@@ -316,7 +318,7 @@ class GrowWithoutSearchCheck(unittest.TestCase):
     def test_builtin_batches_materials_and_rebuild(self):
         with site() as (root, client, species):
             sid = species['id']
-            no_tests(client, sid)
+            no_tests(root, sid)
             dates = {'start_date': '2024-08-01', 'end_date': '2024-08-06'}
             scope = {'dataset_id': 1, 'species_id': sid, **dates}
             url = f'/datasets/1/species/{sid}/custom-model'

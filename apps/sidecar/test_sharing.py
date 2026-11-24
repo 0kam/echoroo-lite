@@ -53,7 +53,7 @@ class SharingCheck(unittest.TestCase):
     def test_other_sites_answers_become_material_only_when_chosen(self):
         with site() as (root, client, species):
             sid = species['id']
-            no_tests(client, sid)
+            no_tests(root, sid)
             dataset, recordings = second_site(root, client)
             answer(root, sid, [1])            # 8 answers here: too few alone
             answer(root, sid, recordings)     # 16 at the other site
@@ -77,7 +77,7 @@ class SharingCheck(unittest.TestCase):
     def test_a_species_ai_goes_out_as_one_file_and_comes_in_as_a_new_ai(self):
         with site() as (root, client, species):
             sid = species['id']
-            no_tests(client, sid)
+            no_tests(root, sid)
             answer(root, sid, [1, 2, 3])
             made = client.post('/custom-models', json={'dataset_id': 1, 'species_id': sid, **SCOPE}).json()
             out = root / 'out'; out.mkdir()

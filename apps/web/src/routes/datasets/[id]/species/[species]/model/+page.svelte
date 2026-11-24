@@ -52,9 +52,9 @@
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;skipped=[];await next.run();},{toast:true});
   const model=$derived(info?.model??null);
-  // Test sounds are made first; growing starts once they are frozen ('fixed') or given up ('skipped').
+  // Test sounds are made first; growing starts once they are frozen ('fixed'). 'skipped' is a species grown before that rule.
   const collecting=$derived(info?.phase==='collecting');
-  const setPhase=createTask(async(state:'fixed'|'skipped')=>{await api(`/datasets/${id}/species/${speciesId}/test-phase`,{state});skipped=[];await next.run();},{toast:true});
+  const startGrowing=createTask(async()=>{await api(`/datasets/${id}/species/${speciesId}/test-phase`,{});skipped=[];await next.run();},{toast:true});
   // The words for how far it has grown: one round that hardly changed it (growth_state's 0.9) is "almost", not "changed".
   const growText=$derived(model?.growth.state==='growing'&&(model.growth.rounds.at(-1)?.overlap??0)>=.9?'almost':model?.growth.state);
   const folded=$derived(model?.growth.state==='settled'&&!more);
@@ -82,13 +82,14 @@
         <span>{t(name as string)}</span><progress max={of as number} value={Math.min(n as number,of as number)} aria-label={t(name as string)}></progress><span>{fill('tpCount',{n,of})}</span>{/each}</div>
       <p class="muted">{t('tpWhy')}</p>
       {#if test.complete}<div class="status-box" role="status"><strong>{t('tpReadyTitle')}</strong><p>{fill('tpReadyText',{heard:test.heard,not_heard:test.not_heard})}</p></div>
-        <div class="actions"><Button variant="primary" pending={setPhase.pending} onclick={()=>setPhase.run('fixed')}>{t('tpStart')}</Button></div>
-      <!-- Many answers and still short, or nothing left to offer: growing without test sounds is the way on. -->
+        <div class="actions"><Button variant="primary" pending={startGrowing.pending} onclick={()=>startGrowing.run()}>{t('tpStart')}</Button></div>
+      <!-- Many answers and still short, or nothing left to offer: growing can start with the test sounds found so far. -->
       {:else if test.answered>=test.ask_after||(!next.pending&&!batch.length)}
         {#if test.answered}<div class="status-box" role="status"><strong>{fill(few?'tpShortHeardTitle':'tpShortNotHeardTitle',{n:few?test.heard:test.not_heard})}</strong>
           <p>{fill(few?'tpShortHeardText':'tpShortNotHeardText',{answered:test.answered,n:few?test.heard:test.not_heard,aim:few?test.aim_heard:test.aim_not_heard})}</p></div>{/if}
-        <div class="actions"><Button variant="primary" pending={setPhase.pending} onclick={()=>setPhase.run('skipped')}>{t('tpSkip')}</Button></div>
-        <p class="muted">{t('tpSkipNote')}</p>{/if}
+        {#if test.heard>=test.enough}<div class="actions"><Button variant="primary" pending={startGrowing.pending} onclick={()=>startGrowing.run()}>{t('tpEarly')}</Button></div>
+          <p class="muted">{fill('tpEarlyNote',{heard:test.heard,not_heard:test.not_heard})}</p>
+        {:else}<p class="info">{fill('tpStuck',{n:test.enough})}</p>{/if}{/if}
     </section>{/if}
     {#snippet counts()}<p><strong>{fill('mdCounts',{positive:info!.examples.positive_5s,negative:info!.examples.negative_5s})}</strong>
       {#if info!.needed}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>

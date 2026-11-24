@@ -299,10 +299,6 @@ class ModelLabel(BaseModel):
     label: Literal['target', 'other', 'unknown'] | None
 
 
-class PhaseChange(BaseModel):
-    state: Literal['fixed', 'skipped']
-
-
 class EvidenceSelection(BaseModel):
     recording_id: int
     start_s: float = Field(ge=0, allow_inf_nan=False)
@@ -729,10 +725,10 @@ def create_app(root, models, token):
         return test_sounds.report(root, ctx, species_id)
 
     @app.post('/datasets/{dataset_id}/species/{species_id}/test-phase')
-    def species_test_phase(dataset_id: int, species_id: str, body: PhaseChange):
+    def species_test_phase(dataset_id: int, species_id: str):
         import test_sounds
         from results_workflow import context
-        return test_sounds.set_phase(root, context(root, dataset_id), species_id, body.state)
+        return test_sounds.freeze(root, context(root, dataset_id), species_id)
 
     @app.post('/datasets/{dataset_id}/species/{species_id}/labels')
     def custom_model_label(dataset_id: int, species_id: str, body: ModelLabel):
