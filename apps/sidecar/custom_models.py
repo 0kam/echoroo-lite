@@ -357,7 +357,8 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
 
     With `batch` also the next sounds to answer, never an answered one nor one in `skip` (shown and passed over),
     and where they were chosen from (`source`): 'custom' (species AI scores), 'search' (similarity),
-    'builtin' (the main AI's score) or None (nothing to rank by). `by_example`: a 'custom' batch also has a sound
+    'builtin' (the main AI's score) or None (nothing to rank by). `search_examples`: how many examples the species'
+    search was made from. `by_example`: a 'custom' batch also has a sound
     for each example of the species' search (`example_picks`).
     """
     models = list_models(root, ctx, species_id, every=True)
@@ -367,7 +368,8 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
     shared = sharing.state(root, ctx, species_id)
     with connect(root) as db:
         import test_sounds
-        run, every = _labelled(db, ctx, species_id)
+        pieces = _pieces(db, ctx)
+        run, every = _labelled(db, ctx, species_id, pieces)
         set_aside = test_sounds.recordings(db, ctx['site']['id'], species_id)
         # While the test sounds are being made, every sound may be offered: answering it makes its recording a test recording.
         stage = test_sounds.phase(db, ctx['site']['id'], species_id)
@@ -379,8 +381,9 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
         # What the batch should bring more of: test sounds while they are made, then material for the first AI.
         need_voice = test['heard'] < test['aim_heard'] if collecting else positive < MIN_CLASS_EXAMPLES
         need_silent = test['not_heard'] < test['aim_not_heard'] if collecting else negative < MIN_CLASS_EXAMPLES
-        # A test sound is answered too: it is not asked again, though it is no material.
-        leave = {**dict.fromkeys(skip), **{segment: value['label'] for segment, value in every.items()}}
+        # A test sound is answered too: it is not asked again, though it is no material. Nor is a sound answered "cannot tell".
+        unsure = on_pieces([{**row, 'verdict': 'present'} for row in current(db, ctx['dataset']['id'], species_id, 'unknown')], pieces)
+        leave = {**dict.fromkeys(skip), **dict.fromkeys(unsure), **{segment: value['label'] for segment, value in every.items()}}
         # Sounds of a test recording are not offered here: chosen by the very AI they test, they would flatter or damn it.
         if batch and set_aside and not collecting:
             leave = {**{r[0]: None for r in db.execute('''SELECT s.id FROM segments s JOIN analyses a ON a.id=s.analysis_id
@@ -427,6 +430,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
                                               ('custom_no_new_answers', unchanged)] if missing]
     return {'species': names_for_id(root, species_id), 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'model': model, 'source': source, 'by_example': source == 'custom' and bool(run), 'engine': main_engine(root),
+            'search_examples': len(json.loads(run['snapshot'])['references']) if run else 0,
             'batch': rows if batch else None, 'answered': answered, 'needed': needed,
             'examples': {'positive_5s': positive, 'negative_5s': negative,
                          'other_answers': sum(value['origin'] not in ('label', 'no_bird') for value in labels.values()),

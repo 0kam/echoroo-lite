@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import numpy as np
 
+import explore
 import labels
 import map_entries
 from storage import connect
@@ -98,6 +99,13 @@ class MapEntryApi(ExploreCheck):
         unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
         self.assertEqual((unsure['targets'], unsure['groups'], unsure['scattered']), (sorted([at[20], at[0]]), [], 2))
         self.assertEqual(([g['scientific_name'] for g in unsure['guesses']], unsure['guess']), (['Strix aluco'], [0, 0]))
+        # A group's summary counts the same first answers as the flags and the "AI answer" beside a sound, not only
+        # the Japan checklist kept with the map: the owl is the answer of its three sounds.
+        with connect(self.root) as db:
+            answers = explore._first_answers(db, db.execute('SELECT id FROM explore_runs').fetchone()[0], 0, 64)
+        self.assertEqual([answers[at[start]] for start in (0, 10, 20)], ['Strix aluco'] * 3)
+        whole = self.client.get('/explore', params={'dataset': 1}).json()['node']
+        self.assertAlmostEqual(whole['hint_rate'], sum(name is not None for name in answers) / 64)
         # Looking for that species by name finds every sound the AI answered with it: here the 0.5 bar does not apply.
         owl = self.client.get('/species', params={'q': 'Strix aluco'}).json()[0]['id']
         self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': owl}).json()['targets'], sorted([at[0], at[10], at[20]]))
@@ -106,6 +114,10 @@ class MapEntryApi(ExploreCheck):
         self.assertEqual(next(row['detected'] for row in picked if row['id'] == owl), 3)
         self.assertNotIn('detected', self.client.get('/datasets/1/heard/species', params={'q': 'Strix aluco'}).json()['species'][0])
 
+        # A species AI grown at the site counts as well, in the list of groups and in the picker's numbers.
+        with patch('map_entries._species_ai', return_value={'Strix aluco': [at[30]]}):
+            self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': owl}).json()['targets'], sorted([at[0], at[10], at[20], at[30]]))
+            self.assertEqual(self.client.get('/datasets/1/heard/species', params={'q': 'Strix aluco', 'detections': True}).json()['species'][0]['detected'], 4)
         # A checklist species not usual here is a point's candidate and a roll-up's first answer: its sound is one target.
         with connect(self.root) as db:
             db.execute("INSERT INTO rollups VALUES(?,5,10,'Zosteropidae',.4,'Zosterops japonicus',.9,NULL)", (analysis,))

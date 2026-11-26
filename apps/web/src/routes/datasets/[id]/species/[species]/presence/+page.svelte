@@ -66,7 +66,7 @@
       <p class="status" role="status"><strong>{presenceText(list.presence)}</strong></p>
       {#each list.rows.slice(0,shown) as row,index (key(row))}<article class="row" class:marked={row.marked}>
         <div class="row-head"><span class="rank">{index+1}</span><span>{time(row)}</span>
-          {#if source==='search'}<span class="muted">{fill('pSimilarity',{value:(row.score??0).toFixed(2)})}</span>{/if}</div>
+          {#if source==='search'}<span class="muted">{fill('pSimilarity',{value:(row.score??0).toFixed(2).replace('-0.00','0.00')})}</span>{/if}</div>
         <AudioRegion source={row.source} fixedRange compact start={row.start_s} end={row.end_s}>
           <!-- A sound can be marked without playing it (a figure can be enough); which sounds were played still counts for "could not confirm". -->
           {#snippet actions()}<Button active={row.marked} aria-pressed={row.marked} pending={mark.pending}

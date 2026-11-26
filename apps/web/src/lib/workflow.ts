@@ -39,7 +39,7 @@ export type LabelRow = {test?:boolean;segment_id:number;start_s:number;end_s:num
 /** The species-AI page. `batch` and `source` come only when a round is asked for; source null = nothing to choose sounds by. */
 export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;source:'custom'|'search'|'builtin'|null;engine:string;
   /** A species-AI batch also has one sound for each example of the species' search. */
-  by_example:boolean;batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number;no_bird_answers:number};
+  by_example:boolean;search_examples:number;batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number;no_bird_answers:number};
   requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[];
   /** Test sounds come first: 'collecting' until they are frozen ('fixed'); 'skipped' is a species grown before that; `test` counts them and names the aims. */
   phase:'collecting'|'fixed'|'skipped';test:{heard:number;not_heard:number;answered:number;aim_heard:number;aim_not_heard:number;ask_after:number;enough:number;complete:boolean};sharing?:{all_sites:boolean;positive_5s:number;negative_5s:number;sites:number}};
@@ -170,6 +170,13 @@ export function remainingSounds(models:Countable[]):number {
 // One value when both ends round to the same text (not "3 min–3 min").
 export const workload = (sounds:number) => {const low=duration(sounds*8),high=duration(sounds*10);
   return {time:low===high?low:`${low}${app.locale==='ja'?'〜':'–'}${high}`};};
-// `return=` carries the in-app page to go back to (hash routing); anything not matching `allowed` is ignored.
-export const returnPath = (url:URL,allowed:RegExp) => {const path=new URL(url.hash.slice(1)||url.pathname+url.search,url).searchParams.get('return')??'';return allowed.test(path)?path:'';};
+// A page's own parameters and its `return=` (`back`: the in-app page to go back to). `return` is always the last
+// parameter and takes the rest of the query: after a reload or a step in the history the hash router hands the hash
+// over decoded, and the `&` of the return path could not be told from the page's own.
+export const pageQuery = (url:URL) => {const text=url.hash.slice(1)||url.pathname+url.search,query=text.includes('?')?text.slice(text.indexOf('?')+1):'',at=query.search(/(^|&)return=/);
+  let back=at<0?'':query.slice(query.indexOf('return=',at)+7);
+  try{back=decodeURIComponent(back);}catch{/* already decoded */}
+  return {params:new URLSearchParams(at<0?query:query.slice(0,at)),back};};
+// Anything not matching `allowed` is ignored.
+export const returnPath = (url:URL,allowed:RegExp) => {const path=pageQuery(url).back;return allowed.test(path)?path:'';};
 export const appHref = (path:string) => `${resolve('/')}${path.slice(1)}`;

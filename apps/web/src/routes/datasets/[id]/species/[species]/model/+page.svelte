@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { appHref,fill,modelIntro,modelName,returnPath,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
+  import { appHref,fill,modelIntro,modelName,pageQuery,returnPath,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
   import TestSounds from '$lib/TestSounds.svelte';
@@ -18,12 +18,17 @@
   import { notify } from '$lib/ui/toast.svelte';
   const id=Number(page.params.id),speciesId=page.params.species!;
   const site=$derived(siteOf(datasetOf(id)));
-  const range=new URLSearchParams([...new URL(page.url.hash.slice(1),page.url).searchParams].filter(([key])=>key.endsWith('_date')));
+  const range=new URLSearchParams([...pageQuery(page.url).params].filter(([key])=>key.endsWith('_date')));
   // `info` holds the counts and the AI; the batch changes only when a new batch is loaded, so its rows do not move while answering.
   let info=$state<SpeciesAI|null>(null),batch=$state<LabelRow[]>([]),answered=$state<LabelRow[]>([]),source=$state<SpeciesAI['source']>(null);
   let error=$state(''),skipped:number[]=[],answeredShown=$state(10),confirming=$state(false);
   // `more` opens the sounds again once growing has settled.
   let more=$state(false);
+  // Back from adding examples on the search page (the layout restores the scroll to the panel that led there): say so
+  // there and show the next sounds, also once growing has settled.
+  const added=sessionStorage.getItem('echoroo-examples-added')===speciesId;
+  sessionStorage.removeItem('echoroo-examples-added');
+  if(added)more=true;
   // Sounds answered "Not sure": left without an answer, so they are never material for the AI and the next batch skips them.
   let unsure=$state<number[]>([]);
   const notSure=async(row:LabelRow)=>{if(row.label)await label.run(row,row.label);if(row.label)return;const on=!unsure.includes(row.segment_id);
@@ -45,7 +50,9 @@
   },{toast:true});
   // The period the server used for this page, so a link without dates still makes the AI for what is shown.
   const build=createTask(async()=>{await api('/custom-models',{dataset_id:id,species_id:speciesId,
-    start_date:info!.start_date,end_date:info!.end_date});skipped=[];await next.run();toTop();
+    start_date:info!.start_date,end_date:info!.end_date});skipped=[];await next.run();
+    // The new AI's score on the test sounds is above the sounds: bring it into view.
+    (document.getElementById('tests-title')??document.getElementById('next-sounds'))?.scrollIntoView({block:'start'});
     notify('mdBuilt','success',undefined,{n:info?.model?.round??1});});
   // A new batch is answered from its first sound, so bring the top of the list back into view.
   const toTop=()=>document.getElementById('next-sounds')?.scrollIntoView({block:'start'});
@@ -83,17 +90,17 @@
   }
   // Opens this AI's accuracy check at once (an unfinished one with the same AI and period is reused).
   const startCheck=createTask(async()=>{const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
-    start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(resolve(`/datasets/${id}/validation/${validation.id}`));},{toast:true});
+    start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(`${resolve(`/datasets/${id}/validation/${validation.id}`)}?return=${encodeURIComponent(here)}`);},{toast:true});
   // Nothing to rank by and nothing to make an AI from yet: the page only points to the search.
   const chosen=$derived(source==='custom'?`${t('mdIntroCustom')}${info!.by_example?` ${t('mdIntroExamples')}`:''}`:source==='search'?t('mdIntroSearch'):source?fill('mdIntroBuiltin',{model:modelIntro(info!.engine)}):'');
   const searchFirst=$derived(!!info&&!source&&!info.can_train&&!model);
   // The page that led here (the checked-sounds list) can be gone back to; this page passes itself on to the search.
-  const origin=$derived(returnPath(page.url,/^\/datasets\/\d+\/heard(\?[^#]*)?$/)),here=`/datasets/${id}/species/${speciesId}/model?${range}`;
+  const origin=returnPath(page.url,/^\/datasets\/\d+\/heard(\?[^#]*)?$/),here=`/datasets/${id}/species/${speciesId}/model?${range}${origin?`&return=${encodeURIComponent(origin)}`:''}`;
   const searchHref=`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}&return=${encodeURIComponent(here)}`;
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
   const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(row.local_time));
   const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
-  const score=(value:number)=>{const text=value.toFixed(2);
+  const score=(value:number)=>{const text=value.toFixed(2).replace('-0.00','0.00');
     return source==='custom'?fill('mdScoreCustom',{value:text}):source==='search'?fill('pSimilarity',{value:text}):fill('mdScoreBuiltin',{model:modelName(info!.engine),value:text});};
 </script>
 <svelte:window onkeydown={shortcut}/>
@@ -108,6 +115,7 @@
       <p>{t('tpIntro')}</p>
       <div class="meter">{#each [['mdVoice',test.heard,test.aim_heard],['mdNoVoice',test.not_heard,test.aim_not_heard]] as [name,n,of]}
         <span>{t(name as string)}</span><progress max={of as number} value={Math.min(n as number,of as number)} aria-label={t(name as string)}></progress><span>{fill('tpCount',{n,of})}</span>{/each}</div>
+      <p class="muted">{t('tpCountNote')}</p>
       <p class="muted">{t('tpWhy')}</p>
       {#if chosen&&!test.complete}<p class="muted">{chosen}</p>{/if}
       {#if test.complete}<div class="status-box" role="status"><strong>{t('tpReadyTitle')}</strong><p>{fill('tpReadyText',{heard:test.heard,not_heard:test.not_heard})}</p></div>
@@ -191,8 +199,8 @@
       </div>{/if}
     </section>{/if}
     <!-- While growing (also once it has settled): a call the AI was not given an example of can be added; the search page keeps the current examples. -->
-    {#if source&&!collecting}<section class="panel"><h2>{t('mdMoreCallsTitle')}</h2><p>{t('mdMoreCallsText')}</p><p class="muted">{t('mdMoreCallsNote')}</p>
-      <div class="actions"><Button href={searchHref}>{t('mdMoreCallsAction')}</Button></div></section>{/if}
+    {#if source&&!collecting}<section class="panel"><h2>{t('mdMoreCallsTitle')}</h2><p>{t('mdMoreCallsText')}</p>{#if info.search_examples}<p class:info={added} role={added?'status':undefined}>{fill(added?'mdExamplesAdded':'mdExamplesNow',{n:info.search_examples})}</p>{/if}<p class="muted">{t('mdMoreCallsNote')}</p>
+      <div class="actions">{#if added&&listed}<Button variant="primary" onclick={toTop}>{t('mdSeeNext')}</Button>{/if}<Button href={searchHref}>{t('mdMoreCallsAction')}</Button></div></section>{/if}
     <!-- The count follows each answer and undo; new answers are added on top, and the list is reordered only with a new batch. -->
     {#if answered.length}<details class="panel"><summary>{fill('mdAnswered',{n:info.answered.length})}</summary>
       <p class="muted">{t('mdUndo')}</p>

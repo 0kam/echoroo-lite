@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelIntro,rangeQuery,workload,type Validation } from '$lib/workflow';
+  import { appHref,fill,modelIntro,rangeQuery,returnPath,workload,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
   import QualityPanel from '$lib/QualityPanel.svelte';
@@ -61,11 +61,13 @@
   const range=$derived(validation?rangeQuery(validation.start_date,validation.end_date):'');
   const view=$derived(validation?`${range}&engine=${validation.engine}${validation.model_id?`&model_id=${validation.model_id}`:''}`:'');
   const back=$derived(validation?`${resolve(`/datasets/${id}/species/${validation.species.id}`)}?${view}`:resolve(`/datasets/${id}`));
+  // A check started on the species-AI page can go back there.
+  const origin=returnPath(page.url,/^\/datasets\/\d+\/species\/[^/?#]+\/model(\?[^#]*)?$/);
   const practice=$derived(validation?`${resolve('/quiz')}?species=${validation.species.id}&return=${encodeURIComponent(`/datasets/${id}/validation/${sid}`)}`:'');
 </script>
 {#snippet examples()}{#if validation}<div class="examples-column"><ReferencePanel species={validation.species} datasetId={id} validationId={sid} {practice} onexamples={list=>heard=list}/></div>{/if}{/snippet}
 <svelte:window onkeydown={shortcut}/>
-<div class="page wide validation-page" style:padding-bottom={asking?`${barHeight+24}px`:undefined} style:--answer-bar={asking?`${barHeight}px`:'0px'}><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
+<div class="page wide validation-page" style:padding-bottom={asking?`${barHeight+24}px`:undefined} style:--answer-bar={asking?`${barHeight}px`:'0px'}><div class="crumbs">{#if origin}<a href={appHref(origin)}>{t('wReturn')}</a>{/if}<a href={back}>{t('wBackSpecies')}</a></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if validation}
     {#if done||!started||validation.question}<div class="page-header"><div>

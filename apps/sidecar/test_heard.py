@@ -163,6 +163,11 @@ class HeardTest(unittest.TestCase):
             self.assertEqual(client.post('/heard/fix', json=dict(dataset_id=1, ids=[none['id']], action='absent')).status_code, 400)
             client.post('/heard/fix', json=dict(dataset_id=1, ids=[none['id']], action='other', species_id=warbler))
             self.assertEqual(listed(), [('Horornis diphone', 'present', 'review', 0), ('Parus cinereus', 'absent', 'training', 0), ('Parus cinereus', 'present', 'sound_map', 5)])
+            # A "not heard" answer put right to "no bird sound" leaves the list too, as a "heard" one does: one row for the sound.
+            row = next(r for r in client.get('/datasets/1/heard/records', params={'species_id': tit}).json()['rows'] if r['verdict'] == 'absent')
+            client.post('/heard/fix', json=dict(dataset_id=1, ids=[row['id']], action='no_bird'))
+            self.assertEqual(listed(), [('Parus cinereus', 'present', 'sound_map', 5), ('none', 'present', 'review', 0)])
+            self.assertEqual(examples(tit), {'positive_5s': 1, 'negative_5s': 1, 'other_answers': 2, 'no_bird_answers': 0})
 
     def test_another_species_is_added_on_a_question_card_and_taken_back(self):
         with tempfile.TemporaryDirectory() as temp:

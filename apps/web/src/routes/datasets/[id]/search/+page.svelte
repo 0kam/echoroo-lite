@@ -8,7 +8,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,dayRange,fileName,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { appHref,fill,focusMissing,missingText,rangeQuery,returnPath } from '$lib/workflow';
+  import { appHref,fill,focusMissing,missingText,pageQuery,rangeQuery,returnPath } from '$lib/workflow';
   import HeardBox from '$lib/HeardBox.svelte';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
   import SpeciesPicker from '$lib/SpeciesPicker.svelte';
@@ -17,7 +17,7 @@
   import { createTask } from '$lib/ui/task.svelte';
   type Reference=AudioSource&{attribution?:{id:number;recordist:string;license:string}};
   type Clip={source:Reference;start_s:number;end_s:number};
-  const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
+  const id=Number(page.params.id),query=pageQuery(page.url).params;
   const site=$derived(siteOf(datasetOf(id)));
   // Example calls belong to one species; choosing another species starts a new list.
   let species=$state<Species|null>(null),source=$state<Reference|null>(null),clips=$state<Clip[]>([]),clipsFor=$state('');
@@ -73,6 +73,8 @@
       clips:clips.map(c=>({source_kind:c.source.kind,source_id:c.source.id,start_s:c.start_s,end_s:c.end_s}))});
     if(!alive)return;
     const found=species;
+    // The species-AI page says the examples were added and shows the next sounds.
+    if(origin)sessionStorage.setItem('echoroo-examples-added',found.id);
     clips=[];clipsFor='';species=null;source=null;localStorage.removeItem(`echoroo-search-${id}`);ready=false;
     // Next: listen to the search results and confirm the species.
     await goto(origin?appHref(origin):`${resolve(`/datasets/${id}/species/${found.id}/presence`)}?${first&&last?`${rangeQuery(first,last)}&`:''}source=search`);

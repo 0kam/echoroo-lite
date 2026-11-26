@@ -383,6 +383,11 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             first = client.get(url, params={**dates, 'batch': True}).json()
             self.assertEqual((first['source'], first['engine'], len(first['batch'])), ('builtin', 'perch', 10))
             self.assertEqual(first['batch'], client.get(url, params={**dates, 'batch': True}).json()['batch'])
+            # A sound answered "cannot tell" is not offered again, though the page no longer passes it as skipped.
+            unsure = first['batch'][0]['segment_id']
+            label(unsure, 'unknown')
+            self.assertNotIn(unsure, [row['segment_id'] for row in client.get(url, params={**dates, 'batch': True}).json()['batch']])
+            label(unsure, None)
             # Without dates in the link, the page still learns the period to make the AI for.
             self.assertEqual({k: client.get(url).json()[k] for k in dates}, dates)
             self.assertTrue(all(abs(row['score'] - .3) < 1e-6 for row in first['batch'][:4]))

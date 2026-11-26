@@ -85,7 +85,7 @@
             {:else if row.ai.state==='family'}<span class="muted">{t('hdAiFamily')}</span>
             {:else if row.ai.state==='made'}{fill('hdAiMade',{n:row.ai.round})}　<a href={modelHref(row.species)}>{t('hdAiGrow')}</a>
             {:else if row.ai.state==='ready'}{t('hdAiReady')}　<a href={modelHref(row.species)}>{t('hdAiGrow')}</a>
-            {:else}{fill('hdAiNeeded',{n:row.ai.needed})}　<a href={modelHref(row.species)}>{t('hdAiGrow')}</a>{/if}</td>{/if}</tr>{/each}
+            {:else}{fill('hdAiNeeded',{n:row.ai.needed,m:row.ai.material})}　<a href={modelHref(row.species)}>{t('hdAiGrow')}</a>{/if}</td>{/if}</tr>{/each}
       </tbody></table></div>
       <p class="muted">{fill('hdRule',{total:summary.requirements.total,each:summary.requirements.each})}</p>
       {#if scope==='all'}<p class="muted">{t('hdAllNote')}</p>{/if}

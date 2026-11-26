@@ -31,7 +31,7 @@
   <div class="score"><div class="muted">{t(label)}</div>
     {#if of}<div class="big">{Math.round(100 * now / of)}%</div><div>{fill('tsOf', { n: of, m: now })}</div>
       {#if change != null}<div class="change" class:good={change !== 0 && change > 0 === up} class:bad={change !== 0 && change > 0 !== up}>
-        {change ? fill(change > 0 ? 'tsMore' : 'tsFewer', { k: Math.abs(change) }) : t('tsSame')}</div>{/if}
+        {change ? fill(change > 0 ? 'tsMore' : 'tsFewer', { k: Math.abs(change) }) + t(change > 0 === up ? 'tsGood' : 'tsBad') : t('tsSame')}</div>{/if}
       <div class="bars" aria-hidden="true">{#each scored as row (row.round)}<span class:now={row.current} style:height="{Math.max(6, 100 * value(row) / of)}%"><i>{row.round}</i></span>{/each}</div>
     {:else}<div class="big">—</div><div class="muted">{t(none)}</div>{/if}
   </div>

@@ -84,7 +84,8 @@ def _ai(root, dataset_id, species_ids):
     models = {model['species']['id']: model for model in list_models(root, ctx)}
     status = material_status(root, ctx, [s for s in species_ids if s not in models])
     return {taxon: {'state': 'made', 'round': models[taxon]['round'], 'usable': models[taxon]['applicable']} if taxon in models
-            else {'state': 'ready' if not status[taxon]['needed'] else 'needed', 'needed': status[taxon]['needed']}
+            else {'state': 'ready' if not status[taxon]['needed'] else 'needed', 'needed': status[taxon]['needed'],
+                  'material': status[taxon]['positive'] + status[taxon]['negative']}
             for taxon in species_ids}
 
 
@@ -178,6 +179,9 @@ def fix(root, body):
                 _heard(db, other, piece, {'with': taxon}, True)
             elif body.action == 'no_bird':
                 checks += sum(refresh(root, db, heard, *piece) for heard in put_no_bird(db, *piece, 'review') if heard != taxon)
+                if row['verdict'] != 'present':
+                    # "Not heard" or "cannot tell" now follows from "no bird sound" too, as "heard" does: one row in the list.
+                    put(db, taxon, *piece, 'absent', 'review', {'was': row['verdict'], 'screen': row['source'], 'auto': no_bird(db)}, history=True)
             elif taxon == no_bird(db):
                 _heard(db, other, piece, {})  # `put` takes "no bird sound" back
             else:
