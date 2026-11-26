@@ -85,10 +85,11 @@
   const startCheck=createTask(async()=>{const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
     start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(resolve(`/datasets/${id}/validation/${validation.id}`));},{toast:true});
   // Nothing to rank by and nothing to make an AI from yet: the page only points to the search.
-  const chosen=$derived(source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):source?fill('mdIntroBuiltin',{model:modelIntro(info!.engine)}):'');
+  const chosen=$derived(source==='custom'?`${t('mdIntroCustom')}${info!.by_example?` ${t('mdIntroExamples')}`:''}`:source==='search'?t('mdIntroSearch'):source?fill('mdIntroBuiltin',{model:modelIntro(info!.engine)}):'');
   const searchFirst=$derived(!!info&&!source&&!info.can_train&&!model);
   // The page that led here (the checked-sounds list) can be gone back to; this page passes itself on to the search.
   const origin=$derived(returnPath(page.url,/^\/datasets\/\d+\/heard(\?[^#]*)?$/)),here=`/datasets/${id}/species/${speciesId}/model?${range}`;
+  const searchHref=`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}&return=${encodeURIComponent(here)}`;
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
   const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(row.local_time));
   const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
@@ -162,7 +163,7 @@
       {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
         <!-- Sounds already checked by ear can be the examples: the search is made here and the sounds to answer appear. -->
         {#if site}<HeardBox datasetId={id} {speciesId} timezone={site.timezone} hasSearch={false} range={range.toString()} searchHref="" resultsHref="" ondone={()=>next.run()}/>{/if}
-        <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}&return=${encodeURIComponent(here)}`}>{t('sSearchStart')}</Button>
+        <Button href={searchHref}>{t('sSearchStart')}</Button>
       {:else}
         {#if !model&&info.needed&&!collecting}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
         <p>{t('mdShortIntro')}</p>
@@ -189,6 +190,9 @@
         {#if next.error&&!error}<p class="error" role="alert">{t(next.error)}</p>{/if}
       </div>{/if}
     </section>{/if}
+    <!-- While growing (also once it has settled): a call the AI was not given an example of can be added; the search page keeps the current examples. -->
+    {#if source&&!collecting}<section class="panel"><h2>{t('mdMoreCallsTitle')}</h2><p>{t('mdMoreCallsText')}</p><p class="muted">{t('mdMoreCallsNote')}</p>
+      <div class="actions"><Button href={searchHref}>{t('mdMoreCallsAction')}</Button></div></section>{/if}
     <!-- The count follows each answer and undo; new answers are added on top, and the list is reordered only with a new batch. -->
     {#if answered.length}<details class="panel"><summary>{fill('mdAnswered',{n:info.answered.length})}</summary>
       <p class="muted">{t('mdUndo')}</p>

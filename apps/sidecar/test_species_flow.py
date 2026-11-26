@@ -289,6 +289,60 @@ class SpeciesFlowCheck(unittest.TestCase):
                 self.assertEqual(client.post('/search-runs', json=search).status_code, 200)
 
 
+class AnotherCallCheck(unittest.TestCase):
+    def test_examples_join_batches_and_a_search_made_again_keeps_what_was_built(self):
+        with site() as (root, client, species):
+            sid = species['id']
+            no_tests(root, sid)
+            scope = {'dataset_id': 1, 'species_id': sid, 'start_date': '2024-08-01', 'end_date': '2024-08-06'}
+            clips = [{'source_kind': 'recording', 'source_id': rid, 'start_s': 0, 'end_s': 5} for rid in (1, 2, 3)]
+            search = {'dataset_id': 1, 'species_id': sid, 'clips': clips[:2]}
+            url = f'/datasets/1/species/{sid}/search-examples'
+            self.assertEqual(client.get(url).json(), {'exists': False, 'clips': [], 'missing': 0})
+            with patch('search_runs.load_perch', return_value=(Session(), 'perch-sha')), patch('search.load_perch', return_value=(Session(), 'perch-sha')):
+                run = client.post('/search-runs', json=search).json()
+                with connect(root) as db:
+                    # The stand-in session embeds every example alike; say the last recording's other sounds are nearest to the second example.
+                    db.execute('UPDATE search_hits SET reference_index=1 WHERE similarity<.5 AND segment_id>90')
+                    best = lambda taken: [db.execute('''SELECT segment_id FROM search_hits WHERE reference_index=? AND segment_id NOT IN (SELECT value FROM json_each(?))
+                        ORDER BY similarity DESC,segment_id''', (lane, json.dumps(taken))).fetchone()[0] for lane in (0, 1)]
+                    # 4 "voice" and 16 "no voice" answers: the AI scores the second example's sounds low.
+                    answers = {**dict.fromkeys((7, 13, 25, 31), 'target'), **dict.fromkeys(range(40, 56), 'other')}
+                    expected = best(list(answers))
+                self.assertEqual(client.post('/presence/marks', json={'dataset_id': 1, 'species_id': sid, 'recording_id': 4, 'start_s': 30, 'end_s': 35,
+                    'run_id': run['id'], 'marked': True}).json(), {'marked': True})
+                for segment, value in answers.items():
+                    client.post(f'/datasets/1/species/{sid}/labels', json={'segment_id': segment, 'label': value})
+                model = client.post('/custom-models', json=scope)
+                self.assertEqual(model.status_code, 200, model.text)
+                ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={'start_date': scope['start_date'], 'end_date': scope['end_date'], 'batch': True}).json()
+                rows = {row['segment_id']: row['score'] for row in ready['batch']}
+                self.assertEqual((ready['source'], ready['by_example'], len(rows), set(expected) <= set(rows)), ('custom', True, 10, True))
+                self.assertLess(rows[expected[1]], .5)  # shown with the AI's score, low as it is
+                # The search page lists the current examples as clips it can search with again.
+                kept = client.get(url).json()
+                self.assertEqual((kept['exists'], kept['missing'], [(c['source']['kind'], c['source']['id'], c['start_s'], c['end_s']) for c in kept['clips']]),
+                                 (True, 0, [('recording', 1, 0, 5), ('recording', 2, 0, 5)]))
+                self.assertTrue(all(c['source']['path'] and c['source']['seconds'] == 90 for c in kept['clips']))
+                # Made again with one more example: the marks and the species AI move to it, and the earlier search goes.
+                self.assertEqual(client.post('/search-runs', json={**search, 'clips': clips}).json()['detail'], 'search_exists')
+                again = client.post('/search-runs', json={**search, 'clips': clips, 'replace': True, 'start_date': '2024-08-02'})
+                self.assertEqual(again.status_code, 200, again.text)
+                again = again.json()
+            self.assertEqual((len(again['snapshot']['references']), again['snapshot']['start_date']), (3, None))  # the days of the earlier search
+            with connect(root) as db:
+                self.assertEqual([r[0] for r in db.execute('SELECT id FROM search_runs')], [again['id']])
+                self.assertEqual({r[0] for r in db.execute('SELECT run_id FROM search_hits')}, {again['id']})
+                self.assertEqual(db.execute("SELECT json_extract(source_ref,'$.run_id') FROM labels WHERE source='species_mark'").fetchone()[0], again['id'])
+                self.assertEqual(tuple(db.execute("SELECT run_id,json_extract(snapshot,'$.run_id') FROM custom_models").fetchone()), (again['id'],) * 2)
+            ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={'start_date': scope['start_date'], 'end_date': scope['end_date'], 'batch': True}).json()
+            self.assertEqual((ready['examples']['positive_5s'], ready['model']['applicable'], ready['source']), (5, True, 'custom'))
+            # An example whose file is gone is left out and counted.
+            (root / 'audio' / '20240802_060000.wav').unlink()
+            kept = client.get(url).json()
+            self.assertEqual((kept['missing'], [c['source']['id'] for c in kept['clips']]), (1, [1, 3]))
+
+
 class GrowWithoutSearchCheck(unittest.TestCase):
     def test_voice_answers_are_presence_evidence(self):
         with site() as (root, client, species):
@@ -502,6 +556,40 @@ class BatchChoiceCheck(unittest.TestCase):
         flat = [segment for segment, _ in model_picks([(segment, .5) for segment in range(1000)], {}, rng())]
         self.assertEqual((flat[:5], len(set(flat)), sum(segment >= 500 for segment in flat)), ([0, 1, 85, 251, 417], 10, 5))
         self.assertEqual(model_picks(scored[:4], {}, rng()), sorted(scored[:4], key=lambda p: -p[1]))
+
+    def test_examples_in_species_ai_batch(self):
+        from custom_models import example_picks, model_picks
+        rng = lambda: np.random.default_rng(0)
+        scored = [(segment, 1 - segment / 1000) for segment in range(1000)]
+        score = dict(scored)
+        # Two examples, most similar first: the AI scores the second one's sounds low (a rarer call of the species).
+        hits = [(segment, 0) for segment in range(50)] + [(segment, 1) for segment in range(900, 950)]
+        first = example_picks(hits, {}, score)
+        self.assertEqual(first, [0, 900])
+        picks = model_picks(scored, {}, rng(), first)
+        self.assertEqual(picks, model_picks(reversed(scored), {}, rng(), first))
+        chosen = [segment for segment, _ in picks]
+        # In the batch whatever their score, with the AI's score; beside them the two highest of the others.
+        self.assertEqual((len(set(chosen)), chosen, chosen[:3], score[900]), (10, sorted(chosen), [0, 1, 2], dict(picks)[900]))
+        self.assertNotIn(900, {s for s, _ in model_picks(scored, {}, rng())})
+        # Answered, passed over or in a test recording (None), or without a score: the example's next sound instead.
+        known = {0: 'target', 900: 'other', 901: None, 902: None}
+        self.assertEqual(example_picks(hits, known, {k: v for k, v in score.items() if k != 903}), [1, 904])
+        self.assertFalse(set(known) & {s for s, _ in model_picks(scored, known, rng(), [1, 904])})
+        # An example with nothing left gives nothing; no search gives the batch as before.
+        self.assertEqual(example_picks(hits, dict.fromkeys(range(900, 950)), score), [0])
+        self.assertEqual(model_picks(scored, known, rng(), example_picks([], known, score)), model_picks(scored, known, rng()))
+        # More examples than the batch has room for: the six with the fewest answered sounds, so the others come next.
+        many = [(lane * 100 + i, lane) for lane in range(8) for i in range(10)]
+        first = example_picks(many, {}, score)
+        self.assertEqual(first, [0, 100, 200, 300, 400, 500])
+        answered = dict.fromkeys(first, 'other')
+        turn = example_picks(many, answered, score)
+        self.assertEqual(turn, [600, 700, 1, 101, 201, 301])
+        picks = [s for s, _ in model_picks(scored, answered, rng(), turn)]
+        self.assertEqual((len(set(picks)), set(turn) <= set(picks), picks[:3]), (10, True, [1, 2, 3]))
+        # Few sounds left: all of them, once.
+        self.assertEqual([s for s, _ in model_picks(scored[:8], {}, rng(), [5])], list(range(8)))
 
     def test_calibration(self):
         import custom_models

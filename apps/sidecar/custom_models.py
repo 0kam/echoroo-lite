@@ -283,10 +283,30 @@ def boundary_score(answers):
     return best[(len(best) - 1) // 2]
 
 
-def model_picks(scored, known, rng):
+def example_picks(hits, known, score):
+    """With a species AI and a search: one sound for each example of the search, so a call the AI scores low (a rarer
+    call of the species) is still asked about. `hits`: (segment, the example it is nearest to), most similar first.
+
+    Each example gives its most similar sound that has a score and is not in `known`. With more examples than the
+    batch has room for beside its ENDS, those with the fewest answered sounds among their own hits go first (then the
+    earlier example), so every example gets its turn over the batches.
+    """
+    lanes = {}
+    for segment, lane in hits:
+        lanes.setdefault(lane, []).append(segment)
+    turns = []
+    for lane, segments in lanes.items():
+        best = next((segment for segment in segments if segment not in known and segment in score), None)
+        if best is not None:
+            turns.append((sum(known.get(segment) is not None for segment in segments), lane, best))
+    return [best for *_, best in sorted(turns)[:BATCH - 2 * ENDS]]
+
+
+def model_picks(scored, known, rng, first=()):
     """With a species AI: BATCH (segment, score) pairs not in `known` (answered, with their label, or passed over: None).
 
-    The free pieces are ranked by score. ENDS come from the top ranks, and ENDS are drawn at random from the lower
+    `first` (`example_picks`) are in the batch whatever their score, in place of as many sounds near the boundary.
+    The other free pieces are ranked by score. ENDS come from the top ranks, and ENDS are drawn at random from the lower
     half: clearly different sounds, not always the same extremes. For the rest: its scores bunch together, so 0.5 is
     not where its answer changes: the boundary is the score that best separates the answered pieces
     (`boundary_score`), and the boundary rank is the number of the other free pieces scoring at or above it (the middle
@@ -296,11 +316,15 @@ def model_picks(scored, known, rng):
     scored = list(scored)
     score = dict(scored)
     cut = boundary_score([(score[segment], label) for segment, label in known.items() if label and segment in score])
-    free = sorted(((segment, value) for segment, value in scored if segment not in known), key=lambda p: (-p[1], p[0]))
-    if len(free) <= BATCH:
-        return free
+    order = lambda p: (-p[1], p[0])
+    free = sorted(((segment, value) for segment, value in scored if segment not in known), key=order)
+    mine, free = [p for p in free if p[0] in first], [p for p in free if p[0] not in first]
+    if len(free) <= BATCH - len(mine):
+        return sorted(mine + free, key=order)
     far = set((len(free) // 2 + rng.choice(len(free) - len(free) // 2, ENDS, replace=False)).tolist())
-    middle, count = [p for rank, p in enumerate(free) if rank >= ENDS and rank not in far], BATCH - 2 * ENDS
+    middle, count = [p for rank, p in enumerate(free) if rank >= ENDS and rank not in far], BATCH - 2 * ENDS - len(mine)
+    if not count:
+        return sorted(mine + free[:ENDS] + [free[rank] for rank in far], key=order)
     rank = len(middle) // 2 if cut is None else sum(value >= cut for _, value in middle)
     width = count * NEAR_POOL
     low = max(0, min(rank - width // 2, len(middle) - width))
@@ -308,7 +332,7 @@ def model_picks(scored, known, rng):
     # ponytail: segment ids follow import and recording order, a stand-in for time; use recording times if that drifts.
     pool = sorted(p for p in middle if window[-1][1] <= p[1] <= window[0][1])
     near = [pool[(2 * i + 1) * len(pool) // (2 * count)] for i in range(count)]
-    return sorted(free[:ENDS] + near + [free[rank] for rank in far], key=lambda p: (-p[1], p[0]))
+    return sorted(mine + free[:ENDS] + near + [free[rank] for rank in far], key=order)
 
 
 def _ranked_builtin(root, db, ctx, species_id, analyses):
@@ -333,7 +357,8 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
 
     With `batch` also the next sounds to answer, never an answered one nor one in `skip` (shown and passed over),
     and where they were chosen from (`source`): 'custom' (species AI scores), 'search' (similarity),
-    'builtin' (the main AI's score) or None (nothing to rank by).
+    'builtin' (the main AI's score) or None (nothing to rank by). `by_example`: a 'custom' batch also has a sound
+    for each example of the species' search (`example_picks`).
     """
     models = list_models(root, ctx, species_id, every=True)
     model = models[0] if models else None
@@ -363,8 +388,10 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
         if batch:
             if model and model['applicable']:
                 source = 'custom'
-                picks = model_picks(((w['segment_id'], w['score']) for w in score_windows(root, model['id'])), leave,
-                                    _rng(species_id, model['id'], model['round'], sorted(leave)))
+                scored = [(w['segment_id'], w['score']) for w in score_windows(root, model['id'])]
+                # A search's examples each bring one sound, whatever the AI makes of it: the AI may not know that call yet.
+                picks = model_picks(scored, leave, _rng(species_id, model['id'], model['round'], sorted(leave)), example_picks(db.execute(
+                    'SELECT segment_id,reference_index FROM search_hits WHERE run_id=? ORDER BY similarity DESC,segment_id', (run['id'],)), leave, dict(scored)) if run else ())
             else:
                 # ponytail: the whole ranking is read for each batch; draw the ranks in SQL if a site's sounds make this slow.
                 hits = db.execute('SELECT segment_id,similarity,reference_index FROM search_hits WHERE run_id=? ORDER BY similarity DESC,segment_id',
@@ -399,7 +426,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
                                               ('custom_negative_examples_needed', all_negative < MIN_CLASS_EXAMPLES),
                                               ('custom_no_new_answers', unchanged)] if missing]
     return {'species': names_for_id(root, species_id), 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
-            'model': model, 'source': source, 'engine': main_engine(root),
+            'model': model, 'source': source, 'by_example': source == 'custom' and bool(run), 'engine': main_engine(root),
             'batch': rows if batch else None, 'answered': answered, 'needed': needed,
             'examples': {'positive_5s': positive, 'negative_5s': negative,
                          'other_answers': sum(value['origin'] not in ('label', 'no_bird') for value in labels.values()),
