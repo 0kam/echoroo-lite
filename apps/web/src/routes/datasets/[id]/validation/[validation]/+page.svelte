@@ -23,9 +23,6 @@
   // An answered sound always has a next sound: a later answered one, or the first unanswered one (or the result).
   const goNext=()=>navigate.run(next?.id);
   const answered=$derived(!!validation?.question?.verdict);
-  // A new sound is answered only after it was played, so no answer is given (or looks given) before listening.
-  let played=$state<number[]>([]);
-  const canAnswer=$derived(answered||played.includes(validation?.question?.id??-1));
   // Pressing Next before answering points to the answer buttons instead of moving on.
   let triedNext=$state<number|null>(null);
   const remaining=$derived(validation?validation.counts.total-validation.counts.answered:0);
@@ -38,10 +35,19 @@
     // Correcting an earlier sound moves on to the following sound, just like a first answer.
     corrected=question.verdict!==null;
     validation=corrected&&next?await api<Validation>(`/validations/${sid}?item_id=${next.id}`):value;
-    // The answers of the new sound wait for playback, so keyboard focus moves to its play button.
-    await tick();if(!canAnswer)document.querySelector<HTMLElement>('.validation-page .zoom-controls button')?.focus();
+    // A sound can be answered without playing it (a figure can be enough); keyboard focus still goes to the new sound's play button.
+    await tick();if(!answered)document.querySelector<HTMLElement>('.validation-page .zoom-controls button')?.focus();
   });
   const busy=$derived(answer.pending||navigate.pending||extend.pending);
+  // Keys for answering without the mouse: Space plays or stops the sound, 1 / 2 / 3 answer. Not while typing in a field,
+  // and by the key's place on the keyboard so a Japanese input method does not swallow it.
+  const KEYS:Record<string,string>={Digit1:'target',Numpad1:'target',Digit2:'other',Numpad2:'other',Digit3:'unknown',Numpad3:'unknown'};
+  function shortcut(event:KeyboardEvent){
+    const target=event.target as HTMLElement|null;
+    if(event.ctrlKey||event.metaKey||event.altKey||!validation?.question||target?.closest('input,textarea,select,[contenteditable],dialog'))return;
+    if(event.code==='Space'){event.preventDefault();document.querySelector<HTMLElement>('.validation-page .zoom-controls button')?.click();}
+    else if(KEYS[event.code]&&!busy&&validation.applicable){event.preventDefault();void answer.run(KEYS[event.code]);}
+  }
   const done=$derived(validation?.stage==='complete'&&!validation.question);
   // New checks ask the two highest-scoring groups first; with a voice among them, a notice leads on to the remaining sounds.
   const first=$derived(validation?.method==='detection_top_bin_v2'?validation.counts.bins.slice(4):null);
@@ -58,6 +64,7 @@
   const practice=$derived(validation?`${resolve('/quiz')}?species=${validation.species.id}&return=${encodeURIComponent(`/datasets/${id}/validation/${sid}`)}`:'');
 </script>
 {#snippet examples()}{#if validation}<div class="examples-column"><ReferencePanel species={validation.species} datasetId={id} validationId={sid} {practice} onexamples={list=>heard=list}/></div>{/if}{/snippet}
+<svelte:window onkeydown={shortcut}/>
 <div class="page wide validation-page" style:padding-bottom={asking?`${barHeight+24}px`:undefined} style:--answer-bar={asking?`${barHeight}px`:'0px'}><div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if validation}
@@ -89,17 +96,17 @@
         {#if validation.question}
           {@const question=validation.question}
           <p class="muted">{t(first?'vOrderNote':'vMixedNote')}</p>
-          {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`} onplaying={()=>{if(!played.includes(question.id))played=[...played,question.id];}}/>{/key}
-          <OtherSpecies datasetId={id} of={validation.species.id} recordingId={question.source.id} start={question.start_s} end={question.end_s} screen="validation" disabled={!canAnswer}/>
+          {#key question.id}<AudioRegion source={question.source} fixedRange zoomable start={question.start_s} end={question.end_s} storageKey={`echoroo-validation:${sid}:${question.id}:view`}/>{/key}
+          <OtherSpecies datasetId={id} of={validation.species.id} recordingId={question.source.id} start={question.start_s} end={question.end_s} screen="validation"/>
           <div class="actions answers" bind:offsetHeight={barHeight}>
             <div class="progress-row"><progress id="validation-progress" value={answered?question.review_position:validation.counts.answered} max={answered?question.review_total:inFirst?firstTotal:validation.counts.total}></progress>
               <label for="validation-progress">{answered?fill('vReviewProgress',{n:question.review_position,total:question.review_total}):fill(inFirst?'vProgressFirst':'vProgress',{answered:validation.counts.answered,first:firstTotal,total:validation.counts.total})}</label>
               {#if corrected}<span role="status">✓ {t('vCorrectionSaved')}</span>{/if}</div>
             <Button disabled={busy||!previous} onclick={()=>previous&&navigate.run(previous.id)}>‹ {t('vPreviousSound')}</Button>
-            <div class="verdicts" role="group" aria-label={t('wQuestion')}>{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label]}
-            <Button size="lg" active={question.verdict===verdict} aria-pressed={question.verdict===verdict} disabled={busy||!validation.applicable||!canAnswer} onclick={()=>answer.run(verdict)}>{question.verdict===verdict?'✓ ':''}{t(label)}</Button>{/each}</div>
-            <Button disabled={busy} title={answered?undefined:t('vAnswerToContinue')} onclick={()=>{if(answered)goNext();else{triedNext=question.id;document.querySelector<HTMLElement>(canAnswer?'.verdicts button':'.validation-page .zoom-controls button')?.focus();}}}>{t(nextLabel)} ›</Button>
-            {#if triedNext===question.id&&!answered}<p class="field-error unknown-note" role="alert">{t(canAnswer?'vAnswerToContinue':'pPlayFirst')}</p>{:else}<p class="muted unknown-note">{t(canAnswer?'vUnknownNote':'pPlayFirst')}</p>{/if}</div>
+            <div class="verdicts" role="group" aria-label={t('wQuestion')}>{#each [['target','wHeard'],['other','wNotHeard'],['unknown','wCannotTell']] as [verdict,label],index}
+            <Button size="lg" active={question.verdict===verdict} aria-pressed={question.verdict===verdict} aria-keyshortcuts={String(index+1)} disabled={busy||!validation.applicable} onclick={()=>answer.run(verdict)}>{question.verdict===verdict?'✓ ':''}{t(label)} <kbd>{index+1}</kbd></Button>{/each}</div>
+            <Button disabled={busy} title={answered?undefined:t('vAnswerToContinue')} onclick={()=>{if(answered)goNext();else{triedNext=question.id;document.querySelector<HTMLElement>('.verdicts button')?.focus();}}}>{t(nextLabel)} ›</Button>
+            {#if triedNext===question.id&&!answered}<p class="field-error unknown-note" role="alert">{t('vAnswerToContinue')}</p>{:else}<p class="muted unknown-note">{t('vKeys')} {t('vUnknownNote')}</p>{/if}</div>
           {#if answered&&next}<div class="actions review-navigation"><Button disabled={busy} onclick={()=>navigate.run()}>{t(remaining>0?'vResume':'wValidationDone')}</Button></div>{/if}
         {/if}
         {#if answer.error||navigate.error}<p class="error" class:answer-feedback={!!validation.question} style:bottom={validation.question?`${barHeight+8}px`:undefined} role="alert">{t(answer.error||navigate.error)}</p>{/if}
@@ -119,4 +126,5 @@
   .validation-page section h2{margin:0 0 8px}p{margin:4px 0}
   .answers{position:fixed;bottom:0;left:0;right:0;z-index:3;justify-content:space-between;align-items:center;row-gap:4px;padding:12px max(24px,calc((100vw - 1280px)/2));background:rgb(var(--color-page-bg));border-top:1px solid rgb(var(--stone-300));margin:0}
   .answers .verdicts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.unknown-note{flex-basis:100%;text-align:center;margin:0}.review-navigation{margin-top:24px}
-  @media(max-width:700px){.answers{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;padding:8px 12px}.progress-row{grid-column:1/-1}.answers .verdicts{grid-column:1/-1;order:-1;flex-wrap:nowrap;gap:4px}.answers .verdicts :global(.button){flex:1;padding:8px;font-size:16px;min-height:48px}.unknown-note{grid-column:1/-1}}</style>
+  @media(max-width:700px){.answers{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;padding:8px 12px}.progress-row{grid-column:1/-1}.answers .verdicts{grid-column:1/-1;order:-1;flex-wrap:nowrap;gap:4px}.answers .verdicts :global(.button){flex:1;padding:8px;font-size:16px;min-height:48px}.unknown-note{grid-column:1/-1}}
+  kbd{margin-left:6px;padding:0 6px;border:1px solid currentColor;border-radius:4px;font:inherit;font-size:13px;opacity:.75}</style>

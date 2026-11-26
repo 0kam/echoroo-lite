@@ -8,8 +8,8 @@
   import { fill } from './workflow';
   // "Another species is calling too", under a question about one species (`of`) in one sound. Each chosen species is
   // recorded as heard in this sound and stays listed here; one added on a question card can be taken back.
-  let { datasetId, of, recordingId, start, end, screen, disabled = false }:
-    { datasetId: number; of: string; recordingId: number; start: number; end: number; screen: 'validation' | 'training' | 'species_mark'; disabled?: boolean } = $props();
+  let { datasetId, of, recordingId, start, end, screen }:
+    { datasetId: number; of: string; recordingId: number; start: number; end: number; screen: 'validation' | 'training' | 'species_mark' } = $props();
   let others = $state<Other[]>([]), picking = $state(false), busy = $state(false), error = $state('');
   const sound = $derived(`recording_id=${recordingId}&start_s=${start}&end_s=${end}`);
   $effect(() => { const query = sound; others = []; picking = false; error = '';
@@ -22,7 +22,7 @@
   }
 </script>
 <div class="others">
-  <div class="line"><Button size="sm" active={picking} aria-expanded={picking} {disabled} onclick={() => picking = !picking}>{t('hdOthersAdd')}</Button>
+  <div class="line"><Button size="sm" active={picking} aria-expanded={picking} onclick={() => picking = !picking}>{t('hdOthersAdd')}</Button>
     {#each others as other (other.species.id)}<span class="chip" title={other.removable ? undefined : t('hdOthersElsewhere')}>{taxonName(other.species)}
       {#if other.removable}<button type="button" aria-label={fill('hdOthersRemove', { name: taxonName(other.species) })} disabled={busy} onclick={() => set(other.species, false)}>✕</button>{/if}</span>{/each}</div>
   {#if picking}<div class="picker"><h3>{t('hdOthersTitle')}</h3>

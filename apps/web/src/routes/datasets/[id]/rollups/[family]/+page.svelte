@@ -15,7 +15,7 @@
   const id=Number(page.params.id),family=page.params.family!;
   const query=$derived(new URL(page.url.hash.slice(1),page.url).searchParams);
   const dates=$derived(new URLSearchParams([...query].filter(([key])=>key.endsWith('_date'))).toString());
-  let data=$state<RollupFamily|null>(null),error=$state(''),index=$state(0),played=$state<string[]>([]),savedNote=$state('');
+  let data=$state<RollupFamily|null>(null),error=$state(''),index=$state(0),savedNote=$state('');
   let all=$state(false),picking=$state(false),picked=$state<Species|null>(null),comparing=$state(false),compared=$state('');
   const key=(sound:RollupSound)=>`${sound.recording_id}:${sound.start_s}:${sound.end_s}`;
   async function load(){try{data=await api<RollupFamily>(`/datasets/${id}/rollups/${encodeURIComponent(family)}${dates?`?${dates}`:''}`);compared=data.choices[0]?.id??'';index=Math.max(0,data.sounds.findIndex(item=>!item.answer));}
@@ -27,7 +27,6 @@
   // Empty on the page of the families without a species in Japan, which has no family of its own (and no choices).
   const familyText=$derived(data?.family?familyName(data.family):'');
   const left=$derived(data?.sounds.filter(item=>!item.answer).length??0);
-  const listened=$derived(!!sound&&played.includes(key(sound)));
   // Species likely at this site are listed before "N more" (at least five); when none is known to be likely, up to twelve are listed.
   const likely=$derived(data?.choices.filter(choice=>choice.likely).length??0);
   const short=$derived(likely?Math.max(5,likely):12);
@@ -62,25 +61,24 @@
         {#if savedNote}<p class="saved" role="status">✓ {savedNote}</p>{/if}
         <h2>{t('ruAsk')}</h2>
         <p class="muted">{fill('ruPosition',{total:data.sounds.length,n:index+1})}　{time(sound)}　{fill('ruAiAnswer',{name:speciesName(sound.guess)})}　{fill('ruAi',{ai:new Intl.ListFormat(app.locale).format(sound.engines.map(modelName))})}</p>
-        {#key key(sound)}<AudioRegion source={{id:sound.recording_id,kind:'recording',path:sound.source_path,seconds:sound.seconds}} fixedRange compact start={sound.start_s} end={sound.end_s}
-          onplaying={()=>{if(!played.includes(key(sound)))played=[...played,key(sound)];}}/>{/key}
+        {#key key(sound)}<AudioRegion source={{id:sound.recording_id,kind:'recording',path:sound.source_path,seconds:sound.seconds}} fixedRange compact start={sound.start_s} end={sound.end_s}/>{/key}
         {#if sound.answer}<p class="status" role="status"><strong>✓ {fill('ruYourAnswer',{answer:answerText(sound.answer)})}</strong>
           <Button pending={answer.pending} onclick={()=>answer.run(null)}>{t('ruUndo')}</Button></p>
-        {:else if !listened}<p class="muted">{t('pPlayFirst')}</p>{/if}
+        {/if}
         <p class="muted">{t('ruConfident')}</p>
         {#if !data.choices.length}<p>{data.family?fill('ruNoJapan',{family:familyText}):t('ruNoneNoJapan')}</p>{/if}
         {#if data.choices.length}<h3>{fill('ruChoices',{family:familyText})}</h3>
         <div class="choices">{#each shown as choice (choice.id)}<Button active={sound.answer?.species?.id===choice.id} aria-pressed={sound.answer?.species?.id===choice.id}
-            disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('species',choice)}>{speciesName(choice)}</Button>{/each}
+            pending={answer.pending} onclick={()=>answer.run('species',choice)}>{speciesName(choice)}</Button>{/each}
           {#if data.choices.length>short}<button class="link" onclick={()=>all=!all}>{all?t('ruFewer'):fill('ruMore',{n:data.choices.length-short})}</button>{/if}</div>{/if}
         {#if sound.japan_guess||extra}<div class="choices">{#if sound.japan_guess}{@const guess=sound.japan_guess}<span class="muted">{t('ruJapanGuess')}</span>
-          <Button active={sound.answer?.species?.id===guess.id} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('species',guess)}>{speciesName(guess)}</Button>{/if}
+          <Button active={sound.answer?.species?.id===guess.id} pending={answer.pending} onclick={()=>answer.run('species',guess)}>{speciesName(guess)}</Button>{/if}
           {#if extra}<Button active aria-pressed={true} disabled>{speciesName(extra)}</Button>{/if}</div>{/if}
         <div class="choices other">
-          {#if data.choices.length}<Button active={sound.answer?.kind==='family'} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('family')}>{fill('ruFamilyOnly',{family:familyText})}</Button>{/if}
-          <Button active={picking} disabled={!listened&&!sound.answer} onclick={()=>picking=!picking}>{t('ruOther')}</Button>
-          <Button active={sound.answer?.kind==='not_bird'} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('not_bird')}>{t('ruNotBird')}</Button>
-          <Button active={sound.answer?.kind==='unknown'} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('unknown')}>{t('ruUnknown')}</Button></div>
+          {#if data.choices.length}<Button active={sound.answer?.kind==='family'} pending={answer.pending} onclick={()=>answer.run('family')}>{fill('ruFamilyOnly',{family:familyText})}</Button>{/if}
+          <Button active={picking} onclick={()=>picking=!picking}>{t('ruOther')}</Button>
+          <Button active={sound.answer?.kind==='not_bird'} pending={answer.pending} onclick={()=>answer.run('not_bird')}>{t('ruNotBird')}</Button>
+          <Button active={sound.answer?.kind==='unknown'} pending={answer.pending} onclick={()=>answer.run('unknown')}>{t('ruUnknown')}</Button></div>
         <p class="muted">{t('ruUnknownHint')}</p>
         {#if picking}<div class="picker"><SpeciesPicker bind:value={picked} label={t('ruOther')}/>
           {#if picked&&picked.japan===false}<p class="notice" role="alert">{fill('ruNotJapan',{name:speciesName(picked)})}</p>{/if}

@@ -21,8 +21,8 @@
   // `info` holds the counts and the AI; the batch changes only when a new batch is loaded, so its rows do not move while answering.
   let info=$state<SpeciesAI|null>(null),batch=$state<LabelRow[]>([]),answered=$state<LabelRow[]>([]),source=$state<SpeciesAI['source']>(null);
   let error=$state(''),skipped:number[]=[],answeredShown=$state(10),confirming=$state(false);
-  // A sound is answered only after it was played, as on the other answer pages; `more` opens the sounds again once growing has settled.
-  let played=$state<number[]>([]),more=$state(false);
+  // `more` opens the sounds again once growing has settled.
+  let more=$state(false);
   // Sounds answered "Not sure": left without an answer, so they are never material for the AI and the next batch skips them.
   let unsure=$state<number[]>([]);
   const notSure=async(row:LabelRow)=>{if(row.label)await label.run(row,row.label);if(row.label)return;const on=!unsure.includes(row.segment_id);
@@ -120,14 +120,12 @@
       version={`${model?.id}:${model?.round}:${info.examples.positive_5s}:${info.examples.negative_5s}:${info.test?.heard}:${info.test?.not_heard}`}/>{/if}
     {#snippet row(item:LabelRow)}<article class="row">
       <div class="row-head"><span>{time(item)}</span>{#if item.test&&!collecting}<span class="test">{t('tsBadgeHere')}</span>{/if}{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
-      <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}
-        onplaying={()=>{if(!played.includes(item.segment_id))played=[...played,item.segment_id];}}>
+      <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}>
         {#snippet actions()}<div class="actions" role="group" aria-label={time(item)}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
-          <Button active={item.label===value} aria-pressed={item.label===value} pending={label.pending} disabled={next.pending||build.pending||(!item.label&&!played.includes(item.segment_id))} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}</Button>{/each}
-          <Button active={unsure.includes(item.segment_id)} aria-pressed={unsure.includes(item.segment_id)} pending={label.pending} disabled={next.pending||build.pending||(!item.label&&!played.includes(item.segment_id))} onclick={()=>notSure(item)}>{unsure.includes(item.segment_id)?'✓ ':''}{t('mdUnsure')}</Button>
-          {#if !item.label&&!played.includes(item.segment_id)}<span class="muted">{t('pPlayFirst')}</span>{/if}</div>{/snippet}
+          <Button active={item.label===value} aria-pressed={item.label===value} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}</Button>{/each}
+          <Button active={unsure.includes(item.segment_id)} aria-pressed={unsure.includes(item.segment_id)} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>notSure(item)}>{unsure.includes(item.segment_id)?'✓ ':''}{t('mdUnsure')}</Button></div>{/snippet}
       </AudioRegion>
-      <OtherSpecies datasetId={id} of={speciesId} recordingId={item.recording_id} start={item.start_s} end={item.end_s} screen="training" disabled={!item.label&&!played.includes(item.segment_id)}/>
+      <OtherSpecies datasetId={id} of={speciesId} recordingId={item.recording_id} start={item.start_s} end={item.end_s} screen="training"/>
     </article>{/snippet}
     {#if !folded&&!(collecting&&info.test.complete)}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
       <!-- Nothing to rank by is a step still to do, not an error. -->
