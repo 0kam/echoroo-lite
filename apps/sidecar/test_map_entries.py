@@ -101,6 +101,10 @@ class MapEntryApi(ExploreCheck):
         # Looking for that species by name finds every sound the AI answered with it: here the 0.5 bar does not apply.
         owl = self.client.get('/species', params={'q': 'Strix aluco'}).json()[0]['id']
         self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': owl}).json()['targets'], sorted([at[0], at[10], at[20]]))
+        # The species picker of this way in says how many sounds the AI detected each choice in, by the same rule.
+        picked = self.client.get('/datasets/1/heard/species', params={'q': 'Strix aluco', 'detections': True}).json()['species']
+        self.assertEqual(next(row['detected'] for row in picked if row['id'] == owl), 3)
+        self.assertNotIn('detected', self.client.get('/datasets/1/heard/species', params={'q': 'Strix aluco'}).json()['species'][0])
 
         # A checklist species not usual here is a point's candidate and a roll-up's first answer: its sound is one target.
         with connect(self.root) as db:

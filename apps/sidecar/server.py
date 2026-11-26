@@ -718,9 +718,18 @@ def create_app(root, models, token):
         return heard.map_answer(root, body)
 
     @app.get('/datasets/{dataset_id}/heard/species')
-    def heard_pick_species(dataset_id: int, q: str = ''):
+    def heard_pick_species(dataset_id: int, q: str = '', detections: bool = False):
         import heard
-        return heard.pick_species(root, q, dataset_id)
+        found = heard.pick_species(root, q, dataset_id)
+        if detections:
+            # For the sound map's "by species" way in: how many of the map's sounds the AI detected each choice in.
+            import map_entries
+            counts = map_entries.detections(root, dataset_id, [(row['scientific_name'], 'family' if rows is found['families'] else 'species')
+                                                               for rows in (found['species'], found['families']) for row in rows])
+            for rows in (found['species'], found['families']):
+                for row in rows:
+                    row['detected'] = counts.get(row['scientific_name'])
+        return found
 
     @app.get('/datasets/{dataset_id}/species/{species_id}/heard-examples')
     def heard_examples(dataset_id: int, species_id: str):

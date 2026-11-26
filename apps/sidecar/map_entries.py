@@ -145,6 +145,41 @@ def by_species(root, dataset_id, species_id):
     return {'species': names_for(taxon), **_found(points, nodes, answers, detected, species_id)}
 
 
+def detections(root, dataset_id, taxa):
+    """How many of the map's sounds the AI detected each taxon in, by the rule of `by_species` (a point candidate or
+    a roll-up's first answer at the display threshold; a family counts its species): {scientific name: sounds}.
+    `taxa`: (scientific name, rank) pairs. Empty when the site has no map yet."""
+    from taxa import family_of
+    try:
+        _, _, _, run = _current_run(root, dataset_id)
+    except CatalogError:
+        return {}
+    if run is None:
+        return {}
+    species = {name for name, rank in taxa if rank != 'family'}
+    families = {name for name, rank in taxa if rank == 'family'}
+    hit = lambda name: ({name} & species) | ({family_of(name)} & families)
+    found = {}  # position -> the wanted taxa detected there
+    with connect(root) as db:
+        points, _, _ = _load(db, run)
+        at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
+        for p in points:
+            for name, score in p['candidates']:
+                if score >= SCORE_THRESHOLD and hit(name):
+                    found.setdefault(p['position'], set()).update(hit(name))
+        for row in db.execute('''SELECT u.analysis_id,u.start_s,u.top_label,a.engine FROM rollups u JOIN analyses a ON a.id=u.analysis_id
+                WHERE u.top_score>=? AND u.analysis_id IN (SELECT value FROM json_each(?))''',
+                (SCORE_THRESHOLD, json.dumps(sorted({p['analysis_id'] for p in points})))):
+            position, name = at.get((row['analysis_id'], round(row['start_s'], 3))), canonical_scientific_name(row['engine'], row['top_label']) or ''
+            if position is not None and hit(name):
+                found.setdefault(position, set()).update(hit(name))
+    counts = dict.fromkeys(species | families, 0)
+    for names in found.values():
+        for name in names:
+            counts[name] += 1
+    return counts
+
+
 def by_examples(root, dataset_id, species_id):
     """Entry B: the groups around example sounds of the species (heard sounds the app chose, as for a search)."""
     from heard import search_examples

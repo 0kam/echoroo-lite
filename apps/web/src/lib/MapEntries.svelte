@@ -94,7 +94,7 @@
   <p>{t(`meIntro_${entry}`)}</p>
   {#if entry !== 'unsure'}
     {#if species}<p class="chosen"><strong>{taxonName(species)}</strong> <i>{species.scientific_name}</i> <Button size="sm" onclick={() => { species = null; clip = null; source = null; }}>{t('changeSpecies')}</Button></p>
-    {:else}<SpeciesChoice {datasetId} onchoose={taxon => species = taxon} />{/if}{/if}
+    {:else}<SpeciesChoice {datasetId} detections={entry === 'species'} onchoose={taxon => species = taxon} />{/if}{/if}
   {#if entry === 'examples' && species}
     <div class="actions" role="group" aria-label={t('wSource')}>{#each ['heard', 'xc', 'file'] as const as name}
       <Button active={from === name} aria-pressed={from === name} pending={name === 'file' && addFile.pending} onclick={() => chooseFrom(name)}>{t(`meFrom_${name}`)}</Button>{/each}</div>
