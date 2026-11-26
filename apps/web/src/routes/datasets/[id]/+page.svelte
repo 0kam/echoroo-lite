@@ -40,7 +40,10 @@
   let heardTotal=$state(0);
   $effect(()=>{const current=id;heardTotal=0;api<{total:number}>(`/datasets/${current}/heard/records?limit=1`).then(value=>{if(current===id)heardTotal=value.total;},()=>{});});
   $effect(()=>{const current=id,scope=result?rangeQuery(result.start_date,result.end_date):'',revision=result?.analysed_recordings;void revision;if(!scope)return;
-    api<RollupSummary>(`/datasets/${current}/rollups?${scope}`).then(value=>{if(current===id)rollups=value;},()=>{});});
+    // While roll-ups are still being found behind the page (a site analysed by an earlier version), the list is asked for again.
+    let timer:ReturnType<typeof setTimeout>|undefined,gone=false;
+    const load=()=>api<RollupSummary>(`/datasets/${current}/rollups?${scope}`).then(value=>{if(gone||current!==id)return;rollups=value;if(value.pending)timer=setTimeout(load,5000);},()=>{});
+    void load();return()=>{gone=true;clearTimeout(timer);};});
   const rollupTotal=$derived(rollups?.families.reduce((sum,row)=>sum+row.sounds,0)??0);
   const listSep=$derived(app.locale==='ja'?'・':', ');
   const analyze=createTask(async()=>{await api('/jobs',{dataset_id:id,recording_id:null});await refreshCatalog();},{toast:true});
@@ -129,7 +132,7 @@
       {/if}{/each}
       {#if !result.species.length}<p>{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</p>{/if}
     </section>
-    {#if rollups?.families.length}<section class="panel"><details class="rollup-box" open={folds.rollups??false} ontoggle={e=>fold('rollups',e.currentTarget.open)}>
+    {#if rollups?.families.length||rollups?.pending}<section class="panel">{#if rollups.pending}<p class="notice" role="status">{fill('ruPending',{n:rollups.pending.toLocaleString(app.locale)})}</p>{/if}<details class="rollup-box" open={folds.rollups??false} ontoggle={e=>fold('rollups',e.currentTarget.open)}>
       <summary><h2>{fill('ruBoxOpen',{n:rollupTotal.toLocaleString(app.locale)})}</h2></summary>
       <p>{t('ruBoxLead')} <strong>{t('ruBoxFamily')}</strong> {t('ruBoxHint')}</p>
       <div class="table-wrap"><table class="rollups"><thead><tr><th>{t('ruColFamily')}</th><th>{t('ruColSounds')}</th><th>{t('ruColGuess')}</th><th></th></tr></thead><tbody>

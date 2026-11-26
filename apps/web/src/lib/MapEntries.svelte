@@ -7,7 +7,7 @@
   export type MapOverlay = { entry: 'unsure' | 'species' | 'examples'; marks: [number, 1 | 2][]; targets: number[]; groups: Group[]; guess: Map<number, Species> };
   // The two answers by ear (drawn with ✓ and × as well, so they never rest on colour alone).
   export const HEARD = '#1565c0', NOT_HEARD = '#5b5670';
-  type Found = { species?: Taxon; groups: Group[]; scattered: number; marks: [number, 1 | 2][]; targets: number[];
+  type Found = { pending?: number; species?: Taxon; groups: Group[]; scattered: number; marks: [number, 1 | 2][]; targets: number[];
     examples?: number; mixed?: number; guesses?: Species[]; guess?: number[] };
   // The page is made anew for every group opened: the last answer is on the new page from its first drawing, so nothing
   // above the map changes height (the layout restores the scroll position), and is read again behind it.
@@ -119,6 +119,7 @@
     {:else if entry === 'examples' && !found.examples}<p class="notice">{found.mixed ? fill('meExMixed', { n: found.mixed }) : t('meExNone')}</p>
     {:else if entry === 'examples'}<p class="muted">{fill('meExTotal', { n: found.examples ?? 0 })}{#if found.mixed}{' '}{fill('meExLeftOut', { n: found.mixed })}{/if}</p>
     {:else if found.targets.length}<p class="muted">{fill('meUnTotal', { n: found.targets.length })}</p>{/if}
+    {#if found.pending}<p class="notice" role="status">{fill('ruPending', { n: found.pending.toLocaleString() })}</p>{/if}
     {#if found.groups.length}<ol>{#each found.groups as group, index (group.node)}<li class:current={group.node === node}>
       <div><strong>{fill('meGroup', { n: 'ABCDEFGHIJ'[index], size: group.size })}</strong><span>{about(group)}</span>{#if answered(group)}<span class="muted">{answered(group)}</span>{/if}</div>
       {#if group.node === node}<span class="shown">{t('meShown')}</span>{:else}<Button size="sm" onclick={() => go(group.node)}>{t('meLook')}</Button>{/if}</li>{/each}</ol>

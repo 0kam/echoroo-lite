@@ -175,6 +175,16 @@ class RollupTest(unittest.TestCase):
                     with connect(data) as db:
                         self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], kept)
                         self.assertEqual(db.execute('SELECT COUNT(*),COUNT(basis) FROM rollup_scans').fetchone()[:], (1, 1))
+                    # When finding them takes longer than a page waits, the rest goes on behind it: the page is told how
+                    # many analyses are left and asks again.
+                    import rollups
+                    with connect(data) as db:
+                        db.execute('UPDATE sites SET latitude=37')
+                    with patch('rollups.SCAN_NOW', 0):
+                        self.assertEqual(client.get('/datasets/1/rollups').json()['pending'], 1)
+                        for thread in list(rollups._scanning.values()):
+                            thread.join(10)
+                    self.assertEqual(client.get('/datasets/1/rollups').json()['pending'], 0)
 
 
 if __name__ == '__main__':

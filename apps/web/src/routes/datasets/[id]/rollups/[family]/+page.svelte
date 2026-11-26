@@ -53,6 +53,7 @@
 <div class="page wide">
   <div class="crumbs"><a href={back}>{t('ruBack')}</a></div>
   <div class="page-header"><div>{#if data}<div class="site-name">{data.site.name}</div>{/if}<h1>{data?rollupTitle(data.family):t('ruBoxTitle')}</h1><p>{t('ruCardHint')}</p></div></div>
+  {#if data?.pending}<p class="notice" role="status">{fill('ruPending',{n:data.pending.toLocaleString(app.locale)})}</p>{/if}
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if data}
     {#if !sound}<section class="panel"><p>{t('ruNone')}</p><Button variant="primary" href={back}>{t('ruBack')}</Button></section>

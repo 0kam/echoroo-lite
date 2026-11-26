@@ -275,10 +275,12 @@ def unsure(root, dataset_id):
     """Entry C: groups with many sounds the AI likely mixed up: its first answer was a bird not usual at the
     site in that season (rollups.py) and the roll-up reaches rollups.AWAY_SCORE, as on the site page's list. `guess`: for each target, in order,
     which of `guesses` the AI answered."""
-    from rollups import AWAY_SCORE, _guess
+    from rollups import AWAY_SCORE, _guess, catch_up
     _, engine, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
+    # The map reads the same roll-ups as the site page; `pending` says how many analyses' are still being found.
+    pending = catch_up(root, dataset_id)
     with connect(root) as db:
         points, nodes, answers = _load(db, run)
         at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
@@ -292,4 +294,4 @@ def unsure(root, dataset_id):
     away = np.zeros(len(points), dtype=bool)
     away[list(labels)] = True
     found, names = _found(points, nodes, answers, away), list(guesses)
-    return {**found, 'guesses': list(guesses.values()), 'guess': [names.index(labels[at]) for at in found['targets']]}
+    return {**found, 'pending': pending, 'guesses': list(guesses.values()), 'guess': [names.index(labels[at]) for at in found['targets']]}
