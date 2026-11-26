@@ -98,6 +98,9 @@ class MapEntryApi(ExploreCheck):
         unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
         self.assertEqual((unsure['targets'], unsure['groups'], unsure['scattered']), (sorted([at[20], at[0]]), [], 2))
         self.assertEqual(([g['scientific_name'] for g in unsure['guesses']], unsure['guess']), (['Strix aluco'], [0, 0]))
+        # Looking for that species by name finds every sound the AI answered with it: here the 0.5 bar does not apply.
+        owl = self.client.get('/species', params={'q': 'Strix aluco'}).json()[0]['id']
+        self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': owl}).json()['targets'], sorted([at[0], at[10], at[20]]))
 
         # The targets come first in a group's list, and each sound says where it is on the map.
         listed = self.client.post('/explore/nodes/0/segments', params={'dataset': 1}, json={'first': unsure['targets']}).json()['segments']

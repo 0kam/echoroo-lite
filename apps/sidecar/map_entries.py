@@ -12,7 +12,7 @@ import numpy as np
 
 from explore import PCA_DIMS, SCORE_THRESHOLD, _current_run
 from labels import LATEST
-from species import names_for
+from species import canonical_scientific_name, names_for
 from storage import CatalogError, connect
 
 NEIGHBOURS = 10  # sounds counted as "near" an example
@@ -129,6 +129,16 @@ def by_species(root, dataset_id, species_id):
     else:
         mine = lambda n: n == name
     detected = np.array([any(score >= SCORE_THRESHOLD for n, score in p['candidates'] if mine(n)) for p in points], dtype=bool)
+    # A species not recorded in Japan is no candidate of a point (those are Japan's birds): it is the AI's first
+    # answer of a roll-up. Nothing is left out here; the display threshold is the only bar, as for Japan's birds.
+    with connect(root) as db:
+        at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
+        for row in db.execute('''SELECT u.analysis_id,u.start_s,u.top_label,a.engine FROM rollups u JOIN analyses a ON a.id=u.analysis_id
+                WHERE u.top_score>=? AND u.analysis_id IN (SELECT value FROM json_each(?))''',
+                (SCORE_THRESHOLD, json.dumps(sorted({p['analysis_id'] for p in points})))):
+            position = at.get((row['analysis_id'], round(row['start_s'], 3)))
+            if position is not None and mine(canonical_scientific_name(row['engine'], row['top_label']) or ''):
+                detected[position] = True
     answers = {position: [(species_id if t == species_id or mine(names.get(t, '')) else t, verdict) for t, verdict in found]
                for position, found in answers.items()}
     return {'species': names_for(taxon), **_found(points, nodes, answers, detected, species_id)}
