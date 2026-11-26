@@ -1,5 +1,6 @@
-"""Ways into the sound map: groups of a suitable size around a species, example sounds, or sounds the AI is unsure of."""
+"""Ways into the sound map: groups of a suitable size around a species, example sounds, or sounds the AI likely mixed up."""
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -89,16 +90,47 @@ class MapEntryApi(ExploreCheck):
         none = self.client.get('/explore/entries/examples', params={'dataset': 1, 'species_id': ids['Horornis diphone']}).json()
         self.assertEqual((none['examples'], none['groups'], none['targets']), (0, [], []))
 
+        # The fixture's AI only answers birds of Japan: no sound is a target, and no group is listed.
         unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
-        from taxa import japan_names
-        weak = [p['position'] for p in points if (c := __import__('json').loads(p['candidates']))
-                and all(s < .1 for n, s in c if n in japan_names())]
-        self.assertEqual(unsure['targets'], sorted(weak))
-        self.assertEqual((unsure['unsure'], unsure['outside'] + unsure['low']), (len(weak), len(weak)))
+        self.assertEqual((unsure['targets'], unsure['groups'], unsure['unsure']), ([], [], 0))
+        self.assertEqual(sorted(unsure['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
+        # Two sounds whose first answer was a bird not recorded in Japan (the roll-ups) are the only targets, best score first;
+        # sounds where no bird reached the threshold (rows 2, 6, ...) stay out.
+        with connect(self.root) as db:
+            analysis = db.execute('SELECT id FROM analyses').fetchone()[0]
+            db.executemany("INSERT INTO rollups VALUES(?,?,?,'Strigidae',?,'Strix aluco',?,NULL)",
+                           [(analysis, 0, 5, .5, .5), (analysis, 20, 25, .9, .9)])
+        unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
+        self.assertEqual((unsure['targets'], unsure['unsure']), ([at[20], at[0]], 2))
+        self.assertEqual(([g['scientific_name'] for g in unsure['guesses']], unsure['guess']), (['Strix aluco'], [0, 0]))
+        self.assertTrue(unsure['groups'])
         self.assertEqual([g['left'] for g in unsure['groups']], sorted((g['left'] for g in unsure['groups']), reverse=True))
         for group in unsure['groups']:
-            self.assertEqual((group['unsure'], group['checked'] + group['left']), (group['outside'] + group['low'], group['unsure']))
-        self.assertEqual(sorted(unsure['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
+            self.assertGreaterEqual(group['unsure'], 1)
+            self.assertEqual(group['checked'] + group['left'], group['unsure'])
+        # The sound at 0 s was answered by ear.
+        self.assertEqual((sum(g['unsure'] for g in unsure['groups']), sum(g['checked'] for g in unsure['groups'])), (2, 1))
+
+        # What was answered in a group, newest first, with where each sound is on the map.
+        recorded = self.client.get('/explore/recorded', params={'dataset': 1, 'node': 0}).json()
+        self.assertEqual([(r['position'], r['verdict'], r['screen']) for r in recorded],
+                         [(at[10], 'absent', 'training'), (at[0], 'present', 'sound_map'), (at[5], 'present', 'species_mark')])
+        part = unsure['groups'][0]
+        inside = self.client.get('/explore/recorded', params={'dataset': 1, 'node': part['node']}).json()
+        self.assertEqual({r['position'] for r in inside}, {r['position'] for r in recorded if part['lo'] <= r['position'] < part['hi']})
+
+        # An example from outside the site (Xeno-Canto or a file): the map's sounds most like the clip, best first.
+        with connect(self.root) as db:
+            vector = np.frombuffer(db.execute('SELECT v.embedding FROM explore_points p JOIN vectors v ON v.rowid=p.segment_id WHERE p.position=7').fetchone()[0], dtype='<f4')
+        clip = {'dataset_id': 1, 'species_id': ids['Zosterops japonicus'], 'source_kind': 'recording', 'source_id': 1, 'start_s': 0, 'end_s': 5}
+        with patch('search.query_embeddings', return_value=([vector.copy()], {})) as embedded:
+            like = self.client.post('/explore/entries/clip', json=clip).json()
+            self.assertEqual((like['targets'][0], len(like['targets']), like['near']), (7, map_entries.CLIP_NEAR, map_entries.CLIP_NEAR))
+            self.assertEqual(sorted(like['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
+            self.assertEqual(sum(g['near'] for g in like['groups']) <= like['near'] and bool(like['groups']), True)
+            # Asked again for the next group opened, the clip is not listened to again.
+            self.client.post('/explore/entries/clip', json=clip)
+            self.assertEqual(embedded.call_count, 1)
         self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1}).status_code, 400)
 
 

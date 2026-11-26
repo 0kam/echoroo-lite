@@ -154,6 +154,11 @@ class SearchRunRequest(BaseModel):
     clips: list[ClipRequest] = Field(min_length=1, max_length=20)
 
 
+class MapClip(ClipRequest):
+    dataset_id: int = Field(ge=1)
+    species_id: str
+
+
 class ExampleRef(BaseModel):
     kind: Literal['named', 'confirmed', 'unverified']
     origin: Literal['quiz', 'xeno-canto', 'search-reference', 'presence', 'validation']
@@ -527,6 +532,20 @@ def create_app(root, models, token):
         if species_id is None:
             raise CatalogError('invalid_input')
         return (map_entries.by_species if entry == 'species' else map_entries.by_examples)(root, dataset, species_id)
+
+    @app.post('/explore/entries/clip')
+    def explore_clip(body: MapClip):
+        import map_entries
+        # Listening to the clip runs the AI, as a search does: not while a job is running.
+        with lock:
+            if worker and worker.is_alive():
+                raise HTTPException(409, 'job_busy')
+            return map_entries.by_clip(root, models, body.dataset_id, body.species_id, body.source_kind, body.source_id, body.start_s, body.end_s)
+
+    @app.get('/explore/recorded')
+    def explore_recorded(dataset: int = Query(ge=1), node: int = Query(ge=0)):
+        import map_entries
+        return map_entries.recorded(root, dataset, node)
 
     @app.get('/explore/points')
     def explore_points(dataset: int = Query(ge=1)):
