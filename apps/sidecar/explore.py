@@ -1,5 +1,6 @@
 """Precomputed PCA sound maps over the current main-engine embeddings."""
 import hashlib
+from functools import lru_cache
 import heapq
 import json
 import shutil
@@ -996,6 +997,24 @@ def points_file(root, dataset_id):
     return path
 
 
+@lru_cache(maxsize=64)
+def _every_class(path, engine, count):
+    return _score_rows(path, engine, count)[2]
+
+
+def _answers(db, rows):
+    """Each shown sound's candidates over every class the AI knows, not only the Japan checklist kept with the map:
+    what is listed beside a sound is what the AI answered. A sound whose scores cannot be read keeps the map's own."""
+    for row in rows:
+        found = db.execute('''SELECT a.scores_path,a.engine,(SELECT COUNT(*) FROM segments WHERE analysis_id=a.id) AS n,
+            (SELECT COUNT(*) FROM segments o WHERE o.analysis_id=a.id AND o.start_s<s.start_s) AS at
+            FROM segments s JOIN analyses a ON a.id=s.analysis_id WHERE s.id=?''', (row['segment_id'],)).fetchone()
+        try:
+            row['candidates'] = _every_class(found['scores_path'], found['engine'], found['n'])[found['at']]
+        except (CatalogError, TypeError, IndexError):
+            pass
+
+
 def _segment_shape(row, species_ids):
     return {**{key: row[key] for key in ('segment_id', 'recording_id', 'path', 'start_s', 'end_s',
                                           'recorded_at', 'timezone')},
@@ -1015,6 +1034,7 @@ def point_segment(root, dataset_id, position):
         if row is None:
             raise CatalogError('not_found')
         row = dict(row); row['candidates'] = json.loads(row['candidates'])
+        _answers(db, [row])
         species_ids = _species_ids(db, [name for name, _ in row['candidates']])
     return _segment_shape(row, species_ids)
 
@@ -1073,6 +1093,7 @@ def node_segments(root, dataset_id, node, offset=0, near=None, first=()):
         rows = [dict(row) for row in rows]
         for row in rows:
             row['candidates'] = json.loads(row['candidates'])
+        _answers(db, rows)
         species_ids = _species_ids(db, [name for row in rows for name, _ in row['candidates']])
     by_position = {row['position']: row for row in rows}
     segments = []

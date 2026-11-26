@@ -206,11 +206,7 @@
   const suggested=(g:Group)=>g.hint_rate<.2?[]:g.top_species;
   const aiHint=(g:Group)=>!suggested(g).length?fill('eNoAiHint',{rate:pct(g.hint_rate)})
     :fill('eAiHint',{list:listOf(g.top_species,s=>s.share),rate:pct(g.hint_rate)});
-  // The candidates are birds of the Japan checklist only. Where the tag beside them names the AI's answer and that
-  // species is not among them (a bird not usual here, or one off the checklist), the line says so; else the two seem to disagree.
-  const besides=(s:Segment)=>s.position!==undefined&&targetAt.has(s.position)&&(overlay.entry==='unsure'
-    ||overlay.entry==='species'&&!!wanted&&wanted.rank!=='family'&&!s.candidates.some(c=>c.scientific_name===wanted!.scientific_name));
-  const candidates=(s:Segment)=>s.candidates.length?fill(besides(s)?'eCandidatesJapan':'eCandidates',{list:listOf(s.candidates,c=>c.score)}):besides(s)?'':t('eNoCandidates');
+  const candidates=(s:Segment)=>s.candidates.length?fill('eCandidates',{list:listOf(s.candidates,c=>c.score)}):t('eNoCandidates');
   const made=(at:string|null)=>at?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium'}).format(new Date(`${at.replace(' ','T')}Z`)):'';
 
   // Scatter: every point is drawn once into an offscreen canvas; pan and zoom move that image and redraw sharply when the gesture pauses.
