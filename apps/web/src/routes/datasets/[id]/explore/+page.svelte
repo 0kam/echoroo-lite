@@ -16,7 +16,6 @@
   import AudioRegion from '$lib/AudioRegion.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
   import MapEntries,{HEARD,NOT_HEARD,type MapOverlay} from '$lib/MapEntries.svelte';
-  import SpeciesChoice from '$lib/SpeciesChoice.svelte';
   import {recordText,taxonName,type HeardRecord,type Taxon,type Verdict} from '$lib/heard';
   import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -61,17 +60,17 @@
   // Sounds collected to save as a ZIP, kept in the sidecar; the last section of the page counts them and what is still blank.
   const picks=pickedSounds(id);void picks.reload();
   // The answer card under the map: what is recorded on the shown sound, and an answer about the species chosen in "where to look".
-  let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null),recorded=$state<HeardRecord[]>([]),answering=$state(false),choosing=$state(false),answerError=$state('');
+  let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null),recorded=$state<HeardRecord[]>([]),answering=$state(false),answerError=$state('');
   // Every answer given by ear on the sounds of the group being viewed, newest first, for the short list beside the map.
   let inGroup=$state<(HeardRecord&{position:number})[]>([]);
   const loadRecorded=()=>{const at=node?.node;if(at!==undefined)api<typeof inGroup>(`/explore/recorded?dataset=${id}&node=${at}`).then(value=>{if(node?.node===at)inGroup=value;},()=>{/* The list keeps what it showed. */});};
   const at=(s:Segment)=>`recording_id=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
-  $effect(()=>{const s=pick;void picks.state.items;untrack(()=>{choosing=false;answerError='';if(!s){recorded=[];return;}
+  $effect(()=>{const s=pick;void picks.state.items;untrack(()=>{answerError='';if(!s){recorded=[];return;}
     api<{now:HeardRecord[]}>(`/datasets/${id}/heard/sound?${at(s)}&blank=true`).then(value=>{if(pick===s)recorded=value.now;},()=>{/* The card still takes an answer. */});});});
   // `species` null: "no bird sound". The mark on the map and the list beside it change at once; the numbers of the open way follow.
   async function answer(s:Segment,species:Taxon|null,verdict:Verdict){answering=true;answerError='';const at=shownAt;
     try{const value=await api<{now:HeardRecord[]}>('/heard/map-answer',{dataset_id:id,recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,...species?{species_id:species.id,verdict}:{verdict:'no_bird'}});
-      if(pick===s)recorded=value.now;choosing=false;
+      if(pick===s)recorded=value.now;
       // The same rule as the sidecar's marks: the chosen species' answer, or without one any species heard, else "not heard" ("no bird sound" too).
       const verdicts=value.now.filter(r=>wanted?r.species.id===wanted.id:r.species.rank!=='none'||r.verdict==='present').map(r=>r.species.rank==='none'?'absent':r.verdict);
       if(verdicts.includes('present'))markAt.set(at,1);else if(verdicts.includes('absent'))markAt.set(at,2);else markAt.delete(at);
@@ -451,16 +450,8 @@
                   <strong>{fill('maTitle',{species:taxonName(wanted)})}</strong>
                   <div class="actions" role="group" aria-label={fill('maTitle',{species:taxonName(wanted)})}>{#each ['present','absent','unknown'] as const as verdict}
                     <Button size="sm" active={mine?.verdict===verdict} aria-pressed={mine?.verdict===verdict} disabled={answering} onclick={()=>answer(s,wanted!,verdict)}>{t(`maV_${verdict}`)}</Button>{/each}</div>
-                {:else if choosing}
-                  <strong>{t('maTitleAny')}</strong>
-                  <SpeciesChoice datasetId={id} onchoose={taxon=>answer(s,taxon,'present')}/>
-                  <Button size="sm" onclick={()=>choosing=false}>{t('maCancel')}</Button>
-                {:else}{@const none=recorded.some(r=>r.species.rank==='none'&&r.verdict==='present')}
-                  <strong>{t('maTitleAny')}</strong>
-                  <div class="actions"><Button size="sm" disabled={answering} onclick={()=>choosing=true}>{t('maChoose')}</Button>
-                    <Button size="sm" active={none} aria-pressed={none} disabled={answering} onclick={()=>answer(s,null,'present')}>{t('ruNotBird')}</Button></div>
                 {/if}
-                <span class="muted">{recorded.length?fill('maNow',{list:recorded.map(recordText).join(t('eSep'))}):t('maNone')}</span>
+                {#if recorded.length}<span class="muted">{fill('maNow',{list:recorded.map(recordText).join(t('eSep'))})}</span>{/if}
                 {#if answerError}<span class="error" role="alert">{t(answerError)}</span>{/if}
               </div>
             {/if}
