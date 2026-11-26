@@ -8,7 +8,8 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,dayRange,fileName,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { fill,focusMissing,missingText,rangeQuery } from '$lib/workflow';
+  import { appHref,fill,focusMissing,missingText,rangeQuery,returnPath } from '$lib/workflow';
+  import HeardBox from '$lib/HeardBox.svelte';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
   import SpeciesPicker from '$lib/SpeciesPicker.svelte';
   import XenoCantoSearch from '$lib/XenoCantoSearch.svelte';
@@ -24,7 +25,9 @@
   let ready=$state(false);
   // Three ways here: a species the AI list lacks (from site results), a species page, or one species' sounds on the picked-sounds page (`picked`: its scientific name).
   const fromSpecies=query.get('species'),fromPicked=query.get('picked'),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','model_id'].includes(key)));
-  const back=fromPicked?{href:resolve(`/datasets/${id}/explore/picked`),label:'sBackPicked'}
+  // The species-AI page sends people here and takes them back.
+  const origin=returnPath(page.url,/^\/datasets\/\d+\/species\/[^/?#]+\/model(\?[^#]*)?$/);
+  const back=origin?{href:appHref(origin),label:'wReturn'}:fromPicked?{href:resolve(`/datasets/${id}/explore/picked`),label:'sBackPicked'}
     :fromSpecies?{href:`${resolve(`/datasets/${id}/species/${fromSpecies}`)}?${speciesState}`,label:'wBackSpecies'}
     :{href:`${resolve(`/datasets/${id}`)}${first&&last?`?${rangeQuery(first,last)}`:''}`,label:'uBackResults'};
   let alive=true;
@@ -57,7 +60,7 @@
     const found=species;
     clips=[];clipsFor='';species=null;source=null;localStorage.removeItem(`echoroo-search-${id}`);ready=false;
     // Next: listen to the search results and confirm the species.
-    await goto(`${resolve(`/datasets/${id}/species/${found.id}/presence`)}?${first&&last?`${rangeQuery(first,last)}&`:''}source=search`);
+    await goto(origin?appHref(origin):`${resolve(`/datasets/${id}/species/${found.id}/presence`)}?${first&&last?`${rangeQuery(first,last)}&`:''}source=search`);
   });
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   onMount(()=>{void(async()=>{try{
@@ -84,6 +87,9 @@
     {#if handed&&species?.id===handed.id}{#if handed.exists}<p class="notice">{t('sPickedExists')} <a href={resolve(`/datasets/${id}/species/${handed.id}`)}>{t('wOpenSpecies')}</a></p>
       {:else}<p class="info">{fill('sPickedAdded',{species:handed.name,n:handed.n})}</p>{/if}{/if}</section>
   {#if species}
+    <!-- Sounds of this species already checked by ear can be the examples, without choosing a file. -->
+    {#if site}{#key species.id}<HeardBox datasetId={id} speciesId={species.id} timezone={site.timezone} hasSearch={false} range={first&&last?rangeQuery(first,last):''} searchHref=""
+      resultsHref={origin?appHref(origin):`${resolve(`/datasets/${id}/species/${species.id}/presence`)}?${first&&last?`${rangeQuery(first,last)}&`:''}source=search`}/>{/key}{/if}
     <section class="panel step-card"><h2>{t('wSource')}</h2>{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
       <Button active={!xc&&!!source} pending={addReference.pending} disabled={search.pending} onclick={()=>{xc=false;if(!isTauri()&&!referencePath.trim())showMissing(true);else addReference.run();}}>{t('referenceFromFile')}</Button></div>
       {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending} aria-invalid={noPath||undefined} aria-describedby={noPath?'path-error':undefined}/></label>

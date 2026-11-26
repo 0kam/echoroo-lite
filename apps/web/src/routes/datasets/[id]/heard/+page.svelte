@@ -64,7 +64,8 @@
     await api('/heard/fix',{dataset_id:id,ids:[row.current_id],action:row.verdict,species_id:null});
     await done(fill('hdSaved',{n:1}));
   },{toast:true});
-  const modelHref=(taxon:Taxon)=>`${resolve(`/datasets/${id}/species/${taxon.id}/model`)}${dates?`?${dates}`:''}`;
+  // The species-AI page can come back here.
+  const modelHref=(taxon:Taxon)=>`${resolve(`/datasets/${id}/species/${taxon.id}/model`)}?${dates?`${dates}&`:''}return=${encodeURIComponent(`/datasets/${id}/heard${dates?`?${dates}`:''}`)}`;
 </script>
 <div class="page wide heard-page">
   <div class="crumbs"><a href={back}>{t('uBackResults')}</a></div>

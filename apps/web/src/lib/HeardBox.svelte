@@ -10,8 +10,9 @@
   import { fill } from './workflow';
   // On a species page: how many sounds were checked by ear, a link to see and put them right, and (while the site
   // has no search for this species) a search for similar sounds from heard sounds the app chose as examples.
-  let { datasetId, speciesId, timezone, hasSearch, range, searchHref, resultsHref }:
-    { datasetId: number; speciesId: string; timezone: string; hasSearch: boolean; range: string; searchHref: string; resultsHref: string } = $props();
+  // `ondone`: stay on the page that shows this box and tell it the search is made (else the results open). No `searchHref`: no link to choosing one's own example.
+  let { datasetId, speciesId, timezone, hasSearch, range, searchHref, resultsHref, ondone }:
+    { datasetId: number; speciesId: string; timezone: string; hasSearch: boolean; range: string; searchHref: string; resultsHref: string; ondone?: () => void } = $props();
   let counts = $state<Counts | null>(null), found = $state<SearchExamples | null>(null), left = $state<number[]>([]);
   $effect(() => { void speciesId;
     api<{ site: Counts }>(`/datasets/${datasetId}/heard?species_id=${encodeURIComponent(speciesId)}`).then(value => counts = value.site, () => {});
@@ -22,7 +23,7 @@
   const search = createTask(async () => {
     await api('/search-runs', { dataset_id: datasetId, species_id: speciesId, start_date: dates.get('start_date'), end_date: dates.get('end_date'),
       clips: examples.map(item => ({ source_kind: 'recording', source_id: item.recording_id, start_s: item.start_s, end_s: item.end_s })) });
-    await goto(resultsHref);
+    if (ondone) ondone(); else await goto(resultsHref);
   });
   const total = $derived(counts ? counts.present + counts.absent + counts.unknown : 0);
 </script>
@@ -35,9 +36,9 @@
         <Button size="sm" disabled={search.pending} onclick={() => left = [...left, item.id]}>{t('hdExRemove')}</Button></div>
         <AudioRegion source={item.source} fixedRange compact start={item.start_s} end={item.end_s} /></article>{/each}
       <div class="actions"><Button variant="primary" pending={search.pending} disabled={!!activeJob()} onclick={() => search.run()}>{search.pending ? t('hdExSearching') : fill('hdExSearch', { n: examples.length })}</Button>
-        <Button href={searchHref} disabled={search.pending}>{t('hdExOwn')}</Button></div>
+        {#if searchHref}<Button href={searchHref} disabled={search.pending}>{t('hdExOwn')}</Button>{/if}</div>
       {#if search.error}<p class="error" role="alert">{t(search.error)}</p>{/if}
-    {:else}<p>{t(found.examples.length ? 'uChooseExample' : 'hdExNone')}</p><div class="actions"><Button href={searchHref}>{t('hdExOwn')}</Button></div>{/if}
+    {:else}<p>{t(found.examples.length ? 'uChooseExample' : 'hdExNone')}</p>{#if searchHref}<div class="actions"><Button href={searchHref}>{t('hdExOwn')}</Button></div>{/if}{/if}
     <details><summary>{t('hdExHow')}</summary><p class="muted">{t('hdExHowText')}</p>
       {#if found.mixed_example}<p class="muted">{fill('hdExMixed', { time: time(found.mixed_example.local_time), species: new Intl.ListFormat(app.locale).format(found.mixed_example.species.map(taxonName)) })}</p>{/if}</details>{/if}
 </section>{/if}

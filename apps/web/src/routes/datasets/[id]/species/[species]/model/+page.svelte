@@ -6,10 +6,11 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { fill,modelIntro,modelName,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
+  import { appHref,fill,modelIntro,modelName,returnPath,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
   import TestSounds from '$lib/TestSounds.svelte';
+  import HeardBox from '$lib/HeardBox.svelte';
   import AiSharing from '$lib/AiSharing.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -85,6 +86,8 @@
     start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(resolve(`/datasets/${id}/validation/${validation.id}`));},{toast:true});
   // Nothing to rank by and nothing to make an AI from yet: the page only points to the search.
   const searchFirst=$derived(!!info&&!source&&!info.can_train&&!model);
+  // The page that led here (the checked-sounds list) can be gone back to; this page passes itself on to the search.
+  const origin=$derived(returnPath(page.url,/^\/datasets\/\d+\/heard(\?[^#]*)?$/)),here=`/datasets/${id}/species/${speciesId}/model?${range}`;
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
   const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(row.local_time));
   const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
@@ -93,7 +96,7 @@
 </script>
 <svelte:window onkeydown={shortcut}/>
 <div class="page">
-  <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
+  <div class="crumbs">{#if origin}<a href={appHref(origin)}>{t('wReturn')}</a>{/if}<a href={back}>{t('wBackSpecies')}</a></div>
   <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{info?fill('customModelTitleFor',{name:commonName(info.species,app.locale)||info.species.scientific_name}):t('customModelTitle')}</h1></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if info}
@@ -107,7 +110,7 @@
       {#if test.complete}<div class="status-box" role="status"><strong>{t('tpReadyTitle')}</strong><p>{fill('tpReadyText',{heard:test.heard,not_heard:test.not_heard})}</p></div>
         <div class="actions"><Button variant="primary" pending={startGrowing.pending} onclick={()=>startGrowing.run()}>{t('tpStart')}</Button></div>
       <!-- Many answers and still short, or nothing left to offer: growing can start with the test sounds found so far. -->
-      {:else if test.answered>=test.ask_after||(!next.pending&&!batch.length)}
+      {:else if test.answered>=test.ask_after||(!next.pending&&!batch.length&&!!source)}
         {#if test.answered}<div class="status-box" role="status"><strong>{fill(few?'tpShortHeardTitle':'tpShortNotHeardTitle',{n:few?test.heard:test.not_heard})}</strong>
           <p>{fill(few?'tpShortHeardText':'tpShortNotHeardText',{answered:test.answered,n:few?test.heard:test.not_heard,aim:few?test.aim_heard:test.aim_not_heard})}</p></div>{/if}
         {#if test.heard>=test.enough}<div class="actions"><Button variant="primary" pending={startGrowing.pending} onclick={()=>startGrowing.run()}>{t('tpEarly')}</Button></div>
@@ -155,7 +158,9 @@
     {#if listed}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
       <!-- Nothing to rank by is a step still to do, not an error. -->
       {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
-        <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
+        <!-- Sounds already checked by ear can be the examples: the search is made here and the sounds to answer appear. -->
+        {#if site}<HeardBox datasetId={id} {speciesId} timezone={site.timezone} hasSearch={false} range={range.toString()} searchHref="" resultsHref="" ondone={()=>next.run()}/>{/if}
+        <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}&return=${encodeURIComponent(here)}`}>{t('sSearchStart')}</Button>
       {:else}
         {#if !model&&info.needed&&!collecting}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
         <p>{t('mdShortIntro')}</p>
