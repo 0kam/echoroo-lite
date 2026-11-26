@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (proposal, not agreed): the score panel on the grow page and how test sounds are drawn (option A, 2026-11-26):
+     test sounds compare rounds, drawn at random from three layers of the similarity ranking; two numbers, details folded.
+     All numbers are examples. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>テスト用の音の成績（見本）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.7 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: #6e6a86; font-size: 14px; }
+  .mockbar { background: #efe7dc; border: 1px dashed #b9ab99; border-radius: 12px; padding: 10px 16px; margin: 0 0 20px; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { white-space: nowrap; min-height: 44px; padding: 6px 16px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; }
+  button[aria-pressed="true"] { background: #f6dede; border-color: #9b4b4b; color: #9b4b4b; font-weight: 600; }
+  .panel { background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 20px 24px; margin: 0 0 16px; }
+  .new { display: inline-block; font-size: 12px; background: #286983; color: #fff; border-radius: 6px; padding: 0 8px; margin-left: 8px; vertical-align: 2px; font-weight: 400; }
+  .scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 0 0 12px; }
+  .score { border: 1px solid #e6ddd3; border-radius: 12px; padding: 14px 18px; background: #fff; }
+  .score .label { font-size: 14px; color: #6e6a86; }
+  .score .big { font-size: 34px; font-weight: 700; line-height: 1.2; }
+  .score .of { font-size: 15px; }
+  .score .change { font-size: 14px; }
+  .up { color: #2f6f4f; } .down { color: #a33a3a; }
+  .bars { display: flex; align-items: flex-end; gap: 6px; height: 54px; margin: 10px 0 24px; }
+  .bars span { flex: 1; max-width: 46px; background: #b9c9d6; border-radius: 4px 4px 0 0; position: relative; }
+  .bars span.now { background: #286983; }
+  .bars span i { position: absolute; left: 0; right: 0; bottom: -20px; text-align: center; font-size: 12px; font-style: normal; color: #6e6a86; }
+  details > summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e6ddd3; font-size: 15px; }
+  th { font-size: 13px; color: #6e6a86; }
+  .meter { display: grid; grid-template-columns: 5em 1fr 6em; gap: 4px 12px; align-items: center; margin: 0 0 12px; }
+  progress { width: 100%; height: 10px; }
+  .sound { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; border-top: 1px solid #e6ddd3; padding: 10px 0; }
+  .tag { font-size: 13px; color: #6e6a86; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mockbar">見本です（数字は例）。<div class="row" style="margin-top:8px" id="tabs"></div></div>
+  <div id="screen"></div>
+</main>
+<script>
+(function () {
+  var NEW = '<span class="new">新しい</span>';
+  function bars(values, flip) {
+    return '<div class="bars" aria-hidden="true">' + values.map(function (v, i) {
+      return '<span class="' + (i === values.length - 1 ? 'now' : '') + '" style="height:' + Math.max(6, v) + '%"><i>' + (i + 1) + '回目</i></span>'; }).join('') + '</div>';
+  }
+  // The panel after three rounds: two numbers, their change, a small history; everything else folded.
+  function panel() {
+    return '<h1>エゾハルゼミ用のAIを育てる</h1><p class="muted">2. 育てる　・　AI：3 回目</p>' +
+      '<section class="panel"><h2>テスト用の音での成績' + NEW + '</h2>' +
+      '<div class="scores">' +
+        '<div class="score"><div class="label">声ありの音を、AI が見つけた割合</div><div class="big">90%</div><div class="of">10 音のうち 9 音</div>' +
+          '<div class="change up">前の回より 2 音ふえた ↑</div>' + bars([50, 70, 90]) + '</div>' +
+        '<div class="score"><div class="label">声なしの音を、AI が誤って「いる」とした割合</div><div class="big">5%</div><div class="of">20 音のうち 1 音</div>' +
+          '<div class="change up">前の回より 1 音へった ↓</div>' + bars([15, 10, 5]) + '</div>' +
+      '</div>' +
+      '<p style="margin-top:28px">左は高いほど、右は低いほど、よい AI です。</p>' +
+      '<p class="muted">作り直すたびに、同じ 30 音で試した結果です。前の回と比べるための数字で、この地点全体での正しさではありません。正しさは「AI の答えを確かめる」で測ります。</p>' +
+      '<details><summary>くわしく見る</summary>' +
+        '<table><tr><th>AI</th><th>声あり 10 音のうち、見つけた</th><th>声なし 20 音のうち、誤って「いる」とした</th></tr>' +
+        '<tr><td>1 回目</td><td>5 音</td><td>3 音</td></tr><tr><td>2 回目</td><td>7 音</td><td>2 音</td></tr><tr><td><strong>3 回目（今の AI）</strong></td><td>9 音</td><td>1 音</td></tr></table>' +
+        '<p class="muted">AI の点数が 0.5 以上の音を「見つけた」と数えています。テスト用の音は、育て始める前に答えた 30 音です。あとから答えた音は入りません。' + NEW + '</p>' +
+        '<div class="row"><button type="button">今の AI が見逃した 1 音を聞く</button><button type="button">誤って「いる」とした 1 音を聞く</button><button type="button">テスト用にしている録音（24 本）</button></div>' +
+      '</details></section>';
+  }
+  // Stage 1: ten sounds per batch, drawn at random from three layers of the ranking; the mix follows what is still short.
+  function drawing() {
+    function s(time, tag) { return '<div class="sound"><span>' + time + '　▶ 聞く　<span class="tag">' + tag + '</span></span><span class="row"><button type="button">声あり</button><button type="button">声なし</button><button type="button">わからない</button></span></div>'; }
+    return '<h1>エゾハルゼミ用のAIを育てる</h1><p class="muted">1. テスト用の音を作る</p>' +
+      '<section class="panel"><h2>テスト用の音</h2><p>育てる前に、AI を試すための音を先に集めます。作り直すたびに、この同じ音で AI を試します。</p>' +
+      '<div class="meter"><span>声あり</span><progress max="10" value="6"></progress><span>6 / 10 音</span><span>声なし</span><progress max="20" value="4"></progress><span>4 / 20 音</span></div>' +
+      '<p class="muted">お手本に「よく似ている音」「中くらいの音」「似ていない音」のそれぞれから、くじ引きで選んで出しています。足りない方が多く出るように、割合を変えます。' + NEW + '</p></section>' +
+      '<section class="panel"><h2>次に答える音</h2><p>聞いて「声あり」か「声なし」を、迷ったら「わからない」を押してください。</p>' +
+      s('2025/07/13 14:34:00', 'よく似ている音') + s('2025/07/12 10:02:15', 'よく似ている音') + s('2025/07/11 09:31:40', '中くらいの音') +
+      s('2025/07/13 05:03:20', '中くらいの音') + s('2025/07/12 22:31:05', '似ていない音') + s('2025/07/11 02:00:35', '似ていない音') +
+      '<p class="muted" style="margin-top:12px">…ほか 4 音（この回は、声なしが足りないので「似ていない音」を 5 音にしています）</p></section>';
+  }
+  var screens = [['成績のパネル', panel], ['テスト用の音の出し方', drawing]], current = 0;
+  function draw() {
+    document.getElementById('tabs').innerHTML = screens.map(function (x, i) { return '<button type="button" data-i="' + i + '" aria-pressed="' + (i === current) + '">' + x[0] + '</button>'; }).join('');
+    document.getElementById('screen').innerHTML = screens[current][1]();
+  }
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-i]'); if (b) { current = +b.dataset.i; draw(); } });
+  draw();
+})();
+</script>
+</body>
+</html>
