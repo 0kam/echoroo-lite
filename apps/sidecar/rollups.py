@@ -1,10 +1,12 @@
 """Sounds an AI answered with a bird not recorded in Japan, shown as their family and asked to the user.
 
 A window is rolled up when the AI's first answer over all classes is a bird outside the Japan checklist and its
-family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are found once and kept.
+family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are found once and kept
+with their scores; only those reaching AWAY_SCORE are shown, on the site's list, the family pages and the sound map.
 The user's answer is a label with source `rollup_fix`: the species they heard (evidence and species-AI material
-like any other "present"), or the family row itself when the answer stops there: present ("this family, species
-unknown"), absent ("not a bird") or unknown.
+like any other "present"), the family row itself when the answer stops there: present ("this family, species
+unknown") or unknown, or "no bird sound" (`labels.put_no_bird`; older data: the family row, absent).
+Families without a species on the Japan checklist are shown together under the reserved family key NO_JAPAN.
 """
 import json
 from zoneinfo import ZoneInfo
@@ -24,6 +26,10 @@ SCHEMA = '''
     CREATE TABLE IF NOT EXISTS rollup_scans (analysis_id INTEGER PRIMARY KEY REFERENCES analyses);
 '''
 KINDS = ('species', 'family', 'not_bird', 'unknown')
+NO_JAPAN = '_none'
+# A roll-up is shown from this family score. A rule of thumb to review with users' data: at the display threshold
+# (0.1) 29% of one site's sounds were shown, most of them near silence; at 0.5, about 1%.
+AWAY_SCORE = 0.5
 LATEST = '''a.id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)'''
 
 
@@ -49,8 +55,8 @@ def scan(root, dataset_id):
 
 
 def _sounds(root, db, ctx, family=None):
-    """Rolled-up sounds of the shown AIs in the period, one per recording interval and family, best score first,
-    each with the current answer."""
+    """Rolled-up sounds of the shown AIs in the period, one per recording interval and family, best score first
+    (ties in recording order), each with the current answer."""
     from reports import window_in_scope
     zone = ZoneInfo(ctx['site']['timezone'])
     dataset_id = ctx['dataset']['id']
@@ -58,8 +64,8 @@ def _sounds(root, db, ctx, family=None):
     records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))}
     sounds = {}
     for row in db.execute(f'''SELECT u.*,a.recording_id,a.engine FROM rollups u JOIN analyses a ON a.id=u.analysis_id
-            JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND {LATEST} AND (? IS NULL OR u.family=?)
-            ORDER BY u.score DESC''', (dataset_id, family, family)):
+            JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND {LATEST} AND u.score>=? AND (? IS NULL OR u.family=?)
+            ORDER BY u.score DESC,a.recording_id,u.start_s''', (dataset_id, AWAY_SCORE, family, family)):
         record = records[row['recording_id']]
         if row['engine'] not in engines or not window_in_scope(record, row['start_s'], row['end_s'], zone,
                                                                  ctx['start_date'], ctx['end_date']):
@@ -70,13 +76,17 @@ def _sounds(root, db, ctx, family=None):
             'top_engine': row['engine'], 'japan_label': row['japan_label'], 'source_path': record['path'], 'seconds': record['seconds'], 'answer': None})
         sound['engines'].append(row['engine'])
     families = {r['id']: r['scientific_name'] for r in db.execute("SELECT id,scientific_name FROM species WHERE rank='family'")}
+    none = labels.no_bird(db)
     for row in db.execute('''SELECT l.* FROM labels l JOIN site_recordings r ON r.id=l.recording_id
             WHERE r.scope_id=? AND l.source='rollup_fix' ORDER BY l.id''', (dataset_id,)):
         data = labels.ref(row)
         sound = sounds.get((row['recording_id'], row['start_s'], row['end_s'], data.get('family')))
         if sound is None:
             continue
-        if row['taxon_id'] in families:
+        if row['taxon_id'] == none:
+            sound['answer'] = {'kind': 'not_bird', 'species': None}
+        elif row['taxon_id'] in families:
+            # 'absent': how "no bird sound" was stored before it had its own record.
             kind = {'present': 'family', 'absent': 'not_bird', 'unknown': 'unknown'}[row['verdict']]
             sound['answer'] = {'kind': kind, 'species': None}
         else:
@@ -92,6 +102,15 @@ def _family(db, family):
     return row
 
 
+def _japan_species(db):
+    """The Japan checklist's species rows, by family."""
+    japan, found = japan_names(), {}
+    for row in db.execute("SELECT * FROM species WHERE rank='species' AND accepted_id IS NULL"):
+        if row['scientific_name'] in japan:
+            found.setdefault(family_of(row['scientific_name']), []).append(row)
+    return found
+
+
 def _guess(db, sound):
     """The species the AI answered, with its names where the app knows them."""
     name = canonical_scientific_name(sound['top_engine'], sound['top_label']) or sound['top_label'].partition('_')[0]
@@ -101,29 +120,41 @@ def _guess(db, sound):
 
 def summary(root, dataset_id, first=None, last=None):
     """Per family: how many sounds were rolled up to it, how many still wait for an answer, and the two species
-    the AI answered most often."""
+    the AI answered most often. Families without a Japan species share one last row (`family` None) that names
+    its two largest families."""
     from results_workflow import context
     ctx = context(root, dataset_id, first, last)
     scan(root, dataset_id)
     with connect(root) as db:
-        rows, guesses = {}, {}
+        rows, guesses, away, home = {}, {}, {}, _japan_species(db)
         for sound in _sounds(root, db, ctx):
-            row = rows.setdefault(sound['family'], {'family': names_for(_family(db, sound['family'])), 'sounds': 0, 'left': 0})
+            family = sound['family'] if sound['family'] in home else NO_JAPAN
+            row = rows.setdefault(family, {'family': names_for(_family(db, family)) if family != NO_JAPAN else None, 'sounds': 0, 'left': 0})
             row['sounds'] += 1
             row['left'] += sound['answer'] is None
-            counts = guesses.setdefault(sound['family'], {})
+            if family == NO_JAPAN:
+                away[sound['family']] = away.get(sound['family'], 0) + 1
+            counts = guesses.setdefault(family, {})
             key = (sound['top_engine'], sound['top_label'])
             counts[key] = counts.get(key, 0) + 1
         for family, row in rows.items():
-            best = sorted(guesses[family], key=lambda key: -guesses[family][key])[:2]
-            row['guesses'] = [_guess(db, {'top_engine': engine, 'top_label': label}) for engine, label in best]
+            # Two AIs naming the same species count as one guess.
+            named = {}
+            for (engine, label), count in guesses[family].items():
+                guess = _guess(db, {'top_engine': engine, 'top_label': label})
+                named.setdefault(guess['scientific_name'], [guess, 0])[1] += count
+            row['guesses'] = [guess for guess, _ in sorted(named.values(), key=lambda pair: -pair[1])[:2]]
+        merged = rows.pop(NO_JAPAN, None)
+        if merged:
+            merged['families'] = len(away)
+            merged['examples'] = [names_for(_family(db, name)) for name in sorted(away, key=lambda name: (-away[name], name))[:2]]
     return {'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
-            'families': sorted(rows.values(), key=lambda r: (-r['sounds'], r['family']['scientific_name']))}
+            'families': sorted(rows.values(), key=lambda r: (-r['sounds'], r['family']['scientific_name'])) + ([merged] if merged else [])}
 
 
 def family_sounds(root, dataset_id, family, first=None, last=None):
-    """One family's sounds (unanswered first), the Japan species of the family to choose from, and the AI's own
-    answer for each sound."""
+    """One family's sounds (the AI's best score first), the Japan species of the family to choose from, and the AI's
+    own answer for each sound. NO_JAPAN gives the sounds of every family without a Japan species, with no choices."""
     from results_workflow import context
     ctx = context(root, dataset_id, first, last)
     scan(root, dataset_id)
@@ -131,11 +162,12 @@ def family_sounds(root, dataset_id, family, first=None, last=None):
     zone = ZoneInfo(ctx['site']['timezone'])
     with connect(root) as db:
         records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))}
-        taxon = names_for(_family(db, family))
-        japan = japan_names()
-        choices = [names_for(r) for r in db.execute("SELECT * FROM species WHERE rank='species' AND accepted_id IS NULL")
-                   if r['scientific_name'] in japan and family_of(r['scientific_name']) == family]
-        sounds = _sounds(root, db, ctx, family)
+        home = _japan_species(db)
+        merged = family == NO_JAPAN
+        taxon = None if merged else names_for(_family(db, family))
+        choices = [names_for(r) for r in home.get(family, [])]
+        # The order depends on the scores alone, so a sound keeps its place whatever was answered.
+        sounds = [s for s in _sounds(root, db, ctx) if s['family'] not in home] if merged else _sounds(root, db, ctx, family)
         offered = {choice['id'] for choice in choices}
         for sound in sounds:
             sound['guess'] = _guess(db, sound)
@@ -144,8 +176,6 @@ def family_sounds(root, dataset_id, family, first=None, last=None):
             sound['japan_guess'] = home if home and home['id'] and home['id'] not in offered else None
             del sound['top_label'], sound['top_engine'], sound['japan_label']
             sound['local_time'] = window_key(records[sound['recording_id']], sound['start_s'], zone)[1]
-    # In recording order, so a sound keeps its place whatever was answered.
-    sounds.sort(key=lambda s: (s['local_time'], s['recording_id'], s['start_s']))
     # Species already confirmed by listening at this site come first, then those the range model expects here; the
     # rest follow by name. An AI detection nobody checked gives no priority. `likely` marks the first two groups.
     from results_workflow import region_statuses
@@ -180,8 +210,13 @@ def answer(root, body):
         # One answer per sound: an earlier one, whatever it named, is replaced.
         db.execute('''DELETE FROM labels WHERE source='rollup_fix' AND recording_id=? AND start_s=? AND end_s=?
             AND json_extract(source_ref,'$.family')=?''', (body.recording_id, body.start_s, body.end_s, body.family))
-        if body.kind is not None:
-            verdict = {'species': 'present', 'family': 'present', 'not_bird': 'absent', 'unknown': 'unknown'}[body.kind]
-            labels.put(db, taxon, body.recording_id, body.start_s, body.end_s, verdict, 'rollup_fix',
-                       {'family': body.family, 'ai_answer': rolled[0]['top_label'], 'engines': [r['engine'] for r in rolled]})
+        note = {'family': body.family, 'ai_answer': rolled[0]['top_label'], 'engines': [r['engine'] for r in rolled]}
+        if body.kind == 'not_bird':
+            from validation import refresh
+            for heard in labels.put_no_bird(db, body.recording_id, body.start_s, body.end_s, 'rollup_fix', note):
+                refresh(root, db, heard, body.recording_id, body.start_s, body.end_s)
+            db.execute('DELETE FROM workflow_cache')
+        elif body.kind is not None:
+            verdict = {'species': 'present', 'family': 'present', 'unknown': 'unknown'}[body.kind]
+            labels.put(db, taxon, body.recording_id, body.start_s, body.end_s, verdict, 'rollup_fix', note)
     return {'kind': body.kind}

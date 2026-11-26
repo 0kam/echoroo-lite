@@ -1,6 +1,8 @@
 <script lang="ts" module>
   // Back and forward walk the groups viewed on each map. The page remounts on every group change, so the list lives here until the app closes.
   const visits=new Map<number,{created_at:string;stack:number[];index:number}>();
+  // A sound clicked outside the group being viewed: the page made for its group shows and plays it.
+  let carry=-1;
 </script>
 <script lang="ts">
   import { resolve } from '$app/paths';
@@ -15,20 +17,20 @@
   import JobStatus from '$lib/JobStatus.svelte';
   import MapEntries,{HEARD,NOT_HEARD,type MapOverlay} from '$lib/MapEntries.svelte';
   import SpeciesChoice from '$lib/SpeciesChoice.svelte';
-  import {taxonName,verdictText,type HeardRecord,type Taxon,type Verdict} from '$lib/heard';
+  import {recordText,taxonName,type HeardRecord,type Taxon,type Verdict} from '$lib/heard';
   import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  type Segment={segment_id:number;recording_id:number;path:string;start_s:number;end_s:number;recorded_at:string;timezone:string;candidates:(Named&{score:number})[]};
+  type Segment={position?:number;segment_id:number;recording_id:number;path:string;start_s:number;end_s:number;recorded_at:string;timezone:string;candidates:(Named&{score:number})[]};
   // Points come in tree order, so the sounds of every group are the positions lo..hi-1 of the point arrays.
   type Group={node:number;name:string;size:number;lo:number;hi:number;child_count:number;rep:{start_s:number;end_s:number};hint_rate:number;top_species:(Named&{share:number})[]};
   type Status={status:'none'|'building'|'ready'|'stale';stale_reason?:'data'|'method';created_at:string|null;engine:string;segment_count:number;last_error?:string;node?:Group;path?:{node:number;name:string}[];children?:Group[]};
   type Page={total:number;segments:Segment[]};
-  // `anchor`: the position the sounds are sorted around, or -1 for the group's centre.
-  type List=Page&{pending:boolean;error:string;anchor:number};
+  // `anchor`: the order the sounds were loaded in (see `anchorOf`).
+  type List=Page&{pending:boolean;error:string;anchor:string};
   type Points={n:number;x:Float32Array;y:Float32Array;box:[number,number,number,number]};
-  const id=Number(page.params.id),PAGE=20,MAX_ZOOM=1000,draftKey=`echoroo-explore:${id}`;
+  const id=Number(page.params.id),PAGE=20,MAX_ZOOM=10000,draftKey=`echoroo-explore:${id}`;
   const site=$derived(siteOf(datasetOf(id)));
   // Group species were dropped; clear what older versions kept in this browser.
   try{localStorage.removeItem(`echoroo-explore-species:${id}`);}catch{/* Private windows may refuse storage. */}
@@ -52,24 +54,36 @@
   let pickAt=$state(-1),pick=$state<Segment|null>(null),shownAt=$state(-1),pickError=$state(''),autoplayPick=$state(true);
   let watched=$state<number|null>(null),transformed=$state(false),canBack=$state(false),canForward=$state(false);
   // Sounds in a group are listed nearest to the current sound; until a dot is clicked, nearest to the group's centre.
-  const anchorOf=()=>pickAt;
+  // The sounds the open way points at come first; `order` counts its changes, so the shown lists are sorted again.
+  let order=$state(0);
+  const anchorOf=()=>`${pickAt}:${order}`;
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
-  // Sounds picked for export, saved in the sidecar; the line under the map counts them and what is still blank.
+  // Sounds collected to save as a ZIP, kept in the sidecar; the last section of the page counts them and what is still blank.
   const picks=pickedSounds(id);void picks.reload();
   // The answer card under the map: what is recorded on the shown sound, and an answer about the species chosen in "where to look".
   let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null),recorded=$state<HeardRecord[]>([]),answering=$state(false),choosing=$state(false),answerError=$state('');
+  // Every answer given by ear on the sounds of the group being viewed, newest first, for the short list beside the map.
+  let inGroup=$state<(HeardRecord&{position:number})[]>([]);
+  const loadRecorded=()=>{const at=node?.node;if(at!==undefined)api<typeof inGroup>(`/explore/recorded?dataset=${id}&node=${at}`).then(value=>{if(node?.node===at)inGroup=value;},()=>{/* The list keeps what it showed. */});};
   const at=(s:Segment)=>`recording_id=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
   $effect(()=>{const s=pick;void picks.state.items;untrack(()=>{choosing=false;answerError='';if(!s){recorded=[];return;}
     api<{now:HeardRecord[]}>(`/datasets/${id}/heard/sound?${at(s)}&blank=true`).then(value=>{if(pick===s)recorded=value.now;},()=>{/* The card still takes an answer. */});});});
-  async function answer(s:Segment,species:Taxon,verdict:Verdict){answering=true;answerError='';
-    try{const value=await api<{now:HeardRecord[]}>('/heard/map-answer',{dataset_id:id,recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,species_id:species.id,verdict});
-      if(pick===s)recorded=value.now;choosing=false;entries?.refresh();
+  // `species` null: "no bird sound". The mark on the map and the list beside it change at once; the numbers of the open way follow.
+  async function answer(s:Segment,species:Taxon|null,verdict:Verdict){answering=true;answerError='';const at=shownAt;
+    try{const value=await api<{now:HeardRecord[]}>('/heard/map-answer',{dataset_id:id,recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,...species?{species_id:species.id,verdict}:{verdict:'no_bird'}});
+      if(pick===s)recorded=value.now;choosing=false;
+      // The same rule as the sidecar's marks: the chosen species' answer, or without one any species heard, else "not heard" ("no bird sound" too).
+      const verdicts=value.now.filter(r=>wanted?r.species.id===wanted.id:r.species.rank!=='none'||r.verdict==='present').map(r=>r.species.rank==='none'?'absent':r.verdict);
+      if(verdicts.includes('present'))markAt.set(at,1);else if(verdicts.includes('absent'))markAt.set(at,2);else markAt.delete(at);
+      blit();loadRecorded();entries?.refresh();
     }catch(e){answerError=e instanceof Error?e.message:'unknown_error';}finally{answering=false;}}
   // Species entered on a ticked sound change the map's marks too.
   let pickedNow='';
   $effect(()=>{const now=JSON.stringify(Object.values(picks.state.items).map(i=>[i.recording_id,i.start_s,i.species?.id,i.background.map(b=>b.id)]));
-    untrack(()=>{if(pickedNow&&pickedNow!==now)entries?.refresh();pickedNow=now;});});
-  function look(target:number){void go(target).then(()=>setTimeout(()=>document.querySelector('.map-panel')?.scrollIntoView({block:'start',behavior:'smooth'}),50));}
+    untrack(()=>{if(pickedNow&&pickedNow!==now){entries?.refresh();loadRecorded();}pickedNow=now;});});
+  // "Look here" and the map's flags go into a group. The map is brought into view before the move: the layout keeps
+  // the scroll position over the page made anew for the group, so the map is in view there and stays.
+  function enter(target:number){document.querySelector('.explore')?.scrollIntoView({block:'start'});void go(target);}
   const tally=$derived.by(()=>{const items=Object.values(picks.state.items);return {n:items.length,blanks:blanks(items)};});
   const recent=$derived(recentSpecies(Object.values(picks.state.items)));
   const job=$derived(activeJob());
@@ -101,13 +115,14 @@
       if(visited.stack[visited.index]!==next.node.node){visited.stack=[...visited.stack.slice(0,visited.index+1),next.node.node];visited.index=visited.stack.length-1;}
       canBack=visited.index>0;canForward=visited.index<visited.stack.length-1;
       if(fresh||moved){
-        selected=null;open={};pickAt=-1;pick=null;quietUntil=performance.now()+400;
+        selected=null;open={};pickAt=-1;pick=null;quietUntil=performance.now()+400;inGroup=[];loadRecorded();
         const kept=draft?.created_at===next.created_at?draft:null,saved=kept?.node===next.node.node?kept.loaded??{}:{};draft=null;
-        // The sound chosen before going inside (or before leaving the page) stays chosen when it is in this group, without playing again.
-        const was=kept?.pick??-1;
-        if(was>=next.node.lo&&was<next.node.hi){const at=(next.children??[]).findIndex(c=>c.lo<=was&&was<c.hi);selected=at<0?null:at;void choose(was,false);
-          // Going inside with a chosen sound opens the smaller group it belongs to, as a click would.
-          if(at>=0&&!Object.keys(saved).length){open[next.children![at].node]=true;bringUp(next.children![at].node);}}
+        // The sound chosen before going inside (or before leaving the page) stays chosen when it is in this group, without playing again;
+        // a sound clicked outside the group that was viewed plays, as any clicked sound.
+        const was=carry>=0?carry:kept?.pick??-1,play=carry>=0;carry=-1;
+        if(was>=next.node.lo&&was<next.node.hi){const at=(next.children??[]).findIndex(c=>c.lo<=was&&was<c.hi);selected=at<0?null:at;void choose(was,play);
+          // Going inside with a chosen sound opens the smaller group it belongs to, without scrolling away from the map.
+          if(at>=0&&!Object.keys(saved).length)open[next.children![at].node]=true;}
         // A group that is not divided further shows its own sounds instead of rows.
         if(!next.children?.length)void loadList(next.node.node,saved[next.node.node]);
         for(const c of next.children??[])if(saved[c.node]){open[c.node]=true;void loadList(c.node,saved[c.node]);}
@@ -127,14 +142,14 @@
   const build=createTask(async()=>{watched=(await api<{id:number}>('/explore',{dataset_id:id})).id;await refreshCatalog();if(nodeId)void go(0);});
   // Loads a group's sounds in order until `count` are loaded or none are left.
   async function loadList(at:number,count=PAGE){
-    const anchor=anchorOf();
+    const anchor=anchorOf(),near=pickAt,group=[node,...children].find(g=>g?.node===at),first=group?matching(group):[];
     lists[at]??={total:0,segments:[],pending:false,error:'',anchor};
     const list=lists[at],sorted=list.anchor!==anchor;
     if(list.pending||!sorted&&list.segments.length>=Math.max(1,Math.min(count,list.total)))return;
     list.pending=true;list.error='';
     // A new order loads aside and replaces the shown sounds at once, so the rows never shrink while loading.
     const segments=sorted?[]:[...list.segments];let total=list.total;
-    try{do{const next=await api<Page>(`/explore/nodes/${at}/segments?dataset=${id}&offset=${segments.length}${anchor>=0?`&near=${anchor}`:''}`);
+    try{do{const next=await api<Page>(`/explore/nodes/${at}/segments?dataset=${id}&offset=${segments.length}${near>=0?`&near=${near}`:''}`,first.length?{first}:undefined);
         total=next.total;segments.push(...next.segments);askNames(next.segments.flatMap(s=>s.candidates));
         if(!next.segments.length)break;
       }while(segments.length<Math.min(Math.max(count,PAGE),total));
@@ -157,7 +172,7 @@
       if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
-  // Ticking a sound adds it for export with nothing filled in; unticking removes it and its labels.
+  // Ticking a sound collects it with nothing filled in; unticking removes it and its labels.
   function pickSound(s:Segment,checked:boolean){
     if(!checked){void picks.remove(s);return;}
     void picks.save({recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,path:s.path,recorded_at:s.recorded_at,timezone:s.timezone,
@@ -176,6 +191,7 @@
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
   // A fixed range only plays start–end, so the clip end stands in for the recording length.
   const sourceOf=(s:Segment)=>({id:s.recording_id,kind:'recording' as const,path:s.path,seconds:s.end_s});
+  const heardAt=(local:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(local));
   const when=(s:Segment)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
   const pct=(share:number,digits=0)=>new Intl.NumberFormat(app.locale,{style:'percent',maximumFractionDigits:digits}).format(share);
   const groupName=(g:{node:number;name:string})=>g.name?fill('eGroup',{n:g.name}):t('eWhole');
@@ -199,8 +215,32 @@
   let view={k:1,tx:0,ty:0},drawn={k:1,tx:0,ty:0},drag:{x:number;y:number;tx:number;ty:number;moved:boolean}|null=null;
   // Where each child's numbered badge goes: the median of its points, in map coordinates.
   let marks:{x:number;y:number}[]=[];
-  // From the ways into the map: answers given by ear, the sounds the open way points at, and example sounds.
-  let overlay:MapOverlay={marks:[],targets:[],examples:[]};
+  // From the ways into the map: answers given by ear, the sounds the open way points at (its targets) and the groups it suggests.
+  let overlay=$state.raw<MapOverlay>({entry:'unsure',marks:[],targets:[],groups:[],guess:new Map()});
+  // The same, by position: the mark of each answered sound (changed at once by an answer on this page) and which sounds are targets.
+  let markAt=new Map<number,1|2>();
+  const targetAt=$derived(new Set(overlay.targets));
+  const matching=(g:{lo:number;hi:number})=>overlay.targets.filter(i=>i>=g.lo&&i<g.hi);
+  // The whole map is the overview: its points keep their group colours and the suggested groups carry flags. Inside a group
+  // (or on a map so small that the whole of it is the suggestion) the group's targets are drawn a little larger.
+  const inside=$derived(!!node&&(node.node!==0||overlay.groups.some(g=>g.node===0))&&matching(node).length>0);
+  // Suggested groups get a flag, lettered as in the list; not the group being viewed or one around it: the user is there already.
+  const offered=$derived(node?overlay.groups.map((g,index)=>({...g,letter:'ABCDEFGHIJ'[index]})).filter(g=>!(g.lo<=node.lo&&node.hi<=g.hi)):[]);
+  // What the open way says about a sound, shown beside it in the lists and under the map.
+  const badge=(at:number|undefined)=>{if(at===undefined||!targetAt.has(at))return '';const guess=overlay.guess.get(at);
+    return overlay.entry==='examples'?t('meBadge_examples'):overlay.entry==='species'?wanted?fill('meBadge_species',{name:taxonName(wanted)}):''
+      :guess?fill('meBadge_unsure',{name:commonName(guess,app.locale)||guess.scientific_name}):'';};
+  // Each flag in map coordinates: the middle of the group's points and half the width and height of their middle 90%, so a few far points do not stretch it.
+  let flags:{node:number;letter:string;x:number;y:number;rx:number;ry:number}[]=[];
+  function plant(){const all=points;flags=!all?[]:offered.map(g=>{
+    const span=(values:Float32Array)=>{const sorted=values.slice(g.lo,g.hi).sort(),a=sorted[Math.floor(sorted.length*.05)],b=sorted[Math.ceil(sorted.length*.95)-1];return [(a+b)/2,(b-a)/2];};
+    const [x,rx]=span(all.x),[y,ry]=span(all.y);return {node:g.node,letter:g.letter,x,y,rx,ry};});}
+  // On the canvas: a dashed ring around the group and the lettered badge on its upper right.
+  const ring=(flag:typeof flags[number],{ratio,x0,y0,sx,sy,ox,oy}:ReturnType<typeof frame>)=>{
+    const cx=ox+(flag.x-x0)*sx,cy=oy-(flag.y-y0)*sy,rx=1.4*flag.rx*sx+12*ratio,ry=1.4*flag.ry*sy+12*ratio;const r=13*ratio,keep=(v:number,size:number)=>Math.min(Math.max(v,r+2*ratio),size-r-2*ratio);
+    // A group at the map's edge keeps its letter inside the picture.
+    return {cx,cy,rx,ry,bx:keep(cx+.7*rx,canvas!.width),by:keep(cy-.7*ry,canvas!.height),r};};
+  function overlayed(value:MapOverlay){const before=overlay.targets.join();overlay=value;markAt=new Map(value.marks);if(before!==value.targets.join())order++;plant();render();}
   async function loadPoints(status:Status){
     pointsError='';
     try{const buffer=await api<ArrayBuffer>(`/explore/points?dataset=${id}`,undefined,'GET',true);
@@ -222,7 +262,7 @@
   function fly(animate:boolean){
     if(!points||!canvas||!node)return;
     const {x,y}=points,{width,height}=canvas,base=frame(canvas,points,{k:1,tx:0,ty:0});
-    marks=children.map(c=>({x:median(x.subarray(c.lo,c.hi)),y:median(y.subarray(c.lo,c.hi))}));
+    marks=children.map(c=>({x:median(x.subarray(c.lo,c.hi)),y:median(y.subarray(c.lo,c.hi))}));plant();
     let left=Infinity,right=-Infinity,bottom=Infinity,top=-Infinity;
     for(let i=node.lo;i<node.hi;i++){left=Math.min(left,x[i]);right=Math.max(right,x[i]);bottom=Math.min(bottom,y[i]);top=Math.max(top,y[i]);}
     // The group's box in base pixels (k = 1, t = 0); canvas y grows downwards.
@@ -241,16 +281,20 @@
     animation=requestAnimationFrame(step);
   }
   // The group being viewed is coloured by its smaller groups; every other point stays faint for context.
+  // Inside a group, the sounds the open way points at are a little larger, in their group's own colour with a thin white edge.
   function render(){
     if(!points||!canvas||!offscreen||!node)return;
     const {n,x,y}=points,{ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),context=offscreen.getContext('2d')!;
-    offscreen.width=canvas.width;offscreen.height=canvas.height;
+    offscreen.width=canvas.width;offscreen.height=canvas.height;context.strokeStyle='#fff';context.lineWidth=ratio;
     const dots=(lo:number,hi:number,size:number)=>{for(let i=lo;i<hi;i++)context.fillRect(ox+(x[i]-x0)*sx-size/2,oy-(y[i]-y0)*sy-size/2,size,size);};
-    const paint=(index:number,alpha:number)=>{context.globalAlpha=alpha;context.fillStyle=palette[index%palette.length];dots(children[index].lo,children[index].hi,3*ratio);};
+    const larger=(lo:number,hi:number)=>{if(inside)for(let i=lo;i<hi;i++)if(targetAt.has(i)){context.beginPath();context.arc(ox+(x[i]-x0)*sx,oy-(y[i]-y0)*sy,3.5*ratio,0,2*Math.PI);context.fill();context.stroke();}};
+    const paint=(index:number,draw:(lo:number,hi:number)=>void)=>{context.globalAlpha=selected===null?.8:index===selected?.9:.15;context.fillStyle=palette[index%palette.length];draw(children[index].lo,children[index].hi);};
     context.globalAlpha=.1;context.fillStyle=getComputedStyle(canvas).color;dots(0,node.lo,2*ratio);dots(node.hi,n,2*ratio);
-    if(!children.length){context.globalAlpha=.8;context.fillStyle=palette[0];dots(node.lo,node.hi,4*ratio);}
-    children.forEach((_,index)=>{if(index!==selected)paint(index,selected===null?.8:.15);});
-    if(selected!==null&&children[selected])paint(selected,.9);
+    if(!children.length){context.globalAlpha=.8;context.fillStyle=palette[0];dots(node.lo,node.hi,4*ratio);larger(node.lo,node.hi);}
+    // The chosen smaller group is drawn last, and every larger dot over the small ones.
+    const others=children.map((_,index)=>index).filter(index=>index!==selected),all=selected!==null&&children[selected]?[...others,selected]:others;
+    for(const index of all)paint(index,(lo,hi)=>dots(lo,hi,3*ratio));
+    for(const index of all)paint(index,larger);
     drawn={...view};blit();
   }
   function blit(){
@@ -264,17 +308,25 @@
     marks.forEach((mark,index)=>{const cx=ox+(mark.x-x0)*sx,cy=oy-(mark.y-y0)*sy;
       context.beginPath();context.arc(cx,cy,11*ratio,0,2*Math.PI);context.fillStyle=palette[index%palette.length];context.fill();
       context.strokeStyle='#fff';context.stroke();context.fillStyle='#fff';context.fillText(String(index+1),cx,cy);});
-    // What a way into the map points at (thin rings), then what was heard by ear (filled dots) and example sounds (stars), over the groups' colours.
-    const at=(i:number)=>[ox+(points!.x[i]-x0)*sx,oy-(points!.y[i]-y0)*sy] as const;
-    context.lineWidth=1.5*ratio;context.strokeStyle=getComputedStyle(canvas).color;context.globalAlpha=.7;
-    for(const i of overlay.targets)if(i<points.n){const [cx,cy]=at(i);context.beginPath();context.arc(cx,cy,7*ratio,0,2*Math.PI);context.stroke();}
-    context.globalAlpha=1;context.strokeStyle=getComputedStyle(canvas).color;
-    for(const [i,state] of overlay.marks)if(i<points.n){const [cx,cy]=at(i);context.beginPath();context.arc(cx,cy,4.5*ratio,0,2*Math.PI);context.fillStyle=state===1?HEARD:NOT_HEARD;context.fill();context.stroke();}
-    context.font=`${16*ratio}px sans-serif`;context.fillStyle=HEARD;
-    for(const i of overlay.examples)if(i<points.n){const [cx,cy]=at(i);context.strokeText('★',cx,cy);context.fillText('★',cx,cy);}
-    // A ring marks the sound shown under the map.
-    if(pickAt>=0&&pickAt<points.n){context.beginPath();context.arc(ox+(points.x[pickAt]-x0)*sx,oy-(points.y[pickAt]-y0)*sy,10*ratio,0,2*Math.PI);
-      context.lineWidth=2.5*ratio;context.strokeStyle=getComputedStyle(canvas).color;context.stroke();}
+    const at=(i:number)=>[ox+(points!.x[i]-x0)*sx,oy-(points!.y[i]-y0)*sy] as const,ink=getComputedStyle(canvas).color;
+    // The open way's flags: the letter matches the list of suggestions.
+    context.font=`700 ${14*ratio}px ${getComputedStyle(canvas).fontFamily}`;
+    for(const flag of flags){const {cx,cy,rx,ry,bx,by,r}=ring(flag,frame(canvas,points));
+      if(cx<0||cx>canvas.width||cy<0||cy>canvas.height)continue;
+      context.beginPath();context.ellipse(cx,cy,rx,ry,0,0,2*Math.PI);context.setLineDash([5*ratio,4*ratio]);context.lineWidth=1.5*ratio;context.strokeStyle=ink;context.stroke();context.setLineDash([]);
+      context.beginPath();context.arc(bx,by,r,0,2*Math.PI);context.fillStyle=ink;context.fill();context.fillStyle=getComputedStyle(canvas).backgroundColor;context.fillText(flag.letter,bx,by);}
+    // What was heard by ear: a blue dot with a tick (heard) or a grey one with a cross (not heard), told apart without colour.
+    const mark=(cx:number,cy:number,state:1|2,r:number)=>{context.beginPath();context.arc(cx,cy,r,0,2*Math.PI);context.fillStyle=state===1?HEARD:NOT_HEARD;context.fill();
+      context.lineWidth=.25*r;context.strokeStyle='#fff';context.stroke();context.beginPath();
+      if(state===1){context.moveTo(cx-.5*r,cy);context.lineTo(cx-.12*r,cy+.38*r);context.lineTo(cx+.5*r,cy-.32*r);}
+      else{context.moveTo(cx-.38*r,cy-.38*r);context.lineTo(cx+.38*r,cy+.38*r);context.moveTo(cx+.38*r,cy-.38*r);context.lineTo(cx-.38*r,cy+.38*r);}
+      context.stroke();};
+    for(const [i,state] of markAt)if(i<points.n)mark(...at(i),state,7*ratio);
+    // The sound shown under the map is the largest dot, with a dark outline on a white one so it stands out on any colour.
+    if(pickAt>=0&&pickAt<points.n){const [cx,cy]=at(pickAt),state=markAt.get(pickAt),r=9*ratio;
+      if(state)mark(cx,cy,state,r);
+      else{context.beginPath();context.arc(cx,cy,r,0,2*Math.PI);context.fillStyle=palette[Math.max(0,children.findIndex(c=>c.lo<=pickAt&&pickAt<c.hi))%palette.length];context.fill();}
+      for(const [width,colour] of [[5.5,'#fff'],[2.5,ink]] as const){context.beginPath();context.arc(cx,cy,r+2*ratio,0,2*Math.PI);context.lineWidth=width*ratio;context.strokeStyle=colour;context.stroke();}}
   }
   function moved(){transformed=true;blit();clearTimeout(timer);timer=setTimeout(render,150);}
   $effect(()=>{void selected;void palette;untrack(render);});
@@ -297,7 +349,8 @@
     // Only a real drag stops a running zoom; a click right after going inside must not freeze it halfway.
     const r=canvas.width/Math.max(1,canvas.clientWidth);drag.moved=true;cancelAnimationFrame(animation);view={...view,tx:drag.tx+dx*r,ty:drag.ty+dy*r};moved();
   }
-  // A click picks the nearest point of the group being viewed (within 8 px), shows and plays its sound and highlights its smaller group without scrolling; a second click within 350 ms goes into it.
+  // A click on a flag goes into its group. Else it picks the nearest point (within 8 px), shows and plays its sound and highlights its smaller group without scrolling;
+  // a second click within 350 ms goes into it. A point outside the group being viewed moves to its group first.
   function up(event:PointerEvent){
     const click=drag&&!drag.moved;drag=null;
     // Clicks right after going into a group are ignored, so a fast double click cannot go down two levels.
@@ -305,20 +358,26 @@
     const now=performance.now(),double=now-lastClick<350;lastClick=now;
     const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),bounds=canvas.getBoundingClientRect();
     const px=(event.clientX-bounds.left)*ratio,py=(event.clientY-bounds.top)*ratio;
+    const hit=flags.find(flag=>{const {cx,cy,bx,by,r}=ring(flag,frame(canvas!,points!));return cx>=0&&cx<=canvas!.width&&cy>=0&&cy<=canvas!.height&&Math.hypot(bx-px,by-py)<=r;});
+    if(hit){enter(hit.node);return;}
     let best=-1,limit=(8*ratio)**2;
-    for(let i=node.lo;i<node.hi;i++){const dx=ox+(points.x[i]-x0)*sx-px,dy=oy-(points.y[i]-y0)*sy-py,d=dx*dx+dy*dy;if(d<limit){limit=d;best=i;}}
+    for(let i=0;i<points.n;i++){const dx=ox+(points.x[i]-x0)*sx-px,dy=oy-(points.y[i]-y0)*sy-py,d=dx*dx+dy*dy;if(d<limit){limit=d;best=i;}}
     const child=children.findIndex(c=>c.lo<=best&&best<c.hi);
     if(double&&child>=0){void go(children[child].node);return;}
     // An empty spot clears the pick.
     if(best<0){selected=null;pickAt=-1;pick=null;return;}
+    if(best<node.lo||best>=node.hi){carry=best;api<{node:number}>(`/explore/points/${best}/group?dataset=${id}&node=${node.node}`).then(group=>go(group.node),()=>{carry=-1;});return;}
     if(best!==pickAt||pickError)void choose(best);
     if(child>=0)show(child);
   }
 </script>
 <!-- In the list the line wraps, and the row of the current sound is marked. -->
-{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{' '}{/if}{when(s)} · <span class="muted">{candidates(s)}</span></span>{/snippet}
-{#snippet sounds(at:number)}
+{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{' '}{/if}{when(s)} · <span class="muted">{candidates(s)}</span>{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
+{#snippet sounds(g:Group)}
+  {@const at=g.node}
   {@const list=lists[at]}
+  {@const first=matching(g).length}
+  {#if first}<p class="muted">{fill(`meFirst_${overlay.entry}`,{n:first})}</p>{/if}
   {#each list?.segments??[] as s (s.segment_id)}{@const p=picks.state.items[pickKey(s)]}<div class="member" class:picked={!!p}>
     <label class="check"><input type="checkbox" aria-label={`${t('ePick')}: ${when(s)}`} checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
     <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s,pick?.segment_id===s.segment_id)}{/snippet}</AudioRegion>
@@ -354,18 +413,25 @@
       {#if build.error==='no_search_embeddings'}<Button href={resolve(`/datasets/${id}`)}>{t('eBackToAnalyse')}</Button>{/if}</section>{/if}
     {#if node}
       <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelIntro(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
-      <MapEntries bind:this={entries} datasetId={id} node={node.node} {parent} go={look} onoverlay={value=>{overlay=value;blit();}} onspecies={value=>wanted=value}/>
+      <MapEntries bind:this={entries} datasetId={id} node={node.node} go={enter} onoverlay={overlayed} onspecies={value=>wanted=value}/>
       <div class="explore">
         <section class="panel stack map-panel" aria-label={t('eMapHeading')}>
           {#if pointsError}<p class="error" role="alert">{t(pointsError)}</p>{/if}
           <!-- The list is the keyboard path to the same groups; the map adds pointer zoom, pan, picking and double-click to go inside. -->
           <!-- The controls sit above the map, never over its points and group numbers. -->
+          {#if inside}<p class="info" role="status">{t(`meHint_${overlay.entry}`)}</p>{:else if offered.length}<p class="info" role="status">{t('meHintFlags')}</p>{/if}
           <div class="map-nav" role="group" aria-label={t('eMapNav')}>
             <Button size="sm" disabled={!canBack} onclick={()=>step(-1)}>{t('eBackView')}</Button>
             <Button size="sm" disabled={!canForward} onclick={()=>step(1)}>{t('eForwardView')}</Button>
             <Button size="sm" disabled={!node.node&&!transformed} onclick={whole}>{t('eTop')}</Button>
           </div>
           <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
+          <!-- One legend for the whole map: size and outline (and the tick and cross) carry the meaning, colour only helps. -->
+          <p class="legend">{#if offered.length}<span><i class="flag"></i>{t('meLegendFlag')}</span>{/if}
+            {#if inside}<span><i class="target" style:background={palette[0]}></i>{t(`meLegendTarget_${overlay.entry}`)}</span><span><i class="other" style:background={palette[0]}></i>{t('meLegendOther')}</span>{/if}
+            {#if node.node}<span><i class="other"></i>{t('meLegendOutside')}</span>{/if}
+            <span><i class="now"></i>{t('meLegendNow')}</span>
+            <span><i class="mark" style:background={HEARD}>✓</i>{t(overlay.entry==='unsure'?'meLegendHeardAny':'hdV_present')}</span><span><i class="mark" style:background={NOT_HEARD}>×</i>{t('hdV_absent')}</span></p>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
           <!-- Fixed text lines and a kept-up card: a new pick changes what the card shows, never how tall it is. -->
           <div class="pick" aria-busy={pickAt>=0&&!pickError&&shownAt!==pickAt}>
@@ -374,9 +440,11 @@
             {:else}
               {@const s=pick}
               {@const child=children.findIndex(c=>c.lo<=shownAt&&shownAt<c.hi)}
-              <h3 class="line">{t('ePicked')}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
+              {@const tag=badge(shownAt)}
+              <!-- Its own line above the figure, free to wrap: when, which group, and what the open way says about the sound. -->
+              <h3 class="line"><strong>{t('ePicked')}</strong> {when(s)}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if tag}{' · '}{tag}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
               <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
-              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>{/key}
+              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if !tag||s.candidates.length}<span class="muted" title={candidates(s)}>{candidates(s)}</span>{/if}{/snippet}</AudioRegion>{/key}
               <div class="answer">
                 {#if wanted}{@const mine=recorded.find(r=>r.species.id===wanted!.id)}
                   <strong>{fill('maTitle',{species:taxonName(wanted)})}</strong>
@@ -386,22 +454,16 @@
                   <strong>{t('maTitleAny')}</strong>
                   <SpeciesChoice datasetId={id} onchoose={taxon=>answer(s,taxon,'present')}/>
                   <Button size="sm" onclick={()=>choosing=false}>{t('maCancel')}</Button>
-                {:else}
+                {:else}{@const none=recorded.some(r=>r.species.rank==='none'&&r.verdict==='present')}
                   <strong>{t('maTitleAny')}</strong>
-                  <div class="actions"><Button size="sm" disabled={answering} onclick={()=>choosing=true}>{t('maChoose')}</Button></div>
+                  <div class="actions"><Button size="sm" disabled={answering} onclick={()=>choosing=true}>{t('maChoose')}</Button>
+                    <Button size="sm" active={none} aria-pressed={none} disabled={answering} onclick={()=>answer(s,null,'present')}>{t('ruNotBird')}</Button></div>
                 {/if}
-                <span class="muted">{recorded.length?fill('maNow',{list:recorded.map(r=>fill('maItem',{species:taxonName(r.species),verdict:verdictText(r.verdict)})).join(t('eSep'))}):t('maNone')}</span>
+                <span class="muted">{recorded.length?fill('maNow',{list:recorded.map(recordText).join(t('eSep'))}):t('maNone')}</span>
                 {#if answerError}<span class="error" role="alert">{t(answerError)}</span>{/if}
               </div>
             {/if}
           </div>
-          <!-- One row of fixed height, empty until a sound is ticked: ticking or labelling a sound changes the numbers, never the map's size. -->
-          <div class="tally">
-            {#if tally.n}<p><strong>{fill('eTally',{n:tally.n})}</strong>
-                {#if tally.blanks}<span title={tally.blanks}>{tally.blanks}</span>{/if}</p>
-              <Button variant="primary" size="sm" href={resolve(`/datasets/${id}/explore/picked`)}>{t('eToPicked')}</Button>{/if}
-          </div>
-          {#if picks.state.error}<p class="error" role="alert">{t(picks.state.error)}</p>{/if}
         </section>
         <section class="panel stack">
           <nav class="trail" aria-label={t('eTrail')}>
@@ -411,6 +473,11 @@
             {/each}
           </nav>
           <p>{fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/Math.max(1,data.segment_count),1)})}<br><span class="muted">{aiHint(node)}</span></p>
+          <!-- Answers given under the map show here at once; the newest five are enough to see that each one was kept. -->
+          <h2>{t('eRecorded')}</h2>
+          {#if inGroup.length}<ul class="recorded">{#each inGroup.slice(0,5) as r (r.id)}<li>{heardAt(r.local_time)} · {recordText(r)}</li>{/each}</ul>
+            {#if inGroup.length>5}<p class="muted">{fill('eRecordedMore',{shown:5,n:inGroup.length})}</p>{/if}{/if}
+          <p class="muted">{t('eRecordedHint')}</p>
           {#if children.length}
             <h2>{t('eListHeading')}</h2>
             <p class="muted">{t('eListHint')}</p>
@@ -427,17 +494,24 @@
                 </summary>
                 {#if open[c.node]}<div class="body stack">
                   {#if c.child_count}<div class="actions"><Button size="sm" onclick={()=>go(c.node)}>{t('eOpen')}</Button><span class="muted">{fill('eInner',{n:c.child_count})}</span></div>{/if}
-                  {@render sounds(c.node)}
+                  {@render sounds(c)}
                 </div>{/if}
               </details>
             {/each}
           {:else}
             <h2>{fill('eMembersHeading',{n:node.size.toLocaleString(app.locale)})}</h2>
             {@render orderNote()}
-            {@render sounds(node.node)}
+            {@render sounds(node)}
           {/if}
         </section>
       </div>
+      {#if picks.state.error}<p class="error" role="alert">{t(picks.state.error)}</p>{/if}
+      <!-- Not a step of the page: collecting sounds to hand to others comes after finding, listening and recording, folded. -->
+      <details class="panel"><summary>{t('eCollect')}{#if tally.n}{' · '}{fill('eTally',{n:tally.n})}{/if}</summary>
+        <div class="stack"><p>{t('eCollectText')}</p>
+          {#if tally.n}{#if tally.blanks}<p class="muted">{tally.blanks}</p>{/if}
+            <Button href={resolve(`/datasets/${id}/explore/picked`)}>{t('eToPicked')}</Button>
+          {:else}<p class="muted">{t('eCollectNone')}</p>{/if}</div></details>
     {/if}
   {:else if !error}<p role="status"><Spinner/> {t('eLoading')}</p>{/if}
 </div>
@@ -451,12 +525,20 @@
   .map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
   /* The map shrinks in short windows so the current sound under it stays in view. */
   .map-nav{display:flex;gap:4px}
-  /* The map takes the height left over by its 44px controls, the hint (three lines at 1024px), the current-sound card and the 44px tally row with their 12px gaps, so the column fits a 768px window. */
-  canvas{display:block;width:100%;height:clamp(220px,calc(100vh - 698px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  /* The map takes the height left over by the line about the coloured dots, its 44px controls, the legend, the hint and the current-sound card with their 12px gaps; in a short window it stays 320px and the column scrolls. */
+  canvas{display:block;flex:none;width:100%;height:clamp(320px,calc(100vh - 660px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
   /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
   .answer{display:flex;flex-direction:column;gap:4px;font-size:14px}.answer .actions{gap:6px}
-  .pick{display:flex;flex-direction:column;gap:8px;min-height:300px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
-  .line{line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* `flex:none`: in the height-limited column the card must not be squeezed under its content, which pushed its first line onto the figure. */
+  .pick{display:flex;flex:none;flex-direction:column;gap:8px;min-height:300px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
+  .line{font-size:14px;font-weight:400;line-height:1.6}
+  .explore{scroll-margin-top:16px}
+  .legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px}.legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{box-sizing:border-box;display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;font-style:normal;font-size:10px;font-weight:700;line-height:1;color:#fff}
+  .legend .target{width:12px;height:12px;border:1px solid #fff}.legend .other{width:7px;height:7px;background:rgb(var(--stone-600)/.35)}
+  .legend .flag{border:1.5px dashed currentColor;background:none;color:inherit}
+  .legend .now{color:inherit;border:2px solid currentColor;outline:2px solid currentColor;outline-offset:1px;background:none}
+  .recorded{margin:0;padding:0;list-style:none}.recorded li{padding:6px 0;border-top:1px solid rgb(var(--stone-300));font-size:14px}
   .trail{display:flex;flex-wrap:wrap;align-items:center;gap:0 4px}
   .trail a,.trail strong{display:inline-flex;align-items:center;min-height:44px;padding:0 4px}.trail strong{font-weight:600}
   .group{scroll-margin-top:16px;font-size:16px;border:1px solid rgb(var(--color-card-border));border-radius:8px;transition:opacity .15s}
@@ -480,9 +562,8 @@
   .member .about{white-space:normal}
   /* Outlined, so the mark stays visible on a ticked row's tint; the word, not the colour, carries the meaning. */
   .current{display:inline-block;margin-right:6px;padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;background:rgb(var(--color-card-bg));color:rgb(var(--primary-700));font-size:13px;font-weight:600;line-height:1.5}
-  .tally{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
-  .tally p{min-width:0;font-size:14px;line-height:1.3}
-  .tally p>*{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tally :global(.button){flex:none}
+  /* What the open way says about a listed sound: outlined words, as the current-sound mark. */
+  .tag{display:inline-block;padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;line-height:1.5}
   .empty :global(.button){align-self:center}
   @media(max-width:700px){.flow{grid-template-columns:minmax(0,1fr)}}
   @media(max-width:900px){.explore{grid-template-columns:minmax(0,1fr)}.map-panel{position:static;max-height:none;overflow:visible}canvas{height:320px}}</style>

@@ -1,4 +1,4 @@
-"""Test sounds: recordings set aside per species when its AI is made, kept out of the material, scored every round."""
+"""Test sounds: made first per species and site, frozen or given up before growing, kept out of the material, scored every round."""
 import unittest
 
 import labels
@@ -6,84 +6,120 @@ import test_sounds
 from storage import connect
 from test_species_flow import site
 
+DATES = {'start_date': '2024-08-01', 'end_date': '2024-08-06'}
+HEARD_AT, NOT_HEARD_AT = (0, 30, 60), (5, 10, 15, 20, 25)  # per recording: the separable voice pieces, and five others
+
 
 class TestSoundsCheck(unittest.TestCase):
-    def answer(self, root, sid, recordings, extra=()):
-        """Per recording: heard at 0, 30 and 60 s (the separable voice pieces), not heard at 5-25 s."""
-        with connect(root) as db:
-            for recording in recordings:
-                for start in (0, 30, 60):
-                    labels.put(db, sid, recording, start, start + 5, 'present', 'training')
-                for start in (5, 10, 15, 20, 25, *extra):
-                    labels.put(db, sid, recording, start, start + 5, 'absent', 'training')
-
-    def test_recordings_are_set_aside_scored_each_round_and_never_material(self):
+    def test_test_sounds_come_first_then_are_frozen_and_never_material(self):
         with site() as (root, client, species):
             sid = species['id']
-            scope = {'dataset_id': 1, 'species_id': sid, 'start_date': '2024-08-01', 'end_date': '2024-08-06'}
-            url = f'/datasets/1/species/{sid}/test-sounds'
-            # Twelve heard sounds are too few to set any aside.
-            self.answer(root, sid, range(1, 5))
-            self.assertEqual(client.get(url).json(), {'state': 'none', 'heard': 12, 'needed': 13})
-            first = client.post('/custom-models', json=scope).json()
-            self.assertEqual((first['training']['positive_5s'], first['training']['negative_5s']), (12, 20))
-            self.assertEqual(client.get(url).json()['state'], 'none')
-            # With 18, recordings are set aside while the rest can still make the AI (20 answers): three of six.
-            self.answer(root, sid, (5, 6))
-            again = client.post('/custom-models', json=scope).json()
+            scope = {'dataset_id': 1, 'species_id': sid, **DATES}
+            url, phase = f'/datasets/1/species/{sid}/test-sounds', f'/datasets/1/species/{sid}/test-phase'
+            state = lambda: client.get(f'/datasets/1/species/{sid}/custom-model', params={**DATES, 'batch': True}).json()
             with connect(root) as db:
-                test = test_sounds.recordings(db, 1, sid)
-            self.assertEqual(len(test), 3)
-            self.assertEqual((again['round'], again['training']['positive_5s'], again['training']['negative_5s']), (2, 9, 15))
+                segment = {(r[0], r[1]): r[2] for r in db.execute('SELECT a.recording_id,s.start_s,s.id FROM segments s JOIN analyses a ON a.id=s.analysis_id')}
+            label = lambda recording, start, value: client.post(f'/datasets/1/species/{sid}/labels', json={'segment_id': segment[recording, start], 'label': value})
+            def query(sql):
+                with connect(root) as db:
+                    return [r[0] for r in db.execute(sql)]
+            stored = lambda: set(query('SELECT recording_id FROM test_recordings'))
+            # A species without an AI starts by making its test sounds: the AI cannot be made yet, and looking writes nothing.
+            first = state()
+            self.assertEqual((first['phase'], first['can_train'], first['reasons'][0], len(first['batch'])), ('collecting', False, 'custom_test_sounds_first', 10))
+            self.assertEqual(first['test'], {'heard': 0, 'not_heard': 0, 'answered': 0, 'aim_heard': 10, 'aim_not_heard': 20, 'ask_after': 60, 'enough': 3, 'complete': False})
+            self.assertEqual(client.post('/custom-models', json=scope).json()['detail'], 'custom_test_sounds_first')
+            # Growing cannot start without "heard" test sounds.
+            self.assertEqual(client.post(phase).json()['detail'], 'test_phase_refused')
+            self.assertEqual(query('SELECT COUNT(*) FROM test_phases'), [0])
+            # An answer on the page makes its recording a test recording; every answer of the species there is a test sound.
+            with connect(root) as db:
+                labels.put(db, sid, 1, 40, 45, 'absent', 'species_mark')
+            for recording in (1, 2, 3):
+                for start in HEARD_AT:
+                    label(recording, start, 'target')
+                for start in NOT_HEARD_AT:
+                    label(recording, start, 'other')
+            label(2, 35, 'unknown')
+            now = state()
+            self.assertEqual(stored(), {1, 2, 3})
+            self.assertEqual((now['test']['heard'], now['test']['not_heard'], now['test']['answered'], now['test']['complete']), (9, 16, 26, False))
+            self.assertEqual((now['examples']['positive_5s'], now['examples']['negative_5s']), (0, 0))
+            # A recording with check answers counts too, though it is stored only when the set is frozen.
+            with connect(root) as db:
+                for start in HEARD_AT:
+                    labels.put(db, sid, 4, start, start + 5, 'present', 'validation')
+                for start in NOT_HEARD_AT:
+                    labels.put(db, sid, 4, start, start + 5, 'absent', 'validation')
+            now = state()
+            self.assertEqual((now['test']['heard'], now['test']['not_heard'], now['test']['complete'], stored()), (12, 21, True, {1, 2, 3}))
+            self.assertEqual(client.post(phase).json(), {'state': 'fixed'})
+            self.assertEqual(stored(), {1, 2, 3, 4})
+            self.assertEqual(client.post(phase).json()['detail'], 'test_phase_refused')
+            # Growing: no sound of a test recording is offered, and answers on the page are material now.
+            now = state()
+            self.assertEqual((now['phase'], now['reasons'][0]), ('fixed', 'custom_more_answers_needed'))
+            self.assertTrue({row['recording_id'] for row in now['batch']} <= {5, 6})
+            for recording in (5, 6):
+                for start in HEARD_AT:
+                    label(recording, start, 'target')
+                for start in (*NOT_HEARD_AT, 35, 40):
+                    label(recording, start, 'other')
+            self.assertEqual(stored(), {1, 2, 3, 4})
+            made = client.post('/custom-models', json=scope).json()
+            self.assertEqual((made['round'], made['training']['positive_5s'], made['training']['negative_5s']), (1, 6, 14))
+            # The test sounds were there before the first AI, so every round has a score.
             report = client.get(url).json()
-            self.assertEqual((report['state'], report['sounds'], report['aim']), ('ready', {'heard': 9, 'not_heard': 15}, 10))
-            # The first round was made before any were set aside, from sounds that are test sounds now: it gets no score.
-            self.assertEqual([(r['round'], r['found'], r['false'], r['current'], r['made_from_test']) for r in report['rounds']],
-                             [(1, None, None, False, True), (2, 9, 0, True, False)])
-            self.assertEqual((report['threshold'], len(report['recordings'])), (0.5, 3))
-            # No sound of a test recording is offered on the species-AI page: the AI under test would be choosing them.
-            state = client.get(f'/datasets/1/species/{sid}/custom-model', params={'start_date': '2024-08-01', 'end_date': '2024-08-06', 'batch': True}).json()
-            self.assertFalse({row['recording_id'] for row in state['batch']} & test)
-            self.assertFalse(any(row['test'] for row in state['batch']))
+            self.assertEqual((report['state'], report['sounds'], report['aim'], report['threshold'], len(report['recordings'])),
+                             ('ready', {'heard': 12, 'not_heard': 21}, 10, 0.5, 4))
+            self.assertEqual([(r['round'], r['found'], r['false'], r['current'], r['made_from_test']) for r in report['rounds']], [(1, 12, 0, True, False)])
             self.assertEqual((report['missed'], report['false'], report['new']), ([], [], []))
-            ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={'batch': True}).json()
-            self.assertEqual((ready['test'], ready['examples']['positive_5s']), ({'heard': 9, 'not_heard': 15}, 9))
-            # Test sounds are answered: they are not asked again.
-            self.assertFalse({row['recording_id'] for row in ready['batch']} & test and
-                             {(row['recording_id'], row['start_s']) for row in ready['batch']} & {(r, s) for r in test for s in (0, 5, 30, 60)})
+            now = state()
+            self.assertTrue({row['recording_id'] for row in now['batch']} <= {5, 6})
+            self.assertFalse(any(row['test'] for row in now['batch']))
             # A later answer in a test recording is a test sound; one elsewhere is material. A wrong "heard" shows as missed.
-            inside, outside = min(test), min(set(range(1, 7)) - test)
             with connect(root) as db:
-                labels.put(db, sid, inside, 40, 45, 'present', 'species_mark')
-                labels.put(db, sid, outside, 40, 45, 'absent', 'species_mark')
+                labels.put(db, sid, 1, 45, 50, 'present', 'species_mark')
+                labels.put(db, sid, 5, 45, 50, 'absent', 'species_mark')
             report = client.get(url).json()
-            self.assertEqual(report['sounds'], {'heard': 10, 'not_heard': 15})
-            self.assertEqual([(r['round'], r['found']) for r in report['rounds']], [(1, None), (2, 9)])
-            self.assertEqual([(m['recording_id'], m['start_s']) for m in report['missed']], [(inside, 40)])
-            third = client.post('/custom-models', json=scope).json()
-            self.assertEqual((third['round'], third['training']['positive_5s'], third['training']['negative_5s']), (3, 9, 16))
-            self.assertEqual(sorted(p.name for p in (root / 'custom-models' / str(third['id']) / 'rounds').iterdir()),
-                             ['round-1.npz', 'round-2.npz', 'round-3.npz'])
-            self.assertEqual([r['round'] for r in client.get(url).json()['rounds']], [1, 2, 3])
+            self.assertEqual((report['sounds'], [(m['recording_id'], m['start_s']) for m in report['missed']]), ({'heard': 13, 'not_heard': 21}, [(1, 45)]))
+            again = client.post('/custom-models', json=scope).json()
+            self.assertEqual((again['round'], again['training']['positive_5s'], again['training']['negative_5s']), (2, 6, 15))
+            self.assertEqual([r['round'] for r in client.get(url).json()['rounds']], [1, 2])
             # The list of checked sounds says which are test sounds.
             listed = client.get('/datasets/1/heard/records', params={'limit': 500}).json()['rows']
-            self.assertEqual({row['test'] for row in listed if row['recording_id'] in test}, {True})
-            self.assertEqual({row['test'] for row in listed if row['recording_id'] not in test}, {False})
+            self.assertEqual({row['test'] for row in listed if row['recording_id'] <= 4}, {True})
+            self.assertEqual({row['test'] for row in listed if row['recording_id'] > 4}, {False})
+            # A species grown before the phases were stored: fixed when recordings were set aside for it, else without test sounds.
+            with connect(root) as db:
+                db.execute('DELETE FROM test_phases')
+                self.assertEqual(test_sounds.phase(db, 1, sid), 'fixed')
+                db.execute('DELETE FROM test_recordings')
+                self.assertEqual((test_sounds.phase(db, 1, sid), test_sounds.phase(db, 1, 'no-ai')), ('skipped', 'collecting'))
 
-    def test_recordings_with_check_answers_go_first_and_the_rest_must_still_make_an_ai(self):
-        labelled = {}
-        for recording, origin in ((1, 'label'), (2, 'check'), (3, 'label'), (4, 'label'), (5, 'label')):
-            for index in range(8):
-                labelled[recording * 100 + index] = {'label': 'target' if index < 4 else 'other', 'origin': origin, 'recording_id': recording}
-        with site() as (root, client, species), connect(root) as db:
-            added = test_sounds.choose(db, 1, species['id'], labelled, 20, 3)
-            # 4 heard per recording: three recordings reach 10; a fourth is not needed, and two are left for the AI... but
-            # two recordings hold only 16 answers, so only two are set aside and the AI keeps 24.
-            self.assertEqual((added[0], len(added)), (2, 2))
-            self.assertEqual(test_sounds.choose(db, 1, species['id'], labelled, 20, 3), [])
-            few = {key: value for key, value in labelled.items() if value['recording_id'] <= 3}
-            self.assertEqual(test_sounds.choose(db, 1, 'another', few, 20, 3), [])  # 12 heard: none set aside
-
+    def test_a_species_with_few_calls_grows_with_the_test_sounds_found(self):
+        with site() as (root, client, species):
+            sid = species['id']
+            state = lambda: client.get(f'/datasets/1/species/{sid}/custom-model', params={**DATES, 'batch': True}).json()
+            phase = f'/datasets/1/species/{sid}/test-phase'
+            with connect(root) as db:
+                segments = [r[0] for r in db.execute('SELECT s.id FROM segments s JOIN analyses a ON a.id=s.analysis_id WHERE a.recording_id=1 ORDER BY s.start_s')]
+            label = lambda segment, value: client.post(f'/datasets/1/species/{sid}/labels', json={'segment_id': segment, 'label': value})
+            for index, value in enumerate(('target', 'other', 'other')):
+                label(segments[index], value)
+            # Below three "heard" test sounds growing cannot start; from three it can, though the aims are not met.
+            self.assertEqual(client.post(phase).json()['detail'], 'test_phase_refused')
+            label(segments[3], 'target'); label(segments[4], 'target')
+            self.assertFalse(state()['test']['complete'])
+            self.assertEqual(client.post(phase).json(), {'state': 'fixed'})
+            after = state()
+            self.assertEqual((after['phase'], after['test']['heard'], after['test']['not_heard'], after['examples']['positive_5s']), ('fixed', 3, 2, 0))
+            self.assertEqual(client.get(f'/datasets/1/species/{sid}/test-sounds', params=DATES).json()['sounds'], {'heard': 3, 'not_heard': 2})
+            # Answers on the page are material from now on, never from the test recording.
+            offered = after['batch'][0]
+            self.assertNotEqual(offered['recording_id'], 1)
+            label(offered['segment_id'], 'target')
+            self.assertEqual((state()['examples']['positive_5s'], state()['test']['heard']), (1, 3))
 
 
 if __name__ == '__main__':

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (proposal, not agreed): make the test sounds first, then grow the species AI. All numbers are examples. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>先にテスト用の音を作ってから育てる（見本）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.7 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: #6e6a86; font-size: 14px; }
+  .mockbar { background: #efe7dc; border: 1px dashed #b9ab99; border-radius: 12px; padding: 12px 16px; margin: 0 0 20px; }
+  .mockbar label { display: block; font-size: 14px; }
+  .mockbar select { display: block; min-height: 44px; margin: 4px 0 12px; padding: 4px 8px; font: inherit; max-width: 100%; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { min-height: 44px; padding: 6px 16px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; }
+  button.primary { background: #9b4b4b; border-color: #9b4b4b; color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  .panel { background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 20px 24px; margin: 0 0 16px; }
+  .crumb { font-size: 14px; color: #6e6a86; margin: 0 0 4px; }
+  .state { border-left: 6px solid #b9ab99; background: #f6f1ea; padding: 12px 16px; margin: 0 0 12px; }
+  .state.good { border-color: #3f7d5c; background: #eaf4ee; }
+  .state.warn { border-color: #b7791f; background: #fbf1df; }
+  .state strong { display: block; font-size: 17px; }
+  .steps { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; padding: 0; list-style: none; }
+  .steps li { border: 1px solid #d9cfc4; border-radius: 999px; padding: 4px 14px; font-size: 14px; background: #fff; color: #6e6a86; }
+  .steps li.now { background: #9b4b4b; border-color: #9b4b4b; color: #fff; }
+  .steps li.done { background: #eaf4ee; border-color: #9cc4ad; color: #373450; }
+  .sound { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; border-top: 1px solid #e6ddd3; padding: 10px 0; }
+  .new { display: inline-block; font-size: 12px; background: #286983; color: #fff; border-radius: 6px; padding: 0 8px; margin-left: 8px; vertical-align: 2px; }
+  .meter { display: grid; grid-template-columns: 9em 1fr 6em; gap: 4px 12px; align-items: center; margin: 0 0 12px; }
+  .bar { height: 10px; background: #e6ddd3; border-radius: 5px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: #286983; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e6ddd3; font-size: 15px; }
+  th { font-size: 13px; color: #6e6a86; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mockbar">
+    <label for="scenario">見本の例（数字はすべて例です）</label>
+    <select id="scenario">
+      <option value="0">声が十分ある種（ヒガラ）</option>
+      <option value="1">声が少ない種（コゲラ・テスト用の声ありが集まらない。実装では「集まった音でテストして育てる」に変更）</option>
+      <option value="2">育てる途中で候補がなくなる（録音が少ない地点）</option>
+    </select>
+    <div class="row">
+      <button type="button" id="prev">‹ 前の場面</button>
+      <button type="button" id="next" class="primary">次の場面 ›</button>
+      <span id="where" class="muted" role="status"></span>
+    </div>
+  </div>
+  <div id="screen"></div>
+</main>
+<script>
+(function () {
+  var NEW = '<span class="new">新しい</span>';
+  function head(name, stage) {
+    var names = ['1. テスト用の音を作る', '2. 育てる'];
+    return '<p class="crumb">‹ 種の結果に戻る</p><h1>' + name + '用のAIを育てる</h1>' +
+      '<ul class="steps" aria-label="進み具合">' + names.map(function (n, i) {
+        return '<li class="' + (i === stage ? 'now' : i < stage ? 'done' : '') + '">' + n + (i < stage ? ' ✓' : '') + '</li>';
+      }).join('') + '</ul>';
+  }
+  function meter(heard, notHeard) {
+    function line(label, n, of) {
+      return '<span>' + label + '</span><span class="bar"><i style="width:' + Math.min(100, Math.round(n / of * 100)) + '%"></i></span><span>' + n + ' / ' + of + ' 音</span>';
+    }
+    return '<div class="meter">' + line('声あり', heard, 10) + line('声なし', notHeard, 20) + '</div>';
+  }
+  function sounds(hint, n, note) {
+    return '<section class="panel"><h2>次に答える音</h2><p>聞いて「声あり」か「声なし」を、迷ったら「わからない」を押してください。</p><p class="muted">' + hint + '</p>' +
+      [1, 2, 3].map(function (i) {
+        return '<div class="sound"><span>2025/07/1' + i + ' 05:3' + i + '　▶ 聞く</span><span class="row"><button type="button">声あり</button><button type="button">声なし</button><button type="button">わからない</button></span></div>';
+      }).join('') + '<p class="muted" style="margin-top:12px">…ほか ' + (n - 3) + ' 音</p>' + (note || '') + '</section>';
+  }
+  function box(kind, title, text, buttons) {
+    return '<div class="state ' + kind + '" role="status"><strong>' + title + '</strong>' + text + '</div>' + (buttons ? '<div class="row">' + buttons + '</div>' : '');
+  }
+  var TEST_WHY = '<p class="muted">この地点の録音 145 本のうち 29 本（5 本に 1 本）を、テスト用の録音として最初に決めてあります。テスト用の音はこの 29 本からだけ出し、AI の材料には使いません。同じ朝の同じ鳥の声が、材料とテストの両方に入らないようにするためです。</p>';
+  // Stage 1: test sounds come only from the recordings set aside for testing.
+  function testStage(name, heard, notHeard, extra) {
+    return head(name, 0) +
+      '<section class="panel"><h2>テスト用の音' + NEW + '</h2><p>育てる前に、AI を試すための音を先に集めます。作り直すたびに、この同じ音で AI を試します。</p>' +
+      meter(heard, notHeard) + TEST_WHY + (extra || '') + '</section>';
+  }
+  function scores(rows, heard, notHeard) {
+    return '<table><tr><th>AI</th><th>声あり ' + heard + ' 音のうち、AI が見つけた</th><th>声なし ' + notHeard + ' 音のうち、AI が誤って「いる」とした</th></tr>' +
+      rows.map(function (r, i) {
+        var now = i === rows.length - 1;
+        return '<tr><td>' + (now ? '<strong>' + (i + 1) + ' 回目（今の AI）</strong>' : (i + 1) + ' 回目に作った AI') + '</td><td>' + r[0] + ' 音</td><td>' + r[1] + ' 音</td></tr>';
+      }).join('') + '</table>';
+  }
+  // Stage 2: material comes only from the other recordings; every answer here is material.
+  function growStage(name, counts, rows, heard, notHeard, tail) {
+    return head(name, 1) +
+      '<section class="panel"><p><strong>材料：' + counts + '</strong>　AI：' + (rows.length ? rows.length + ' 回目' : 'まだ作っていません') + '</p>' +
+      '<p class="muted">ここで答えた音は、すべて AI の材料になります。テスト用の録音 29 本の音は、ここには出ません。</p></section>' +
+      '<section class="panel"><h2>テスト用の音での成績</h2>' +
+      (rows.length ? scores(rows, heard, notHeard) + '<p class="muted">左の数は多いほど、右の数は少ないほどよい AI です。1 回目から同じ音で試しているので、回ごとに比べられます。</p>'
+        : '<p>テスト用の音は ' + (heard + notHeard) + ' 音です（声あり ' + heard + ' 音・声なし ' + notHeard + ' 音）。AI を作ると、ここに成績が出ます。</p>') +
+      '</section>' + tail;
+  }
+  var tit = 'ヒガラ', pecker = 'コゲラ';
+  var scenarios = [[
+    ['テスト用の音を集めている', testStage(tit, 4, 9) +
+      sounds('テスト用の録音の中から、内蔵の AI の点数が高い音と低い音を混ぜて出しています。「AI の答えを確かめる」で答えた音がテスト用の録音にあれば、それも数えています。', 10)],
+    ['テスト用の音がそろった', testStage(tit, 10, 22,
+      box('good', 'テスト用の音がそろいました', '声あり 10 音・声なし 22 音です。ここからは、ほかの録音の音に答えて AI を育てます。',
+        '<button type="button" class="primary">育て始める</button>'))],
+    ['育てる：最初の AI を作る前', growStage(tit, '声あり 6・声なし 11', [], 10, 22,
+      sounds('テスト用ではない録音 116 本の中から選んでいます。', 10,
+        '<p class="muted">AI を作るには、あと 3 音の答えが必要です（声あり・声なしをそれぞれ 3 音以上、合わせて 20 音）。</p>'))],
+    ['育てる：3 回目', growStage(tit, '声あり 21・声なし 34', [[5, 3], [7, 2], [9, 1]], 10, 22,
+      sounds('今の AI が迷っている音を中心に選んでいます。', 10,
+        '<div class="row"><button type="button" class="primary">答えを反映して AI を作り直す</button></div>'))]
+  ], [
+    ['テスト用の音を集めている', testStage(pecker, 2, 20) +
+      sounds('テスト用の録音の中から、内蔵の AI の点数が高い音と低い音を混ぜて出しています。', 10)],
+    ['声ありが集まらない', testStage(pecker, 3, 57,
+      box('warn', 'テスト用の「声あり」が、まだ 3 音です', 'テスト用の録音の音に 60 音答えましたが、声ありは 3 音でした。この種の声は、この地点には少ないようです。声ありが 10 音より少ないと、AI の成績は目安にしかなりません。',
+        '<button type="button" class="primary">テストなしで育てる</button><button type="button">もう 10 音探す</button>') +
+      '<p class="muted" style="margin-top:12px">「テストなしで育てる」を選ぶと、集めた音は材料に回します。成績の代わりに、作り直すたびに前の AI との違い（育ち具合）を出します。あとで声が増えたら、テスト用の音を作り直せます。</p>')],
+    ['テストなしで育てる', head(pecker, 1) +
+      '<section class="panel"><p><strong>材料：声あり 5・声なし 60</strong>　AI：2 回目</p>' +
+      '<h2>育ち具合</h2><p>2 回目：前回と 71% 同じ</p>' +
+      box('', 'まだ育てている途中です', 'この種はテスト用の音を作っていないので、成績の代わりに、前の AI との違いを出しています。') + '</section>' +
+      sounds('この地点のすべての録音から選んでいます。', 10)]
+  ], [
+    ['育てる：候補が残り少ない', growStage(tit, '声あり 14・声なし 52', [[6, 2], [8, 2]], 10, 22,
+      sounds('今の AI が迷っている音を中心に選んでいます。', 4,
+        '<p class="muted">この地点で、まだ答えていない候補は、この 4 音で最後です。</p>'))],
+    ['育てる：候補がなくなった', growStage(tit, '声あり 15・声なし 55', [[6, 2], [8, 2], [8, 1]], 10, 22,
+      '<section class="panel"><h2>次に答える音</h2>' +
+      box('', 'この地点には、もう候補の音がありません', 'AI が「声がありそう」とした音と、迷っている音には、すべて答えました。育てるのはここまでです。上の成績が、今の AI の出来です。',
+        '<button type="button" class="primary">種の結果に戻る</button><button type="button">点数の低い音からも探す</button>') +
+      '<p class="muted" style="margin-top:12px">録音を追加するか、ほかの地点で答えた音も材料に使うと、続けて育てられます。</p></section>')]
+  ]];
+  var scenario = 0, step = 0;
+  function draw() {
+    var steps = scenarios[scenario];
+    document.getElementById('screen').innerHTML = steps[step][1];
+    document.getElementById('where').textContent = (step + 1) + ' / ' + steps.length + '：' + steps[step][0];
+    document.getElementById('prev').disabled = step === 0;
+    document.getElementById('next').disabled = step === steps.length - 1;
+  }
+  document.getElementById('scenario').addEventListener('change', function (e) { scenario = +e.target.value; step = 0; draw(); });
+  document.getElementById('prev').addEventListener('click', function () { step--; draw(); });
+  document.getElementById('next').addEventListener('click', function () { step++; draw(); });
+  draw();
+})();
+</script>
+</body>
+</html>

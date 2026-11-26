@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (proposal, not agreed): the sound map's three ways in guide per group, not per point. Overview: flags on the groups worth
+     visiting; inside a group: matching points a little larger in the group's own colour, matching sounds first in the list.
+     All numbers and names are examples. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音の地図：まとまりごとの道しるべ（見本）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.7 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: #6e6a86; font-size: 14px; }
+  .mockbar { background: #efe7dc; border: 1px dashed #b9ab99; border-radius: 12px; padding: 10px 16px; margin: 0 0 20px; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { white-space: nowrap; min-height: 44px; padding: 6px 16px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; }
+  button[aria-pressed="true"] { background: #f6dede; border-color: #9b4b4b; color: #9b4b4b; font-weight: 600; }
+  .panel { background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 20px 24px; margin: 0 0 16px; }
+  .two { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+  @media (max-width: 780px) { .two { grid-template-columns: 1fr; } }
+  svg { width: 100%; height: auto; background: #fff; border: 1px solid #e6ddd3; border-radius: 12px; display: block; }
+  svg .flag { cursor: pointer; }
+  ul.plain { list-style: none; margin: 0; padding: 0; }
+  ul.plain li { border-top: 1px solid #e6ddd3; padding: 10px 0; }
+  .cand { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  .letter { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #373450; color: #fff; font-weight: 700; font-size: 14px; margin-right: 8px; }
+  .badge { display: inline-block; font-size: 12px; border: 1px solid #9b4b4b; color: #9b4b4b; border-radius: 999px; padding: 0 8px; margin-left: 6px; }
+  .hint { border-left: 6px solid #286983; background: #e8f1f4; padding: 10px 14px; margin: 0 0 12px; }
+  .spec { height: 44px; border-radius: 6px; background: linear-gradient(180deg, #2a1a4a 0%, #5a2a7a 45%, #b9507a 80%, #f0a060 100%); flex: 1; min-width: 120px; }
+  .sound { display: flex; gap: 10px; align-items: center; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; margin: 8px 0 0; }
+  .dot { display: inline-block; border-radius: 50%; background: #5a7fb8; vertical-align: middle; margin-right: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mockbar">見本です（数字と名前は例）。切り口を選ぶ → 地図の札か一覧の「ここを見る」でまとまりに入る → 「全体に戻る」で戻る、を試せます。</div>
+  <h1>音の地図</h1>
+  <p>似た音が近くに並ぶ地図です。点を押すとその音が流れ、何の声かを記録できます。</p>
+  <div id="screen"></div>
+</main>
+<script>
+(function () {
+  var COLORS = ['#5a7fb8', '#c2571a', '#3f8f6b', '#8a5ab8', '#b8963a', '#b85a7f'];
+  var CENTRES = [[120, 110], [300, 80], [470, 150], [200, 260], [400, 290], [540, 240]];
+  var seed = 7; function rnd() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
+  var pts = [];
+  for (var i = 0; i < 420; i++) { var c = i % 6; pts.push({ c: c, x: CENTRES[c][0] + (rnd() - .5) * 150, y: CENTRES[c][1] + (rnd() - .5) * 110, r: rnd() }); }
+  // Per way in: which groups get a flag (group index, how many matching sounds, the line shown beside it) and the share of matching points inside.
+  var ENTRIES = {
+    unsure: { tab: 'AI が取り違えていそうな音から', lead: 'AI が日本で記録のない種と答えた音が多いまとまりに、札を立てています。まだ聞いていない音が多い順です。',
+      flags: [[4, 38, 'AI が日本で記録のない種と答えた音 38 音・まだ聞いていない'], [1, 21, 'AI が日本で記録のない種と答えた音 21 音・うち 2 音は確かめた'], [5, 9, 'AI が日本で記録のない種と答えた音 9 音・まだ聞いていない']],
+      inside: '少し大きい点が、AI が日本で記録のない種と答えた音です。', badge: 'AI の答え：エボシガラ（日本で記録のない種）', share: .3 },
+    species: { tab: '種から', lead: 'ヒガラ：AI が検出した音が多いまとまりに、札を立てています。', pick: '種：ヒガラ（選び直す）',
+      flags: [[0, 122, 'AI がヒガラを検出した音 122 音・「聞こえた」の記録 4 音'], [3, 40, 'AI がヒガラを検出した音 40 音・まだ聞いていない']],
+      inside: '少し大きい点が、AI がヒガラを検出した音です。', badge: 'AI の検出：ヒガラ', share: .5 },
+    reference: { tab: 'お手本の声から', lead: 'トラツグミのお手本に似た音が多いまとまりに、札を立てています。', pick: 'お手本：トラツグミ（Xeno-Canto XC123456 の 3〜8 秒）（選び直す）',
+      flags: [[2, 23, 'お手本に似た音 23 音・まだ聞いていない'], [5, 4, 'お手本に似た音 4 音・まだ聞いていない']],
+      inside: '少し大きい点が、お手本に似た音です。', badge: 'お手本に似た音', share: .35 }
+  };
+  var entry = 'unsure', inside = null, playing = null;
+  function matches(p, e) { return p.r < e.share; }
+  function overview(e) {
+    var s = '<svg viewBox="0 0 640 360" role="img" aria-label="音の地図（全体）">';
+    pts.forEach(function (p) { s += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="2.6" fill="' + COLORS[p.c] + '" opacity=".75"/>'; });
+    e.flags.forEach(function (f, i) {
+      var c = CENTRES[f[0]], letter = 'ABC'[i];
+      s += '<g class="flag" data-group="' + f[0] + '" tabindex="0" role="button" aria-label="候補 ' + letter + ' を見る">' +
+        '<ellipse cx="' + c[0] + '" cy="' + c[1] + '" rx="88" ry="66" fill="none" stroke="#373450" stroke-width="1.5" stroke-dasharray="5 4"/>' +
+        '<circle cx="' + (c[0] + 62) + '" cy="' + (c[1] - 52) + '" r="15" fill="#373450"/>' +
+        '<text x="' + (c[0] + 62) + '" y="' + (c[1] - 46.5) + '" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">' + letter + '</text></g>';
+    });
+    return s + '</svg>';
+  }
+  function zoomed(g, e) {
+    var c = CENTRES[g], s = '<svg viewBox="0 0 640 360" role="img" aria-label="音の地図（まとまりの中）">';
+    pts.forEach(function (p, i) {
+      var x = (p.x - c[0]) * 3.4 + 320, y = (p.y - c[1]) * 2.9 + 180;
+      if (x < -20 || x > 660 || y < -20 || y > 380) return;
+      var mine = p.c === g, hit = mine && matches(p, e), now = playing === i;
+      s += '<circle data-point="' + i + '" style="cursor:pointer" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (now ? 9 : hit ? 6.5 : 4) + '" fill="' + COLORS[p.c] + '" opacity="' + (mine ? 1 : .35) + '"' +
+        (now ? ' stroke="#373450" stroke-width="3"' : hit ? ' stroke="#fff" stroke-width="1"' : '') + '/>';
+    });
+    return s + '</svg>';
+  }
+  function draw() {
+    var e = ENTRIES[entry], html = '<div class="row" style="margin-bottom:16px">' + Object.keys(ENTRIES).map(function (k) {
+      return '<button type="button" data-entry="' + k + '" aria-pressed="' + (k === entry) + '">' + ENTRIES[k].tab + '</button>'; }).join('') + '</div>';
+    if (inside === null) {
+      html += '<section class="panel"><h2>' + e.tab + '探す</h2>' + (e.pick ? '<p><button type="button">' + e.pick + '</button></p>' : '') + '<p>' + e.lead + '</p>' +
+        '<div class="two"><div>' + overview(e) + '<p class="muted" style="margin-top:8px">札（A・B・C）か、右の「ここを見る」を押すと、そのまとまりに入ります。点を押すと、その音が流れます。</p></div>' +
+        '<div><ul class="plain">' + e.flags.map(function (f, i) {
+          return '<li class="cand"><span><span class="letter">' + 'ABC'[i] + '</span>' + f[2] + '</span><button type="button" data-group="' + f[0] + '">ここを見る</button></li>'; }).join('') +
+        '</ul><p class="muted" style="margin-top:8px">札のないまとまりも、点を二度押すと中に入れます。</p></div></div></section>';
+    } else {
+      var f = e.flags.filter(function (x) { return x[0] === inside; })[0], letter = f ? 'ABC'[e.flags.indexOf(f)] : '';
+      var n = f ? f[1] : 0;
+      html += '<section class="panel"><div class="row" style="margin-bottom:8px"><button type="button" data-back="1">‹ 全体に戻る</button>' +
+        '<strong>' + (letter ? '候補 ' + letter + '：' : '') + 'まとまり ' + (inside + 1) + '（70 音）</strong></div>' +
+        '<div class="hint" role="status">' + e.inside + '点を押すと、その音が流れます。</div>' +
+        '<div class="two"><div>' + zoomed(inside, e) +
+        '<div class="legend"><span><i class="dot" style="width:13px;height:13px;background:' + COLORS[inside] + '"></i>' + e.inside.replace('少し大きい点が、', '').replace('です。', '') + '</span><span><i class="dot" style="width:8px;height:8px;background:' + COLORS[inside] + '"></i>このまとまりのほかの音</span><span><i class="dot" style="width:8px;height:8px;opacity:.35"></i>ほかのまとまりの音（押すと、そのまとまりに移ります）</span></div></div>' +
+        '<div><h2>このまとまりの音</h2><p class="muted">' + (n ? e.badge.split('：')[0] + 'が付いた ' + n + ' 音を、上に並べています。上から順に聞けます。' : '') + '</p><ul class="plain">' +
+        [1, 2, 3].map(function (k) { return '<li><div class="sound"><button type="button">▶</button><span class="spec"></span></div><span class="muted">2025/07/12 8:3' + k + ':10</span><span class="badge">' + e.badge + '</span></li>'; }).join('') +
+        '<li><div class="sound"><button type="button">▶</button><span class="spec"></span></div><span class="muted">2025/07/12 9:02:40　AI の候補：ヤマガラ 31%</span></li>' +
+        '</ul></div></div></section>' +
+        '<section class="panel"><p class="muted" style="margin:0 0 8px">いまの音　2025/07/12 8:31:10 · まとまり ' + (inside + 1) + ' · ' + e.badge + '</p><div class="sound"><button type="button">▶</button><span class="spec" style="height:70px"></span></div>' +
+        '<p style="margin-top:12px">この音は、何の声ですか？</p><div class="row"><button type="button">聞こえた種を記録する…</button><button type="button">鳥の声がしない</button></div>' +
+        '<p class="muted" style="margin-top:12px">「次の音」はなくします。次に聞く音は、右の一覧か地図の点から選びます。</p></section>';
+    }
+    document.getElementById('screen').innerHTML = html;
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target.closest('[data-entry],[data-group],[data-back],[data-point]'); if (!t) return;
+    if (t.dataset.entry) { entry = t.dataset.entry; inside = null; playing = null; }
+    else if (t.dataset.group) { inside = +t.dataset.group; playing = null; }
+    else if (t.dataset.back) { inside = null; playing = null; }
+    else if (t.dataset.point) { var p = pts[+t.dataset.point]; playing = +t.dataset.point; if (p.c !== inside) inside = p.c; }
+    draw();
+  });
+  draw();
+})();
+</script>
+</body>
+</html>

@@ -3,6 +3,11 @@
 Every screen writes the same shape (`source` names the screen, `source_ref` its context). For one taxon and exact
 interval the newest row is the current answer; older rows stay as history. Readers translate to the older
 target / other / unknown words where the screens still use them.
+
+"No bird sound" is an answer about the sound, not a species: 'present' on the one taxon of rank 'none' (`no_bird`).
+A row whose `source_ref` has `auto` was not given by the person but follows from another answer (the species a swap
+moved away from, a species heard where "no bird sound" is recorded, "no bird sound" taken back by a species heard):
+it is a current answer for material and history, and the list of checked sounds leaves it out.
 """
 import json
 
@@ -45,10 +50,34 @@ def put(db, taxon_id, recording_id, start_s, end_s, verdict, source, ref=None, i
             AND source=?''', (taxon_id, recording_id, start_s, end_s, source)).fetchone()[0]
         created = old
         remove(db, taxon_id, recording_id, start_s, end_s, source)
+    if verdict == 'present':
+        # A voice was heard here: a current "no bird sound" on the same interval no longer holds.
+        db.execute(f'''INSERT INTO labels(recording_id,start_s,end_s,taxon_id,verdict,source,source_ref)
+            SELECT l.recording_id,l.start_s,l.end_s,l.taxon_id,'absent',?,? FROM labels l
+            WHERE l.recording_id=? AND l.start_s=? AND l.end_s=? AND l.taxon_id<>? AND l.verdict='present' AND {LATEST}
+              AND l.taxon_id=(SELECT id FROM species WHERE rank='none')''',
+            (source, json.dumps({'auto': taxon_id}), recording_id, start_s, end_s, taxon_id))
     return db.execute('''INSERT INTO labels(recording_id,start_s,end_s,taxon_id,verdict,source,source_ref,incidental,created_at)
         VALUES(?,?,?,?,?,?,?,?,COALESCE(?,strftime('%Y-%m-%d %H:%M:%f','now')))''',
         (recording_id, start_s, end_s, taxon_id, verdict, source, json.dumps(ref or {}, ensure_ascii=False),
          int(bool(incidental)), created)).lastrowid
+
+
+def no_bird(db):
+    """The taxon id of "no bird sound"."""
+    return db.execute("SELECT id FROM species WHERE rank='none'").fetchone()[0]
+
+
+def put_no_bird(db, recording_id, start_s, end_s, source, ref=None):
+    """Record "no bird sound" on an interval and return the species that were "heard" there: each becomes "not
+    heard" as a correction (source 'review'), so its earlier answer stays as history."""
+    taxon = no_bird(db)
+    heard = [dict(r) for r in db.execute(f'''SELECT l.* FROM labels l WHERE l.recording_id=? AND l.start_s=? AND l.end_s=?
+        AND l.taxon_id<>? AND l.verdict='present' AND {LATEST}''', (recording_id, start_s, end_s, taxon))]
+    for row in heard:
+        put(db, row['taxon_id'], recording_id, start_s, end_s, 'absent', 'review', {'was': 'present', 'screen': row['source'], 'auto': taxon}, history=True)
+    put(db, taxon, recording_id, start_s, end_s, 'present', source, ref, history=True)
+    return [row['taxon_id'] for row in heard]
 
 
 def remove(db, taxon_id, recording_id, start_s, end_s, source):

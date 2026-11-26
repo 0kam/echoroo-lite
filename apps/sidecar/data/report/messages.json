@@ -120,6 +120,8 @@
     "origin_mark": "（「声はあったか」の画面で答えた）",
     "origin_check": "（「AI の答えを確かめる」で答えた）",
     "origin_label": "（「この種用のAIを育てる」で答えた）",
+    "origin_map": "（音の地図で答えた）",
+    "origin_rollup": "（「AI が日本で記録のない種と答えた音」で答えた）",
     "ai_title": "AIの検出：",
     "ai_none": "この種は AI で調べていません。",
     "fact_ai": "AI",
@@ -262,7 +264,9 @@
     "heard_from": "（{list}）",
     "from_mark": "「声はあったか」の画面で {count}",
     "from_check": "「AI の答えを確かめる」で {count}",
-    "from_label": "「この種用のAIを育てる」で {count}"
+    "from_label": "「この種用のAIを育てる」で {count}",
+    "from_map": "音の地図で {count}",
+    "from_rollup": "「AI が日本で記録のない種と答えた音」で {count}"
   },
   "en": {
     "title": "Wildlife calls in these recordings",
@@ -385,6 +389,8 @@
     "origin_mark": "(answered on the “Is it here?” page)",
     "origin_check": "(answered in “Check the AI's answers”)",
     "origin_label": "(answered on the “Grow an AI for this species” page)",
+    "origin_map": "(answered on the sound map)",
+    "origin_rollup": "(answered among the sounds the AI answered with a species not recorded in Japan)",
     "ai_title": "AI detections: ",
     "ai_none": "This species was not examined by any AI.",
     "fact_ai": "AI",
@@ -529,6 +535,8 @@
     "heard_from": " ({list})",
     "from_mark": "{count} on the “Is it here?” page",
     "from_check": "{count} in “Check the AI's answers”",
-    "from_label": "{count} on the “Grow an AI for this species” page"
+    "from_label": "{count} on the “Grow an AI for this species” page",
+    "from_map": "{count} on the sound map",
+    "from_rollup": "{count} among the sounds the AI answered with a species not recorded in Japan"
   }
 }

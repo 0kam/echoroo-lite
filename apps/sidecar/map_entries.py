@@ -1,24 +1,32 @@
-"""Ways into the sound map: where to look first, by a species, by example sounds, or by where the AI is unsure.
+"""Ways into the sound map: which groups to visit, by where the AI likely mixed species up, by a species, or by example sounds.
 
-Each entry names target sounds on the current map and picks groups of a suitable size around them: going down
-the map's tree while one child still holds most of the targets, never below a small group. Nothing is stored:
-the map's points, the answers given by ear and the roll-ups are read each time.
+Each way names target sounds on the current map and flags the groups where they are dense (see `flags`); targets
+outside every flagged group are counted as scattered. Nothing is stored: the map's points, the answers given by ear
+and the roll-ups are read each time.
 """
 import json
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 
 from explore import PCA_DIMS, SCORE_THRESHOLD, _current_run
 from labels import LATEST
-from species import names_for
+from species import canonical_scientific_name, names_for
 from storage import CatalogError, connect
 
-SHARE = 0.7      # go into a child while it holds this share of the targets
-SMALLEST = 15    # never offer a group smaller than this (see _smallest for maps of a few dozen sounds)
-GROUPS = 3
 NEIGHBOURS = 10  # sounds counted as "near" an example
-UNSURE_GROUP = 60  # groups ranked for "the AI is unsure" hold at most about this many sounds
+CLIP_NEAR = 30   # sounds counted as "like" an example clip from outside the site (Xeno-Canto or a file)
+# Which groups get a flag. Rules of thumb, to review with users' data.
+MIN_TARGETS = 3  # a group with fewer target sounds gets no flag
+DENSE = 0.4      # a group is flagged when targets are at least this share of its sounds; else its parts are looked into
+MOST = 10        # flags offered at most
+
+
+def _same(point, row):
+    """A sound of the map and an answered interval are the same sound when they overlap by more than half of the shorter."""
+    overlap = min(point['end_s'], row['end_s']) - max(point['start_s'], row['start_s'])
+    return overlap > 0.5 * min(point['end_s'] - point['start_s'], row['end_s'] - row['start_s']) - 1e-6
 
 
 def _load(db, run):
@@ -38,11 +46,12 @@ def _load(db, run):
     for point in points:
         by_recording.setdefault(point['recording_id'], []).append(point)
     answers = {}  # position -> [(taxon, verdict)]
-    for row in db.execute(f'''SELECT l.taxon_id,l.verdict,l.recording_id,l.start_s,l.end_s FROM labels l
-            WHERE l.recording_id IN (SELECT value FROM json_each(?)) AND {LATEST}''', (json.dumps(list(by_recording)),)):
+    # "No bird sound" is a sound listened to with no species heard; one taken back since is no answer.
+    for row in db.execute(f'''SELECT l.taxon_id,CASE WHEN s.rank='none' THEN 'absent' ELSE l.verdict END AS verdict,l.recording_id,l.start_s,l.end_s
+            FROM labels l JOIN species s ON s.id=l.taxon_id WHERE l.recording_id IN (SELECT value FROM json_each(?)) AND {LATEST}
+            AND (s.rank<>'none' OR l.verdict='present')''', (json.dumps(list(by_recording)),)):
         for point in by_recording[row['recording_id']]:
-            overlap = min(point['end_s'], row['end_s']) - max(point['start_s'], row['start_s'])
-            if overlap > 0.5 * min(point['end_s'] - point['start_s'], row['end_s'] - row['start_s']) - 1e-6:
+            if _same(point, row):
                 answers.setdefault(point['position'], []).append((row['taxon_id'], row['verdict']))
     return points, nodes, answers
 
@@ -51,46 +60,24 @@ def _count(node, flags):
     return int(flags[node['lo']:node['hi']].sum())
 
 
-def _smallest(nodes):
-    """SMALLEST, or less on a map so small that a sixth of it is under that: its few groups are all worth offering."""
-    return min(SMALLEST, max(5, (nodes[0]['hi'] - nodes[0]['lo']) // 6))
-
-
-def focus(nodes, targets):
-    """The deepest group that still holds most of the targets: from the top, into the child with at least SHARE
-    of the current group's targets, as long as that child is not smaller than SMALLEST."""
-    node, smallest = nodes[0], _smallest(nodes)
-    while True:
-        here = _count(node, targets)
-        inside = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= smallest]
-        best = max(inside, key=lambda child: _count(child, targets), default=None)
-        if not here or best is None or _count(best, targets) < SHARE * here:
-            return node
-        node = best
-
-
-def groups(nodes, targets):
-    """Up to GROUPS groups to look at, most targets first: the parts of the focus group that hold targets, or the
-    focus group itself when it has no parts of a useful size."""
-    node = focus(nodes, targets)
-    parts = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= _smallest(nodes) and _count(nodes[c], targets)]
-    chosen = sorted(parts, key=lambda part: (-_count(part, targets), part['node']))[:GROUPS] or [node]
-    return [part for part in chosen if _count(part, targets)]
-
-
-def _frontier(nodes, limit):
-    """The map cut into groups of at most `limit` sounds where the tree allows, none smaller than SMALLEST
-    (except the whole map)."""
+def flags(nodes, targets, listened):
+    """The groups worth visiting, one rule for every way in: from the top, a group with fewer than MIN_TARGETS
+    targets gets nothing; one where targets are at least DENSE of its sounds is flagged; else its parts are looked
+    into. Most targets nobody listened to first (then most targets), MOST at most."""
+    def dense(node):
+        count = _count(node, targets)
+        return count >= MIN_TARGETS and count >= DENSE * (node['hi'] - node['lo'])
     found, stack = [], [nodes[0]]
     while stack:
         node = stack.pop()
-        inside = [nodes[c] for c in node['children'] if nodes[c]['hi'] - nodes[c]['lo'] >= _smallest(nodes)]
-        if node['hi'] - node['lo'] <= limit or not inside:
-            found.append(node)
-        else:
-            # Parts smaller than SMALLEST are left out: too few sounds to rank as a group.
+        inside = [nodes[c] for c in node['children']]
+        # The whole map is where the user already is: where it has dense parts, those are flagged instead.
+        if dense(node) and not (node['parent'] is None and any(map(dense, inside))):
+            found.append({'node': node['node'], 'size': node['hi'] - node['lo'], 'lo': node['lo'], 'hi': node['hi'],
+                          'targets': _count(node, targets), 'left': _count(node, targets & ~listened)})
+        elif _count(node, targets) >= MIN_TARGETS:
             stack.extend(inside)
-    return found
+    return sorted(found, key=lambda g: (-g['left'], -g['targets'], g['node']))[:MOST]
 
 
 def _species(db, species_id):
@@ -98,10 +85,6 @@ def _species(db, species_id):
     if row is None:
         raise CatalogError('not_found')
     return row
-
-
-def _shape(node, **more):
-    return {'node': node['node'], 'size': node['hi'] - node['lo'], 'lo': node['lo'], 'hi': node['hi'], **more}
 
 
 def _marks(points, answers, species_id=None):
@@ -117,8 +100,19 @@ def _marks(points, answers, species_id=None):
     return sorted(marks)
 
 
+def _found(points, nodes, answers, targets, species_id=None):
+    """What every way in gives the page: the flagged groups, how many targets lie outside them, the targets' positions
+    (map order) and the marks. A sound counts as listened to when it has a mark."""
+    marks = _marks(points, answers, species_id)
+    listened = np.zeros(len(points), dtype=bool)
+    listened[[at for at, _ in marks]] = True
+    groups = flags(nodes, targets, listened)
+    return {'groups': groups, 'scattered': int(targets.sum()) - sum(g['targets'] for g in groups),
+            'targets': np.flatnonzero(targets).tolist(), 'marks': marks}
+
+
 def by_species(root, dataset_id, species_id):
-    """Entry A: the groups where the AI detected the species or it was heard."""
+    """Entry A: the groups where the AI detected the species."""
     _, _, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
@@ -134,16 +128,20 @@ def by_species(root, dataset_id, species_id):
         mine = lambda n: family_of(n) == name
     else:
         mine = lambda n: n == name
-    detected = np.array([any(mine(n) and score >= SCORE_THRESHOLD for n, score in p['candidates']) for p in points], dtype=bool)
+    detected = np.array([any(score >= SCORE_THRESHOLD for n, score in p['candidates'] if mine(n)) for p in points], dtype=bool)
+    # A species not recorded in Japan is no candidate of a point (those are Japan's birds): it is the AI's first
+    # answer of a roll-up. Nothing is left out here; the display threshold is the only bar, as for Japan's birds.
+    with connect(root) as db:
+        at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
+        for row in db.execute('''SELECT u.analysis_id,u.start_s,u.top_label,a.engine FROM rollups u JOIN analyses a ON a.id=u.analysis_id
+                WHERE u.top_score>=? AND u.analysis_id IN (SELECT value FROM json_each(?))''',
+                (SCORE_THRESHOLD, json.dumps(sorted({p['analysis_id'] for p in points})))):
+            position = at.get((row['analysis_id'], round(row['start_s'], 3)))
+            if position is not None and mine(canonical_scientific_name(row['engine'], row['top_label']) or ''):
+                detected[position] = True
     answers = {position: [(species_id if t == species_id or mine(names.get(t, '')) else t, verdict) for t, verdict in found]
                for position, found in answers.items()}
-    heard = np.zeros(len(points), dtype=bool)
-    for position, found in answers.items():
-        heard[position] = (species_id, 'present') in found
-    chosen = groups(nodes, detected | heard)
-    return {'species': names_for(taxon), 'detected': int(detected.sum()), 'heard': int(heard.sum()),
-            'groups': [_shape(g, detected=_count(g, detected), heard=_count(g, heard)) for g in chosen],
-            'targets': np.flatnonzero(detected).tolist(), 'marks': _marks(points, answers, species_id)}
+    return {'species': names_for(taxon), **_found(points, nodes, answers, detected, species_id)}
 
 
 def by_examples(root, dataset_id, species_id):
@@ -174,56 +172,88 @@ def by_examples(root, dataset_id, species_id):
             near[np.argsort(distance, kind='stable')[:NEIGHBOURS + 1]] = True
     else:
         near[placed] = True
-    spots = np.zeros(len(points), dtype=bool)
-    spots[placed] = True
-    chosen = groups(nodes, near) if placed else []
-    return {'species': names_for(taxon), 'examples': len(placed), 'example_positions': sorted(set(placed)),
-            'heard': chosen_examples['heard'], 'mixed': chosen_examples['mixed'],
-            'groups': [_shape(g, examples=_count(g, spots), near=_count(g, near)) for g in chosen],
-            'targets': np.flatnonzero(near).tolist(), 'marks': _marks(points, answers, species_id)}
+    return {'species': names_for(taxon), 'examples': len(set(placed)), 'mixed': chosen_examples['mixed'],
+            **_found(points, nodes, answers, near, species_id)}
 
 
-def unsure(root, dataset_id):
-    """Entry C: groups with many sounds the AI could not settle: its first answer was a bird outside Japan (the
-    roll-ups), or its best Japan answer stayed under the display threshold. Groups with the most such sounds nobody
-    listened to come first."""
+@lru_cache(maxsize=8)
+def _clip_order(root, models, run_id, engine, kind, source_id, start_s, end_s):
+    """The map's sounds most like a clip, best first: cosine similarity of the map AI's embeddings, a long clip
+    counting by its best window. Kept while the app runs: the page asks again for every group opened."""
+    from audio import source
+    from search import query_embeddings
+    queries = np.stack(query_embeddings(models, source(root, kind, source_id), start_s, end_s, engine=engine)[0])
+    queries /= np.linalg.norm(queries, axis=1, keepdims=True)
+    best = []
+    with connect(root) as db:
+        rows = db.execute('SELECT v.embedding FROM explore_points p JOIN vectors v ON v.rowid=p.segment_id WHERE p.run_id=? ORDER BY p.position', (run_id,))
+        # ponytail: exact scan in 256-vector blocks, as the saved search does; index the vectors if large maps make this slow.
+        while batch := rows.fetchmany(256):
+            matrix = np.stack([np.frombuffer(r['embedding'], dtype='<f4') for r in batch])
+            best.extend((matrix @ queries.T).max(axis=1) / np.maximum(np.linalg.norm(matrix, axis=1), 1e-12))
+    return tuple(np.argsort(-np.asarray(best), kind='stable')[:CLIP_NEAR].tolist())
+
+
+def by_clip(root, models, dataset_id, species_id, kind, source_id, start_s, end_s):
+    """Entry B with an example from outside the site's answers (Xeno-Canto or a file on the PC): the groups around
+    the map's sounds most like the chosen part of it."""
+    _, engine, _, run = _current_run(root, dataset_id)
+    if run is None:
+        raise CatalogError('not_found')
+    order = _clip_order(root, models, run['id'], engine, kind, source_id, start_s, end_s)
+    with connect(root) as db:
+        taxon = _species(db, species_id)
+        points, nodes, answers = _load(db, run)
+    near = np.zeros(len(points), dtype=bool)
+    near[list(order)] = True
+    return {'species': names_for(taxon), **_found(points, nodes, answers, near, species_id)}
+
+
+def recorded(root, dataset_id, node):
+    """The answers given by ear on the sounds of one group, newest first, shaped as the list of checked sounds."""
+    from zoneinfo import ZoneInfo
+    from heard import _current, _public, _site, _taxa
     _, _, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
     with connect(root) as db:
-        points, nodes, answers = _load(db, run)
-        outside = {}  # (analysis, start) -> family
-        for row in db.execute('SELECT analysis_id,start_s,family FROM rollups WHERE analysis_id IN (SELECT value FROM json_each(?))',
-                              (json.dumps(sorted({p['analysis_id'] for p in points})),)):
-            outside[(row['analysis_id'], round(row['start_s'], 3))] = row['family']
-        families = {r['scientific_name']: names_for(r) for r in db.execute(
-            "SELECT * FROM species WHERE rank='family' AND scientific_name IN (SELECT value FROM json_each(?))",
-            (json.dumps(sorted(set(outside.values()))),))}
-    from taxa import japan_names
-    japan = japan_names()
-    # No Japan-checklist bird reaches the display threshold: either a bird from elsewhere does ("away"), or nothing does ("low").
-    weak = np.array([bool(p['candidates']) and all(score < SCORE_THRESHOLD for n, score in p['candidates'] if n in japan) for p in points], dtype=bool)
-    away = np.array([(p['analysis_id'], round(p['start_s'], 3)) in outside for p in points], dtype=bool) | \
-        weak & np.array([any(score >= SCORE_THRESHOLD for _, score in p['candidates']) for p in points], dtype=bool)
-    low = weak & ~away
-    listened = np.zeros(len(points), dtype=bool)
-    listened[list(answers)] = True
-    targets = away | low
+        by_recording = {}
+        for point in db.execute('''SELECT p.position,a.recording_id,s.start_s,s.end_s FROM explore_nodes n
+                JOIN explore_points p ON p.run_id=n.run_id AND p.position>=n.lo AND p.position<n.hi
+                JOIN segments s ON s.id=p.segment_id JOIN analyses a ON a.id=s.analysis_id WHERE n.run_id=? AND n.node=?''', (run['id'], node)):
+            by_recording.setdefault(point['recording_id'], []).append(point)
+        zone, taxa = ZoneInfo(_site(db, dataset_id)['timezone']), _taxa(db)
+        rows = _current(db, dataset_id)
     found = []
-    for node in _frontier(nodes, max(UNSURE_GROUP, len(points) // 20)):
-        count = _count(node, targets)
-        if not count:
+    for row in reversed(rows):
+        # "No bird sound" taken back since is no answer, as on the map's marks.
+        if taxa[row['taxon_id']].get('rank') == 'none' and row['verdict'] != 'present':
             continue
-        inside = [outside[(p['analysis_id'], round(p['start_s'], 3))] for p in points[node['lo']:node['hi']]
-                  if (p['analysis_id'], round(p['start_s'], 3)) in outside]
-        family = max(set(inside), key=inside.count) if inside else None
-        elsewhere = _count(node, away)
-        kind = 'family' if family and inside.count(family) * 2 > elsewhere and elsewhere >= _count(node, low) else \
-            'outside' if elsewhere >= _count(node, low) and elsewhere else 'low'
-        found.append(_shape(node, unsure=count, outside=elsewhere, low=_count(node, low), checked=_count(node, targets & listened),
-                            left=_count(node, targets & ~listened),
-                            kind=kind, family=families.get(family) if kind == 'family' else None))
-    found.sort(key=lambda g: (-g['left'], g['node']))
-    return {'groups': found[:10], 'unsure': int(targets.sum()), 'outside': int(away.sum()), 'low': int(low.sum()),
-            'targets': np.flatnonzero(targets).tolist(),
-            'marks': _marks(points, answers)}
+        at = next((p['position'] for p in by_recording.get(row['recording_id'], ()) if _same(p, row)), None)
+        if at is not None:
+            found.append({**_public(row, taxa, zone), 'position': at})
+    return found
+
+
+def unsure(root, dataset_id):
+    """Entry C: groups with many sounds the AI likely mixed up: its first answer was a bird not recorded in Japan
+    and the roll-up reaches rollups.AWAY_SCORE, as on the site page's list. `guess`: for each target, in order,
+    which of `guesses` the AI answered."""
+    from rollups import AWAY_SCORE, _guess
+    _, engine, _, run = _current_run(root, dataset_id)
+    if run is None:
+        raise CatalogError('not_found')
+    with connect(root) as db:
+        points, nodes, answers = _load(db, run)
+        at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
+        labels = {}  # position -> the species the AI answered
+        for row in db.execute('SELECT analysis_id,start_s,top_label FROM rollups WHERE score>=? AND analysis_id IN (SELECT value FROM json_each(?))',
+                              (AWAY_SCORE, json.dumps(sorted({p['analysis_id'] for p in points})))):
+            position = at.get((row['analysis_id'], round(row['start_s'], 3)))
+            if position is not None:
+                labels[position] = row['top_label']
+        guesses = {label: _guess(db, {'top_engine': engine, 'top_label': label}) for label in sorted(set(labels.values()))}
+    away = np.zeros(len(points), dtype=bool)
+    away[list(labels)] = True
+    found, names = _found(points, nodes, answers, away), list(guesses)
+    return {**found, 'guesses': list(guesses.values()), 'guess': [names.index(labels[at]) for at in found['targets']]}

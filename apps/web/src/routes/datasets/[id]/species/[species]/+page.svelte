@@ -37,8 +37,9 @@
   async function load(){const version=++request;loading=true;error='';
     try{const data=await fetchResult(urlFor(engine,modelId));if(version===request){result=data;engine=data.report?.engine??engine;modelId=data.report?.model_id??0;
       liveUrl=urlFor(engine,modelId);cache.set(liveUrl,Promise.resolve(data));
-      // Keep the open tab in the address so the browser's back button returns to it.
-      void goto(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${view}`,{replaceState:true,noScroll:true,keepFocus:true});
+      // Keep the open tab in the address so the browser's back button returns to it. Not `goto`: the layout rebuilds the page
+      // whenever the router's address changes, which closed the chart's <details> and lost the scroll position.
+      history.replaceState(history.state,'',`${resolve(`/datasets/${id}/species/${speciesId}`)}?${view}`);
       // Prepare the other AIs' charts in the background.
       for(const item of data.checks)void fetchResult(urlFor(item.engine,item.model_id??0));}}
     catch(e){if(version===request)error=e instanceof Error?e.message:'unknown_error';}
@@ -119,8 +120,9 @@
 {#snippet figure(data:SpeciesResult)}
   {#if data.checks.length>1}<div class="actions model-tabs" role="group" aria-label={t('sqWhichAI')}><span class="muted">{t('sqWhichAI')}</span>
     {#each data.checks as item (item.key)}<Button active={data.selected===item.key} aria-pressed={data.selected===item.key}
-      onclick={()=>{engine=item.engine;modelId=item.model_id??0;load();}}>{checkName(item)}</Button>{/each}</div>{/if}
-  {#if loading}<p role="status"><Spinner/> {t('loading')}</p>{/if}
+      onclick={()=>{engine=item.engine;modelId=item.model_id??0;load();}}>{checkName(item)}</Button>{/each}
+    <!-- Beside the buttons, so the chart below does not move while the next one loads. -->
+    {#if loading}<span role="status"><Spinner/> {t('loading')}</span>{/if}</div>{/if}
   {#if selected}<QualityPanel validation={selected.validation} growth={selected.growth} status={false}/>{/if}
   {#if data.report}{#key liveUrl}<ReportView report={data.report} {liveUrl} secondary/>{/key}
   {:else}<p class="empty">{t('wNoModel')}</p>{/if}
@@ -185,7 +187,7 @@
           {#if !searchFirst&&required}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqCheckAnswers')}</Button>{/if}
         {:else if step===0&&settled==='not_started'}<p class="muted">{t('sqSkippedNote')}</p>
           {#if required&&!undetected(required)}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqCheckAnyway')}</Button>{/if}{/if}
-        {#if step===2&&others.length}<details class="more"><summary>{t('sqOtherAIs')}</summary>{#each others as item (item.key)}{@render checkRow(item)}{/each}</details>{/if}
+        {#if step===2&&others.length}<details class="more"><summary>{t('sqOtherAIs')}</summary><p class="muted">{t('sqOtherAIsHint')}</p>{#each others as item (item.key)}{@render checkRow(item)}{/each}</details>{/if}
         <!-- The chart is the answer to ② once a cut-off is decided; before that it is only for reference. -->
         {#if settled==='decided'}{@render figure(result)}
         {:else if step===2&&result.checks.length}<details class="more"><summary>{t('sqReference')}</summary>{@render figure(result)}</details>{/if}

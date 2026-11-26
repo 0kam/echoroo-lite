@@ -37,6 +37,8 @@
   const label=createTask(async(row:LabelRow,value:'target'|'other')=>{
     const saved=await api<{label:LabelRow['label']}>(`/datasets/${id}/species/${speciesId}/labels`,{segment_id:row.segment_id,label:row.label===value?null:value});
     row.label=saved.label;if(saved.label)unsure=unsure.filter(id=>id!==row.segment_id);info=await fetchState();
+    // The last test sound needed: the sounds give way to "Start growing", so bring it into view.
+    if(info.phase==='collecting'&&info.test.complete)document.getElementById('test-title')?.scrollIntoView({block:'start'});
     // A sound answered in this batch joins the answered list at once, as the same row, so both show the same answer.
     if(saved.label&&!answered.includes(row))answered.unshift(row);
   },{toast:true});
@@ -50,6 +52,9 @@
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;skipped=[];await next.run();},{toast:true});
   const model=$derived(info?.model??null);
+  // Test sounds are made first; growing starts once they are frozen ('fixed'). 'skipped' is a species grown before that rule.
+  const collecting=$derived(info?.phase==='collecting');
+  const startGrowing=createTask(async()=>{await api(`/datasets/${id}/species/${speciesId}/test-phase`,{});skipped=[];await next.run();},{toast:true});
   // The words for how far it has grown: one round that hardly changed it (growth_state's 0.9) is "almost", not "changed".
   const growText=$derived(model?.growth.state==='growing'&&(model.growth.rounds.at(-1)?.overlap??0)>=.9?'almost':model?.growth.state);
   const folded=$derived(model?.growth.state==='settled'&&!more);
@@ -69,12 +74,31 @@
   <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{info?fill('customModelTitleFor',{name:commonName(info.species,app.locale)||info.species.scientific_name}):t('customModelTitle')}</h1></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if info}
+    <ol class="steps" aria-label={t('tpSteps')}>{#each ['tpStep1','tpStep2'] as name,i}{@const stage=collecting?0:1}
+      <li aria-current={i===stage?'step':undefined}>{t(name)}{i<stage?' ✓':''}</li>{/each}</ol>
+    {#if collecting}{@const test=info.test}{@const few=test.heard<test.aim_heard}<section class="panel"><h2 id="test-title">{t('tpTitle')}</h2>
+      <p>{t('tpIntro')}</p>
+      <div class="meter">{#each [['mdVoice',test.heard,test.aim_heard],['mdNoVoice',test.not_heard,test.aim_not_heard]] as [name,n,of]}
+        <span>{t(name as string)}</span><progress max={of as number} value={Math.min(n as number,of as number)} aria-label={t(name as string)}></progress><span>{fill('tpCount',{n,of})}</span>{/each}</div>
+      <p class="muted">{t('tpWhy')}</p>
+      {#if test.complete}<div class="status-box" role="status"><strong>{t('tpReadyTitle')}</strong><p>{fill('tpReadyText',{heard:test.heard,not_heard:test.not_heard})}</p></div>
+        <div class="actions"><Button variant="primary" pending={startGrowing.pending} onclick={()=>startGrowing.run()}>{t('tpStart')}</Button></div>
+      <!-- Many answers and still short, or nothing left to offer: growing can start with the test sounds found so far. -->
+      {:else if test.answered>=test.ask_after||(!next.pending&&!batch.length)}
+        {#if test.answered}<div class="status-box" role="status"><strong>{fill(few?'tpShortHeardTitle':'tpShortNotHeardTitle',{n:few?test.heard:test.not_heard})}</strong>
+          <p>{fill(few?'tpShortHeardText':'tpShortNotHeardText',{answered:test.answered,n:few?test.heard:test.not_heard,aim:few?test.aim_heard:test.aim_not_heard})}</p></div>{/if}
+        {#if test.heard>=test.enough}<div class="actions"><Button variant="primary" pending={startGrowing.pending} onclick={()=>startGrowing.run()}>{t('tpEarly')}</Button></div>
+          <p class="muted">{fill('tpEarlyNote',{heard:test.heard,not_heard:test.not_heard})}</p>
+        {:else}<p class="info">{fill('tpStuck',{n:test.enough})}</p>{/if}{/if}
+    </section>{/if}
     {#snippet counts()}<p><strong>{fill('mdCounts',{positive:info!.examples.positive_5s,negative:info!.examples.negative_5s})}</strong>
       {#if info!.needed}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>
       {#if info!.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info!.examples.other_answers})}</p>{/if}
+      {#if info!.examples.no_bird_answers}<p class="muted">{fill('mdNoBird',{n:info!.examples.no_bird_answers})}</p>{/if}
       {#if info!.test&&info!.test.heard+info!.test.not_heard}<p class="muted">{fill('tsMaterialNote',{n:info!.test.heard+info!.test.not_heard})}</p>{/if}{/snippet}
-    {#if !searchFirst}<section class="panel">
+    {#if !searchFirst&&!collecting}<section class="panel">
       {@render counts()}
+      {#if info.phase==='fixed'}<p class="muted">{t('tpGrowNote')}</p>{/if}
       {#if model?.imported}<p class="info">{fill(model.imported.site?'shImportedFrom':'shImported',{site:model.imported.site??'',file:model.imported.file,date:made(model.created_at)})}{#if model.imported.warning}{' '}{fill('shWarnText',{from:modelName(model.imported.engine),here:modelName(info.engine)})}{/if} {t('shImportedBack')}</p>
       {:else}<p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>{/if}
       {#if model&&!model.imported&&model.training.other_sites}<p class="muted">{fill('shPooled',{n:model.training.other_sites.positive_5s+model.training.other_sites.negative_5s,sites:model.training.other_sites.sites})}</p>{/if}
@@ -95,7 +119,7 @@
     <TestSounds datasetId={id} {speciesId} name={commonName(info.species,app.locale)||info.species.scientific_name} query={range.toString()} timezone={site?.timezone}
       version={`${model?.id}:${model?.round}:${info.examples.positive_5s}:${info.examples.negative_5s}:${info.test?.heard}:${info.test?.not_heard}`}/>{/if}
     {#snippet row(item:LabelRow)}<article class="row">
-      <div class="row-head"><span>{time(item)}</span>{#if item.test}<span class="test">{t('tsBadgeHere')}</span>{/if}{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
+      <div class="row-head"><span>{time(item)}</span>{#if item.test&&!collecting}<span class="test">{t('tsBadgeHere')}</span>{/if}{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
       <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}
         onplaying={()=>{if(!played.includes(item.segment_id))played=[...played,item.segment_id];}}>
         {#snippet actions()}<div class="actions" role="group" aria-label={time(item)}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
@@ -105,24 +129,27 @@
       </AudioRegion>
       <OtherSpecies datasetId={id} of={speciesId} recordingId={item.recording_id} start={item.start_s} end={item.end_s} screen="training" disabled={!item.label&&!played.includes(item.segment_id)}/>
     </article>{/snippet}
-    {#if !folded}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
+    {#if !folded&&!(collecting&&info.test.complete)}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
       <!-- Nothing to rank by is a step still to do, not an error. -->
       {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
         <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
       {:else}
-        {#if !model&&info.needed}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
+        {#if !model&&info.needed&&!collecting}<p>{fill('mdFirst',{n:info.requirements.total_5s})}</p>{/if}
         <p>{t('mdShortIntro')}</p>
         <!-- The details stay one click away so the first sound is in view. -->
         <details><summary>{t('mdHowChosen')}</summary>
           <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelIntro(info.engine)})}</p>
           <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p><p class="muted">{t('mdEvidence')}</p></details>
-        {#each batch as item (item.segment_id)}{@render row(item)}{:else}<p>{t('mdNoneLeft')}</p>{/each}
+        {#each batch as item (item.segment_id)}{@render row(item)}{:else}
+          {#if collecting}<p>{t('mdNoneLeft')}</p>
+          {:else}<div class="status-box" role="status"><strong>{t('mdEndTitle')}</strong><p>{t('mdEndText')}</p></div><p class="muted">{t('mdEndMore')}</p>{/if}{/each}
       {/if}
-      {#if !searchFirst}<div class="footer">
-        {@render counts()}
-        {#each info.reasons.filter(reason=>reason!=='custom_more_answers_needed') as reason}<p class="info">{t(reason)}</p>{/each}
+      <!-- While the test sounds are made, the AI cannot be made yet: no counts and no button for it. -->
+      {#if !searchFirst||collecting}<div class="footer">
+        {#if !collecting}{@render counts()}
+          {#each info.reasons.filter(reason=>reason!=='custom_more_answers_needed') as reason}<p class="info">{t(reason)}</p>{/each}{/if}
         <div class="actions">
-          <Button variant="primary" disabled={!info.can_train} pending={build.pending} onclick={()=>build.run()}>{t(model?'mdRebuild':'customModelCreate')}</Button>
+          {#if !collecting}<Button variant="primary" disabled={!info.can_train} pending={build.pending} onclick={()=>build.run()}>{t(model?'mdRebuild':'customModelCreate')}</Button>{/if}
           {#if source}<Button disabled={build.pending} pending={next.pending} onclick={another}>{t('mdAnother')}</Button>{/if}
           <Button href={back}>{t('mdDone')}</Button>
         </div>
@@ -137,7 +164,7 @@
       {#each answered.slice(0,answeredShown) as item (item.segment_id)}{@render row(item)}{/each}
       {#if answeredShown<answered.length}<Button onclick={()=>answeredShown+=10}>{t('pMore')}</Button>{/if}
     </details>{/if}
-    {#if !searchFirst||model}<AiSharing datasetId={id} {speciesId} {info} onchange={async()=>{skipped=[];await next.run();}}/>{/if}
+    {#if (!searchFirst||model)&&!collecting}<AiSharing datasetId={id} {speciesId} {info} onchange={async()=>{skipped=[];await next.run();}}/>{/if}
     {#if model}<details class="more"><summary>{t('sMore')}</summary>
       <Button variant="danger" size="sm" onclick={()=>confirming=!confirming}>{t(model.imported?'shDeleteImported':'mdDeleteAI')}</Button>
       {#if confirming}<div class="confirm"><p>{t(model.imported?'shDeleteImportedConfirm':'modelDeleteConfirm')}</p><div class="actions"><Button disabled={remove.pending} onclick={()=>confirming=false}>{t('mCancel')}</Button>
@@ -145,7 +172,10 @@
     </details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.test{padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;font-weight:600}
+<style>.steps{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+  .steps li{padding:4px 14px;border:1px solid rgb(var(--stone-300));border-radius:999px;font-size:14px}.steps li[aria-current]{border-color:rgb(var(--primary-700));color:rgb(var(--primary-700));font-weight:600}
+  .meter{display:grid;grid-template-columns:auto minmax(0,320px) auto;gap:4px 12px;align-items:center;justify-content:start}.meter progress{width:100%;height:12px}
+  .test{padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;font-weight:600}
   section p{margin:12px 0}.rounds{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;padding:0;list-style:none}
   .rounds li{padding:4px 10px;border:1px solid rgb(var(--stone-300));border-radius:8px;font-size:14px}.status-box{margin-bottom:12px}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
   .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.footer{border-top:1px solid rgb(var(--stone-300));padding-top:4px}

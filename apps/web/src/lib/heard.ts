@@ -5,10 +5,10 @@ import type { Species } from './species';
 import { fill } from './workflow';
 
 export type Verdict = 'present' | 'absent' | 'unknown';
-export type Taxon = Species & { rank?: 'family' };
+export type Taxon = Species & { rank?: 'family' | 'none' };
 export type Counts = Record<Verdict, number>;
 export type AiState = { state: 'made'; round: number; usable: boolean } | { state: 'ready' | 'needed'; needed: number } | { state: 'family' };
-export type HeardSummary = { rows: { species: Taxon; site: Counts; all: Counts; ai: AiState | null }[];
+export type HeardSummary = { rows: { species: Taxon; site: Counts; all: Counts; ai: AiState | null }[]; no_bird: { site: number; all: number };
   total: { site: number; all: number }; requirements: { total: number; each: number } };
 export type HeardRecord = { id: number; test?: boolean; species: Taxon; verdict: Verdict; screen: string; extra: boolean; recording_id: number;
   start_s: number; end_s: number; created_at: string; local_time: string; source: AudioSource };
@@ -21,8 +21,11 @@ export type Choices = { species: (Taxon & { rare: boolean })[]; families: Taxon[
 export type SearchExamples = { examples: HeardRecord[]; heard: number; mixed: number;
   mixed_example: { local_time: string; species: Taxon[] } | null };
 
-/** A species' name, or "キツツキ科の一種" for an answer that stops at the family. */
-export const taxonName = (taxon: Taxon) => taxon.rank === 'family' ? familyLabel(taxon) : speciesName(taxon);
+/** A species' name, "キツツキ科の一種" for an answer that stops at the family, or "鳥の声がしない" (rank 'none'). */
+export const taxonName = (taxon: Taxon) => taxon.rank === 'none' ? t('ruNotBird') : taxon.rank === 'family' ? familyLabel(taxon) : speciesName(taxon);
+/** "ヒガラ：聞こえた", or "鳥の声がしない" alone (in history, taken back once a species was heard). */
+export const recordText = (record: { species: Taxon; verdict: Verdict }) => record.species.rank === 'none' && record.verdict === 'present' ? t('ruNotBird')
+  : fill('hdRecord', { name: taxonName(record.species), verdict: record.species.rank === 'none' ? t('hdTakenBack') : verdictText(record.verdict) });
 /** "聞こえた" / "聞こえなかった" / "わからなかった". */
 export const verdictText = (verdict: Verdict) => t(`hdV_${verdict}`);
 /** The screen an answer was recorded on, in that screen's own name. */

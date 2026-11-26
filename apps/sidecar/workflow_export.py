@@ -239,7 +239,9 @@ def export(root,body,cancel=None):
                         'counting_status':counting_status(snap.get('validation') for snap in species_snapshots),
                         'evidence_count':len(item['evidence']),'marked':sum(e['origin']=='mark' for e in item['evidence']),
                         'heard_in_checks':sum(e['origin']=='check' for e in item['evidence']),
-                        'voice_on_ai_page':sum(e['origin']=='label' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),
+                        'voice_on_ai_page':sum(e['origin']=='label' for e in item['evidence']),
+                        'heard_on_map':sum(e['origin']=='map' for e in item['evidence']),
+                        'heard_in_family_rows':sum(e['origin']=='rollup' for e in item['evidence']),'listened_without_confirming':miss.get('listened'),
                         'not_found_list':miss.get('source'),'not_found_recorded_at':miss.get('created_at')})
                 lengths=t['paren'].format(text=windows_text(snapshots,t)) if snapshots else ''
                 manifest={**ctx,'schema':'echoroo_recording_report_v2','package_id':package_id,'saved_at':datetime.now(timezone.utc).isoformat(),

@@ -13,6 +13,8 @@
   const asked=$derived(entries.find(entry=>entry.answer===null));
   // Results kept for now, and results whose analysis was started again but has not finished (stopped, failed, or waiting).
   const kept=$derived(entries.filter(entry=>entry.answer!==null));
+  // Kinglet's earlier version knew only Japan's species; BirdNET's kept only the site's species.
+  const text=(key:'upBody'|'upKeep'|'upSettings',engine:string)=>engine.startsWith('kinglet')?`${key}Kinglet` as const:key;
   const busy=$derived(app.jobs.some(job=>job.status==='queued'||job.status==='running'));
   async function load(){try{entries=await api<Entry[]>('/analysis-upgrade');}catch{/* Without an answer nothing is asked. */}}
   // Asked again after recordings are added or removed and after each analysis ends.
@@ -25,15 +27,15 @@
     if(answer==='redo'){await refreshCatalog();notify(result.jobs.length?'upStarted':'upWaiting',result.jobs.length?'success':'info');}
   },{toast:true});
 </script>
-{#if settings}{#each kept as entry (entry.engine)}<div class="notice"><p>{fill(entry.answer==='redo'?'upSettingsRedo':'upSettings',{model:modelName(entry.engine),sites:entry.sites,n:entry.recordings})}</p>
-  <p class="muted">{t('upTime')}: {estimate(entry)}　{t('upKeep')}</p>
+{#if settings}{#each kept as entry (entry.engine)}<div class="notice"><p>{fill(entry.answer==='redo'?'upSettingsRedo':text('upSettings',entry.engine),{model:modelName(entry.engine),sites:entry.sites,n:entry.recordings})}</p>
+  <p class="muted">{t('upTime')}: {estimate(entry)}　{t(text('upKeep',entry.engine))}</p>
   <Button pending={reply.pending} disabled={busy} onclick={()=>reply.run(entry,'redo')}>{t('upRedo')}</Button></div>{/each}
 {:else}<dialog bind:this={dialog} oncancel={event=>event.preventDefault()} aria-labelledby="upgrade-title">
   {#if asked}<h2 id="upgrade-title">{t('upTitle')}</h2>
-    <p>{fill('upBody',{model:modelName(asked.engine)})}</p>
+    <p>{fill(text('upBody',asked.engine),{model:modelName(asked.engine)})}</p>
     <dl><div><dt>{t('upRecordings')}</dt><dd>{fill('upRecordingsValue',{sites:asked.sites,n:asked.recordings})}</dd></div>
       <div><dt>{t('upTime')}</dt><dd>{estimate(asked)}</dd></div></dl>
-    <p>{t('upKeep')}</p>
+    <p>{t(text('upKeep',asked.engine))}</p>
     <div class="actions"><Button variant="primary" pending={reply.pending} onclick={()=>reply.run(asked,'redo')}>{t('upRedo')}</Button>
       <Button disabled={reply.pending} onclick={()=>reply.run(asked,'keep')}>{t('upLater')}</Button></div>
     <p class="muted">{t('upNote')}</p>{/if}

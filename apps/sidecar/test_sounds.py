@@ -1,12 +1,12 @@
 """Test sounds: answers set aside per species and site, never used as material, to compare each round of a species AI.
 
 The split is by recording, so calls of one morning do not land on both sides: every answer of the species in a
-"test recording" is a test sound, also answers given later. Recordings are set aside once, the first time the AI
-is made for a species with enough "heard" sounds, and only as far as the AI can still be made from the rest. The
-set is then frozen: adding recordings later would test earlier rounds on sounds they were made from. A round made
-before the split, from sounds that are test sounds now, gets no score.
+"test recording" is a test sound, also answers given later. Test sounds are made first (phase 'collecting'): a
+recording becomes a test recording when a sound in it is answered on the species-AI page, and recordings with a check
+answer count too. Growing starts only when the set is frozen ('fixed': adding recordings later would test earlier
+rounds on sounds they were made from), early with the sounds found so far when the species calls rarely. 'skipped'
+(no test sounds) is only the state of a species grown before test sounds came first.
 """
-import hashlib
 import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -15,7 +15,7 @@ import numpy as np
 from scipy.special import expit
 
 from reports import window_key
-from storage import connect
+from storage import CatalogError, connect
 
 SCHEMA = '''
     CREATE TABLE IF NOT EXISTS test_recordings (
@@ -23,44 +23,77 @@ SCHEMA = '''
         recording_id INTEGER NOT NULL REFERENCES recordings,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY(site_id,species_id,recording_id));
+    CREATE TABLE IF NOT EXISTS test_phases (
+        site_id INTEGER NOT NULL REFERENCES sites, species_id TEXT NOT NULL REFERENCES species,
+        state TEXT NOT NULL CHECK(state IN ('fixed','skipped')), PRIMARY KEY(site_id,species_id));
 '''
 HEARD = 10       # "heard" test sounds aimed for
-NEEDED = 13      # "heard" sounds a species needs before any are set aside: HEARD + the 3 an AI needs
+NOT_HEARD = 20   # "not heard" test sounds aimed for
+ASK_AFTER = 60   # answered test sounds after which growing with the test sounds found so far is offered
+ENOUGH = 3       # "heard" test sounds below which growing cannot start
 FOUND = 0.5      # a species AI's score from which it says the voice is there
 
 
-def recordings(db, site_id, species_id):
+def phase(db, site_id, species_id):
+    """'collecting' (test sounds are being made; no AI yet), 'fixed' (growing, test recordings frozen) or 'skipped'
+    (growing without test sounds). Only the last two are stored. A species grown before phases existed has an AI and
+    no stored phase: 'fixed' when recordings were set aside for it, else 'skipped'."""
+    row = db.execute('SELECT state FROM test_phases WHERE site_id=? AND species_id=?', (site_id, species_id)).fetchone()
+    if row:
+        return row[0]
+    if not db.execute('SELECT 1 FROM custom_models m JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=? AND m.species_id=?',
+                      (site_id, species_id)).fetchone():
+        return 'collecting'
+    return 'fixed' if _stored(db, site_id, species_id) else 'skipped'
+
+
+def _stored(db, site_id, species_id):
     return {r[0] for r in db.execute('SELECT recording_id FROM test_recordings WHERE site_id=? AND species_id=?', (site_id, species_id))}
 
 
-def choose(db, site_id, species_id, labelled, minimum, minimum_each):
-    """Set recordings aside until the test sounds hold HEARD "heard" ones. `labelled`: {segment: {'label', 'origin',
-    'recording_id'}} of the species at the site. Recordings with check answers go first (they were chosen by the
-    built-in AI's score, not by the species AI), then a fixed shuffle. A recording is skipped when the rest would no
-    longer make an AI (`minimum` answers, `minimum_each` of each kind). Returns the recordings newly set aside."""
-    test = recordings(db, site_id, species_id)
-    if test or sum(v['label'] == 'target' for v in labelled.values()) < NEEDED:
-        return []
-    per = {}
-    for value in labelled.values():
-        counts = per.setdefault(value['recording_id'], {'target': 0, 'other': 0, 'check': 0})
-        counts[value['label']] += 1
-        counts['check'] += value['origin'] == 'check'
-    total = lambda ids, key: sum(per[r][key] for r in ids)
-    material = set(per) - test
-    order = sorted(material, key=lambda r: (-per[r]['check'], hashlib.sha256(f'{species_id}:{r}'.encode()).hexdigest()))
-    added = []
-    for recording in order:
-        if total(set(per) & (test | set(added)), 'target') >= HEARD:
-            break
-        rest = material - set(added) - {recording}
-        if total(rest, 'target') < minimum_each or total(rest, 'other') < minimum_each or \
-                total(rest, 'target') + total(rest, 'other') < minimum or not per[recording]['target'] + per[recording]['other']:
-            continue
-        added.append(recording)
-    db.executemany('INSERT OR IGNORE INTO test_recordings(site_id,species_id,recording_id) VALUES(?,?,?)',
-                   [(site_id, species_id, recording) for recording in added])
-    return added
+def recordings(db, site_id, species_id):
+    """The species' test recordings at the site. While collecting, recordings that hold a check answer count too:
+    those sounds were chosen by a built-in AI's score, not by the species AI. They are stored when the set is frozen."""
+    found = _stored(db, site_id, species_id)
+    if phase(db, site_id, species_id) == 'collecting':
+        found |= {r[0] for r in db.execute('''SELECT DISTINCT l.recording_id FROM labels l JOIN recordings r ON r.id=l.recording_id
+            JOIN datasets d ON d.id=r.dataset_id WHERE d.site_id=? AND l.taxon_id=? AND l.source='validation' AND l.verdict!='unknown' ''',
+            (site_id, species_id))}
+    return found
+
+
+def add(db, site_id, species_id, recording_id):
+    """An answer was saved on the species-AI page: while collecting, its recording becomes a test recording."""
+    if phase(db, site_id, species_id) == 'collecting':
+        db.execute('INSERT OR IGNORE INTO test_recordings(site_id,species_id,recording_id) VALUES(?,?,?)', (site_id, species_id, recording_id))
+
+
+def progress(db, ctx, species_id, labelled, test):
+    """How far the test sounds are: `labelled` as from `custom_models._labelled`, `test` the test recordings."""
+    from labels import current
+    said = [value['label'] for value in labelled.values() if value['recording_id'] in test]
+    heard, not_heard = said.count('target'), said.count('other')
+    unknown = sum(row['recording_id'] in test for row in current(db, ctx['dataset']['id'], species_id, 'unknown'))
+    return {'heard': heard, 'not_heard': not_heard, 'answered': heard + not_heard + unknown, 'aim_heard': HEARD, 'aim_not_heard': NOT_HEARD,
+            'ask_after': ASK_AFTER, 'enough': ENOUGH, 'complete': heard >= HEARD and not_heard >= NOT_HEARD}
+
+
+def freeze(root, ctx, species_id):
+    """End the making of test sounds and freeze the test recordings; growing starts. Refused below ENOUGH "heard"
+    test sounds (the page offers it before the aims are met only after ASK_AFTER answers or when nothing is left
+    to offer). It cannot be changed afterwards."""
+    from custom_models import _labelled
+    site_id = ctx['site']['id']
+    with connect(root) as db:
+        test = recordings(db, site_id, species_id)
+        if phase(db, site_id, species_id) != 'collecting' or \
+                progress(db, ctx, species_id, _labelled(db, ctx, species_id)[1], test)['heard'] < ENOUGH:
+            raise CatalogError('test_phase_refused')
+        db.executemany('INSERT OR IGNORE INTO test_recordings(site_id,species_id,recording_id) VALUES(?,?,?)',
+                       [(site_id, species_id, recording) for recording in test])
+        db.execute("INSERT INTO test_phases(site_id,species_id,state) VALUES(?,?,'fixed')", (site_id, species_id))
+        db.execute('DELETE FROM workflow_cache')
+    return {'state': 'fixed'}
 
 
 def keep_round(folder, previous, number, weights, intercept, trained_on=()):
@@ -93,7 +126,7 @@ def _rounds(folder, current):
 def report(root, ctx, species_id):
     """How each round of the species AI does on the test sounds, and which sounds to listen to.
 
-    {'state': 'none', 'heard', 'needed'} while nothing is set aside; else the counts, one row per round ("found"
+    {'state': 'none'} when the species has no test sounds; else the counts, one row per round ("found"
     of the heard test sounds, "false" of the not-heard ones), and for the current round the sounds it missed,
     wrongly found, and found for the first time."""
     from custom_models import _labelled, _normalise, list_models
@@ -104,14 +137,13 @@ def report(root, ctx, species_id):
         rows = {r['segment_id']: dict(r) for r in db.execute('''SELECT s.id AS segment_id,s.start_s,s.end_s,r.id AS recording_id,r.path,r.seconds,
             r.recorded_at,v.embedding FROM segments s JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
             JOIN vectors v ON v.rowid=s.id WHERE s.id IN (SELECT value FROM json_each(?))''', (json.dumps(list(sounds)),))}
-    heard_all = sum(v['label'] == 'target' for v in labelled.values())
     files = sorted(Path(r['path']).name for r in rows.values() if r['recording_id'] in test)
     files = sorted(set(files))
     sounds = {segment: value for segment, value in sounds.items() if segment in rows}
     heard = [s for s, v in sounds.items() if v['label'] == 'target']
     absent = [s for s, v in sounds.items() if v['label'] == 'other']
     if not test or not heard:
-        return {'state': 'none', 'heard': heard_all, 'needed': NEEDED}
+        return {'state': 'none'}
     models = list_models(root, ctx, species_id, every=True)
     model = models[0] if models else None
     result = {'state': 'ready', 'sounds': {'heard': len(heard), 'not_heard': len(absent)}, 'rounds': [], 'aim': HEARD, 'threshold': FOUND,
@@ -127,7 +159,7 @@ def report(root, ctx, species_id):
         if len(weights) != matrix.shape[1]:
             continue
         if trained_on is not None and trained_on & test:
-            # Made before the split, from sounds that are test sounds now: a score on them would flatter it.
+            # Made before test sounds came first, from sounds that are test sounds now: a score on them would flatter it.
             result['rounds'].append({'round': number, 'found': None, 'false': None, 'current': number == model['round'], 'made_from_test': True})
             continue
         scores[number] = dict(zip(order, expit(matrix @ weights + intercept).tolist()))

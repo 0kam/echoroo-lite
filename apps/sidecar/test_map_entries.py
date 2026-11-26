@@ -1,5 +1,6 @@
-"""Ways into the sound map: groups of a suitable size around a species, example sounds, or sounds the AI is unsure of."""
+"""Ways into the sound map: the groups to visit for a species, example sounds, or sounds the AI likely mixed up."""
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -17,43 +18,42 @@ def tree(*rows):
     return nodes
 
 
-class DrillDownTest(unittest.TestCase):
-    #   0 [0,100) -> 1 [0,60) -> 3 [0,20), 4 [20,60) -> 5 [20,30) (too small), 6 [30,60)
+class FlagRuleTest(unittest.TestCase):
+    #   0 [0,100) -> 1 [0,60) -> 3 [0,20), 4 [20,60) -> 5 [20,30), 6 [30,60)
     #             -> 2 [60,100)
     NODES = ((0, None, 0, 100), (1, 0, 0, 60), (2, 0, 60, 100), (3, 1, 0, 20), (4, 1, 20, 60), (5, 4, 20, 30), (6, 4, 30, 60))
 
-    def flags(self, *positions):
-        flags = np.zeros(100, dtype=bool); flags[list(positions)] = True
-        return flags
+    def flagged(self, nodes, positions, listened=()):
+        size = nodes[0]['hi']
+        targets, heard = np.zeros(size, dtype=bool), np.zeros(size, dtype=bool)
+        targets[list(positions)] = True; heard[list(listened)] = True
+        return [(g['node'], g['targets'], g['left']) for g in map_entries.flags(nodes, targets, heard)]
 
-    def test_goes_down_while_one_part_holds_most_targets_and_stops_above_small_groups(self):
+    def test_a_dense_group_is_found_at_its_level_and_sparse_targets_get_no_flag(self):
         nodes = tree(*self.NODES)
-        # All targets in [20,30): node 5 holds them but is smaller than 15, so its parent is the focus.
-        self.assertEqual(map_entries.focus(nodes, self.flags(21, 22, 23, 24))['node'], 4)
-        # The share is of the group being left: 9 of 10 in node 1, then 7 of those 9 in node 4, all 7 in node 6.
-        self.assertEqual(map_entries.focus(nodes, self.flags(31, 32, 33, 34, 35, 36, 37, 1, 2, 70))['node'], 6)
-        # 6 of 10 is not most.
-        self.assertEqual(map_entries.focus(nodes, self.flags(31, 32, 33, 34, 35, 36, 70, 71, 72, 73))['node'], 0)
-        self.assertEqual(map_entries.focus(nodes, self.flags(31, 32, 33, 34, 35, 36, 1, 2, 3, 4))['node'], 1)
-        self.assertEqual(map_entries.focus(nodes, self.flags())['node'], 0)
+        # 11 of 100, of 60 and of 40 are too thin; all of node 5 is dense. The target at 31 is left scattered.
+        self.assertEqual(self.flagged(nodes, [*range(20, 30), 31], listened=[20, 21]), [(5, 10, 8)])
+        # 16 of 40 is dense: the search stops there and does not go on to the denser part inside.
+        self.assertEqual(self.flagged(nodes, range(20, 36)), [(4, 16, 16)])
+        self.assertEqual(self.flagged(nodes, [1, 35, 70, 90]), [])
+        self.assertEqual(self.flagged(nodes, []), [])
+        # Half of a group, but fewer than three sounds.
+        small = tree((0, None, 0, 10), (1, 0, 0, 4), (2, 0, 4, 10))
+        self.assertEqual(self.flagged(small, [0, 1]), [])
 
-    def test_groups_are_the_parts_with_targets_most_first(self):
-        nodes = tree(*self.NODES)
-        spread = self.flags(1, 2, 70, 71, 72)
-        self.assertEqual([g['node'] for g in map_entries.groups(nodes, spread)], [2, 1])
-        self.assertEqual([g['node'] for g in map_entries.groups(nodes, self.flags(21, 22))], [4])
-        self.assertEqual(map_entries.groups(nodes, self.flags()), [])
+    def test_the_whole_map_is_flagged_only_without_dense_parts(self):
+        small = tree((0, None, 0, 6), (1, 0, 0, 3), (2, 0, 3, 6))
+        self.assertEqual(self.flagged(small, [0, 1, 3, 4]), [(0, 4, 4)])
+        self.assertEqual(self.flagged(small, [0, 1, 2, 3]), [(1, 3, 3)])
 
-    def test_a_small_map_offers_its_small_groups(self):
-        # 70 sounds: a group of 13 holds every target and is offered, where a large map would stop above it.
-        nodes = tree((0, None, 0, 70), (1, 0, 0, 33), (2, 0, 33, 57), (3, 0, 57, 70))
-        flags = np.zeros(70, dtype=bool); flags[[58, 59, 60]] = True
-        self.assertEqual([g['node'] for g in map_entries.groups(nodes, flags)], [3])
-        flags[[1]] = True
-        self.assertEqual([g['node'] for g in map_entries.groups(nodes, flags)], [3])
-        flags[[2, 40]] = True
-        self.assertEqual([g['node'] for g in map_entries.groups(nodes, flags)], [3, 1, 2])
-        self.assertEqual(sorted(g['node'] for g in map_entries._frontier(nodes, 60)), [1, 2, 3])
+    def test_at_most_ten_flags_most_unheard_targets_first(self):
+        nodes = tree((0, None, 0, 120), *((part + 1, 0, 10 * part, 10 * part + 10) for part in range(12)))
+        positions = [10 * part + at for part in range(12) for at in range(5)] + [35]
+        # Part 1 was listened to completely, part 2 but for one sound; part 4 has one target more than the others.
+        found = self.flagged(nodes, positions, listened=[*range(5), *range(10, 14)])
+        self.assertEqual(len(found), map_entries.MOST)
+        self.assertEqual((found[0], found[1], found[-1]), ((4, 6, 6), (3, 5, 5), (12, 5, 5)))
+        self.assertFalse({1, 2} & {node for node, _, _ in found})
 
 
 class MapEntryApi(ExploreCheck):
@@ -71,34 +71,67 @@ class MapEntryApi(ExploreCheck):
         at = {p['start_s']: p['position'] for p in points}
         found = self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': ids['Zosterops japonicus']}).json()
         self.assertEqual(found['species']['scientific_name'], 'Zosterops japonicus')
-        self.assertEqual(found['heard'], 2)
-        self.assertEqual(found['detected'], len(found['targets']))
-        self.assertGreater(found['detected'], 0)
+        self.assertGreater(len(found['targets']), 0)
         self.assertEqual(sorted(found['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
-        self.assertTrue(found['groups'])
         for group in found['groups']:
-            self.assertGreaterEqual(group['detected'] + group['heard'], 1)
+            self.assertGreaterEqual(group['targets'], map_entries.MIN_TARGETS)
             self.assertEqual(group['size'], group['hi'] - group['lo'])
-        self.assertEqual(sum(g['detected'] for g in found['groups']) <= found['detected'], True)
+        self.assertEqual(found['scattered'] + sum(g['targets'] for g in found['groups']), len(found['targets']))
 
         near = self.client.get('/explore/entries/examples', params={'dataset': 1, 'species_id': ids['Zosterops japonicus']}).json()
-        self.assertEqual((near['examples'], near['example_positions']), (2, sorted([at[0], at[5]])))
-        self.assertTrue(set(near['example_positions']) <= set(near['targets']))
+        self.assertEqual(near['examples'], 2)
+        self.assertTrue({at[0], at[5]} <= set(near['targets']))
         self.assertLessEqual(len(near['targets']), 2 * (map_entries.NEIGHBOURS + 1))
-        self.assertGreaterEqual(sum(g['examples'] for g in near['groups']), 1)
         none = self.client.get('/explore/entries/examples', params={'dataset': 1, 'species_id': ids['Horornis diphone']}).json()
         self.assertEqual((none['examples'], none['groups'], none['targets']), (0, [], []))
 
+        # The fixture's AI only answers birds of Japan: no sound is a target, and no group is flagged.
         unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
-        from taxa import japan_names
-        weak = [p['position'] for p in points if (c := __import__('json').loads(p['candidates']))
-                and all(s < .1 for n, s in c if n in japan_names())]
-        self.assertEqual(unsure['targets'], sorted(weak))
-        self.assertEqual((unsure['unsure'], unsure['outside'] + unsure['low']), (len(weak), len(weak)))
-        self.assertEqual([g['left'] for g in unsure['groups']], sorted((g['left'] for g in unsure['groups']), reverse=True))
-        for group in unsure['groups']:
-            self.assertEqual((group['unsure'], group['checked'] + group['left']), (group['outside'] + group['low'], group['unsure']))
+        self.assertEqual((unsure['targets'], unsure['groups'], unsure['scattered']), ([], [], 0))
         self.assertEqual(sorted(unsure['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
+        # Sounds whose first answer was a bird not recorded in Japan are targets from a roll-up score of 0.5, as on the
+        # site page's list: the one at 10 s stays out. Two targets are too few for a flag: both are scattered.
+        with connect(self.root) as db:
+            analysis = db.execute('SELECT id FROM analyses').fetchone()[0]
+            db.executemany("INSERT INTO rollups VALUES(?,?,?,'Strigidae',?,'Strix aluco',?,NULL)",
+                           [(analysis, 0, 5, .5, .5), (analysis, 20, 25, .9, .9), (analysis, 10, 15, .49, .49)])
+        unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
+        self.assertEqual((unsure['targets'], unsure['groups'], unsure['scattered']), (sorted([at[20], at[0]]), [], 2))
+        self.assertEqual(([g['scientific_name'] for g in unsure['guesses']], unsure['guess']), (['Strix aluco'], [0, 0]))
+        # Looking for that species by name finds every sound the AI answered with it: here the 0.5 bar does not apply.
+        owl = self.client.get('/species', params={'q': 'Strix aluco'}).json()[0]['id']
+        self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': owl}).json()['targets'], sorted([at[0], at[10], at[20]]))
+
+        # The targets come first in a group's list, and each sound says where it is on the map.
+        listed = self.client.post('/explore/nodes/0/segments', params={'dataset': 1}, json={'first': unsure['targets']}).json()['segments']
+        self.assertEqual(sorted(s['position'] for s in listed[:2]), unsure['targets'])
+        self.assertEqual([s['dist'] for s in listed[2:]], sorted(s['dist'] for s in listed[2:]))
+        # A sound outside the group being viewed opens the group beside it that holds the sound.
+        one, other = self.client.get('/explore', params={'dataset': 1}).json()['children'][:2]
+        self.assertEqual(self.client.get(f"/explore/points/{other['lo']}/group", params={'dataset': 1, 'node': one['node']}).json(), {'node': other['node']})
+        self.assertEqual(self.client.get(f"/explore/points/{one['lo']}/group", params={'dataset': 1, 'node': one['node']}).status_code, 400)
+
+        # What was answered in a group, newest first, with where each sound is on the map.
+        recorded = self.client.get('/explore/recorded', params={'dataset': 1, 'node': 0}).json()
+        self.assertEqual([(r['position'], r['verdict'], r['screen']) for r in recorded],
+                         [(at[10], 'absent', 'training'), (at[0], 'present', 'sound_map'), (at[5], 'present', 'species_mark')])
+        part = one
+        inside = self.client.get('/explore/recorded', params={'dataset': 1, 'node': part['node']}).json()
+        self.assertEqual({r['position'] for r in inside}, {r['position'] for r in recorded if part['lo'] <= r['position'] < part['hi']})
+
+        # An example from outside the site (Xeno-Canto or a file): the map's sounds most like the clip, best first.
+        with connect(self.root) as db:
+            vector = np.frombuffer(db.execute('SELECT v.embedding FROM explore_points p JOIN vectors v ON v.rowid=p.segment_id WHERE p.position=7').fetchone()[0], dtype='<f4')
+        clip = {'dataset_id': 1, 'species_id': ids['Zosterops japonicus'], 'source_kind': 'recording', 'source_id': 1, 'start_s': 0, 'end_s': 5}
+        with patch('search.query_embeddings', return_value=([vector.copy()], {})) as embedded:
+            like = self.client.post('/explore/entries/clip', json=clip).json()
+            self.assertEqual((7 in like['targets'], len(like['targets'])), (True, map_entries.CLIP_NEAR))
+            self.assertEqual(sorted(like['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
+            # 30 of the fixture's 64 sounds: dense on the whole map, so it or some of its parts are flagged.
+            self.assertTrue(like['groups'])
+            # Asked again for the next group opened, the clip is not listened to again.
+            self.client.post('/explore/entries/clip', json=clip)
+            self.assertEqual(embedded.call_count, 1)
         self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1}).status_code, 400)
 
 

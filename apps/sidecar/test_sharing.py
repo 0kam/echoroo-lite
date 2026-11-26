@@ -9,7 +9,7 @@ import soundfile as sf
 
 import labels
 from storage import connect
-from test_species_flow import E0, E1, site
+from test_species_flow import E0, E1, no_tests, site
 
 SCOPE = {'start_date': '2024-08-01', 'end_date': '2024-08-06'}
 
@@ -53,6 +53,7 @@ class SharingCheck(unittest.TestCase):
     def test_other_sites_answers_become_material_only_when_chosen(self):
         with site() as (root, client, species):
             sid = species['id']
+            no_tests(root, sid)
             dataset, recordings = second_site(root, client)
             answer(root, sid, [1])            # 8 answers here: too few alone
             answer(root, sid, recordings)     # 16 at the other site
@@ -76,6 +77,7 @@ class SharingCheck(unittest.TestCase):
     def test_a_species_ai_goes_out_as_one_file_and_comes_in_as_a_new_ai(self):
         with site() as (root, client, species):
             sid = species['id']
+            no_tests(root, sid)
             answer(root, sid, [1, 2, 3])
             made = client.post('/custom-models', json={'dataset_id': 1, 'species_id': sid, **SCOPE}).json()
             out = root / 'out'; out.mkdir()
@@ -148,6 +150,28 @@ class SharingCheck(unittest.TestCase):
             self.assertEqual(client.post('/custom-models/import', json={'dataset_id': 1, 'path': str(out / 'none.json'), 'inspect': True}).json()['detail'], 'file_missing')
             (out / 'bad.csv').write_text('a,b\n1,2\n', encoding='utf-8')
             self.assertEqual(client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': str(out / 'bad.csv')}).json()['detail'], 'heard_file_invalid')
+
+    def test_no_bird_sound_goes_out_and_comes_in_with_the_table(self):
+        with site() as (root, client, species):
+            sound = dict(dataset_id=1, recording_id=1, start_s=1, end_s=3)
+            client.post('/heard/map-answer', json={**sound, 'verdict': 'no_bird'})
+            out = root / 'out'; out.mkdir()
+            made = client.post('/datasets/1/heard/export', json={'folder': str(out)}).json()
+            with open(made['path'], encoding='utf-8-sig', newline='') as stream:
+                table = list(csv.DictReader(stream))
+            self.assertEqual([(row['scientific_name'], row['name'], row['verdict']) for row in table], [('(no bird)', '鳥の声がしない', 'present')])
+            empty = {'added': 0, 'different': 0, 'same': 0, 'no_recording': 0, 'no_species': 0, 'invalid': 0}
+            take = lambda: client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': made['path']}).json()
+            self.assertEqual(take(), {**empty, 'same': 1})
+            with connect(root) as db:
+                db.execute('DELETE FROM labels')
+            self.assertEqual(take(), {**empty, 'added': 1})
+            self.assertEqual(client.get('/datasets/1/heard').json()['no_bird'], {'site': 1, 'all': 1})
+            # Where a species is recorded as heard, the table's "no bird sound" is left out; taken back, it is not written.
+            client.post('/heard/map-answer', json={**sound, 'verdict': 'present', 'species_id': species['id']})
+            self.assertEqual(take(), {**empty, 'different': 1})
+            again = client.post('/datasets/1/heard/export', json={'folder': str(out / '..')}).json()
+            self.assertEqual(again['rows'], 1)
 
 
 if __name__ == '__main__':

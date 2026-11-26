@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -154,6 +154,11 @@ class SearchRunRequest(BaseModel):
     clips: list[ClipRequest] = Field(min_length=1, max_length=20)
 
 
+class MapClip(ClipRequest):
+    dataset_id: int = Field(ge=1)
+    species_id: str
+
+
 class ExampleRef(BaseModel):
     kind: Literal['named', 'confirmed', 'unverified']
     origin: Literal['quiz', 'xeno-canto', 'search-reference', 'presence', 'validation']
@@ -237,7 +242,7 @@ class RollupAnswer(BaseModel):
 class HeardFix(BaseModel):
     dataset_id: int
     ids: list[int] = Field(min_length=1, max_length=2000)
-    action: Literal['present', 'absent', 'unknown', 'other', 'add', 'delete']
+    action: Literal['present', 'absent', 'unknown', 'other', 'add', 'no_bird', 'delete']
     species_id: str | None = None
 
     @model_validator(mode='after')
@@ -252,8 +257,14 @@ class MapAnswer(BaseModel):
     recording_id: int
     start_s: float = Field(ge=0, allow_inf_nan=False)
     end_s: float = Field(gt=0, allow_inf_nan=False)
-    species_id: str
-    verdict: Literal['present', 'absent', 'unknown']
+    species_id: str | None = None
+    verdict: Literal['present', 'absent', 'unknown', 'no_bird']
+
+    @model_validator(mode='after')
+    def species_named(self):
+        if (self.verdict == 'no_bird') != (self.species_id is None):
+            raise ValueError('species_id goes with every verdict but "no_bird"')
+        return self
 
 
 class ModelSharing(BaseModel):
@@ -522,6 +533,20 @@ def create_app(root, models, token):
             raise CatalogError('invalid_input')
         return (map_entries.by_species if entry == 'species' else map_entries.by_examples)(root, dataset, species_id)
 
+    @app.post('/explore/entries/clip')
+    def explore_clip(body: MapClip):
+        import map_entries
+        # Listening to the clip runs the AI, as a search does: not while a job is running.
+        with lock:
+            if worker and worker.is_alive():
+                raise HTTPException(409, 'job_busy')
+            return map_entries.by_clip(root, models, body.dataset_id, body.species_id, body.source_kind, body.source_id, body.start_s, body.end_s)
+
+    @app.get('/explore/recorded')
+    def explore_recorded(dataset: int = Query(ge=1), node: int = Query(ge=0)):
+        import map_entries
+        return map_entries.recorded(root, dataset, node)
+
     @app.get('/explore/points')
     def explore_points(dataset: int = Query(ge=1)):
         from explore import points_file
@@ -537,13 +562,21 @@ def create_app(root, models, token):
                 raise HTTPException(404, 'not_found') from None
             raise
 
+    @app.get('/explore/points/{position}/group')
+    def explore_point_group(position: int, dataset: int = Query(ge=1), node: int = Query(ge=0)):
+        from explore import point_group
+        return point_group(root, dataset, node, position)
+
+    # POST carries `first`, the positions listed before the others: too many for a URL.
     @app.get('/explore/nodes/{node}/segments')
+    @app.post('/explore/nodes/{node}/segments')
     def explore_node_segments(node: int, dataset: int = Query(ge=1),
                               offset: int = Query(default=0, ge=0),
-                              near: int | None = Query(default=None, ge=0)):
+                              near: int | None = Query(default=None, ge=0),
+                              first: list[int] = Body(default=[], embed=True)):
         from explore import node_segments
         try:
-            return node_segments(root, dataset, node, offset, near)
+            return node_segments(root, dataset, node, offset, near, first)
         except CatalogError as error:
             if str(error) == 'not_found':
                 raise HTTPException(404, 'not_found') from None
@@ -723,6 +756,12 @@ def create_app(root, models, token):
         from results_workflow import context
         ctx = context(root, dataset_id, start_date.isoformat() if start_date else None, end_date.isoformat() if end_date else None)
         return test_sounds.report(root, ctx, species_id)
+
+    @app.post('/datasets/{dataset_id}/species/{species_id}/test-phase')
+    def species_test_phase(dataset_id: int, species_id: str):
+        import test_sounds
+        from results_workflow import context
+        return test_sounds.freeze(root, context(root, dataset_id), species_id)
 
     @app.post('/datasets/{dataset_id}/species/{species_id}/labels')
     def custom_model_label(dataset_id: int, species_id: str, body: ModelLabel):

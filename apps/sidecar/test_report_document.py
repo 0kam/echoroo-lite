@@ -32,6 +32,11 @@ def sections(content):
 
 
 class ReportDocumentTest(unittest.TestCase):
+    def test_every_evidence_origin_is_named(self):
+        from presence import ORIGINS
+        for locale in ('ja', 'en'):
+            self.assertLessEqual({'origin_' + o for o in {*ORIGINS.values(), 'check'}}, set(messages(locale)))
+
     def test_new_statuses(self):
         self.assertEqual(status(snapshot()),'decided')
         undecided=snapshot('undecided');self.assertEqual(status(undecided),'undecided')
@@ -70,6 +75,8 @@ class ReportDocumentTest(unittest.TestCase):
         self.assertEqual(heard_text({'evidence_count':15,'marked':1,'heard_in_checks':14,'voice_on_ai_page':0},t),
                          '15 音（「声はあったか」の画面で 1、「AI の答えを確かめる」で 14）')
         self.assertEqual(heard_text({'evidence_count':14,'marked':0,'heard_in_checks':14,'voice_on_ai_page':0},t),'14 音')
+        self.assertEqual(heard_text({'evidence_count':5,'marked':1,'heard_in_checks':1,'heard_on_map':1,'heard_in_family_rows':2},t),
+                         '5 音（「声はあったか」の画面で 1、「AI の答えを確かめる」で 1、音の地図で 1、「AI が日本で記録のない種と答えた音」で 2）')
 
     def test_details_keep_uncertainty_without_score_groups(self):
         snap=snapshot(rare=True)

@@ -263,7 +263,7 @@ class ExploreCheck(unittest.TestCase):
             self.assertEqual([row['dist'] for row in page['segments']],
                              sorted(row['dist'] for row in page['segments']))
             self.assertTrue(all(set(row) == {'segment_id', 'recording_id', 'path', 'start_s', 'end_s',
-                                              'recorded_at', 'timezone', 'candidates', 'dist'}
+                                              'recorded_at', 'timezone', 'candidates', 'dist', 'position'}
                                 for row in page['segments']))
             self.assertTrue(all(set(candidate) == {'id', 'scientific_name', 'score'}
                                 for row in page['segments'] for candidate in row['candidates']))

@@ -1019,7 +1019,22 @@ def point_segment(root, dataset_id, position):
     return _segment_shape(row, species_ids)
 
 
-def node_segments(root, dataset_id, node, offset=0, near=None):
+def point_group(root, dataset_id, node, position):
+    """The group to open for a sound outside the group being viewed: the largest group that holds the sound and
+    not the viewed group (that group's sibling, or the sibling of one of its ancestors)."""
+    _, _, _, run = _current_run(root, dataset_id)
+    with connect(root) as db:
+        row = run and db.execute('''SELECT p.node FROM explore_nodes p JOIN explore_nodes c ON c.run_id=p.run_id AND c.node=?
+            WHERE p.run_id=? AND p.lo<=? AND ?<p.hi AND (p.hi<=c.lo OR c.hi<=p.lo) ORDER BY p.depth LIMIT 1''',
+            (node, run['id'], position, position)).fetchone()
+    if not row:
+        raise CatalogError('not_found')
+    return {'node': row['node']}
+
+
+def node_segments(root, dataset_id, node, offset=0, near=None, first=()):
+    """A page of a group's sounds, nearest first (to the sound `near`, else to the group's centre); the sounds at
+    the positions `first` come before the others, each part in that order."""
     _, _, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
@@ -1044,6 +1059,9 @@ def node_segments(root, dataset_id, node, offset=0, near=None):
     centered = values - (values.mean(axis=0) if near is None else pca[near])
     distance = np.sqrt(np.einsum('ij,ij->i', centered, centered))
     ordering = np.arange(hi - lo) if terminal and near is None else np.argsort(distance, kind='stable')
+    if first:
+        ahead = np.isin(ordering + lo, list(first))
+        ordering = np.concatenate([ordering[ahead], ordering[~ahead]])
     page = ordering[offset:offset + 20]
     positions = (page + lo).tolist()
     with connect(root) as db:
@@ -1061,5 +1079,5 @@ def node_segments(root, dataset_id, node, offset=0, near=None):
     for position, index in zip(positions, page):
         row = by_position[position]
         shaped = _segment_shape(row, species_ids)
-        shaped['dist'] = float(distance[index]); segments.append(shaped)
+        shaped['dist'] = float(distance[index]); shaped['position'] = position; segments.append(shaped)
     return {'total': hi - lo, 'segments': segments}
