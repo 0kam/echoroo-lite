@@ -1,11 +1,12 @@
 """Test sounds: answers set aside per species and site, never used as material, to compare each round of a species AI.
 
-The split is by recording, so calls of one morning do not land on both sides: every answer of the species in a
-"test recording" is a test sound, also answers given later. Test sounds are made first (phase 'collecting'): a
-recording becomes a test recording when a sound in it is answered on the species-AI page, and recordings with a check
-answer count too. Growing starts only when the set is frozen ('fixed': adding recordings later would test earlier
-rounds on sounds they were made from), early with the sounds found so far when the species calls rarely. 'skipped'
-(no test sounds) is only the state of a species grown before test sounds came first.
+The split is by recording, so calls of one morning do not land on both sides. Test sounds are made first (phase
+'collecting'): a recording becomes a test recording when a sound in it is answered on the species-AI page, and
+recordings with a check answer count too; every answer of the species in a test recording is a test sound. Growing
+starts only when the set is frozen ('fixed'), early with the sounds found so far when the species calls rarely: from
+then on the test sounds are the answers first given by that time (`sounds`), so every round is tried on the same
+sounds; an answer given later in a test recording is neither a test sound nor material. 'skipped' (no test sounds)
+is only the state of a species grown before test sounds came first.
 """
 import json
 from pathlib import Path
@@ -25,7 +26,7 @@ SCHEMA = '''
         PRIMARY KEY(site_id,species_id,recording_id));
     CREATE TABLE IF NOT EXISTS test_phases (
         site_id INTEGER NOT NULL REFERENCES sites, species_id TEXT NOT NULL REFERENCES species,
-        state TEXT NOT NULL CHECK(state IN ('fixed','skipped')), PRIMARY KEY(site_id,species_id));
+        state TEXT NOT NULL CHECK(state IN ('fixed','skipped')), fixed_at TEXT, PRIMARY KEY(site_id,species_id));
 '''
 HEARD = 10       # "heard" test sounds aimed for
 NOT_HEARD = 20   # "not heard" test sounds aimed for
@@ -68,10 +69,32 @@ def add(db, site_id, species_id, recording_id):
         db.execute('INSERT OR IGNORE INTO test_recordings(site_id,species_id,recording_id) VALUES(?,?,?)', (site_id, species_id, recording_id))
 
 
-def progress(db, ctx, species_id, labelled, test):
-    """How far the test sounds are: `labelled` as from `custom_models._labelled`, `test` the test recordings."""
+def sounds(db, site_id, species_id, labelled):
+    """The test sounds among `labelled` (as from `custom_models._labelled`): the answers in a test recording, once
+    frozen only those first given by then. A corrected answer keeps the time of its first answer, so it stays one.
+    A set frozen before the time was kept (`fixed_at` NULL) takes later answers too, as it did."""
+    test = recordings(db, site_id, species_id)
+    fixed = db.execute('SELECT fixed_at FROM test_phases WHERE site_id=? AND species_id=?', (site_id, species_id)).fetchone()
+    return {segment: value for segment, value in labelled.items()
+            if value['recording_id'] in test and (not fixed or fixed[0] is None or value['first'] <= fixed[0])}
+
+
+def marker(db, site_id):
+    """For the list of checked sounds: a function telling whether a label row of the site is a test sound (as `sounds`)."""
+    stored = {(r[0], r[1]) for r in db.execute('SELECT species_id,recording_id FROM test_recordings WHERE site_id=?', (site_id,))}
+    fixed = {r[0]: r[1] for r in db.execute('SELECT species_id,fixed_at FROM test_phases WHERE site_id=? AND fixed_at IS NOT NULL', (site_id,))}
+    first = {tuple(r)[:4]: r[4] for r in db.execute('''SELECT taxon_id,recording_id,start_s,end_s,MIN(created_at) FROM labels
+        WHERE taxon_id IN (SELECT value FROM json_each(?)) GROUP BY 1,2,3,4''', (json.dumps(list(fixed)),))}
+    return lambda row: (row['taxon_id'], row['recording_id']) in stored and (
+        row['taxon_id'] not in fixed or first[row['taxon_id'], row['recording_id'], row['start_s'], row['end_s']] <= fixed[row['taxon_id']])
+
+
+def progress(db, ctx, species_id, labelled):
+    """How far the test sounds are: `labelled` as from `custom_models._labelled`."""
     from labels import current
-    said = [value['label'] for value in labelled.values() if value['recording_id'] in test]
+    site_id = ctx['site']['id']
+    test = recordings(db, site_id, species_id)
+    said = [value['label'] for value in sounds(db, site_id, species_id, labelled).values()]
     heard, not_heard = said.count('target'), said.count('other')
     unknown = sum(row['recording_id'] in test for row in current(db, ctx['dataset']['id'], species_id, 'unknown'))
     return {'heard': heard, 'not_heard': not_heard, 'answered': heard + not_heard + unknown, 'aim_heard': HEARD, 'aim_not_heard': NOT_HEARD,
@@ -87,11 +110,12 @@ def freeze(root, ctx, species_id):
     with connect(root) as db:
         test = recordings(db, site_id, species_id)
         if phase(db, site_id, species_id) != 'collecting' or \
-                progress(db, ctx, species_id, _labelled(db, ctx, species_id)[1], test)['heard'] < ENOUGH:
+                progress(db, ctx, species_id, _labelled(db, ctx, species_id)[1])['heard'] < ENOUGH:
             raise CatalogError('test_phase_refused')
         db.executemany('INSERT OR IGNORE INTO test_recordings(site_id,species_id,recording_id) VALUES(?,?,?)',
                        [(site_id, species_id, recording) for recording in test])
-        db.execute("INSERT INTO test_phases(site_id,species_id,state) VALUES(?,?,'fixed')", (site_id, species_id))
+        # The same clock and format as `labels.created_at`.
+        db.execute("INSERT INTO test_phases(site_id,species_id,state,fixed_at) VALUES(?,?,'fixed',strftime('%Y-%m-%d %H:%M:%f','now'))", (site_id, species_id))
         db.execute('DELETE FROM workflow_cache')
     return {'state': 'fixed'}
 
@@ -126,29 +150,27 @@ def _rounds(folder, current):
 def report(root, ctx, species_id):
     """How each round of the species AI does on the test sounds, and which sounds to listen to.
 
-    {'state': 'none'} when the species has no test sounds; else the counts, one row per round ("found"
-    of the heard test sounds, "false" of the not-heard ones), and for the current round the sounds it missed,
-    wrongly found, and found for the first time."""
+    {'state': 'none'} when the species has no test sounds; else the counts, whether the set is closed to later
+    answers (`fixed`), one row per round ("found" of the heard test sounds, "false" of the not-heard ones), and for
+    the current round the sounds it missed, wrongly found, and found for the first time."""
     from custom_models import _labelled, _normalise, list_models
     with connect(root) as db:
         run, labelled = _labelled(db, ctx, species_id)
         test = recordings(db, ctx['site']['id'], species_id)
-        sounds = {segment: value for segment, value in labelled.items() if value['recording_id'] in test}
+        found = sounds(db, ctx['site']['id'], species_id, labelled)
         rows = {r['segment_id']: dict(r) for r in db.execute('''SELECT s.id AS segment_id,s.start_s,s.end_s,r.id AS recording_id,r.path,r.seconds,
             r.recorded_at,v.embedding FROM segments s JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
-            JOIN vectors v ON v.rowid=s.id WHERE s.id IN (SELECT value FROM json_each(?))''', (json.dumps(list(sounds)),))}
-    files = sorted(Path(r['path']).name for r in rows.values() if r['recording_id'] in test)
-    files = sorted(set(files))
-    sounds = {segment: value for segment, value in sounds.items() if segment in rows}
-    heard = [s for s, v in sounds.items() if v['label'] == 'target']
-    absent = [s for s, v in sounds.items() if v['label'] == 'other']
-    if not test or not heard:
+            JOIN vectors v ON v.rowid=s.id WHERE s.id IN (SELECT value FROM json_each(?))''', (json.dumps(list(found)),))}
+        fixed = db.execute('SELECT fixed_at FROM test_phases WHERE site_id=? AND species_id=?', (ctx['site']['id'], species_id)).fetchone()
+    files = sorted({Path(r['path']).name for r in rows.values()})
+    heard = [s for s, v in found.items() if s in rows and v['label'] == 'target']
+    absent = [s for s, v in found.items() if s in rows and v['label'] == 'other']
+    if not heard and not absent:
         return {'state': 'none'}
     models = list_models(root, ctx, species_id, every=True)
     model = models[0] if models else None
-    result = {'state': 'ready', 'sounds': {'heard': len(heard), 'not_heard': len(absent)}, 'rounds': [], 'aim': HEARD, 'threshold': FOUND,
-              'recordings': files,
-              'missed': [], 'false': [], 'new': []}
+    result = {'state': 'ready', 'sounds': {'heard': len(heard), 'not_heard': len(absent)}, 'rounds': [], 'threshold': FOUND,
+              'fixed': bool(fixed and fixed[0]), 'recordings': files, 'missed': [], 'false': [], 'new': []}
     if model is None:
         return result
     order = heard + absent

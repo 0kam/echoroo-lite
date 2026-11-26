@@ -85,6 +85,7 @@
   const startCheck=createTask(async()=>{const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
     start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(resolve(`/datasets/${id}/validation/${validation.id}`));},{toast:true});
   // Nothing to rank by and nothing to make an AI from yet: the page only points to the search.
+  const chosen=$derived(source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):source?fill('mdIntroBuiltin',{model:modelIntro(info!.engine)}):'');
   const searchFirst=$derived(!!info&&!source&&!info.can_train&&!model);
   // The page that led here (the checked-sounds list) can be gone back to; this page passes itself on to the search.
   const origin=$derived(returnPath(page.url,/^\/datasets\/\d+\/heard(\?[^#]*)?$/)),here=`/datasets/${id}/species/${speciesId}/model?${range}`;
@@ -107,6 +108,7 @@
       <div class="meter">{#each [['mdVoice',test.heard,test.aim_heard],['mdNoVoice',test.not_heard,test.aim_not_heard]] as [name,n,of]}
         <span>{t(name as string)}</span><progress max={of as number} value={Math.min(n as number,of as number)} aria-label={t(name as string)}></progress><span>{fill('tpCount',{n,of})}</span>{/each}</div>
       <p class="muted">{t('tpWhy')}</p>
+      {#if chosen&&!test.complete}<p class="muted">{chosen}</p>{/if}
       {#if test.complete}<div class="status-box" role="status"><strong>{t('tpReadyTitle')}</strong><p>{fill('tpReadyText',{heard:test.heard,not_heard:test.not_heard})}</p></div>
         <div class="actions"><Button variant="primary" pending={startGrowing.pending} onclick={()=>startGrowing.run()}>{t('tpStart')}</Button></div>
       <!-- Many answers and still short, or nothing left to offer: growing can start with the test sounds found so far. -->
@@ -142,7 +144,7 @@
         </div>{/if}
       {/if}
     </section>
-    <TestSounds datasetId={id} {speciesId} name={commonName(info.species,app.locale)||info.species.scientific_name} query={range.toString()} timezone={site?.timezone}
+    <TestSounds datasetId={id} {speciesId} query={range.toString()} timezone={site?.timezone}
       version={`${model?.id}:${model?.round}:${info.examples.positive_5s}:${info.examples.negative_5s}:${info.test?.heard}:${info.test?.not_heard}`}/>{/if}
     <!-- `keys`: a row of the next sounds, which can be the selected one; pressing or focusing anything in it selects it. -->
     {#snippet row(item:LabelRow,keys=false)}{@const on=keys&&item===current}<article class="row" class:on aria-current={on?'true':undefined}
@@ -166,7 +168,7 @@
         <p>{t('mdShortIntro')}</p>
         <!-- The details stay one click away so the first sound is in view. -->
         <details><summary>{t('mdHowChosen')}</summary>
-          <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelIntro(info.engine)})}</p>
+          {#if !collecting}<p>{chosen}</p>{/if}
           <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p><p class="muted">{t('mdEvidence')}</p></details>
         {#if batch.length}<p class="muted">{t('mdKeys')}</p>{/if}
         {#each batch as item (item.segment_id)}{@render row(item,true)}{:else}

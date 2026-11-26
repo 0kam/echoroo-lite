@@ -10,7 +10,7 @@ import shutil
 import tempfile
 from bisect import bisect_left
 from datetime import date
-from itertools import islice, zip_longest
+from itertools import zip_longest
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -169,13 +169,14 @@ def _materials(db, ctx, species_id, pieces=None):
     import test_sounds
     run, found = _labelled(db, ctx, species_id, pieces)
     test = test_sounds.recordings(db, ctx['site']['id'], species_id)
-    return run, {segment: value for segment, value in found.items() if value['recording_id'] not in test}
+    return run, {segment: {k: v for k, v in value.items() if k != 'first'} for segment, value in found.items() if value['recording_id'] not in test}
 
 
 def _labelled(db, ctx, species_id, pieces=None):
     """Labelled 5-second pieces of the site's main analysis, from the species' current labels at the site
     (`labels.on_pieces`). Origin: 'label' (the species-AI page), 'check' (a check answer), 'presence' (any other
-    screen) or 'no_bird' (a "no bird sound" answer: "no call" for every species without its own answer there). A mark on a deleted or outdated search does not count, as on the species page."""
+    screen) or 'no_bird' (a "no bird sound" answer: "no call" for every species without its own answer there). A mark on a deleted or outdated search does not count, as on the species page.
+    `first`: when its interval was first answered, however often the answer was changed since (`test_sounds.sounds`)."""
     from search_runs import site_run
     run = site_run(db, ctx['site']['id'], species_id)
     pieces = _pieces(db, ctx) if pieces is None else pieces
@@ -186,8 +187,11 @@ def _labelled(db, ctx, species_id, pieces=None):
     found = on_pieces(rows, pieces, first='training')
     for segment, row in on_pieces([{**row, 'verdict': 'absent', 'source': 'no_bird'} for row in current(db, ctx['dataset']['id'], no_bird(db), 'present')], pieces).items():
         found.setdefault(segment, row)
+    first = {tuple(r)[:4]: r[4] for r in db.execute('SELECT taxon_id,recording_id,start_s,end_s,MIN(created_at) FROM labels WHERE taxon_id IN (?,?) GROUP BY 1,2,3,4',
+                                                    (species_id, no_bird(db)))}
     # Newest first, as the species-AI page lists its answers.
-    return run, {segment: {'label': TO_ANSWER[row['verdict']], 'origin': ORIGINS.get(row['source'], 'presence'), 'recording_id': row['recording_id']}
+    return run, {segment: {'label': TO_ANSWER[row['verdict']], 'origin': ORIGINS.get(row['source'], 'presence'), 'recording_id': row['recording_id'],
+                           'first': first[row['taxon_id'], row['recording_id'], row['start_s'], row['end_s']]}
                  for segment, row in sorted(found.items(), key=lambda item: (item[1]['created_at'], item[1]['id']), reverse=True)}
 
 
@@ -204,71 +208,59 @@ def material_status(root, ctx, species_ids):
     return result
 
 
-def boundary_ranks(total, known, shown, round_, size=10):
-    """Up to `size` unlabelled ranks (0 = most similar) around where the voice stops.
-
-    The voice is assumed present down to the deepest "voice" label (or the last row shown in the
-    similarity list) and absent from the next "no voice" label below it. Ranks between the two are
-    picked at centre-weighted (triangular) quantiles, so they cluster mid-bracket and thin out
-    towards its ends. Each round shifts the quantiles and avoids the previous round's ranks.
-    """
-    lo = max([shown - 1] + [rank for rank, label in known.items() if label == 'target'])
-    hi = min([total] + [rank for rank, label in known.items() if label == 'other' and rank > lo])
-    inside = sorted(rank for rank in known if lo < rank < hi)
-    free = hi - lo - 1 - len(inside)
-    if free == 0:
-        # Boundary pinned between two labels: take the nearest unlabelled ranks on both sides.
-        order = (r for pair in zip_longest(range(hi, total), range(lo, shown - 1, -1)) for r in pair
-                 if r is not None and r not in known)
-        return sorted(list(islice(order, (round_ + 1) * size))[-size:])
-
-    def rank_of(index):  # index-th unlabelled rank inside the bracket
-        rank = lo + 1 + index
-        for labelled in inside:
-            if labelled > rank:
-                break
-            rank += 1
-        return rank
-    if free <= size:
-        return [rank_of(i) for i in range(free)]
-
-    def nearest(index, taken):
-        for step in range(free):
-            for candidate in (index - step, index + step):
-                if 0 <= candidate < free and candidate not in taken:
-                    return candidate
-
-    previous = set()
-    for k in range(round_ + 1):
-        phase, picked = (0.5 + k * 0.6180339887) % 1, set()
-        for i in range(size):
-            u = (i + phase) / size
-            x = (u / 2) ** 0.5 if u < 0.5 else 1 - ((1 - u) / 2) ** 0.5
-            avoid = picked | previous if len(picked | previous) < free else picked
-            picked.add(nearest(min(int(x * free), free - 1), avoid))
-        previous = picked
-    return sorted(rank_of(i) for i in previous)
-
-
-RANKED = 'SELECT segment_id,similarity,ROW_NUMBER() OVER (ORDER BY similarity DESC,segment_id)-1 AS rank FROM search_hits WHERE run_id=?'
 BATCH = 10
-TOP = 3  # likely voice, offered while "voice" is under MIN_CLASS_EXAMPLES
-ENDS = 2  # species-AI batches: the highest and the lowest scores, each
+ENDS = 2  # species-AI batches: the highest scores, and as many drawn from the lower half
 NEAR_POOL = 4
-FLOOR = 0.005  # built-in scores below this show as 0.00 and tell the sounds apart no better than chance
+TOP_SHARE, TOP_MIN = .01, 30  # the top layer of a ranking: its best 1% of ranks, at least 30 sounds
+# (top, middle, low) sounds of a batch, by whether "voice" and "no voice" are still short.
+MIX = {(True, True): (4, 3, 3), (True, False): (6, 4, 0), (False, True): (0, 4, 6), (False, False): (4, 3, 3)}
 
 
-def bracket_ranks(total, known, need_voice):
-    """Before a species AI exists: ranks to offer from a ranking (0 = most likely voice); `known` maps the ranks to
-    leave out to their label (None for sounds passed over). While "voice" is short, the top TOP free ranks;
-    the rest from `boundary_ranks` around where the voice stops."""
-    top = list(islice((r for r in range(total) if r not in known), TOP)) if need_voice else []
-    return sorted(top + [r for r in boundary_ranks(total, known, 0, 0) if r not in top][:BATCH - len(top)])
+def _rng(*state):
+    """A random generator seeded by `state` alone, so the same state draws the same batch (a reload does not
+    reshuffle) and any new answer or passed-over sound draws anew."""
+    return np.random.default_rng(int.from_bytes(hashlib.sha256(json.dumps(state).encode()).digest()[:8], 'big'))
 
 
-def scored_span(scores):
-    """How many of the best-first built-in `scores` to choose from: those that do not show as 0.00, and BATCH below them."""
-    return min(len(scores), sum(score >= FLOOR for score in scores) + BATCH)
+def layered_picks(ranked, known, need_voice, need_silent, rng, lanes=None):
+    """Before a species AI exists: BATCH (segment, score) pairs of `ranked` (best first) not in `known`, best first.
+
+    The ranking has three layers by rank: top (the best TOP_SHARE of the ranks, at least TOP_MIN, never into the
+    lower half), low (the lower half) and middle (between). Sounds are drawn at random within a layer, MIX of each;
+    what a layer cannot give comes from its neighbour (for the middle: the side MIX asks more of), then from the third.
+
+    `lanes` (a search made from several examples): {segment: the example it is nearest to}. The top layer's sounds
+    are then dealt one example at a time, at random within an example, so each example gets its share; the deal
+    starts with the example that has the fewest answered sounds there, which evens the shares out over the batches,
+    and an example with none left passes its turn on. An example with no sound at all in the top layer (a minor
+    call, whose hits rank lower) plays with its own best-ranked max(3, top quota) free sounds instead, so it is drawn
+    too. The middle and low layers are one ranking, whatever the example.
+    """
+    low = len(ranked) // 2
+    top = min(max(TOP_MIN, int(len(ranked) * TOP_SHARE)), low)
+    want = MIX[need_voice, need_silent]
+    free = lambda ranks: [rank for rank in ranks if ranked[rank][0] not in known]
+    by_lane = {}
+    for rank, (segment, _) in enumerate(ranked):
+        by_lane.setdefault(lanes[segment] if lanes else 0, []).append(rank)
+    hands = []
+    for _, ranks in sorted(by_lane.items()):
+        span = [rank for rank in ranks if rank < top]
+        if not span:
+            best = free(ranks)[:max(3, want[0])]
+            span = [rank for rank in ranks if best and rank <= best[-1]]
+        hands.append((sum(known.get(ranked[rank][0]) is not None for rank in span), rng.permutation(free(span)).astype(int).tolist()))
+    start = min(range(len(hands)), key=lambda lane: hands[lane][0])
+    dealt = [rank for turn in zip_longest(*(hand for _, hand in hands[start:] + hands[:start])) for rank in turn if rank is not None]
+    pools = [dealt] + [rng.permutation(sorted(set(free(range(*span))) - set(dealt))).astype(int).tolist() for span in ((top, low), (low, len(ranked)))]
+    take = [min(n, len(pool)) for n, pool in zip(want, pools)]
+    for layer, others in enumerate(((1, 2), (0, 2) if want[0] >= want[2] else (2, 0), (1, 0))):
+        short = want[layer] - min(want[layer], len(pools[layer]))
+        for other in others:
+            more = min(short, len(pools[other]) - take[other])
+            take[other] += more
+            short -= more
+    return [ranked[rank] for rank in sorted(rank for pool, n in zip(pools, take) for rank in pool[:n])]
 
 
 def boundary_score(answers):
@@ -291,14 +283,15 @@ def boundary_score(answers):
     return best[(len(best) - 1) // 2]
 
 
-def model_picks(scored, known):
+def model_picks(scored, known, rng):
     """With a species AI: BATCH (segment, score) pairs not in `known` (answered, with their label, or passed over: None).
 
-    The free pieces are ranked by score. Its scores bunch together, so 0.5 is not where its answer changes: the boundary
-    is the score that best separates the answered pieces (`boundary_score`), and the boundary rank is the number of
-    free pieces scoring at or above it (the middle rank without both kinds of answer). Most of the batch comes from the
-    NEAR_POOL times as many ranks centred on it (widened to whole runs of equal scores), spread evenly by segment id
-    rather than side by side; ENDS come from the top ranks and ENDS from the bottom ranks.
+    The free pieces are ranked by score. ENDS come from the top ranks, and ENDS are drawn at random from the lower
+    half: clearly different sounds, not always the same extremes. For the rest: its scores bunch together, so 0.5 is
+    not where its answer changes: the boundary is the score that best separates the answered pieces
+    (`boundary_score`), and the boundary rank is the number of the other free pieces scoring at or above it (the middle
+    rank without both kinds of answer). They come from the NEAR_POOL times as many ranks centred on it (widened to
+    whole runs of equal scores), spread evenly by segment id rather than side by side.
     """
     scored = list(scored)
     score = dict(scored)
@@ -306,7 +299,8 @@ def model_picks(scored, known):
     free = sorted(((segment, value) for segment, value in scored if segment not in known), key=lambda p: (-p[1], p[0]))
     if len(free) <= BATCH:
         return free
-    middle, count = free[ENDS:-ENDS], BATCH - 2 * ENDS
+    far = set((len(free) // 2 + rng.choice(len(free) - len(free) // 2, ENDS, replace=False)).tolist())
+    middle, count = [p for rank, p in enumerate(free) if rank >= ENDS and rank not in far], BATCH - 2 * ENDS
     rank = len(middle) // 2 if cut is None else sum(value >= cut for _, value in middle)
     width = count * NEAR_POOL
     low = max(0, min(rank - width // 2, len(middle) - width))
@@ -314,7 +308,7 @@ def model_picks(scored, known):
     # ponytail: segment ids follow import and recording order, a stand-in for time; use recording times if that drifts.
     pool = sorted(p for p in middle if window[-1][1] <= p[1] <= window[0][1])
     near = [pool[(2 * i + 1) * len(pool) // (2 * count)] for i in range(count)]
-    return sorted(free[:ENDS] + near + free[-ENDS:], key=lambda p: (-p[1], p[0]))
+    return sorted(free[:ENDS] + near + [free[rank] for rank in far], key=lambda p: (-p[1], p[0]))
 
 
 def _ranked_builtin(root, db, ctx, species_id, analyses):
@@ -354,9 +348,12 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
         stage = test_sounds.phase(db, ctx['site']['id'], species_id)
         collecting = stage == 'collecting'
         labels = {segment: value for segment, value in every.items() if value['recording_id'] not in set_aside}
-        test = test_sounds.progress(db, ctx, species_id, every, set_aside)
-        positive = sum(value['label'] == 'target' for value in labels.values())
+        tests = test_sounds.sounds(db, ctx['site']['id'], species_id, every)
+        test = test_sounds.progress(db, ctx, species_id, every)
+        positive, negative = (sum(value['label'] == label for value in labels.values()) for label in ('target', 'other'))
+        # What the batch should bring more of: test sounds while they are made, then material for the first AI.
         need_voice = test['heard'] < test['aim_heard'] if collecting else positive < MIN_CLASS_EXAMPLES
+        need_silent = test['not_heard'] < test['aim_not_heard'] if collecting else negative < MIN_CLASS_EXAMPLES
         # A test sound is answered too: it is not asked again, though it is no material.
         leave = {**dict.fromkeys(skip), **{segment: value['label'] for segment, value in every.items()}}
         # Sounds of a test recording are not offered here: chosen by the very AI they test, they would flatter or damn it.
@@ -366,33 +363,24 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
         if batch:
             if model and model['applicable']:
                 source = 'custom'
-                picks = model_picks(((w['segment_id'], w['score']) for w in score_windows(root, model['id'])), leave)
-            elif run:
-                source = 'search'
-                total = db.execute('SELECT COUNT(*) FROM search_hits WHERE run_id=?', (run['id'],)).fetchone()[0]
-                known = {rank: leave[segment] for segment, rank in db.execute(
-                    f'SELECT segment_id,rank FROM ({RANKED}) WHERE segment_id IN (SELECT value FROM json_each(?))', (run['id'], json.dumps(list(leave))))}
-                ranks = bracket_ranks(total, known, need_voice)
-                picks = [tuple(r) for r in db.execute(f'SELECT segment_id,similarity FROM ({RANKED}) WHERE rank IN (SELECT value FROM json_each(?)) ORDER BY rank',
-                                                      (run['id'], json.dumps(ranks)))]
+                picks = model_picks(((w['segment_id'], w['score']) for w in score_windows(root, model['id'])), leave,
+                                    _rng(species_id, model['id'], model['round'], sorted(leave)))
             else:
-                ranked = _ranked_builtin(root, db, ctx, species_id, [a['id'] for a in _main_analyses(db, ctx)])
+                # ponytail: the whole ranking is read for each batch; draw the ranks in SQL if a site's sounds make this slow.
+                hits = db.execute('SELECT segment_id,similarity,reference_index FROM search_hits WHERE run_id=? ORDER BY similarity DESC,segment_id',
+                                  (run['id'],)).fetchall() if run else []
+                ranked = [tuple(r)[:2] for r in hits] if run else _ranked_builtin(root, db, ctx, species_id, [a['id'] for a in _main_analyses(db, ctx)])
                 if ranked:
-                    source = 'builtin'
-                    # Sounds scored 0.00 are left for last: first the scored ones and a few below them, then all.
-                    for span in (scored_span([score for _, score in ranked]), len(ranked)):
-                        known = {rank: leave[segment] for rank, (segment, _) in enumerate(ranked[:span]) if segment in leave}
-                        ranks = bracket_ranks(span, known, need_voice)
-                        if len(ranks) == BATCH:
-                            break
-                    picks = [ranked[r] for r in ranks]
+                    source = 'search' if run else 'builtin'
+                    # A search made from several examples: each example's nearest sounds get their share of the batch.
+                    picks = layered_picks(ranked, leave, need_voice, need_silent, _rng(species_id, source, run and run['id'], sorted(leave)),
+                                          {r[0]: r[2] for r in hits} if run else None)
         rows = [{**row, 'label': None} for row in _rows(db, picks)]
-        # Answers in a test recording are listed too, so they can be taken back here; `test` marks them and the
-        # offered sounds that would become test sounds.
+        # Answers in a test recording are listed too, so they can be taken back here; `test` marks the test sounds.
         answered = [{**row, 'label': every[row['segment_id']]['label']}
                     for row in _rows(db, [(segment, None) for segment, value in every.items() if value['origin'] == 'label'])]
         for row in rows + answered:
-            row['test'] = row['recording_id'] in set_aside
+            row['test'] = row['segment_id'] in tests
         # Making the AI again from the very answers it was made from would change nothing but outdate its check.
         unchanged = bool(model and model['applicable']) and {(e['segment_id'], e['label']) for e in json.loads(db.execute(
             'SELECT snapshot FROM custom_models WHERE id=?', (model['id'],)).fetchone()[0])['training']['examples']} == \
@@ -400,7 +388,6 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
     zone = ZoneInfo(ctx['site']['timezone'])
     for row in rows + answered:
         row['local_time'] = window_key(row, row['start_s'], zone)[1]
-    negative = sum(value['label'] == 'other' for value in labels.values())
     # With other sites' answers as material too (`sharing`), they count towards what an AI needs.
     more = shared['material'].values()
     all_positive, all_negative = positive + sum(v['label'] == 'target' for v in more), negative + sum(v['label'] == 'other' for v in more)

@@ -8,6 +8,7 @@ screen with `incidental` set.
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import test_sounds
 from labels import LATEST, no_bird, put, put_no_bird, ref
 from reports import window_key
 from species import list_species, names_for, _kana
@@ -87,8 +88,8 @@ def _ai(root, dataset_id, species_ids):
             for taxon in species_ids}
 
 
-def _public(row, taxa, zone, test=()):
-    return {'id': row['id'], 'test': (row['taxon_id'], row['recording_id']) in test, 'species': taxa[row['taxon_id']], 'verdict': row['verdict'], 'screen': row['source'],
+def _public(row, taxa, zone, test=lambda row: False):
+    return {'id': row['id'], 'test': test(row), 'species': taxa[row['taxon_id']], 'verdict': row['verdict'], 'screen': row['source'],
             'extra': bool(row['incidental']), 'recording_id': row['recording_id'], 'start_s': row['start_s'], 'end_s': row['end_s'],
             'created_at': row['created_at'], 'local_time': window_key(row, row['start_s'], zone)[1],
             'source': {'id': row['recording_id'], 'kind': 'recording', 'path': row['path'], 'seconds': row['seconds']}}
@@ -99,8 +100,7 @@ def records(root, dataset_id, species_id=None, verdict=None, screen=None, day=No
     with connect(root) as db:
         site = _site(db, dataset_id)
         zone, taxa = ZoneInfo(site['timezone']), _taxa(db)
-        # Test sounds (`test_sounds`): every answer of the species in a recording set aside for it.
-        test = {(r[0], r[1]) for r in db.execute('SELECT species_id,recording_id FROM test_recordings WHERE site_id=?', (site['id'],))}
+        test = test_sounds.marker(db, site['id'])
         rows = [_public(row, taxa, zone, test) for row in _current(db, dataset_id)]
     options = {'species': sorted({row['species']['id']: row['species'] for row in rows}.values(), key=lambda s: s['scientific_name']),
                'screens': sorted({row['screen'] for row in rows}), 'days': sorted({row['local_time'][:10] for row in rows})}
@@ -123,7 +123,7 @@ def sound(root, dataset_id, recording_id, start_s, end_s, blank=False):
         rows = [dict(r) for r in db.execute('''SELECT l.*,r.path,r.seconds,r.recorded_at FROM labels l JOIN recordings r ON r.id=l.recording_id
             WHERE l.recording_id=? AND l.start_s=? AND l.end_s=? AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
             ORDER BY l.id DESC''', (recording_id, start_s, end_s, dataset_id))]
-        test = {(r[0], r[1]) for r in db.execute('SELECT species_id,recording_id FROM test_recordings WHERE site_id=?', (site['id'],))}
+        test = test_sounds.marker(db, site['id'])
     if not rows:
         if blank:
             return {'now': [], 'history': []}

@@ -76,11 +76,12 @@ No voice** on that page, every "This is its call" mark, and every 5-second check
 ("Heard" = voice, "Not heard" = no voice); a label given on the page wins over the others.
 An AI can be made (or made again) once there are 20 answers in all, with at least three of each.
 The page offers 10 sounds at a time, deterministically, never one already answered nor one shown
-and passed over with "Show 10 other sounds" (until the AI is made again): before a model exists, the top of the search's similarity ranking
-(or, without a search, of the main AI's score for the species) while voice is short, plus
-sounds around where the voice stops between the deepest "voice" and the next "no voice"
-(`boundary_ranks`); once it exists, mostly pieces whose model score is nearest 0.5, plus two
-of the highest and two of the lowest. There is one model per site, species and period: making
+and passed over with "Show 10 other sounds" (until the AI is made again): before a model exists, drawn at random
+(seeded by the state, so a reload shows the same batch) within three layers of the search's similarity ranking
+(or, without a search, of the main AI's score for the species): the best 1% of ranks (at least 30 sounds), the
+lower half, and between; 4 / 3 / 3 of each, 6 / 4 / 0 while only "voice" is short, 0 / 4 / 6 while only "no voice"
+is (`layered_picks`); once it exists, mostly pieces around the score that separates the answers, plus two
+of the highest and two drawn from the lower half (`model_picks`). There is one model per site, species and period: making
 it again replaces its files in place (same id, round + 1), and its earlier checks become
 outdated ("custom_model_rebuilt"). The fixed main-AI-embedding classifier is applied to the
 site's 5-second pieces and checked like BirdNET and Perch (windows it learned from are left
