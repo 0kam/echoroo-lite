@@ -129,8 +129,9 @@ def by_species(root, dataset_id, species_id):
     else:
         mine = lambda n: n == name
     detected = np.array([any(score >= SCORE_THRESHOLD for n, score in p['candidates'] if mine(n)) for p in points], dtype=bool)
-    # A species not recorded in Japan is no candidate of a point (those are Japan's birds): it is the AI's first
-    # answer of a roll-up. Nothing is left out here; the display threshold is the only bar, as for Japan's birds.
+    # A species not on the Japan checklist is no candidate of a point (those are Japan's birds): it is the AI's first
+    # answer of a roll-up. A checklist species not usual here can be both; a sound is one position, counted once.
+    # Nothing is left out here; the display threshold is the only bar, as for Japan's birds.
     with connect(root) as db:
         at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
         for row in db.execute('''SELECT u.analysis_id,u.start_s,u.top_label,a.engine FROM rollups u JOIN analyses a ON a.id=u.analysis_id
@@ -236,8 +237,8 @@ def recorded(root, dataset_id, node):
 
 
 def unsure(root, dataset_id):
-    """Entry C: groups with many sounds the AI likely mixed up: its first answer was a bird not recorded in Japan
-    and the roll-up reaches rollups.AWAY_SCORE, as on the site page's list. `guess`: for each target, in order,
+    """Entry C: groups with many sounds the AI likely mixed up: its first answer was a bird not usual at the
+    site in that season (rollups.py) and the roll-up reaches rollups.AWAY_SCORE, as on the site page's list. `guess`: for each target, in order,
     which of `guesses` the AI answered."""
     from rollups import AWAY_SCORE, _guess
     _, engine, _, run = _current_run(root, dataset_id)

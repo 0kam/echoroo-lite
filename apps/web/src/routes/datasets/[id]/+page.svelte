@@ -35,7 +35,7 @@
   // Saved reports are counted in the background; without an answer the link is simply not shown.
   let saved=$state(0);
   $effect(()=>{const current=id;saved=0;api<unknown[]>(`/datasets/${current}/exports`).then(list=>{if(current===id)saved=list.length;},()=>{});});
-  // Sounds the AI answered with a bird not recorded in Japan, by family; loaded behind the species list.
+  // Sounds the AI answered with a bird not usual at the site in that season, by family; loaded behind the species list.
   let rollups=$state<RollupSummary|null>(null);
   let heardTotal=$state(0);
   $effect(()=>{const current=id;heardTotal=0;api<{total:number}>(`/datasets/${current}/heard/records?limit=1`).then(value=>{if(current===id)heardTotal=value.total;},()=>{});});

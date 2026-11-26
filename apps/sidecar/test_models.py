@@ -472,7 +472,7 @@ class ModelsTest(unittest.TestCase):
                 response=client.post('/models/benchmark')
                 self.assertEqual(response.status_code,200,response.text)
                 self.assertEqual(bird['app_data'],(directory/'birdnet').resolve())
-                self.assertEqual(bird['loads'],['acoustic','geo','geo'])
+                self.assertEqual(bird['loads'],['geo','acoustic','geo'])  # the first: the roll-ups' range model, loaded once
                 with connect(data) as db:
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM recordings').fetchone()[0],1)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM analyses').fetchone()[0],0)
@@ -482,7 +482,7 @@ class ModelsTest(unittest.TestCase):
                 job=wait_job(client)
                 self.assertEqual((job['status'],job['error']),('complete',None))
                 self.assertEqual({r['engine'] for r in client.get('/recordings/1/results').json()},{'perch','birdnet'})
-                self.assertEqual(bird['loads'],['acoustic','geo','geo','acoustic','geo'])
+                self.assertEqual(bird['loads'],['geo','acoustic','geo','acoustic','geo'])
 
     def test_old_benchmarks_are_dropped_without_changing_selection(self):
         for old in ({'minutes_per_hour':{'perch':.3}}, {'seconds_per_hour':{'perch':67}},

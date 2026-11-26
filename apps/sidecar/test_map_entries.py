@@ -89,7 +89,7 @@ class MapEntryApi(ExploreCheck):
         unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
         self.assertEqual((unsure['targets'], unsure['groups'], unsure['scattered']), ([], [], 0))
         self.assertEqual(sorted(unsure['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
-        # Sounds whose first answer was a bird not recorded in Japan are targets from a roll-up score of 0.5, as on the
+        # Sounds whose first answer was a bird not usual here are targets from a roll-up score of 0.5, as on the
         # site page's list: the one at 10 s stays out. Two targets are too few for a flag: both are scattered.
         with connect(self.root) as db:
             analysis = db.execute('SELECT id FROM analyses').fetchone()[0]
@@ -101,6 +101,11 @@ class MapEntryApi(ExploreCheck):
         # Looking for that species by name finds every sound the AI answered with it: here the 0.5 bar does not apply.
         owl = self.client.get('/species', params={'q': 'Strix aluco'}).json()[0]['id']
         self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': owl}).json()['targets'], sorted([at[0], at[10], at[20]]))
+
+        # A checklist species not usual here is a point's candidate and a roll-up's first answer: its sound is one target.
+        with connect(self.root) as db:
+            db.execute("INSERT INTO rollups VALUES(?,5,10,'Zosteropidae',.4,'Zosterops japonicus',.9,NULL)", (analysis,))
+        self.assertEqual(self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': ids['Zosterops japonicus']}).json()['targets'], found['targets'])
 
         # The targets come first in a group's list, and each sound says where it is on the map.
         listed = self.client.post('/explore/nodes/0/segments', params={'dataset': 1}, json={'first': unsure['targets']}).json()['segments']

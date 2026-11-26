@@ -1,8 +1,10 @@
-"""Sounds an AI answered with a bird not recorded in Japan, shown as their family and asked to the user.
+"""Sounds an AI answered with a bird not usual at the site in that season, shown as their family and asked to the user.
 
-A window is rolled up when the AI's first answer over all classes is a bird outside the Japan checklist and its
-family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are found once and kept
-with their scores; only those reaching AWAY_SCORE are shown, on the site's list, the family pages and the sound map.
+A window is rolled up when the AI's first answer over all classes is a bird the range model does not predict at the
+site in the recording's week (region.usual_at, taxa.at_home; without the range model: a bird outside the Japan
+checklist) and its family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are kept
+with their scores and the basis they were found on (`rollup_scans.basis`), and found again when the basis changes;
+only those reaching AWAY_SCORE are shown, on the site's list, the family pages and the sound map.
 The user's answer is a label with source `rollup_fix`: the species they heard (evidence and species-AI material
 like any other "present"), the family row itself when the answer stops there: present ("this family, species
 unknown") or unknown, or "no bird sound" (`labels.put_no_bird`; older data: the family row, absent).
@@ -23,7 +25,7 @@ SCHEMA = '''
         family TEXT NOT NULL, score REAL NOT NULL, top_label TEXT NOT NULL, top_score REAL NOT NULL,
         japan_label TEXT,
         PRIMARY KEY(analysis_id,start_s));
-    CREATE TABLE IF NOT EXISTS rollup_scans (analysis_id INTEGER PRIMARY KEY REFERENCES analyses);
+    CREATE TABLE IF NOT EXISTS rollup_scans (analysis_id INTEGER PRIMARY KEY REFERENCES analyses, basis TEXT);
 '''
 KINDS = ('species', 'family', 'not_bird', 'unknown')
 NO_JAPAN = '_none'
@@ -34,24 +36,33 @@ LATEST = '''a.id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)'
 
 
 def scan(root, dataset_id):
-    """Find the roll-ups of the site's analyses that were not looked at yet."""
+    """Find the roll-ups of the site's analyses that were not looked at yet, and again those found on another basis
+    (the site moved, another range model, or roll-ups of an earlier version). Answers given are labels and stay."""
     from predictions import dense_rollups
+    from region import usual_at
     with connect(root) as db:
-        todo = [dict(r) for r in db.execute(f'''SELECT a.*,r.seconds FROM analyses a JOIN site_recordings r ON r.id=a.recording_id
-            WHERE r.scope_id=? AND {LATEST} AND a.id NOT IN (SELECT analysis_id FROM rollup_scans)''', (dataset_id,))]
-    for row in todo:
+        site = db.execute('SELECT s.* FROM sites s JOIN datasets d ON d.site_id=s.id WHERE d.id=?', (dataset_id,)).fetchone()
+        rows = [dict(r) for r in db.execute(f'''SELECT a.*,r.seconds,r.recorded_at,s.basis FROM analyses a
+            JOIN site_recordings r ON r.id=a.recording_id LEFT JOIN rollup_scans s ON s.analysis_id=a.id
+            WHERE r.scope_id=? AND {LATEST}''', (dataset_id,))]
+    for row in rows:
+        # The range model's answer is kept per (site, week) while the app runs, so this is cheap for every recording.
+        usual, basis = usual_at(root, site, row)
+        if row['basis'] == basis:
+            continue
         meta = json.loads(row['metadata'])
         found = []
         if row['engine'] == 'perch' or meta.get('all_classes'):
             try:
-                found = dense_rollups(row['scores_path'], row['seconds'], row['engine'], meta.get('window_s', 5))
+                found = dense_rollups(row['scores_path'], row['seconds'], row['engine'], meta.get('window_s', 5), usual)
             except (OSError, CatalogError, ValueError, KeyError):
                 continue
         with connect(root) as db:
+            db.execute('DELETE FROM rollups WHERE analysis_id=?', (row['id'],))
             db.executemany('INSERT OR IGNORE INTO rollups VALUES(?,?,?,?,?,?,?,?)', (
                 (row['id'], r['start_s'], r['end_s'], r['family']['scientific_name'], r['score'], r['top_label'],
                  r['top_score'], r['japan_label']) for r in found))
-            db.execute('INSERT OR IGNORE INTO rollup_scans VALUES(?)', (row['id'],))
+            db.execute('INSERT OR REPLACE INTO rollup_scans VALUES(?,?)', (row['id'], basis))
 
 
 def _sounds(root, db, ctx, family=None):

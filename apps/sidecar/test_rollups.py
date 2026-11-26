@@ -145,6 +145,37 @@ class RollupTest(unittest.TestCase):
                 self.assertEqual([s['start_s'] for s in client.get('/datasets/1/rollups/Picidae').json()['sounds']], [0, 15])
                 self.assertEqual(client.post('/rollups/answers', json={**sound, 'start_s': 0, 'end_s': 5, 'kind': 'species'}).status_code, 422)
 
+                # With the range model the line is "usual at the site in the recording's week", and the roll-ups are
+                # found again: the score changed by hand above is back, and the answers given stay.
+                warbler = lambda: [s['start_s'] for s in client.get('/datasets/1/rollups/Scotocercidae').json()['sounds']]
+                picidae = lambda: {s['start_s']: s['answer'] and s['answer']['kind'] for s in client.get('/datasets/1/rollups/Picidae').json()['sounds']}
+                self.assertEqual((warbler(), picidae()), ([], {0: None, 15: 'unknown'}))
+                geo = directory / 'birdnet/geo-models/v2.4/tf/model-fp32.tflite'
+                geo.parent.mkdir(parents=True); geo.touch()
+                here = lambda key, latitude, longitude, week: frozenset({'Horornis diphone', 'Dendrocopos major'} if (latitude, week) == (35, 30) else ())
+                with patch('region.predict_species', side_effect=here), patch('results_workflow.predict_species', side_effect=here):
+                    # The bush warbler of window 1 is usual here in the second week of August: not rolled up.
+                    self.assertEqual((warbler(), picidae()), ([], {0: None, 15: 'unknown'}))
+                    self.assertEqual([s['start_s'] for s in client.get('/datasets/1/rollups/_none').json()['sounds']], [25, 20])
+                    # The same basis: nothing is found again.
+                    with connect(data) as db:
+                        db.execute('UPDATE rollups SET score=.49 WHERE start_s=25')
+                    self.assertEqual([s['start_s'] for s in client.get('/datasets/1/rollups/_none').json()['sounds']], [20])
+                    # The family's species to choose from are still the Japan checklist's, those usual here first.
+                    choices = client.get('/datasets/1/rollups/Picidae').json()['choices']
+                    self.assertEqual([(c['scientific_name'], c['likely']) for c in choices[:2]][0], ('Dendrocopos major', True))
+                    self.assertFalse(choices[1]['likely'])
+                    self.assertIn('Yungipicus kizuki', {c['scientific_name'] for c in choices})
+                    # The site moves to where the range model does not predict the warbler: a Japan checklist
+                    # species is rolled up there, and the other sounds and their answers stay.
+                    with connect(data) as db:
+                        db.execute('UPDATE sites SET latitude=36')
+                    self.assertEqual((warbler(), picidae()), ([5], {0: None, 15: 'unknown'}))
+                    self.assertEqual([s['start_s'] for s in client.get('/datasets/1/rollups/_none').json()['sounds']], [25, 20])
+                    with connect(data) as db:
+                        self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], kept)
+                        self.assertEqual(db.execute('SELECT COUNT(*),COUNT(basis) FROM rollup_scans').fetchone()[:], (1, 1))
+
 
 if __name__ == '__main__':
     unittest.main()

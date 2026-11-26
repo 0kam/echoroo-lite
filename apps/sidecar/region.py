@@ -1,9 +1,11 @@
 """Optional BirdNET 2.4 location/season markers, independent of detection engines."""
 import atexit
 from contextlib import ExitStack
+from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
+from zoneinfo import ZoneInfo
 
 from models import configure_birdnet, settings
 
@@ -50,3 +52,22 @@ def predict_species(key, latitude, longitude, week):
         prediction = geo_session(key).run(latitude, longitude, week=week)
     return frozenset(str(label).partition('_')[0] for label in
                      prediction.to_structured_array()['species_name'])
+
+
+def usual_at(root, site, record):
+    """The species (BirdNET names) predicted at the site in the week or weeks of one recording, by its local dates,
+    and a short text of all that answer depends on. (None, 'japan') without a usable geo model: the caller falls
+    back to the Japan checklist."""
+    key = model_key(root)
+    if key[1] is None:
+        return None, 'japan'
+    zone = ZoneInfo(site['timezone'])
+    start = datetime.fromisoformat(record['recorded_at'])
+    weeks = sorted({week_number(moment.astimezone(zone).date())
+                    for moment in (start, start + timedelta(seconds=record['seconds'], microseconds=-1))})
+    try:
+        usual = frozenset().union(*(predict_species(key, site['latitude'], site['longitude'], week) for week in weeks))
+    except Exception:
+        # A missing or unusable optional geo model must never break result pages.
+        return None, 'japan'
+    return usual, f"geo {key[1]} {site['latitude']:.4f},{site['longitude']:.4f} {weeks}"

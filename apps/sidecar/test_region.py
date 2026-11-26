@@ -38,6 +38,27 @@ class RegionCheck(unittest.TestCase):
         self.taxon = self.client.get('/species?q=Horornis diphone').json()[0]
         self.name = self.taxon['scientific_name']
 
+    def test_usual_at_names_the_recording_weeks_and_falls_back_without_the_model(self):
+        site = dict(timezone='Asia/Tokyo', latitude=35, longitude=138)
+        day = dict(recorded_at='2024-08-07T06:00:00+09:00', seconds=15)
+        # 23:59:50 on the 7th to 00:00:05 on the 8th in Tokyo, whatever the PC's timezone: weeks 29 and 30.
+        night = dict(recorded_at='2024-08-07T14:59:50+00:00', seconds=15)
+        predict = lambda key, latitude, longitude, week: frozenset({f'week {week}'})
+        with patch('region.predict_species', side_effect=predict):
+            usual, basis = region.usual_at(self.models, site, day)
+            self.assertEqual(usual, {'week 29'})
+            self.assertEqual(region.usual_at(self.models, site, day)[1], basis)
+            both, other = region.usual_at(self.models, site, night)
+            self.assertEqual(both, {'week 29', 'week 30'})
+            moved = region.usual_at(self.models, {**site, 'latitude': 36}, day)[1]
+            self.assertEqual(len({basis, other, moved, 'japan'}), 4)
+        with patch('region.predict_species', side_effect=RuntimeError):
+            self.assertEqual(region.usual_at(self.models, site, day), (None, 'japan'))
+        self.geo_path.unlink()
+        with patch('region.predict_species') as predictor:
+            self.assertEqual(region.usual_at(self.models, site, day), (None, 'japan'))
+            predictor.assert_not_called()
+
     def test_season_changes_overview_revision_and_location_invalidates_cached_badges(self):
         with connect(self.root) as db:
             db.executemany('''INSERT INTO labels(taxon_id,recording_id,start_s,end_s,verdict,source)

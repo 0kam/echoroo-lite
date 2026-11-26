@@ -1164,19 +1164,22 @@ def create_app(root, models, token):
                 if analysis['engine'] not in model_registry.selected_engines(root):
                     continue
                 meta = json.loads(analysis["metadata"])
-                seconds = db.execute("SELECT seconds FROM recordings WHERE id=?", (recording,)).fetchone()[0]
+                record = db.execute("""SELECT r.seconds,r.recorded_at,s.timezone,s.latitude,s.longitude FROM recordings r
+                    JOIN datasets d ON d.id=r.dataset_id JOIN sites s ON s.id=d.site_id WHERE r.id=?""", (recording,)).fetchone()
+                from region import usual_at
+                seconds, usual = record["seconds"], usual_at(root, record, record)[0]
                 rollups = []
                 if analysis["engine"] == "perch":
                     from predictions import perch_display
                     candidate_filter = meta.get("candidate_filter")
-                    candidates, rollups, display = perch_display(analysis["scores_path"], seconds, analysis["id"], candidate_filter)
+                    candidates, rollups, display = perch_display(analysis["scores_path"], seconds, analysis["id"], candidate_filter, usual)
                     meta = {**meta, **display}
                 else:
                     candidates = [dict(r) for r in db.execute(
                         "SELECT * FROM candidates WHERE analysis_id=? ORDER BY score DESC LIMIT 100", (analysis["id"],))]
                     if meta.get("all_classes"):
                         from predictions import dense_rollups
-                        rollups = dense_rollups(analysis["scores_path"], seconds, analysis["engine"], meta.get("window_s", 5))
+                        rollups = dense_rollups(analysis["scores_path"], seconds, analysis["engine"], meta.get("window_s", 5), usual)
                 output.append({**dict(analysis), "metadata": meta, "rollups": rollups[:100],
                                "candidates": decorate_candidates(db, analysis["engine"], candidates)})
             return output

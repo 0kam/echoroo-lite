@@ -220,6 +220,9 @@ def initialize(root):
         labels.upgrade(db)
         import rollups
         db.executescript(rollups.SCHEMA)
+        if 'basis' not in columns(db, 'rollup_scans'):
+            # What the roll-ups were found on (rollups.scan); NULL: an earlier version's, found again once.
+            db.execute('ALTER TABLE rollup_scans ADD COLUMN basis TEXT')
         import test_sounds
         db.executescript(test_sounds.SCHEMA)
         import sharing
