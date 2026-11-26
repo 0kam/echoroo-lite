@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (proposal, not agreed) for docs/feedback-2026-11-26.md, part B: entries on the site page, the "species not recorded in Japan" list,
+     putting an answer right, the "no bird" answer, and the sound map's highlighting. All numbers and names are examples. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>気づきへの直し（見本、2026-11-26）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.7 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 940px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  h3 { font-size: 16px; margin: 0 0 4px; }
+  p { margin: 0 0 12px; }
+  .muted { color: #6e6a86; font-size: 14px; }
+  .mockbar { background: #efe7dc; border: 1px dashed #b9ab99; border-radius: 12px; padding: 12px 16px; margin: 0 0 20px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, .btn { white-space: nowrap; min-height: 44px; padding: 6px 16px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; }
+  button.primary { background: #9b4b4b; border-color: #9b4b4b; color: #fff; }
+  button[aria-pressed="true"], button[aria-selected="true"] { background: #f6dede; border-color: #9b4b4b; color: #9b4b4b; font-weight: 600; }
+  .panel { background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 20px 24px; margin: 0 0 16px; }
+  .crumb { font-size: 14px; color: #6e6a86; margin: 0 0 4px; }
+  .new { display: inline-block; font-size: 12px; background: #286983; color: #fff; border-radius: 6px; padding: 0 8px; margin-left: 8px; vertical-align: 2px; font-weight: 400; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 0 0 16px; }
+  .card { white-space: normal; display: block; background: #fffaf3; border: 1px solid #d9cfc4; border-radius: 16px; padding: 16px 20px; text-align: left; min-height: 0; }
+  .card strong { display: block; font-size: 17px; color: #9b4b4b; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e6ddd3; font-size: 15px; vertical-align: top; }
+  th { font-size: 13px; color: #6e6a86; }
+  details > summary { min-height: 44px; padding: 10px 0; cursor: pointer; font-weight: 600; }
+  .item { border-top: 1px solid #e6ddd3; padding: 12px 0; }
+  .item-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
+  .spec { height: 90px; border-radius: 8px; margin: 10px 0; background: linear-gradient(180deg, #2a1a4a 0%, #5a2a7a 45%, #b9507a 80%, #f0a060 100%); position: relative; }
+  .spec::after { content: "（ここに音の図）"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 13px; opacity: .8; }
+  .hint { border-left: 6px solid #286983; background: #e8f1f4; padding: 10px 14px; margin: 0 0 12px; }
+  .two { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+  svg { width: 100%; height: auto; background: #fff; border: 1px solid #e6ddd3; border-radius: 12px; display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; margin: 8px 0 12px; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
+  ul.plain { list-style: none; margin: 0; padding: 0; }
+  ul.plain li { border-top: 1px solid #e6ddd3; padding: 8px 0; font-size: 15px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mockbar">
+    <p class="muted" style="margin:0 0 8px">見本の画面（数字と名前はすべて例です）。<span class="new">新しい</span> が付いた所が変わる所です。</p>
+    <div class="row" role="tablist" id="tabs"></div>
+  </div>
+  <div id="screen"></div>
+</main>
+<script>
+(function () {
+  var NEW = '<span class="new">新しい</span>';
+  var spec = '<div class="spec"></div>';
+
+  // 1. The site page: the two entries move to the top; the "not recorded in Japan" list is folded and renamed.
+  function site() {
+    var rows = [['AI の答えが フクロウ科 の鳥だった音', '1,584 音', 'モリフクロウ・アメリカワシミミズク'],
+      ['AI の答えが ツグミ科 の鳥だった音', '900 音', 'キユーバヒトリツグミ・コマツグミ'],
+      ['AI の答えが カラス科 の鳥だった音', '248 音', 'ハイイロホシガラス・カササギ'],
+      ['AI の答えが シジュウカラ科 の鳥だった音', '233 音', 'ヨーロッパシジュウカラ・エボシガラ'],
+      ['AI の答えが キクイタダキ科 の鳥だった音', '194 音', 'アメリカキクイタダキ・マミジロキクイタダキ'],
+      ['<strong>日本にいない科の鳥と答えた音</strong>（ジアリドリ科・サンショウクイ科など 52 科）', '1,420 音', 'ニショクジアリドリ・タウンゼンドアメリカムシクイ']];
+    return '<p class="crumb">‹ 地点の一覧に戻る</p><h1>検証用の森</h1><p class="muted">2025/07/11 – 2025/07/14（4日分）　解析済みの録音 145／145本</p>' +
+      '<div class="cards">' +
+      '<button type="button" class="card"><strong>音の地図で探す ›' + NEW + '</strong>似た音が近くに並ぶ地図です。AI が取り違えていそうな音や、お手本に似た音を探して聞けます。</button>' +
+      '<button type="button" class="card"><strong>聞いて確かめた音（70 件） ›' + NEW + '</strong>あなたが聞いて記録した音の一覧です。聞き直して、答えを直せます。</button></div>' +
+      '<section class="panel"><h2>調べている種</h2><p class="muted">AIの検出には誤りが含まれます。種を開くと、聞いてその種がいるかを確かめられます。</p>' +
+      '<table><tr><th>種名</th><th>AIによる検出</th><th>声はあったか</th></tr>' +
+      '<tr><td>エナガ</td><td>Perch V2: 389音・3日で検出</td><td>○ まだ確かめていません</td></tr>' +
+      '<tr><td>ヒガラ</td><td>Perch V2: 361音・3日で検出</td><td>✓ 聞いて確認できた</td></tr>' +
+      '<tr><td>トラツグミ</td><td>Perch V2: 249音・3日で検出</td><td>○ まだ確かめていません</td></tr></table>' +
+      '<p class="muted">…ほか 87 種</p></section>' +
+      '<section class="panel"><details><summary>AI が日本で記録のない種と答えた音（4,579 音）' + NEW + '</summary>' +
+      '<p>AI が、日本で記録のない種の名前を答えた音です。<strong>科が合っているとは限りません。</strong>日本にいる別の鳥の声かもしれませんし、鳥の声ではないかもしれません。聞いて正しい答えを選ぶと、AI が苦手な声の記録になります。上の表の検出数には入っていません。</p>' +
+      '<table><tr><th>AI の答え</th><th>音の数</th><th>AI がよく挙げた種</th><th></th></tr>' +
+      rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td><td><button type="button">聞く</button></td></tr>'; }).join('') +
+      '</table><p class="muted">日本にいる科は 31 行あります（ここでは 5 行だけ）。開いた先では、AI の点数が高い音から順に出します。</p></details>' +
+      '<p class="muted">（押すと開きます。はじめは閉じています）</p></section>';
+  }
+
+  // 2. Sounds checked by ear: play and put right in place; only the current answer is listed; "no bird" is an answer.
+  function heard() {
+    function item(name, time, screen, open) {
+      return '<div class="item"><div class="item-head"><span><strong>' + name + '</strong>　' + time + '　<span class="muted">' + screen + '</span></span>' +
+        '<span class="row"><button type="button">▶ 聞く</button><button type="button"' + (open ? ' aria-pressed="true"' : '') + '>直す</button></span></div>' +
+        (open ? spec + '<p>この音の答えを選び直してください。</p><div class="row">' +
+          '<button type="button" aria-pressed="true">✓ ヒガラの声が聞こえた</button><button type="button">ヒガラの声は聞こえなかった</button><button type="button">わからない</button>' +
+          '<button type="button">別の種の声だった…</button><button type="button">ほかの種の声も聞こえた…</button><button type="button">鳥の声がしない' + NEW + '</button></div>' +
+          '<p class="muted" style="margin-top:12px">「別の種の声だった」を選ぶと、この音は選んだ種の記録に移り、ヒガラの一覧からは消えます。「鳥の声がしない」は、どの種の AI でも「声なし」の材料になります。</p>' +
+          '<details><summary>これまでの記録（1 件）</summary><ul class="plain"><li>2026/11/24 15:12　ヒガラ：聞こえた（「この種用のAIを育てる」で答えた）</li></ul></details>' : '') + '</div>';
+    }
+    return '<p class="crumb">‹ 種の一覧に戻る</p><h1>聞いて確かめた音</h1><p>あなたが聞いて記録した音を、どの画面で記録したものも 1 か所に集めた画面です。各行の「▶ 聞く」で聞き直し、「直す」で答えを選び直せます。' + NEW + '</p>' +
+      '<section class="panel"><h2>記録の一覧（70 件）</h2><p class="muted">今の答えだけを並べています。直す前の答えは、各行の「これまでの記録」で見られます。' + NEW + '</p>' +
+      item('トラツグミ：聞こえた', '2025/07/11 0:02:25', '音の地図') + item('ヒガラ：聞こえた', '2025/07/12 8:31:20', 'この種用のAIを育てる', true) +
+      item('鳥の声がしない', '2025/07/11 3:31:40', '音の地図') + item('キクイタダキ：聞こえた', '2025/07/13 5:30:20', 'AI が日本で記録のない種と答えた音') + '</section>';
+  }
+
+  // 3. The sound map. Points are fixed pseudo-random; `mode` chooses today's rings or the proposed dimming.
+  function points() {
+    var seed = 7, out = [];
+    function rnd() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
+    for (var i = 0; i < 420; i++) {
+      var cluster = i % 6, cx = [120, 300, 470, 200, 400, 540][cluster], cy = [110, 80, 150, 260, 290, 240][cluster];
+      out.push({ x: cx + (rnd() - .5) * 150, y: cy + (rnd() - .5) * 110, away: cluster === 4 && rnd() < .55 || rnd() < .03, low: rnd() < .7 });
+    }
+    return out;
+  }
+  function mapSvg(mode) {
+    var pts = points(), s = '<svg viewBox="0 0 640 360" role="img" aria-label="音の地図（見本）">';
+    pts.forEach(function (p, i) {
+      var chosen = mode === 'new' && i === 100;
+      if (mode === 'old') {
+        s += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="2.5" fill="#8a85a0"/>';
+        if (p.away || p.low) s += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="6" fill="none" stroke="#373450" stroke-width="1"/>';
+      } else if (p.away) {
+        s += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (chosen ? 9 : 5.5) + '" fill="#c2571a" stroke="' + (chosen ? '#373450' : '#fff') + '" stroke-width="' + (chosen ? 3 : 1) + '"/>';
+      } else {
+        s += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="2" fill="#cfc8bd"/>';
+      }
+    });
+    return s + '</svg>';
+  }
+  var mapMode = 'new', entry = 'unsure';
+  function map() {
+    var tabs = [['unsure', 'AI が取り違えていそうな音から'], ['species', '種から'], ['reference', 'お手本の声から']];
+    var head = '<p class="crumb">‹ 種の一覧に戻る</p><h1>音の地図</h1><p>似た音が近くに並ぶ地図です。点を押すとその音が流れ、何の声かを記録できます。</p>' +
+      '<div class="row" style="margin-bottom:16px">' + tabs.map(function (t) { return '<button type="button" data-entry="' + t[0] + '" aria-pressed="' + (entry === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
+    if (entry === 'reference') {
+      return head + '<section class="panel"><h2>お手本の声から探す</h2><p>お手本にする音を選ぶと、地図の上でその音に似た所を示します。</p>' +
+        '<div class="cards"><button type="button" class="card"><strong>聞いて確かめた音から選ぶ</strong>あなたが「聞こえた」と記録した音です。</button>' +
+        '<button type="button" class="card"><strong>Xeno-Canto で探す' + NEW + '</strong>鳥の声の共有サイトから、種名で探して選びます。似た声の検索と同じ画面です。</button>' +
+        '<button type="button" class="card"><strong>PC の音声から選ぶ' + NEW + '</strong>手持ちの音声ファイルを選びます。</button></div>' +
+        '<p class="muted">Xeno-Canto を使うには、設定で無料の利用キーを入れておきます。</p></section>';
+    }
+    if (entry === 'species') {
+      return head + '<section class="panel"><h2>種から探す</h2><p class="muted">（この入口の中身は今のままです。地図の見せ方は「AI が取り違えていそうな音から」と同じになります）</p></section>';
+    }
+    return head +
+      '<section class="panel"><h2>AI が取り違えていそうな音から探す</h2>' +
+      '<p>AI が日本で記録のない種と答えた音が多いまとまりです。まだ聞いていない音が多い順に並べています。</p>' +
+      '<ul class="plain"><li class="item-head"><span><strong>候補 A（426 音のまとまり）</strong>　AI が日本で記録のない種と答えた音 120 音・うち 2 音は確かめた</span><button type="button" aria-pressed="true">ここを見る</button></li>' +
+      '<li class="item-head"><span><strong>候補 B（389 音のまとまり）</strong>　AI が日本で記録のない種と答えた音 88 音・まだ聞いていない</span><button type="button">ここを見る</button></li></ul>' +
+      '<p class="muted" style="margin-top:8px">「ここを見る」を押すと、下の地図まで移動し、そのまとまりの音を 1 つ選んで流します。' + NEW + '</p></section>' +
+      '<section class="panel"><div class="row" style="margin-bottom:8px"><span class="muted">見本の切り替え：</span>' +
+      '<button type="button" data-mode="old" aria-pressed="' + (mapMode === 'old') + '">今の表示</button><button type="button" data-mode="new" aria-pressed="' + (mapMode === 'new') + '">新しい表示</button></div>' +
+      (mapMode === 'new'
+        ? '<div class="hint" role="status"><strong>色の付いた大きな点</strong>が、AI が取り違えていそうな音です。点を押すと、その音が流れます。' + NEW + '</div>'
+        : '<p class="muted">今の表示：印（円）は、AI の答えが決まらなかった音すべてに付きます。無音や雨の音も入るので、ほとんどの点に付いています。</p>') +
+      '<div class="two"><div>' + mapSvg(mapMode) +
+      '<div class="legend">' + (mapMode === 'new'
+        ? '<span><i class="dot" style="background:#c2571a"></i>AI が日本で記録のない種と答えた音</span><span><i class="dot" style="background:#cfc8bd"></i>そのほかの音</span><span><i class="dot" style="background:#c2571a;outline:3px solid #373450"></i>いま流れている音</span>'
+        : '<span><i class="dot" style="background:#fff;outline:1px solid #373450"></i>AI が迷っている音</span><span><i class="dot" style="background:#8a85a0"></i>そのほかの音</span>') + '</div></div>' +
+      '<div><h3>このまとまりで記録した音' + NEW + '</h3><ul class="plain"><li>7/12 8:31:20　ヒガラ：聞こえた</li><li>7/12 8:31:45　鳥の声がしない</li></ul>' +
+      '<p class="muted">下で記録すると、すぐここに出ます。</p></div></div></section>' +
+      '<section class="panel"><p class="muted" style="margin:0">いま流れている音　2025/07/12 8:32:10　まとまり 1-1-1-1　AI の答え：エボシガラ（日本で記録のない種）</p>' + spec +
+      '<p>この音は、何の声ですか？</p><div class="row"><button type="button">聞こえた種を記録する…</button><button type="button">鳥の声がしない' + NEW + '</button><button type="button">わからない</button><button type="button">次の音 ›' + NEW + '</button></div>' +
+      '<p class="muted" style="margin-top:12px">図の上に重なっていた「いまの音 · まとまり …」は、図の上の 1 行に移します。</p></section>' +
+      '<section class="panel"><details><summary>集めた音を保存する（ZIP）' + NEW + '</summary><p>地図で「集める」にチェックした音を、音声と一覧表（CSV）にまとめて保存します。外部に渡したり、ほかのソフトで使ったりするときに使います。今の「書き出す」と同じ機能です。</p></details></section>';
+  }
+
+  var screens = [['地点のページ', site], ['聞いて確かめた音', heard], ['音の地図', map]], current = 0;
+  function draw() {
+    document.getElementById('tabs').innerHTML = screens.map(function (s, i) { return '<button type="button" role="tab" data-screen="' + i + '" aria-selected="' + (i === current) + '">' + s[0] + '</button>'; }).join('');
+    document.getElementById('screen').innerHTML = screens[current][1]();
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.screen) current = +b.dataset.screen;
+    else if (b.dataset.mode) mapMode = b.dataset.mode;
+    else if (b.dataset.entry) entry = b.dataset.entry;
+    else return;
+    draw();
+  });
+  draw();
+})();
+</script>
+</body>
+</html>
