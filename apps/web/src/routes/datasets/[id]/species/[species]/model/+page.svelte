@@ -32,7 +32,7 @@
   const fetchState=(query='')=>api<SpeciesAI>(`/datasets/${id}/species/${speciesId}/custom-model?${range}${query}`);
   // Sounds shown and passed over are not offered again until the AI is made again.
   const next=createTask(async()=>{const value=await fetchState(`&batch=true${skipped.map(segment=>`&skip=${segment}`).join('')}`);
-    info=value;batch=value.batch??[];answered=value.answered;source=value.source;answeredShown=10;});
+    info=value;batch=value.batch??[];answered=value.answered;source=value.source;answeredShown=10;selected=null;});
   onMount(async()=>{await next.run();if(next.error)error=next.error;});
   const label=createTask(async(row:LabelRow,value:'target'|'other')=>{
     const saved=await api<{label:LabelRow['label']}>(`/datasets/${id}/species/${speciesId}/labels`,{segment_id:row.segment_id,label:row.label===value?null:value});
@@ -58,6 +58,28 @@
   // The words for how far it has grown: one round that hardly changed it (growth_state's 0.9) is "almost", not "changed".
   const growText=$derived(model?.growth.state==='growing'&&(model.growth.rounds.at(-1)?.overlap??0)>=.9?'almost':model?.growth.state);
   const folded=$derived(model?.growth.state==='settled'&&!more);
+  // The sounds to answer are on the page: not once growing has settled, nor when the test sounds are complete.
+  const listed=$derived(!!info&&!folded&&!(collecting&&info.test.complete));
+  // One of the next sounds is selected, and the keys act on it: ↑ / ↓ move it, Space plays or stops it, 1 / 2 / 3 answer.
+  // Until a row is chosen it is the first sound without an answer. Keys go by their place on the keyboard, as in the accuracy check.
+  let selected=$state<number|null>(null);
+  const open=(row:LabelRow)=>!row.label&&!unsure.includes(row.segment_id);
+  const current=$derived(batch.find(row=>row.segment_id===selected)??batch.find(open)??batch[0]);
+  const KEYS:Record<string,'target'|'other'|'unknown'>={Digit1:'target',Numpad1:'target',Digit2:'other',Numpad2:'other',Digit3:'unknown',Numpad3:'unknown'};
+  async function shortcut(event:KeyboardEvent){
+    // Not while typing in a field, in a dialog, or inside a folded part (its summary, the answered sounds).
+    if(event.ctrlKey||event.metaKey||event.altKey||!listed||!current||(event.target as HTMLElement|null)?.closest('input,textarea,select,[contenteditable],dialog,details'))return;
+    const row=current,at=batch.indexOf(row),verdict=KEYS[event.code],move=event.code==='ArrowDown'?1:event.code==='ArrowUp'?-1:0;
+    if(event.code==='Space'){event.preventDefault();document.querySelector<HTMLElement>('.row[aria-current] .region-controls button')?.click();return;}
+    if(!verdict&&!move)return;
+    event.preventDefault();
+    let to=move?batch[at+move]:undefined;
+    if(verdict){if(label.pending||next.pending||build.pending)return;const fresh=open(row);
+      await(verdict==='unknown'?notSure(row):label.run(row,verdict));
+      // A new answer moves on to the next sound without one; undoing or changing an answer stays on the sound.
+      if(fresh&&!open(row))to=batch.slice(at+1).find(open);}
+    if(to){selected=to.segment_id;await tick();document.querySelector('.row[aria-current]')?.scrollIntoView({block:'nearest'});}
+  }
   // Opens this AI's accuracy check at once (an unfinished one with the same AI and period is reused).
   const startCheck=createTask(async()=>{const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
     start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(resolve(`/datasets/${id}/validation/${validation.id}`));},{toast:true});
@@ -69,6 +91,7 @@
   const score=(value:number)=>{const text=value.toFixed(2);
     return source==='custom'?fill('mdScoreCustom',{value:text}):source==='search'?fill('pSimilarity',{value:text}):fill('mdScoreBuiltin',{model:modelName(info!.engine),value:text});};
 </script>
+<svelte:window onkeydown={shortcut}/>
 <div class="page">
   <div class="crumbs"><a href={back}>{t('wBackSpecies')}</a></div>
   <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{info?fill('customModelTitleFor',{name:commonName(info.species,app.locale)||info.species.scientific_name}):t('customModelTitle')}</h1></div>
@@ -118,16 +141,18 @@
     </section>
     <TestSounds datasetId={id} {speciesId} name={commonName(info.species,app.locale)||info.species.scientific_name} query={range.toString()} timezone={site?.timezone}
       version={`${model?.id}:${model?.round}:${info.examples.positive_5s}:${info.examples.negative_5s}:${info.test?.heard}:${info.test?.not_heard}`}/>{/if}
-    {#snippet row(item:LabelRow)}<article class="row">
+    <!-- `keys`: a row of the next sounds, which can be the selected one; pressing or focusing anything in it selects it. -->
+    {#snippet row(item:LabelRow,keys=false)}{@const on=keys&&item===current}<article class="row" class:on aria-current={on?'true':undefined}
+      onpointerdown={keys?()=>selected=item.segment_id:undefined} onfocusin={keys?()=>selected=item.segment_id:undefined}>
       <div class="row-head"><span>{time(item)}</span>{#if item.test&&!collecting}<span class="test">{t('tsBadgeHere')}</span>{/if}{#if item.score!=null}<span class="muted">{score(item.score)}</span>{/if}</div>
       <AudioRegion source={{id:item.recording_id,kind:'recording',path:item.path,seconds:item.seconds}} fixedRange compact start={item.start_s} end={item.end_s}>
-        {#snippet actions()}<div class="actions" role="group" aria-label={time(item)}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name]}
-          <Button active={item.label===value} aria-pressed={item.label===value} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}</Button>{/each}
-          <Button active={unsure.includes(item.segment_id)} aria-pressed={unsure.includes(item.segment_id)} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>notSure(item)}>{unsure.includes(item.segment_id)?'✓ ':''}{t('mdUnsure')}</Button></div>{/snippet}
+        {#snippet actions()}<div class="actions" role="group" aria-label={time(item)}>{#each [['target','mdVoice'],['other','mdNoVoice']] as [value,name],i}
+          <Button active={item.label===value} aria-pressed={item.label===value} aria-keyshortcuts={on?String(i+1):undefined} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>label.run(item,value as 'target'|'other')}>{item.label===value?'✓ ':''}{t(name)}{#if on} <kbd>{i+1}</kbd>{/if}</Button>{/each}
+          <Button active={unsure.includes(item.segment_id)} aria-pressed={unsure.includes(item.segment_id)} aria-keyshortcuts={on?'3':undefined} pending={label.pending} disabled={next.pending||build.pending} onclick={()=>notSure(item)}>{unsure.includes(item.segment_id)?'✓ ':''}{t('mdUnsure')}{#if on} <kbd>3</kbd>{/if}</Button></div>{/snippet}
       </AudioRegion>
       <OtherSpecies datasetId={id} of={speciesId} recordingId={item.recording_id} start={item.start_s} end={item.end_s} screen="training"/>
     </article>{/snippet}
-    {#if !folded&&!(collecting&&info.test.complete)}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
+    {#if listed}<section class="panel"><h2 id="next-sounds">{t('mdNextTitle')}</h2>
       <!-- Nothing to rank by is a step still to do, not an error. -->
       {#if !source}<p class="info" role="status">{t('custom_search_needed')}</p>
         <Button href={`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}`}>{t('sSearchStart')}</Button>
@@ -138,7 +163,8 @@
         <details><summary>{t('mdHowChosen')}</summary>
           <p>{source==='custom'?t('mdIntroCustom'):source==='search'?t('mdIntroSearch'):fill('mdIntroBuiltin',{model:modelIntro(info.engine)})}</p>
           <p class="muted">{t('mdUndo')}</p><p class="muted">{t('mdUnsureHint')}</p><p class="muted">{t('mdEvidence')}</p></details>
-        {#each batch as item (item.segment_id)}{@render row(item)}{:else}
+        {#if batch.length}<p class="muted">{t('mdKeys')}</p>{/if}
+        {#each batch as item (item.segment_id)}{@render row(item,true)}{:else}
           {#if collecting}<p>{t('mdNoneLeft')}</p>
           {:else}<div class="status-box" role="status"><strong>{t('mdEndTitle')}</strong><p>{t('mdEndText')}</p></div><p class="muted">{t('mdEndMore')}</p>{/if}{/each}
       {/if}
@@ -175,6 +201,8 @@
   .meter{display:grid;grid-template-columns:auto minmax(0,320px) auto;gap:4px 12px;align-items:center;justify-content:start}.meter progress{width:100%;height:12px}
   .test{padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;font-weight:600}
   section p{margin:12px 0}.rounds{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;padding:0;list-style:none}
-  .rounds li{padding:4px 10px;border:1px solid rgb(var(--stone-300));border-radius:8px;font-size:14px}.status-box{margin-bottom:12px}.row{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-top:1px solid rgb(var(--stone-300))}
+  .rounds li{padding:4px 10px;border:1px solid rgb(var(--stone-300));border-radius:8px;font-size:14px}.status-box{margin-bottom:12px}.row{display:flex;flex-direction:column;gap:8px;padding:16px 12px;border-top:1px solid rgb(var(--stone-300));border-left:4px solid transparent;scroll-margin-block:12px}
+  .row.on{border-left-color:rgb(var(--primary-700));background:rgb(var(--primary-700) / .07)}
+  kbd{margin-left:6px;padding:0 6px;border:1px solid currentColor;border-radius:4px;font:inherit;font-size:13px;opacity:.75}
   .row-head{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}.footer{border-top:1px solid rgb(var(--stone-300));padding-top:4px}
   details summary{min-height:44px;padding:10px 0;cursor:pointer}.confirm{margin-top:8px;padding:12px;border:1px solid rgb(var(--color-danger) / .5);border-radius:8px}</style>

@@ -97,7 +97,7 @@ class ReportDocumentTest(unittest.TestCase):
     def test_decided_check_states_threshold_and_precision(self):
         snap=snapshot();t=messages('en')
         rendered=str(blocks(manifest(snap,'en'),[snap],{'per_species':[]}))
-        self.assertIn('Of the sounds counted as "call present", about 50% were correct (probably between 30% and 70%; estimated from 60 sounds that people listened to)',rendered)
+        self.assertIn('Of the sounds counted as "call present", about 50% were correct (probably between 30% and 70%; estimated from 60 sounds that people checked)',rendered)
         self.assertIn(t['rule_checked'].format(score='0.40'),rendered)
         self.assertIn('4 of 100 sounds examined, each 3 seconds long (4.0%). Days with detections: 2',rendered)
 
@@ -192,9 +192,9 @@ class ReportDocumentTest(unittest.TestCase):
         rows=sections(content)['summary']['body'][3]['rows']
         self.assertTrue(all(cell[0]=='text' and cell[1].startswith(('BirdNET 2.4','Perch')) for row in rows for cell in row[2] if cell[0]=='text'))
         self.assertIn(t['table_found_none'],summary);self.assertIn(t['other_list_title'].format(count=1),summary);self.assertIn('BirdNET 2.4：12 音',summary)
-        self.assertIn('AI の点数が高い順に10音を聞いたが、声を確かめられなかった',str(content))
+        self.assertIn('AI の点数が高い順に10音を確かめたが、声は見つからなかった',str(content))
         report['presence'][1]['not_found_list']='search'
-        self.assertIn('お手本に似ている順に10音を聞いたが',str(blocks(report,[snap,other,lone],{'per_species':[]})))
+        self.assertIn('お手本に似ている順に10音を確かめたが',str(blocks(report,[snap,other,lone],{'per_species':[]})))
         # A check with no answers yet reads as not started.
         unanswered=snapshot();unanswered['validation'].update(stage='sample',results={});unanswered['validation']['counts']['answered']=0
         self.assertEqual(status(unanswered),'not_evaluated')
@@ -216,7 +216,7 @@ class ReportDocumentTest(unittest.TestCase):
                   'start_s':i,'end_s':i+3,'local_time':'2024-01-01T05:00:00+09:00'} for i in range(5)]
         rendered=str(blocks(report,[snap],{'per_species':[]},answers))
         # Answers that confirmed nothing are not "not listened yet", and the play link names what is inside.
-        self.assertIn('「AI の答えを確かめる」で 5 音を聞いたが、まだ声を確かめられていない（すべて「判断できない」）',rendered)
+        self.assertIn('「AI の答えを確かめる」で 5 音に答えたが、まだ声は見つかっていない（すべて「判断できない」）',rendered)
         self.assertNotIn(t['badge_unchecked'],rendered)
         self.assertIn('答えた 5 音を聞く（すべて「判断できない」）',rendered)
         # The method says which cut-off each result used.
