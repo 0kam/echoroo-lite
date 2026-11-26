@@ -151,6 +151,28 @@ class SharingCheck(unittest.TestCase):
             (out / 'bad.csv').write_text('a,b\n1,2\n', encoding='utf-8')
             self.assertEqual(client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': str(out / 'bad.csv')}).json()['detail'], 'heard_file_invalid')
 
+    def test_no_bird_sound_goes_out_and_comes_in_with_the_table(self):
+        with site() as (root, client, species):
+            sound = dict(dataset_id=1, recording_id=1, start_s=1, end_s=3)
+            client.post('/heard/map-answer', json={**sound, 'verdict': 'no_bird'})
+            out = root / 'out'; out.mkdir()
+            made = client.post('/datasets/1/heard/export', json={'folder': str(out)}).json()
+            with open(made['path'], encoding='utf-8-sig', newline='') as stream:
+                table = list(csv.DictReader(stream))
+            self.assertEqual([(row['scientific_name'], row['name'], row['verdict']) for row in table], [('(no bird)', '鳥の声がしない', 'present')])
+            empty = {'added': 0, 'different': 0, 'same': 0, 'no_recording': 0, 'no_species': 0, 'invalid': 0}
+            take = lambda: client.post('/datasets/1/heard/import', json={'dataset_id': 1, 'path': made['path']}).json()
+            self.assertEqual(take(), {**empty, 'same': 1})
+            with connect(root) as db:
+                db.execute('DELETE FROM labels')
+            self.assertEqual(take(), {**empty, 'added': 1})
+            self.assertEqual(client.get('/datasets/1/heard').json()['no_bird'], {'site': 1, 'all': 1})
+            # Where a species is recorded as heard, the table's "no bird sound" is left out; taken back, it is not written.
+            client.post('/heard/map-answer', json={**sound, 'verdict': 'present', 'species_id': species['id']})
+            self.assertEqual(take(), {**empty, 'different': 1})
+            again = client.post('/datasets/1/heard/export', json={'folder': str(out / '..')}).json()
+            self.assertEqual(again['rows'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

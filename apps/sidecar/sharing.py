@@ -240,8 +240,9 @@ def _start(recorded_at, zone):
 
 
 def export_heard(root, dataset_id, folder):
-    """Write the site's current answers as a CSV table into `folder`: file name, time, species and what was heard."""
-    from labels import current
+    """Write the site's current answers as a CSV table into `folder`: file name, time, species and what was heard.
+    "No bird sound" is a row with scientific_name `(no bird)` and verdict `present`."""
+    from labels import current, no_bird
     parent = Path(folder).expanduser().resolve()
     if not parent.is_dir():
         raise CatalogError('folder_missing')
@@ -250,11 +251,12 @@ def export_heard(root, dataset_id, folder):
         if site is None:
             raise CatalogError('not_found')
         records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))}
-        rows = current(db, dataset_id)
-        from species import names_for
+        from species import NO_BIRD, names_for
+        # "No bird sound" taken back since is no answer.
+        rows = [row for row in current(db, dataset_id) if row['verdict'] == 'present' or row['taxon_id'] != no_bird(db)]
         species = {r['id']: r for r in db.execute('SELECT * FROM species WHERE id IN (SELECT value FROM json_each(?))',
                    (json.dumps(sorted({row['taxon_id'] for row in rows})),))}
-        names = {key: names_for(r)['common_names'].get('ja') or names_for(r)['common_names'].get('en') or '' for key, r in species.items()}
+        names = {key: '鳥の声がしない' if r['scientific_name'] == NO_BIRD else names_for(r)['common_names'].get('ja') or names_for(r)['common_names'].get('en') or '' for key, r in species.items()}
     if not rows:
         raise CatalogError('nothing_to_export')
     zone, made = ZoneInfo(site['timezone']), datetime.now(timezone.utc)
@@ -277,7 +279,7 @@ def import_heard(root, dataset_id, path):
     """Take answers in from a table written by `export_heard` (or by hand in the same columns). A row is matched to
     a recording of the site by its file name; rows for a recording or species not found here are counted and left out.
     A sound that already has an answer for the species here keeps it: a different answer in the table is counted and left out."""
-    from labels import LATEST, VERDICTS, put
+    from labels import LATEST, VERDICTS, no_bird, put, put_no_bird
     if not Path(path).is_file():
         raise CatalogError('file_missing')
     try:
@@ -303,7 +305,7 @@ def import_heard(root, dataset_id, path):
         for record in db.execute('SELECT id,path,seconds,recorded_at FROM site_recordings WHERE scope_id=?', (dataset_id,)):
             by_name.setdefault(Path(record['path']).name.casefold(), []).append(record)
         species = {r['scientific_name']: r['id'] for r in db.execute('SELECT scientific_name,COALESCE(accepted_id,id) AS id FROM species')}
-        touched = set()
+        touched, none = set(), no_bird(db)
         for line in table:
             try:
                 start, end, verdict = float(line['start_s']), float(line['end_s']), line['verdict'].strip()
@@ -328,9 +330,19 @@ def import_heard(root, dataset_id, path):
             else:
                 piece = (taxon, found[0]['id'], start, end)
                 now = db.execute(f'SELECT l.verdict FROM labels l WHERE l.taxon_id=? AND l.recording_id=? AND l.start_s=? AND l.end_s=? AND {LATEST}', piece).fetchone()
-                if now is not None:
+                # "No bird sound" and a species heard cannot both hold for one sound.
+                clash = (taxon == none or verdict == 'present') and db.execute(f'''SELECT 1 FROM labels l WHERE l.recording_id=? AND l.start_s=? AND l.end_s=?
+                    AND l.verdict='present' AND (l.taxon_id=?)<>? AND {LATEST}''', (*piece[1:], none, taxon == none)).fetchone()
+                if taxon == none and verdict != 'present':
+                    result['invalid'] += 1
+                elif now is not None and not (taxon == none and now[0] != 'present'):
                     # An answer already here is never replaced by a table: a different one is counted and left out.
                     result['same' if now[0] == verdict else 'different'] += 1
+                elif clash:
+                    result['different'] += 1
+                elif taxon == none:
+                    put_no_bird(db, *piece[1:], 'import', {'file': Path(path).name})
+                    result['added'] += 1
                 else:
                     put(db, *piece, verdict, 'import', {'file': Path(path).name}, history=True)
                     touched.add(piece)

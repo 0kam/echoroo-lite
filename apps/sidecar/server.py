@@ -237,7 +237,7 @@ class RollupAnswer(BaseModel):
 class HeardFix(BaseModel):
     dataset_id: int
     ids: list[int] = Field(min_length=1, max_length=2000)
-    action: Literal['present', 'absent', 'unknown', 'other', 'add', 'delete']
+    action: Literal['present', 'absent', 'unknown', 'other', 'add', 'no_bird', 'delete']
     species_id: str | None = None
 
     @model_validator(mode='after')
@@ -252,8 +252,14 @@ class MapAnswer(BaseModel):
     recording_id: int
     start_s: float = Field(ge=0, allow_inf_nan=False)
     end_s: float = Field(gt=0, allow_inf_nan=False)
-    species_id: str
-    verdict: Literal['present', 'absent', 'unknown']
+    species_id: str | None = None
+    verdict: Literal['present', 'absent', 'unknown', 'no_bird']
+
+    @model_validator(mode='after')
+    def species_named(self):
+        if (self.verdict == 'no_bird') != (self.species_id is None):
+            raise ValueError('species_id goes with every verdict but "no_bird"')
+        return self
 
 
 class ModelSharing(BaseModel):

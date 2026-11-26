@@ -106,8 +106,20 @@ class RollupTest(unittest.TestCase):
                 for kind in ('family', 'not_bird', 'unknown'):
                     sounds = answer(15, kind)
                     self.assertEqual({s['start_s']: s['answer']['kind'] for s in sounds}, {0: 'species', 15: kind})
+                    if kind == 'not_bird':
+                        # "No bird sound" is its own record, not "family: not heard".
+                        with connect(data) as db:
+                            label = db.execute("SELECT l.verdict,s.rank FROM labels l JOIN species s ON s.id=l.taxon_id WHERE l.source='rollup_fix' AND l.start_s=15").fetchone()
+                            self.assertEqual(tuple(label), ('present', 'none'))
+                        self.assertEqual(client.get('/datasets/1/heard').json()['no_bird']['site'], 2)  # with the one answered above
+                # As it was stored before ("family: not heard"), it still reads as answered.
+                with connect(data) as db:
+                    db.execute("UPDATE labels SET verdict='absent' WHERE source='rollup_fix' AND start_s=15")
+                self.assertEqual(client.get('/datasets/1/rollups/Picidae').json()['sounds'][0]['answer'], {'kind': 'not_bird', 'species': None})
+                with connect(data) as db:
+                    db.execute("UPDATE labels SET verdict='unknown' WHERE source='rollup_fix' AND start_s=15")
                 overview = client.get('/datasets/1/overview').json()
-                self.assertFalse(any(s['species'].get('rank') == 'family' for s in overview['species']))
+                self.assertFalse(any(s['species'].get('rank') for s in overview['species']))
                 self.assertEqual(client.get('/datasets/1/rollups').json()['families'][0]['left'], 0)
                 with connect(data) as db:
                     self.assertEqual(db.execute("SELECT COUNT(*) FROM labels WHERE source='rollup_fix'").fetchone()[0], 3)

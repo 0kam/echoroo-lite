@@ -57,6 +57,8 @@ def japan_names():
     return frozenset(row['perch_scientific_name'] for row in data['mappings'])
 
 
+NO_BIRD = '(no bird)'  # scientific_name of the one species row with rank 'none'
+
 # Tables that point at a species; an alias's rows move to the species it names.
 SPECIES_COLUMNS = (('labels', 'taxon_id'), ('validation_sessions', 'species_id'), ('presence_misses', 'species_id'),
                    ('custom_models', 'species_id'), ('quiz_clips', 'species_id'), ('search_runs', 'species_id'))
@@ -79,6 +81,9 @@ def initialize_species(root):
         from taxa import families
         db.executemany("INSERT INTO species(id,scientific_name,rank) VALUES(?,?,'family')",
                        ((str(uuid4()), name) for name in families() if name not in existing))
+        if NO_BIRD not in existing:
+            # The taxon of "no bird sound" answers (`labels.put_no_bird`); never listed as a species.
+            db.execute("INSERT INTO species(id,scientific_name,rank) VALUES(?,?,'none')", (str(uuid4()), NO_BIRD))
         ids = {r['scientific_name']: r['id'] for r in db.execute('SELECT id,scientific_name FROM species')}
         for alias, accepted in aliases().items():
             if alias not in ids or accepted not in ids:
@@ -112,7 +117,7 @@ def names_for(row):
                 "name_sources": {lang: "user" if lang in custom else "bundled" for lang in bundled.keys() | custom.keys()}}
     bundled = bundled_names().get(row["scientific_name"], {})
     defaults = {**additional_names().get(row['scientific_name'], {}), **bundled}
-    return {"id": row["id"], "scientific_name": row["scientific_name"],
+    return {"id": row["id"], "scientific_name": row["scientific_name"], **({'rank': 'none'} if row['scientific_name'] == NO_BIRD else {}),
             "common_names": {**defaults, **custom}, "custom_names": custom,
             "name_sources": {lang: "user" if lang in custom else "bundled" if lang in bundled else 'quiz' for lang in defaults.keys() | custom.keys()}}
 

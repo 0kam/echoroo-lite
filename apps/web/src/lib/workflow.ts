@@ -38,7 +38,7 @@ export type LabelRow = {test?:boolean;segment_id:number;start_s:number;end_s:num
   score:number|null;label:'target'|'other'|null};
 /** The species-AI page. `batch` and `source` come only when a round is asked for; source null = nothing to choose sounds by. */
 export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;source:'custom'|'search'|'builtin'|null;engine:string;
-  batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number};
+  batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number;no_bird_answers:number};
   requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[];
   /** Test sounds come first: 'collecting' until they are frozen ('fixed'); 'skipped' is a species grown before that; `test` counts them and names the aims. */
   phase:'collecting'|'fixed'|'skipped';test:{heard:number;not_heard:number;answered:number;aim_heard:number;aim_not_heard:number;ask_after:number;enough:number;complete:boolean};sharing?:{all_sites:boolean;positive_5s:number;negative_5s:number;sites:number}};

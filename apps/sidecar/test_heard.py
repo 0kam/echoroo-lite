@@ -68,24 +68,27 @@ class HeardTest(unittest.TestCase):
             self.assertEqual(client.get('/datasets/1/heard/records', params={'day': '2024-08-09'}).json()['total'], 0)
             self.assertEqual(len(client.get('/datasets/1/heard/records', params={'limit': 1, 'offset': 1}).json()['rows']), 1)
 
-            # Both heard sounds were another species: the warbler is "not heard" there, the tit "heard".
+            # Both heard sounds were another species: they move to the tit and are no longer rows of the warbler,
+            # for which they are "not heard" all the same (history, and material for its AI below).
             ids = [r['id'] for r in heard['rows']]
             self.assertEqual(client.post('/heard/fix', json=dict(dataset_id=1, ids=ids, action='other', species_id=tit)).json()['changed'], 2)
             summary = {r['species']['scientific_name']: r['site'] for r in client.get('/datasets/1/heard').json()['rows']}
-            self.assertEqual(summary, {'Horornis diphone': {'present': 0, 'absent': 3, 'unknown': 0},
+            self.assertEqual(summary, {'Horornis diphone': {'present': 0, 'absent': 1, 'unknown': 0},
                                        'Parus cinereus': {'present': 2, 'absent': 0, 'unknown': 0}})
+            self.assertEqual([(r['species']['scientific_name'], r['start_s']) for r in client.get('/datasets/1/heard/records', params={'species_id': warbler}).json()['rows']],
+                             [('Horornis diphone', 10)])
             # The list was shown before the change: its ids are no longer the current answers.
             stale = client.post('/heard/fix', json=dict(dataset_id=1, ids=ids, action='unknown'))
             self.assertEqual((stale.status_code, stale.json()['detail']), (400, 'annotation_changed'))
             # The species page no longer counts the sounds as evidence, and the species AI counts them as "not heard".
             self.assertEqual(client.get(f'/datasets/1/species/{warbler}/presence').json()['presence']['status'], 'unchecked')
             self.assertEqual(client.get(f'/datasets/1/species/{warbler}/custom-model').json()['examples'],
-                             {'positive_5s': 0, 'negative_5s': 3, 'other_answers': 2})
+                             {'positive_5s': 0, 'negative_5s': 3, 'other_answers': 2, 'no_bird_answers': 0})
 
             sound = client.get('/datasets/1/heard/sound', params=dict(recording_id=1, start_s=0, end_s=5)).json()
             self.assertEqual(sound['file'].rsplit('/', 1)[-1].rsplit('\\', 1)[-1], '20240808_060000.wav')
             self.assertEqual(sorted((r['species']['scientific_name'], r['verdict'], r['screen']) for r in sound['now']),
-                [('Horornis diphone', 'absent', 'review'), ('Parus cinereus', 'present', 'review')])
+                [('Parus cinereus', 'present', 'review')])
             self.assertEqual([(r['species']['scientific_name'], r['verdict'], r['screen'], r['current']) for r in sound['history']],
                 [('Parus cinereus', 'present', 'review', True), ('Horornis diphone', 'absent', 'review', True),
                  ('Parus cinereus', 'unknown', 'validation', False), ('Horornis diphone', 'present', 'species_mark', False)])
@@ -101,7 +104,7 @@ class HeardTest(unittest.TestCase):
             client.post('/heard/fix', json=dict(dataset_id=1, ids=[current], action='add', species_id=family['id']))
             rows = {r['species']['scientific_name']: r for r in client.get('/datasets/1/heard').json()['rows']}
             self.assertEqual((rows['Picidae']['site']['present'], rows['Picidae']['ai']), (1, {'state': 'family'}))
-            self.assertEqual(rows['Horornis diphone']['site'], {'present': 1, 'absent': 2, 'unknown': 0})
+            self.assertEqual(rows['Horornis diphone']['site'], {'present': 1, 'absent': 1, 'unknown': 0})
             # A family answer named as a species is replaced by it, not turned into "family not heard".
             picidae = next(r['id'] for r in client.get('/datasets/1/heard/records', params={'species_id': family['id']}).json()['rows'])
             woodpecker = self.species(client, 'Dendrocopos major')
@@ -111,10 +114,55 @@ class HeardTest(unittest.TestCase):
             self.assertEqual(rows['Dendrocopos major'], {'present': 1, 'absent': 0, 'unknown': 0})
             self.assertEqual(client.get('/datasets/1/heard/species', params={'q': 'きつつきか'}).json()['families'][0]['scientific_name'], 'Picidae')
             client.post('/heard/fix', json=dict(dataset_id=1, ids=[current], action='delete'))
-            self.assertEqual(client.get('/datasets/1/heard', params={'species_id': warbler}).json()['site'], {'present': 0, 'absent': 2, 'unknown': 0})
+            self.assertEqual(client.get('/datasets/1/heard', params={'species_id': warbler}).json()['site'], {'present': 0, 'absent': 1, 'unknown': 0})
             with connect(self.data) as db:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM labels WHERE taxon_id=? AND start_s=0', (warbler,)).fetchone()[0], 0)
             self.assertEqual(client.post('/heard/fix', json=dict(dataset_id=1, ids=[1], action='other')).status_code, 422)
+
+    def test_no_bird_sound_is_a_record_of_the_sound_and_no_call_for_every_species(self):
+        with tempfile.TemporaryDirectory() as temp:
+            client = self.site(temp)
+            warbler, tit = self.species(client, 'Horornis diphone'), self.species(client, 'Parus cinereus')
+            examples = lambda species: client.get(f'/datasets/1/species/{species}/custom-model').json()['examples']
+            listed = lambda: sorted((r['species'].get('rank', r['species']['scientific_name']), r['verdict'], r['screen'], r['start_s'])
+                                    for r in client.get('/datasets/1/heard/records').json()['rows'])
+            with connect(self.data) as db:
+                labels.put(db, warbler, 1, 0, 5, 'present', 'sound_map')
+                labels.put(db, tit, 1, 0, 5, 'absent', 'training')
+            # Put right to "no bird sound": the warbler heard there becomes "not heard" (kept as history, not a row).
+            row = client.get('/datasets/1/heard/records', params={'species_id': warbler}).json()['rows'][0]
+            self.assertEqual(client.post('/heard/fix', json=dict(dataset_id=1, ids=[row['id']], action='no_bird')).json()['changed'], 1)
+            self.assertEqual(listed(), [('Parus cinereus', 'absent', 'training', 0), ('none', 'present', 'review', 0)])
+            sound = client.get('/datasets/1/heard/sound', params=dict(recording_id=1, start_s=0, end_s=5)).json()
+            self.assertEqual([(r['species']['scientific_name'], r['verdict'], r['current']) for r in sound['history'] if r['species']['id'] == warbler],
+                             [('Horornis diphone', 'absent', True), ('Horornis diphone', 'present', False)])
+            # The sound map's answer, for the map to call: no species, verdict 'no_bird'.
+            saved = client.post('/heard/map-answer', json=dict(dataset_id=1, recording_id=1, start_s=5, end_s=10, verdict='no_bird'))
+            self.assertEqual([(r['species']['rank'], r['verdict'], r['screen']) for r in saved.json()['now']], [('none', 'present', 'sound_map')])
+            self.assertEqual(client.post('/heard/map-answer', json=dict(dataset_id=1, recording_id=1, start_s=5, end_s=10, verdict='no_bird', species_id=tit)).status_code, 422)
+            # It is not a species: not in the counts table, the species search, the pickers, or the site's species list.
+            summary = client.get('/datasets/1/heard').json()
+            self.assertEqual(([r['species']['scientific_name'] for r in summary['rows']], summary['no_bird'], summary['total']),
+                             (['Parus cinereus'], {'site': 2, 'all': 2}, {'site': 3, 'all': 3}))
+            self.assertEqual(client.get('/species', params={'q': 'no bird'}).json(), [])
+            self.assertEqual(client.get('/datasets/1/heard/species', params={'q': 'no bird'}).json(), {'species': [], 'families': []})
+            self.assertEqual(client.get('/datasets/1/heard/others', params=dict(recording_id=1, start_s=5, end_s=10, of=tit)).json(), [])
+            self.assertFalse(any(s['species'].get('rank') or s['presence']['status'] == 'confirmed' for s in client.get('/datasets/1/overview').json()['species']))
+            self.assertEqual(client.get('/datasets/1/heard/records', params={'verdict': 'present'}).json()['total'], 0)
+            # "No call" material for every species, but a species' own answer on the piece wins.
+            self.assertEqual(examples(warbler), {'positive_5s': 0, 'negative_5s': 2, 'other_answers': 1, 'no_bird_answers': 1})
+            self.assertEqual(examples(tit), {'positive_5s': 0, 'negative_5s': 2, 'other_answers': 0, 'no_bird_answers': 1})
+            self.assertEqual(client.get('/datasets/1/heard').json()['rows'][0]['ai']['needed'], 18)
+            # A species heard there afterwards takes "no bird sound" back.
+            client.post('/heard/map-answer', json=dict(dataset_id=1, recording_id=1, start_s=5, end_s=10, verdict='present', species_id=tit))
+            self.assertEqual(listed(), [('Parus cinereus', 'absent', 'training', 0), ('Parus cinereus', 'present', 'sound_map', 5), ('none', 'present', 'review', 0)])
+            self.assertEqual(examples(tit), {'positive_5s': 1, 'negative_5s': 1, 'other_answers': 1, 'no_bird_answers': 0})
+            self.assertEqual(examples(warbler)['no_bird_answers'], 0)
+            # The record itself: a species was calling after all, or deleted; it has no "heard / not heard".
+            none = next(r for r in client.get('/datasets/1/heard/records').json()['rows'] if r['species'].get('rank') == 'none')
+            self.assertEqual(client.post('/heard/fix', json=dict(dataset_id=1, ids=[none['id']], action='absent')).status_code, 400)
+            client.post('/heard/fix', json=dict(dataset_id=1, ids=[none['id']], action='other', species_id=warbler))
+            self.assertEqual(listed(), [('Horornis diphone', 'present', 'review', 0), ('Parus cinereus', 'absent', 'training', 0), ('Parus cinereus', 'present', 'sound_map', 5)])
 
     def test_another_species_is_added_on_a_question_card_and_taken_back(self):
         with tempfile.TemporaryDirectory() as temp:

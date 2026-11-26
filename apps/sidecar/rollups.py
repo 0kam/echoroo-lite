@@ -3,8 +3,8 @@
 A window is rolled up when the AI's first answer over all classes is a bird outside the Japan checklist and its
 family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are found once and kept.
 The user's answer is a label with source `rollup_fix`: the species they heard (evidence and species-AI material
-like any other "present"), or the family row itself when the answer stops there: present ("this family, species
-unknown"), absent ("not a bird") or unknown.
+like any other "present"), the family row itself when the answer stops there: present ("this family, species
+unknown") or unknown, or "no bird sound" (`labels.put_no_bird`; older data: the family row, absent).
 Families without a species on the Japan checklist are shown together under the reserved family key NO_JAPAN.
 """
 import json
@@ -72,13 +72,17 @@ def _sounds(root, db, ctx, family=None):
             'top_engine': row['engine'], 'japan_label': row['japan_label'], 'source_path': record['path'], 'seconds': record['seconds'], 'answer': None})
         sound['engines'].append(row['engine'])
     families = {r['id']: r['scientific_name'] for r in db.execute("SELECT id,scientific_name FROM species WHERE rank='family'")}
+    none = labels.no_bird(db)
     for row in db.execute('''SELECT l.* FROM labels l JOIN site_recordings r ON r.id=l.recording_id
             WHERE r.scope_id=? AND l.source='rollup_fix' ORDER BY l.id''', (dataset_id,)):
         data = labels.ref(row)
         sound = sounds.get((row['recording_id'], row['start_s'], row['end_s'], data.get('family')))
         if sound is None:
             continue
-        if row['taxon_id'] in families:
+        if row['taxon_id'] == none:
+            sound['answer'] = {'kind': 'not_bird', 'species': None}
+        elif row['taxon_id'] in families:
+            # 'absent': how "no bird sound" was stored before it had its own record.
             kind = {'present': 'family', 'absent': 'not_bird', 'unknown': 'unknown'}[row['verdict']]
             sound['answer'] = {'kind': kind, 'species': None}
         else:
@@ -202,8 +206,13 @@ def answer(root, body):
         # One answer per sound: an earlier one, whatever it named, is replaced.
         db.execute('''DELETE FROM labels WHERE source='rollup_fix' AND recording_id=? AND start_s=? AND end_s=?
             AND json_extract(source_ref,'$.family')=?''', (body.recording_id, body.start_s, body.end_s, body.family))
-        if body.kind is not None:
-            verdict = {'species': 'present', 'family': 'present', 'not_bird': 'absent', 'unknown': 'unknown'}[body.kind]
-            labels.put(db, taxon, body.recording_id, body.start_s, body.end_s, verdict, 'rollup_fix',
-                       {'family': body.family, 'ai_answer': rolled[0]['top_label'], 'engines': [r['engine'] for r in rolled]})
+        note = {'family': body.family, 'ai_answer': rolled[0]['top_label'], 'engines': [r['engine'] for r in rolled]}
+        if body.kind == 'not_bird':
+            from validation import refresh
+            for heard in labels.put_no_bird(db, body.recording_id, body.start_s, body.end_s, 'rollup_fix', note):
+                refresh(root, db, heard, body.recording_id, body.start_s, body.end_s)
+            db.execute('DELETE FROM workflow_cache')
+        elif body.kind is not None:
+            verdict = {'species': 'present', 'family': 'present', 'unknown': 'unknown'}[body.kind]
+            labels.put(db, taxon, body.recording_id, body.start_s, body.end_s, verdict, 'rollup_fix', note)
     return {'kind': body.kind}

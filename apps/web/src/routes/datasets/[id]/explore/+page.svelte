@@ -390,7 +390,7 @@
                   <strong>{t('maTitleAny')}</strong>
                   <div class="actions"><Button size="sm" disabled={answering} onclick={()=>choosing=true}>{t('maChoose')}</Button></div>
                 {/if}
-                <span class="muted">{recorded.length?fill('maNow',{list:recorded.map(r=>fill('maItem',{species:taxonName(r.species),verdict:verdictText(r.verdict)})).join(t('eSep'))}):t('maNone')}</span>
+                <span class="muted">{recorded.length?fill('maNow',{list:recorded.map(r=>r.species.rank==='none'?taxonName(r.species):fill('maItem',{species:taxonName(r.species),verdict:verdictText(r.verdict)})).join(t('eSep'))}):t('maNone')}</span>
                 {#if answerError}<span class="error" role="alert">{t(answerError)}</span>{/if}
               </div>
             {/if}

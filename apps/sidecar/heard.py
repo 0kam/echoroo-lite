@@ -1,13 +1,14 @@
 """Sounds a person checked by ear, from every screen in one place: counts per species, the list, and putting them right.
 
-Reads the current answers of `labels`. A correction is a new answer (source 'review'), so what it replaced stays as
+Reads the current answers of `labels`, without those that only follow from another answer (`auto`, see `labels`).
+A correction is a new answer (source 'review'), so what it replaced stays as
 history and can be brought back. "Another species is calling too" on a question card is an answer of that card's
 screen with `incidental` set.
 """
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from labels import LATEST, put, ref
+from labels import LATEST, no_bird, put, put_no_bird, ref
 from reports import window_key
 from species import list_species, names_for, _kana
 from storage import CatalogError, connect
@@ -30,10 +31,10 @@ def _taxa(db):
 
 
 def _current(db, dataset_id=None):
-    """Current answers, of one site or of all, with each one's recording."""
+    """Current answers the person gave, of one site or of all, with each one's recording."""
     return [dict(r) for r in db.execute(f'''SELECT l.*,r.path,r.seconds,r.recorded_at FROM labels l JOIN recordings r ON r.id=l.recording_id
         WHERE (? IS NULL OR l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)) AND {LATEST}
-        ORDER BY l.id''', (dataset_id, dataset_id))]
+        AND json_extract(l.source_ref,'$.auto') IS NULL ORDER BY l.id''', (dataset_id, dataset_id))]
 
 
 def _counts(rows):
@@ -45,10 +46,12 @@ def _counts(rows):
 
 def summary(root, dataset_id, species_id=None):
     """Per species: how many sounds were heard / not heard / left unknown at this site and at all sites, and (for the
-    whole list) whether a species AI can be made here. One sound with two species counts once for each."""
+    whole list) whether a species AI can be made here. One sound with two species counts once for each.
+    "No bird sound" is not a species row: `no_bird` counts its sounds."""
     with connect(root) as db:
         _site(db, dataset_id)
         here, everywhere, taxa = _counts(_current(db, dataset_id)), _counts(_current(db)), _taxa(db)
+        none = [counts.pop(no_bird(db), {'present': 0})['present'] for counts in (here, everywhere)]
         if species_id is not None:
             row = db.execute('SELECT * FROM species WHERE id=?', (species_id,)).fetchone()
             if row is None:
@@ -63,7 +66,8 @@ def summary(root, dataset_id, species_id=None):
             for taxon, counts in everywhere.items()]
     rows.sort(key=lambda row: (-sum(row['site'].values()), -sum(row['all'].values()), row['species']['scientific_name']))
     from custom_models import MIN_CLASS_EXAMPLES, MIN_EXAMPLES
-    return {'rows': rows, 'total': {'site': sum(sum(c.values()) for c in here.values()), 'all': sum(sum(c.values()) for c in everywhere.values())},
+    return {'rows': rows, 'no_bird': {'site': none[0], 'all': none[1]},
+            'total': {'site': sum(sum(c.values()) for c in here.values()) + none[0], 'all': sum(sum(c.values()) for c in everywhere.values()) + none[1]},
             'requirements': {'total': MIN_EXAMPLES, 'each': MIN_CLASS_EXAMPLES}}
 
 
@@ -100,7 +104,8 @@ def records(root, dataset_id, species_id=None, verdict=None, screen=None, day=No
         rows = [_public(row, taxa, zone, test) for row in _current(db, dataset_id)]
     options = {'species': sorted({row['species']['id']: row['species'] for row in rows}.values(), key=lambda s: s['scientific_name']),
                'screens': sorted({row['screen'] for row in rows}), 'days': sorted({row['local_time'][:10] for row in rows})}
-    rows = [row for row in rows if (species_id is None or row['species']['id'] == species_id) and (verdict is None or row['verdict'] == verdict)
+    rows = [row for row in rows if (species_id is None or row['species']['id'] == species_id)
+            and (verdict is None or row['verdict'] == verdict and row['species'].get('rank') != 'none')
             and (screen is None or row['screen'] == screen) and (day is None or row['local_time'][:10] == day)]
     if order == 'time':
         rows.sort(key=lambda row: (datetime.fromisoformat(row['local_time']), row['species']['scientific_name']))
@@ -129,16 +134,18 @@ def sound(root, dataset_id, recording_id, start_s, end_s, blank=False):
     history = [{**_public(row, taxa, zone, test), 'current': newest[row['taxon_id']] == row['id'], 'current_id': newest[row['taxon_id']]} for row in rows]
     return {'site': dict(site), 'file': rows[0]['path'], 'recording_id': recording_id, 'start_s': start_s, 'end_s': end_s,
             'local_time': history[0]['local_time'], 'source': history[0]['source'],
-            'now': [row for row in history if row['current']], 'history': history}
+            'now': [row for row, raw in zip(history, rows) if row['current'] and 'auto' not in ref(raw)], 'history': history}
 
 
 def fix(root, body):
     """Put answers right. `ids` are current answers of one species at this site; `action`:
     'present' / 'absent' / 'unknown' (the species' answer becomes that), 'other' (it was `species_id` instead: this
-    species becomes absent, that one present), 'add' (`species_id` was calling as well) or 'delete' (never answered).
+    species becomes absent, that one present), 'add' (`species_id` was calling as well), 'no_bird' (no bird sound:
+    every species heard in the sound becomes absent) or 'delete' (never answered). A "no bird sound" record itself
+    takes 'other' (a species was heard after all) and 'delete'.
     """
     from validation import refresh
-    if body.action not in ('present', 'absent', 'unknown', 'other', 'add', 'delete') or not body.ids:
+    if body.action not in ('present', 'absent', 'unknown', 'other', 'add', 'no_bird', 'delete') or not body.ids:
         raise CatalogError('invalid_input')
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
@@ -152,6 +159,8 @@ def fix(root, body):
             raise CatalogError('invalid_input')
         taxon, other = rows[0]['taxon_id'], None
         family = db.execute("SELECT rank='family' FROM species WHERE id=?", (taxon,)).fetchone()[0]
+        if taxon == no_bird(db) and body.action not in ('other', 'delete'):
+            raise CatalogError('invalid_input')
         if body.action in ('other', 'add'):
             found = db.execute('SELECT COALESCE(accepted_id,id) FROM species WHERE id=?', (body.species_id,)).fetchone()
             if found is None or found[0] == taxon:
@@ -167,10 +176,15 @@ def fix(root, body):
                     _heard(db, other, piece, {'instead_of': taxon})
             elif body.action == 'add':
                 _heard(db, other, piece, {'with': taxon}, True)
+            elif body.action == 'no_bird':
+                checks += sum(refresh(root, db, heard, *piece) for heard in put_no_bird(db, *piece, 'review') if heard != taxon)
+            elif taxon == no_bird(db):
+                _heard(db, other, piece, {})  # `put` takes "no bird sound" back
             else:
                 verdict = 'absent' if body.action == 'other' else body.action
                 if verdict != row['verdict']:
-                    put(db, taxon, *piece, verdict, 'review', {'was': row['verdict'], 'screen': row['source']}, history=True)
+                    # Moved to another species: "not heard" for this one (material for its AI), but not a row of the list.
+                    put(db, taxon, *piece, verdict, 'review', {'was': row['verdict'], 'screen': row['source'], **({'auto': other} if other else {})}, history=True)
                 if other:
                     _heard(db, other, piece, {'instead_of': taxon})
             checks += refresh(root, db, taxon, *piece) + (refresh(root, db, other, *piece) if other else 0)
@@ -203,7 +217,7 @@ def others(root, dataset_id, recording_id, start_s, end_s, of):
     with connect(root) as db:
         rows = db.execute(f'''SELECT l.*,s.names,s.scientific_name,s.rank FROM labels l JOIN species s ON s.id=l.taxon_id
             WHERE l.recording_id=? AND l.start_s=? AND l.end_s=? AND l.taxon_id<>? AND l.verdict='present' AND {LATEST}
-            AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?) ORDER BY l.id''',
+            AND s.rank<>'none' AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?) ORDER BY l.id''',
             (recording_id, start_s, end_s, of, dataset_id)).fetchall()
         return [{'species': names_for({**dict(row), 'id': row['taxon_id']}), 'removable': bool(row['incidental']) and row['source'] in SCREENS}
                 for row in rows]
@@ -233,18 +247,23 @@ def set_other(root, body):
 
 
 def map_answer(root, body):
-    """An answer given on the sound map about one sound: `species_id` was heard in it, was not, or cannot be told.
+    """An answer given on the sound map about one sound: `species_id` was heard in it, was not, or cannot be told;
+    or (`verdict` 'no_bird', no species) there is no bird sound in it.
     Kept beside the answers of other screens (newest wins), and apart from the sounds ticked for export."""
+    from validation import refresh
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
         _interval(db, body)
-        found = db.execute('SELECT COALESCE(accepted_id,id) FROM species WHERE id=?', (body.species_id,)).fetchone()
-        if found is None:
-            raise CatalogError('invalid_input')
-        piece = (found[0], body.recording_id, body.start_s, body.end_s)
-        put(db, *piece, body.verdict, 'sound_map', {'answer': True}, history=True)
-        from validation import refresh
-        refresh(root, db, *piece)
+        sound_ = (body.recording_id, body.start_s, body.end_s)
+        if body.verdict == 'no_bird':
+            for heard in put_no_bird(db, *sound_, 'sound_map', {'answer': True}):
+                refresh(root, db, heard, *sound_)
+        else:
+            found = db.execute("SELECT COALESCE(accepted_id,id) FROM species WHERE id=? AND rank<>'none'", (body.species_id,)).fetchone()
+            if found is None:
+                raise CatalogError('invalid_input')
+            put(db, found[0], *sound_, body.verdict, 'sound_map', {'answer': True}, history=True)
+            refresh(root, db, found[0], *sound_)
         db.execute('DELETE FROM workflow_cache')
     return sound(root, body.dataset_id, body.recording_id, body.start_s, body.end_s)
 
@@ -289,7 +308,7 @@ def search_examples(root, dataset_id, species_id):
         site = _site(db, dataset_id)
         zone, taxa = ZoneInfo(site['timezone']), _taxa(db)
         rows = _current(db, dataset_id)
-    heard = [row for row in rows if row['verdict'] == 'present']
+    heard = [row for row in rows if row['verdict'] == 'present' and taxa[row['taxon_id']].get('rank') != 'none']
     mine = [_public(row, taxa, zone) for row in heard if row['taxon_id'] == species_id]
     for row in mine:
         row['mixed'] = sorted({taxa[o['taxon_id']]['id'] for o in heard if o['taxon_id'] != species_id and o['recording_id'] == row['recording_id']

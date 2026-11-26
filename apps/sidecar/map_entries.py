@@ -38,8 +38,10 @@ def _load(db, run):
     for point in points:
         by_recording.setdefault(point['recording_id'], []).append(point)
     answers = {}  # position -> [(taxon, verdict)]
-    for row in db.execute(f'''SELECT l.taxon_id,l.verdict,l.recording_id,l.start_s,l.end_s FROM labels l
-            WHERE l.recording_id IN (SELECT value FROM json_each(?)) AND {LATEST}''', (json.dumps(list(by_recording)),)):
+    # "No bird sound" is a sound listened to with no species heard; one taken back since is no answer.
+    for row in db.execute(f'''SELECT l.taxon_id,CASE WHEN s.rank='none' THEN 'absent' ELSE l.verdict END AS verdict,l.recording_id,l.start_s,l.end_s
+            FROM labels l JOIN species s ON s.id=l.taxon_id WHERE l.recording_id IN (SELECT value FROM json_each(?)) AND {LATEST}
+            AND (s.rank<>'none' OR l.verdict='present')''', (json.dumps(list(by_recording)),)):
         for point in by_recording[row['recording_id']]:
             overlap = min(point['end_s'], row['end_s']) - max(point['start_s'], row['start_s'])
             if overlap > 0.5 * min(point['end_s'] - point['start_s'], row['end_s'] - row['start_s']) - 1e-6:

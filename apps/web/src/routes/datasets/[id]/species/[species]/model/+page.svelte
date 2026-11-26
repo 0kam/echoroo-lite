@@ -94,6 +94,7 @@
     {#snippet counts()}<p><strong>{fill('mdCounts',{positive:info!.examples.positive_5s,negative:info!.examples.negative_5s})}</strong>
       {#if info!.needed}<span class="muted">{fill('mdNeed',{n:info!.needed,each:info!.requirements.positive_5s})}</span>{/if}</p>
       {#if info!.examples.other_answers}<p class="muted">{fill('mdElsewhere',{n:info!.examples.other_answers})}</p>{/if}
+      {#if info!.examples.no_bird_answers}<p class="muted">{fill('mdNoBird',{n:info!.examples.no_bird_answers})}</p>{/if}
       {#if info!.test&&info!.test.heard+info!.test.not_heard}<p class="muted">{fill('tsMaterialNote',{n:info!.test.heard+info!.test.not_heard})}</p>{/if}{/snippet}
     {#if !searchFirst&&!collecting}<section class="panel">
       {@render counts()}
