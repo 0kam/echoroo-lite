@@ -1,14 +1,18 @@
-"""Sounds an AI answered with a bird not recorded in Japan, shown as their family and asked to the user.
+"""Sounds an AI answered with a bird not usual at the site in that season, shown as their family and asked to the user.
 
-A window is rolled up when the AI's first answer over all classes is a bird outside the Japan checklist and its
-family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are found once and kept
-with their scores; only those reaching AWAY_SCORE are shown, on the site's list, the family pages and the sound map.
+A window is rolled up when the AI's first answer over all classes is a bird the range model does not predict at the
+site in the recording's week (region.usual_at, taxa.at_home; without the range model: a bird outside the Japan
+checklist) and its family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are kept
+with their scores and the basis they were found on (`rollup_scans.basis`), and found again when the basis changes;
+only those reaching AWAY_SCORE are shown, on the site's list, the family pages and the sound map.
 The user's answer is a label with source `rollup_fix`: the species they heard (evidence and species-AI material
 like any other "present"), the family row itself when the answer stops there: present ("this family, species
 unknown") or unknown, or "no bird sound" (`labels.put_no_bird`; older data: the family row, absent).
 Families without a species on the Japan checklist are shown together under the reserved family key NO_JAPAN.
 """
 import json
+import threading
+import time
 from zoneinfo import ZoneInfo
 
 import labels
@@ -23,7 +27,7 @@ SCHEMA = '''
         family TEXT NOT NULL, score REAL NOT NULL, top_label TEXT NOT NULL, top_score REAL NOT NULL,
         japan_label TEXT,
         PRIMARY KEY(analysis_id,start_s));
-    CREATE TABLE IF NOT EXISTS rollup_scans (analysis_id INTEGER PRIMARY KEY REFERENCES analyses);
+    CREATE TABLE IF NOT EXISTS rollup_scans (analysis_id INTEGER PRIMARY KEY REFERENCES analyses, basis TEXT);
 '''
 KINDS = ('species', 'family', 'not_bird', 'unknown')
 NO_JAPAN = '_none'
@@ -33,25 +37,60 @@ AWAY_SCORE = 0.5
 LATEST = '''a.id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)'''
 
 
-def scan(root, dataset_id):
-    """Find the roll-ups of the site's analyses that were not looked at yet."""
+SCAN_NOW = 2.0  # seconds a page waits for roll-ups to be found before the rest goes on behind it
+_scanning, _scan_lock = {}, threading.Lock()  # (data folder, site's dataset) -> the thread finding its roll-ups
+
+
+def scan(root, dataset_id, budget=None):
+    """Find the roll-ups of the site's analyses that were not looked at yet, and again those found on another basis
+    (the site moved, another range model, or roll-ups of an earlier version). Answers given are labels and stay.
+    With `budget` (seconds) it stops when that is used up. Returns how many analyses are still to do."""
     from predictions import dense_rollups
+    from region import usual_at
     with connect(root) as db:
-        todo = [dict(r) for r in db.execute(f'''SELECT a.*,r.seconds FROM analyses a JOIN site_recordings r ON r.id=a.recording_id
-            WHERE r.scope_id=? AND {LATEST} AND a.id NOT IN (SELECT analysis_id FROM rollup_scans)''', (dataset_id,))]
-    for row in todo:
+        site = db.execute('SELECT s.* FROM sites s JOIN datasets d ON d.site_id=s.id WHERE d.id=?', (dataset_id,)).fetchone()
+        rows = [dict(r) for r in db.execute(f'''SELECT a.*,r.seconds,r.recorded_at,s.basis FROM analyses a
+            JOIN site_recordings r ON r.id=a.recording_id LEFT JOIN rollup_scans s ON s.analysis_id=a.id
+            WHERE r.scope_id=? AND {LATEST}''', (dataset_id,))]
+    # The range model's answer is kept per (site, week) while the app runs, so this is cheap for every recording.
+    todo = [(row, *usual_at(root, site, row)) for row in rows]
+    todo = [item for item in todo if item[0]['basis'] != item[2]]
+    until = None if budget is None else time.monotonic() + budget
+    for done, (row, usual, basis) in enumerate(todo):
+        if until is not None and time.monotonic() >= until:
+            return len(todo) - done
         meta = json.loads(row['metadata'])
         found = []
         if row['engine'] == 'perch' or meta.get('all_classes'):
             try:
-                found = dense_rollups(row['scores_path'], row['seconds'], row['engine'], meta.get('window_s', 5))
+                found = dense_rollups(row['scores_path'], row['seconds'], row['engine'], meta.get('window_s', 5), usual)
             except (OSError, CatalogError, ValueError, KeyError):
-                continue
+                found = []  # Unreadable scores have no roll-ups; marked as looked at, so they are not tried on every visit.
         with connect(root) as db:
+            db.execute('DELETE FROM rollups WHERE analysis_id=?', (row['id'],))
             db.executemany('INSERT OR IGNORE INTO rollups VALUES(?,?,?,?,?,?,?,?)', (
                 (row['id'], r['start_s'], r['end_s'], r['family']['scientific_name'], r['score'], r['top_label'],
                  r['top_score'], r['japan_label']) for r in found))
-            db.execute('INSERT OR IGNORE INTO rollup_scans VALUES(?)', (row['id'],))
+            db.execute('INSERT OR REPLACE INTO rollup_scans VALUES(?,?)', (row['id'], basis))
+    return 0
+
+
+def catch_up(root, dataset_id):
+    """For a page: find roll-ups for up to SCAN_NOW seconds, then let the rest go on behind it (a site analysed by an
+    earlier version has thousands to find again, which takes minutes). Returns how many analyses were still to do;
+    the page shows what is found so far and asks again."""
+    key = (str(root), dataset_id)
+    with _scan_lock:
+        running = _scanning.get(key)
+        if running and running.is_alive():
+            return scan(root, dataset_id, 0)
+    left = scan(root, dataset_id, SCAN_NOW)
+    if left:
+        with _scan_lock:
+            if not (_scanning.get(key) and _scanning[key].is_alive()):
+                _scanning[key] = threading.Thread(target=scan, args=(root, dataset_id), daemon=True)
+                _scanning[key].start()
+    return left
 
 
 def _sounds(root, db, ctx, family=None):
@@ -124,7 +163,7 @@ def summary(root, dataset_id, first=None, last=None):
     its two largest families."""
     from results_workflow import context
     ctx = context(root, dataset_id, first, last)
-    scan(root, dataset_id)
+    left = catch_up(root, dataset_id)
     with connect(root) as db:
         rows, guesses, away, home = {}, {}, {}, _japan_species(db)
         for sound in _sounds(root, db, ctx):
@@ -148,7 +187,8 @@ def summary(root, dataset_id, first=None, last=None):
         if merged:
             merged['families'] = len(away)
             merged['examples'] = [names_for(_family(db, name)) for name in sorted(away, key=lambda name: (-away[name], name))[:2]]
-    return {'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
+    # `pending`: analyses whose roll-ups are still being found behind the page; the list grows until it is 0.
+    return {'pending': left, 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'families': sorted(rows.values(), key=lambda r: (-r['sounds'], r['family']['scientific_name'])) + ([merged] if merged else [])}
 
 
@@ -157,7 +197,7 @@ def family_sounds(root, dataset_id, family, first=None, last=None):
     own answer for each sound. NO_JAPAN gives the sounds of every family without a Japan species, with no choices."""
     from results_workflow import context
     ctx = context(root, dataset_id, first, last)
-    scan(root, dataset_id)
+    left = catch_up(root, dataset_id)
     from reports import window_key
     zone = ZoneInfo(ctx['site']['timezone'])
     with connect(root) as db:
@@ -187,7 +227,7 @@ def family_sounds(root, dataset_id, family, first=None, last=None):
         choice['likely'] = choice['id'] in heard or usual
         choice['_order'] = (choice['id'] not in heard, not usual, choice['common_names'].get('ja') or choice['scientific_name'])
     choices.sort(key=lambda c: c.pop('_order'))
-    return {'family': taxon, 'site': ctx['site'], 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
+    return {'pending': left, 'family': taxon, 'site': ctx['site'], 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
             'choices': choices, 'sounds': sounds}
 
 

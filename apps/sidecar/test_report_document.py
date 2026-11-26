@@ -76,7 +76,7 @@ class ReportDocumentTest(unittest.TestCase):
                          '15 音（「声はあったか」の画面で 1、「AI の答えを確かめる」で 14）')
         self.assertEqual(heard_text({'evidence_count':14,'marked':0,'heard_in_checks':14,'voice_on_ai_page':0},t),'14 音')
         self.assertEqual(heard_text({'evidence_count':5,'marked':1,'heard_in_checks':1,'heard_on_map':1,'heard_in_family_rows':2},t),
-                         '5 音（「声はあったか」の画面で 1、「AI の答えを確かめる」で 1、音の地図で 1、「AI が日本で記録のない種と答えた音」で 2）')
+                         '5 音（「声はあったか」の画面で 1、「AI の答えを確かめる」で 1、音の地図で 1、「AI が、この地域・時期にふつういない種と答えた音」で 2）')
 
     def test_details_keep_uncertainty_without_score_groups(self):
         snap=snapshot(rare=True)

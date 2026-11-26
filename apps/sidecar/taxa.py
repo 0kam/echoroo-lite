@@ -1,5 +1,8 @@
 """One display flow for every AI: keep all-class scores, show only Japan-checklist species, and roll a window whose
-best class lies outside Japan up to that class's family ("〇〇科の一種").
+best class is a bird not usual at the site in that season up to that class's family ("〇〇科の一種").
+
+"Usual" (`at_home`) is a Japan-checklist species the range model (BirdNET geo, region.py) predicts there in that
+week, or one the model has no class for. Without the range model, every Japan-checklist species counts as usual.
 
 Families come from data/families.json (scripts/build_families.py). A class without a family is not a bird (insects,
 frogs, mammals, noise) and is never rolled up.
@@ -55,6 +58,27 @@ def in_japan(labels):
     return np.array([str(label).partition('_')[0] in japan for label in labels], dtype=bool)
 
 
+@lru_cache(maxsize=1)
+def _geo_names():
+    """Every name of a Japan-checklist species the range model has a class for -> its BirdNET names."""
+    data = json.loads((DATA / 'japan-birds.json').read_text(encoding='utf-8'))
+    found = {}
+    for row in data['mappings']:
+        if row.get('birdnet_scientific_name'):
+            for name in filter(None, (row.get('scientific_name'), row.get('perch_scientific_name'), row['birdnet_scientific_name'])):
+                found.setdefault(name, set()).add(row['birdnet_scientific_name'])
+    return found
+
+
+@lru_cache(maxsize=8)
+def at_home(labels, usual):
+    """Boolean mask of the classes usual at a place and time: Japan-checklist species among `usual` (the BirdNET names
+    the range model predicts there) and those the range model has no class for. `labels` is a tuple, `usual` a frozenset."""
+    geo = _geo_names()
+    names = [str(label).partition('_')[0] for label in labels]
+    return in_japan(labels) & np.array([name not in geo or not geo[name].isdisjoint(usual) for name in names], dtype=bool)
+
+
 @lru_cache(maxsize=8)
 def _family_index(labels):
     """Family of each class (None for non-birds) and, per family, the indices of its classes."""
@@ -67,20 +91,22 @@ def _family_index(labels):
 
 
 def display(scores, labels, *, allowed=None, score_type='softmax', top_k=5, threshold=None, rollup_threshold=None,
-            window_s=5, seconds=None):
+            window_s=5, seconds=None, home=None):
     """Candidates and family roll-ups of one recording's all-class scores.
 
     `scores` is (windows, classes) of probabilities: softmax (sums to 1 over all classes) or sigmoid (independent).
     `allowed` masks the classes that may be shown as species (default: the Japan checklist). Returns
     (candidates, rollups); each candidate is (start_s, end_s, label, score) and each roll-up a dict naming the family,
-    its score, the out-of-Japan class the AI put first and its best Japan-checklist class. A window is rolled up when its best class over all classes
-    is a bird outside Japan and the family's score (summed for softmax, the highest for sigmoid) reaches
-    `rollup_threshold` (default `threshold`, else nothing is held back).
+    its score, the class the AI put first and its best Japan-checklist class. A window is rolled up when its best class
+    over all classes is a bird outside `home` (a mask as `at_home` gives; default: the Japan checklist) and the family's
+    score (summed for softmax, the highest for sigmoid) reaches `rollup_threshold` (default `threshold`, else nothing
+    is held back).
     """
     labels = tuple(str(label) for label in labels)
     scores = np.asarray(scores)
     japan = in_japan(labels)
     allowed = japan if allowed is None else np.asarray(allowed, dtype=bool)
+    home = japan if home is None else home
     shown = np.flatnonzero(allowed)
     families, members = _family_index(labels)
     rollup_threshold = threshold if rollup_threshold is None else rollup_threshold
@@ -94,13 +120,13 @@ def display(scores, labels, *, allowed=None, score_type='softmax', top_k=5, thre
         best = int(np.argmax(row))
         family = families[best]
         # A last piece shorter than half a window is mostly padding: too little to ask a person about.
-        if japan[best] or not family or end - start < window_s / 2:
+        if home[best] or not family or end - start < window_s / 2:
             continue
         score = float(row[members[family]].sum() if score_type == 'softmax' else row[members[family]].max())
         if rollup_threshold is None or score >= rollup_threshold:
             # The AI's best answer among the Japan checklist species, offered beside the family's species.
-            home = int(np.flatnonzero(japan)[np.argmax(row[japan])]) if japan.any() else None
+            listed = int(np.flatnonzero(japan)[np.argmax(row[japan])]) if japan.any() else None
             rollups.append({'start_s': start, 'end_s': end, 'family': family_names(family), 'score': score,
                             'top_label': labels[best], 'top_score': float(row[best]),
-                            'japan_label': None if home is None else labels[home]})
+                            'japan_label': None if listed is None else labels[listed]})
     return candidates, rollups

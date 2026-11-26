@@ -4,7 +4,12 @@ from scipy.special import softmax
 
 from models import default_threshold
 from storage import CatalogError
-from taxa import display
+from taxa import at_home, display
+
+
+def _home(labels, usual):
+    """The classes usual at the recording's place and week (`usual`: region.usual_at), None for the Japan checklist."""
+    return None if usual is None else at_home(tuple(str(label) for label in labels), usual)
 
 
 def _load(path, key):
@@ -16,7 +21,7 @@ def _load(path, key):
     return values, labels
 
 
-def perch_display(path, seconds, analysis_id, candidate_filter):
+def perch_display(path, seconds, analysis_id, candidate_filter, usual=None):
     """Candidates (top 5 of the allowed species per window), roll-ups, and display metadata of a Perch analysis."""
     logits, labels = _load(path, "logits")
     # Perch V2 was trained with a softmax head. Normalize over ALL classes before filtering.
@@ -24,7 +29,7 @@ def perch_display(path, seconds, analysis_id, candidate_filter):
     scores = softmax(logits.astype(np.float64), axis=1)
     allowed = np.isin(labels, list((candidate_filter or {}).get("species", [])))
     rows, rollups = display(scores, labels, allowed=allowed, score_type="softmax", seconds=seconds,
-                            rollup_threshold=default_threshold("perch"))
+                            rollup_threshold=default_threshold("perch"), home=_home(labels, usual))
     index_of = {str(label): index for index, label in enumerate(labels)}
     candidates = [{"analysis_id": analysis_id, "start_s": start, "end_s": end, "label": label, "score": score,
                    "raw_score": float(logits[int(start // 5), index_of[label]])} for start, end, label, score in rows]
@@ -39,11 +44,11 @@ def perch_candidates(path, seconds, analysis_id, candidate_filter):
     return candidates, meta
 
 
-def dense_rollups(path, seconds, engine, window_s=5):
+def dense_rollups(path, seconds, engine, window_s=5, usual=None):
     """Family roll-ups of an all-class analysis (Perch, Kinglet, BirdNET 3, all-class BirdNET 2.4)."""
     scores, labels = _load(path, "logits" if engine == "perch" else "scores")
     if engine == "perch":
         scores = softmax(scores.astype(np.float64), axis=1)
     score_type = "sigmoid" if engine in ("birdnet", "birdnet-v3") else "softmax"
     return display(scores, labels, score_type=score_type, top_k=0, seconds=seconds, window_s=window_s,
-                   rollup_threshold=default_threshold(engine))[1]
+                   rollup_threshold=default_threshold(engine), home=_home(labels, usual))[1]

@@ -129,8 +129,9 @@ def by_species(root, dataset_id, species_id):
     else:
         mine = lambda n: n == name
     detected = np.array([any(score >= SCORE_THRESHOLD for n, score in p['candidates'] if mine(n)) for p in points], dtype=bool)
-    # A species not recorded in Japan is no candidate of a point (those are Japan's birds): it is the AI's first
-    # answer of a roll-up. Nothing is left out here; the display threshold is the only bar, as for Japan's birds.
+    # A species not on the Japan checklist is no candidate of a point (those are Japan's birds): it is the AI's first
+    # answer of a roll-up. A checklist species not usual here can be both; a sound is one position, counted once.
+    # Nothing is left out here; the display threshold is the only bar, as for Japan's birds.
     with connect(root) as db:
         at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
         for row in db.execute('''SELECT u.analysis_id,u.start_s,u.top_label,a.engine FROM rollups u JOIN analyses a ON a.id=u.analysis_id
@@ -142,6 +143,41 @@ def by_species(root, dataset_id, species_id):
     answers = {position: [(species_id if t == species_id or mine(names.get(t, '')) else t, verdict) for t, verdict in found]
                for position, found in answers.items()}
     return {'species': names_for(taxon), **_found(points, nodes, answers, detected, species_id)}
+
+
+def detections(root, dataset_id, taxa):
+    """How many of the map's sounds the AI detected each taxon in, by the rule of `by_species` (a point candidate or
+    a roll-up's first answer at the display threshold; a family counts its species): {scientific name: sounds}.
+    `taxa`: (scientific name, rank) pairs. Empty when the site has no map yet."""
+    from taxa import family_of
+    try:
+        _, _, _, run = _current_run(root, dataset_id)
+    except CatalogError:
+        return {}
+    if run is None:
+        return {}
+    species = {name for name, rank in taxa if rank != 'family'}
+    families = {name for name, rank in taxa if rank == 'family'}
+    hit = lambda name: ({name} & species) | ({family_of(name)} & families)
+    found = {}  # position -> the wanted taxa detected there
+    with connect(root) as db:
+        points, _, _ = _load(db, run)
+        at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
+        for p in points:
+            for name, score in p['candidates']:
+                if score >= SCORE_THRESHOLD and hit(name):
+                    found.setdefault(p['position'], set()).update(hit(name))
+        for row in db.execute('''SELECT u.analysis_id,u.start_s,u.top_label,a.engine FROM rollups u JOIN analyses a ON a.id=u.analysis_id
+                WHERE u.top_score>=? AND u.analysis_id IN (SELECT value FROM json_each(?))''',
+                (SCORE_THRESHOLD, json.dumps(sorted({p['analysis_id'] for p in points})))):
+            position, name = at.get((row['analysis_id'], round(row['start_s'], 3))), canonical_scientific_name(row['engine'], row['top_label']) or ''
+            if position is not None and hit(name):
+                found.setdefault(position, set()).update(hit(name))
+    counts = dict.fromkeys(species | families, 0)
+    for names in found.values():
+        for name in names:
+            counts[name] += 1
+    return counts
 
 
 def by_examples(root, dataset_id, species_id):
@@ -236,13 +272,15 @@ def recorded(root, dataset_id, node):
 
 
 def unsure(root, dataset_id):
-    """Entry C: groups with many sounds the AI likely mixed up: its first answer was a bird not recorded in Japan
-    and the roll-up reaches rollups.AWAY_SCORE, as on the site page's list. `guess`: for each target, in order,
+    """Entry C: groups with many sounds the AI likely mixed up: its first answer was a bird not usual at the
+    site in that season (rollups.py) and the roll-up reaches rollups.AWAY_SCORE, as on the site page's list. `guess`: for each target, in order,
     which of `guesses` the AI answered."""
-    from rollups import AWAY_SCORE, _guess
+    from rollups import AWAY_SCORE, _guess, catch_up
     _, engine, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
+    # The map reads the same roll-ups as the site page; `pending` says how many analyses' are still being found.
+    pending = catch_up(root, dataset_id)
     with connect(root) as db:
         points, nodes, answers = _load(db, run)
         at = {(p['analysis_id'], round(p['start_s'], 3)): p['position'] for p in points}
@@ -256,4 +294,4 @@ def unsure(root, dataset_id):
     away = np.zeros(len(points), dtype=bool)
     away[list(labels)] = True
     found, names = _found(points, nodes, answers, away), list(guesses)
-    return {**found, 'guesses': list(guesses.values()), 'guess': [names.index(labels[at]) for at in found['targets']]}
+    return {**found, 'pending': pending, 'guesses': list(guesses.values()), 'guess': [names.index(labels[at]) for at in found['targets']]}

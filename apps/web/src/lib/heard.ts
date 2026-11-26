@@ -17,7 +17,7 @@ export type HeardList = { total: number; rows: HeardRecord[]; site: { name: stri
 export type HeardSound = { file: string; local_time: string; start_s: number; end_s: number; source: AudioSource;
   now: HeardRecord[]; history: (HeardRecord & { current: boolean; current_id: number })[] };
 export type Other = { species: Taxon; removable: boolean };
-export type Choices = { species: (Taxon & { rare: boolean })[]; families: Taxon[] };
+export type Choices = { species: (Taxon & { rare: boolean; detected?: number | null })[]; families: (Taxon & { detected?: number | null })[] };
 export type SearchExamples = { examples: HeardRecord[]; heard: number; mixed: number;
   mixed_example: { local_time: string; species: Taxon[] } | null };
 

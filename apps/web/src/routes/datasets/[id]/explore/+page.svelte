@@ -206,7 +206,8 @@
   const suggested=(g:Group)=>g.hint_rate<.2?[]:g.top_species;
   const aiHint=(g:Group)=>!suggested(g).length?fill('eNoAiHint',{rate:pct(g.hint_rate)})
     :fill('eAiHint',{list:listOf(g.top_species,s=>s.share),rate:pct(g.hint_rate)});
-  const candidates=(s:Segment)=>s.candidates.length?fill('eCandidates',{list:listOf(s.candidates,c=>c.score)}):t('eNoCandidates');
+  // Beside a tag that names the AI's answer, "no AI suggestion" would contradict it: nothing is said then.
+  const candidates=(s:Segment)=>s.candidates.length?fill('eCandidates',{list:listOf(s.candidates,c=>c.score)}):badge(s.position)?'':t('eNoCandidates');
   const made=(at:string|null)=>at?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium'}).format(new Date(`${at.replace(' ','T')}Z`)):'';
 
   // Scatter: every point is drawn once into an offscreen canvas; pan and zoom move that image and redraw sharply when the gesture pauses.
@@ -372,7 +373,7 @@
   }
 </script>
 <!-- In the list the line wraps, and the row of the current sound is marked. -->
-{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{' '}{/if}{when(s)} · <span class="muted">{candidates(s)}</span>{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
+{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{' '}{/if}{when(s)}{#if candidates(s)} · <span class="muted">{candidates(s)}</span>{/if}{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
 {#snippet sounds(g:Group)}
   {@const at=g.node}
   {@const list=lists[at]}
@@ -444,7 +445,7 @@
               <!-- Its own line above the figure, free to wrap: when, which group, and what the open way says about the sound. -->
               <h3 class="line"><strong>{t('ePicked')}</strong> {when(s)}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if tag}{' · '}{tag}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
               <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
-              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if !tag||s.candidates.length}<span class="muted" title={candidates(s)}>{candidates(s)}</span>{/if}{/snippet}</AudioRegion>{/key}
+              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if candidates(s)&&(s.candidates.length||!tag)}<span class="muted" title={candidates(s)}>{candidates(s)}</span>{/if}{/snippet}</AudioRegion>{/key}
               <div class="answer">
                 {#if wanted}{@const mine=recorded.find(r=>r.species.id===wanted!.id)}
                   <strong>{fill('maTitle',{species:taxonName(wanted)})}</strong>

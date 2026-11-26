@@ -237,8 +237,10 @@ class ExploreCheck(unittest.TestCase):
         self.assertEqual(point.status_code, 200, point.text)
         self.assertEqual(point.json()['segment_id'], int(segment_ids[3]))
         stored_candidates = json.loads(points[3]['candidates'])
-        self.assertEqual([[item['scientific_name'], item['score']] for item in point.json()['candidates']],
-                         stored_candidates)
+        # A shown sound lists what the AI answered over every class; the map itself keeps the Japan-checklist ones.
+        shown = [[item['scientific_name'], item['score']] for item in point.json()['candidates']]
+        self.assertEqual(shown[0][0], 'Water')
+        self.assertEqual([item for item in shown if item in stored_candidates], stored_candidates[:len(shown) - 1])
         past_end = self.client.get(f'/explore/points/{count}', params={'dataset': 1})
         self.assertEqual((past_end.status_code, past_end.json()), (404, {'detail': 'not_found'}))
 

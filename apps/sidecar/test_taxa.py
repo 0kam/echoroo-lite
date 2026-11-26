@@ -8,7 +8,7 @@ import numpy as np
 
 from analysis import birdnet_dense
 from predictions import perch_display
-from taxa import display, family_names, family_of, in_japan
+from taxa import at_home, display, family_names, family_of, in_japan
 
 
 class TaxaCheck(unittest.TestCase):
@@ -39,6 +39,21 @@ class TaxaCheck(unittest.TestCase):
         _, sigmoid = display(scores, labels, score_type='sigmoid', rollup_threshold=.1)
         self.assertAlmostEqual(sigmoid[0]['score'], .3)
 
+    def test_a_checklist_species_not_usual_here_is_rolled_up(self):
+        # A vagrant on the Japan checklist, a checklist species the range model has no class for, a species the range
+        # model predicts here, and a bird outside the checklist.
+        labels = ('Erithacus rubecula', 'Syrmaticus soemmerringii', 'Horornis diphone', 'Dryocopus pileatus')
+        usual = frozenset({'Horornis diphone'})
+        self.assertEqual(list(at_home(labels, usual)), [False, True, True, False])
+        self.assertEqual(list(at_home(('Horornis diphone_Japanese Bush Warbler', 'Erithacus rubecula_European Robin'), usual)), [True, False])
+        shown = lambda home: display(np.eye(4), labels, rollup_threshold=.1, top_k=1, threshold=.1, home=home)
+        candidates, rollups = shown(at_home(labels, usual))
+        self.assertEqual([r['top_label'] for r in rollups], ['Erithacus rubecula', 'Dryocopus pileatus'])
+        # The species shown stay the Japan checklist's: the vagrant is still a candidate.
+        self.assertEqual([label for _, _, label, _ in candidates], list(labels[:3]))
+        # Without the range model the Japan checklist is the line.
+        self.assertEqual([r['top_label'] for r in shown(None)[1]], ['Dryocopus pileatus'])
+
     def test_perch_display_keeps_candidates_and_adds_rollups(self):
         labels = np.array(['Horornis diphone', 'Dryocopus pileatus', 'Picus canus', 'Some frog'])
         logits = np.array([[0, 3, 1, 0], [3, 0, 0, 0]], dtype=np.float32)
@@ -46,9 +61,12 @@ class TaxaCheck(unittest.TestCase):
             path = Path(temp) / 'scores.npz'
             np.savez_compressed(path, logits=logits, labels=labels)
             candidates, rollups, meta = perch_display(path, 10, 7, {'species': ['Horornis diphone', 'Picus canus']})
+            away = perch_display(path, 10, 7, None, frozenset())[1]
         self.assertEqual(meta['display_species_count'], 2)
         self.assertEqual(len(candidates), 4)
         self.assertEqual([(r['start_s'], r['family']['scientific_name']) for r in rollups], [(0, 'Picidae')])
+        # Where the range model does not predict the bush warbler, its window is rolled up too.
+        self.assertEqual([(r['start_s'], r['family']['scientific_name']) for r in away], [(0, 'Picidae'), (5, 'Scotocercidae')])
 
     def test_birdnet_result_becomes_one_row_per_window(self):
         result = SimpleNamespace(species_list=np.array(['A a_A', 'B b_B', 'C c_C']),
