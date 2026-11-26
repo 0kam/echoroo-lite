@@ -1,7 +1,8 @@
 """Sounds an AI answered with a bird not recorded in Japan, shown as their family and asked to the user.
 
 A window is rolled up when the AI's first answer over all classes is a bird outside the Japan checklist and its
-family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are found once and kept.
+family's score reaches the display threshold (taxa.display). The roll-ups of an analysis are found once and kept
+with their scores; only those reaching AWAY_SCORE are shown, on the site's list, the family pages and the sound map.
 The user's answer is a label with source `rollup_fix`: the species they heard (evidence and species-AI material
 like any other "present"), the family row itself when the answer stops there: present ("this family, species
 unknown") or unknown, or "no bird sound" (`labels.put_no_bird`; older data: the family row, absent).
@@ -26,6 +27,9 @@ SCHEMA = '''
 '''
 KINDS = ('species', 'family', 'not_bird', 'unknown')
 NO_JAPAN = '_none'
+# A roll-up is shown from this family score. A rule of thumb to review with users' data: at the display threshold
+# (0.1) 29% of one site's sounds were shown, most of them near silence; at 0.5, about 1%.
+AWAY_SCORE = 0.5
 LATEST = '''a.id IN (SELECT MAX(id) FROM analyses GROUP BY recording_id,engine)'''
 
 
@@ -60,8 +64,8 @@ def _sounds(root, db, ctx, family=None):
     records = {r['id']: dict(r) for r in db.execute('SELECT * FROM site_recordings WHERE scope_id=?', (dataset_id,))}
     sounds = {}
     for row in db.execute(f'''SELECT u.*,a.recording_id,a.engine FROM rollups u JOIN analyses a ON a.id=u.analysis_id
-            JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND {LATEST} AND (? IS NULL OR u.family=?)
-            ORDER BY u.score DESC,a.recording_id,u.start_s''', (dataset_id, family, family)):
+            JOIN site_recordings r ON r.id=a.recording_id WHERE r.scope_id=? AND {LATEST} AND u.score>=? AND (? IS NULL OR u.family=?)
+            ORDER BY u.score DESC,a.recording_id,u.start_s''', (dataset_id, AWAY_SCORE, family, family)):
         record = records[row['recording_id']]
         if row['engine'] not in engines or not window_in_scope(record, row['start_s'], row['end_s'], zone,
                                                                  ctx['start_date'], ctx['end_date']):

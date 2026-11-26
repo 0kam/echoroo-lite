@@ -130,6 +130,19 @@ class RollupTest(unittest.TestCase):
                 sounds = answer(0, None)
                 self.assertEqual({s['start_s']: s['answer'] and s['answer']['kind'] for s in sounds}, {0: None, 15: 'unknown'})
                 self.assertEqual(client.post('/rollups/answers', json={**sound, 'start_s': 5, 'end_s': 10, 'kind': 'unknown'}).status_code, 400)
+                # Only roll-ups whose family score reaches 0.5 are shown: on the site's list, a family's page and the
+                # page of families Japan does not have. The scores stay stored, and so do answers given below the line.
+                with connect(data) as db:
+                    kept = db.execute('SELECT COUNT(*) FROM labels').fetchone()[0]
+                    db.execute('UPDATE rollups SET score=.49 WHERE start_s IN (15,25)')
+                picidae, merged = client.get('/datasets/1/rollups').json()['families']
+                self.assertEqual((picidae['sounds'], picidae['left'], merged['sounds'], merged['left'], merged['families']), (1, 1, 1, 1, 1))
+                self.assertEqual([s['start_s'] for s in client.get('/datasets/1/rollups/Picidae').json()['sounds']], [0])
+                self.assertEqual([s['start_s'] for s in client.get('/datasets/1/rollups/_none').json()['sounds']], [20])
+                with connect(data) as db:
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], kept)
+                    db.execute('UPDATE rollups SET score=.5 WHERE start_s=15')
+                self.assertEqual([s['start_s'] for s in client.get('/datasets/1/rollups/Picidae').json()['sounds']], [0, 15])
                 self.assertEqual(client.post('/rollups/answers', json={**sound, 'start_s': 0, 'end_s': 5, 'kind': 'species'}).status_code, 422)
 
 

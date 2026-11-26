@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -562,13 +562,21 @@ def create_app(root, models, token):
                 raise HTTPException(404, 'not_found') from None
             raise
 
+    @app.get('/explore/points/{position}/group')
+    def explore_point_group(position: int, dataset: int = Query(ge=1), node: int = Query(ge=0)):
+        from explore import point_group
+        return point_group(root, dataset, node, position)
+
+    # POST carries `first`, the positions listed before the others: too many for a URL.
     @app.get('/explore/nodes/{node}/segments')
+    @app.post('/explore/nodes/{node}/segments')
     def explore_node_segments(node: int, dataset: int = Query(ge=1),
                               offset: int = Query(default=0, ge=0),
-                              near: int | None = Query(default=None, ge=0)):
+                              near: int | None = Query(default=None, ge=0),
+                              first: list[int] = Body(default=[], embed=True)):
         from explore import node_segments
         try:
-            return node_segments(root, dataset, node, offset, near)
+            return node_segments(root, dataset, node, offset, near, first)
         except CatalogError as error:
             if str(error) == 'not_found':
                 raise HTTPException(404, 'not_found') from None
