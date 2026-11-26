@@ -22,6 +22,7 @@
   import { fileName, t } from './app.svelte';
   import AudioRegion, { type AudioSource } from './AudioRegion.svelte';
   import { taxonName, type Taxon } from './heard';
+  import { speciesName } from './rollups';
   import SpeciesChoice from './SpeciesChoice.svelte';
   import XenoCantoSearch from './XenoCantoSearch.svelte';
   import Button from './ui/Button.svelte';
@@ -79,6 +80,12 @@
   function chooseFrom(name: From) { from = name; clip = null; source = null; if (name === 'file' && isTauri()) void addFile.run(); }
   const about = (group: Group) => [fill(`meCount_${entry}`, { n: group.targets }),
     group.left < group.targets ? fill('meChecked', { n: group.targets - group.left }) : t('meNew')].join(t('meSep'));
+  // The species the AI answered most often in a group (the "likely mixed up" way in): up to three, most sounds first.
+  const answered = (group: Group) => { if (!found?.guesses || !found.guess) return '';
+    const counts = new Map<number, number>();
+    found.targets.forEach((at, index) => { if (at >= group.lo && at < group.hi) counts.set(found!.guess![index], (counts.get(found!.guess![index]) ?? 0) + 1); });
+    const names = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([which, n]) => fill('meGuessCount', { name: speciesName(found!.guesses![which]), n }));
+    return names.length ? fill(names.length > 3 ? 'meGuessesMore' : 'meGuesses', { names: names.slice(0, 3).join(t('meGuessSep')) }) : ''; };
 </script>
 <section class="panel entries" aria-labelledby="entries-title">
   <div class="actions" role="group" aria-label={t('meTitle')}>{#each ['unsure', 'species', 'examples'] as const as name}
@@ -113,7 +120,7 @@
     {:else if entry === 'examples'}<p class="muted">{fill('meExTotal', { n: found.examples ?? 0 })}{#if found.mixed}{' '}{fill('meExLeftOut', { n: found.mixed })}{/if}</p>
     {:else if found.targets.length}<p class="muted">{fill('meUnTotal', { n: found.targets.length })}</p>{/if}
     {#if found.groups.length}<ol>{#each found.groups as group, index (group.node)}<li class:current={group.node === node}>
-      <div><strong>{fill('meGroup', { n: 'ABCDEFGHIJ'[index], size: group.size })}</strong><span>{about(group)}</span></div>
+      <div><strong>{fill('meGroup', { n: 'ABCDEFGHIJ'[index], size: group.size })}</strong><span>{about(group)}</span>{#if answered(group)}<span class="muted">{answered(group)}</span>{/if}</div>
       {#if group.node === node}<span class="shown">{t('meShown')}</span>{:else}<Button size="sm" onclick={() => go(group.node)}>{t('meLook')}</Button>{/if}</li>{/each}</ol>
       <p class="muted">{t('meListen')}</p>
       {#if found.scattered}{@render scattered('meScattered', found.scattered)}{/if}
