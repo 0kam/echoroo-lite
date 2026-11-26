@@ -15,17 +15,21 @@ from storage import connect
 from test_models import FakeSession, model_files, wait_job
 
 OUTSIDE = 'Dryobates pubescens'  # a woodpecker (Picidae) that is not on the Japan checklist
+NO_JAPAN = ('Thamnophilus doliatus', 'Furnarius rufus')  # their families have no species on the Japan checklist
 
 
 class RollupSession(FakeSession):
-    """Windows 0 and 3 answer the woodpecker outside Japan, window 1 a Japan species, window 2 a non-bird class."""
+    """Windows 0 and 3 answer the woodpecker outside Japan (3 with the higher score), window 1 a Japan species,
+    window 2 a non-bird class, windows 4 and 5 birds of families that Japan does not have (5 with the higher score)."""
 
     def run(self, outputs, inputs):
         values = dict(zip(outputs, super().run(outputs, inputs)))
         if 'logits' in values:
             values['logits'][:] = -50
-            for window, column in enumerate((400, 0, 5000, 400)[:len(values['logits'])]):
+            for window, (column, sure) in enumerate(((400, False), (0, True), (5000, True), (400, True), (401, False), (402, True))[:len(values['logits'])]):
                 values['logits'][window, column] = 5
+                if not sure:  # a non-bird class takes a share of the score
+                    values['logits'][window, 5001] = 4
         return [values[name] for name in outputs]
 
 
@@ -36,10 +40,10 @@ class RollupTest(unittest.TestCase):
             head = directory / REGISTRY['kinglet-xs']['files'][1]
             with np.load(head) as saved:
                 arrays = dict(saved)
-            arrays['labels'][400] = OUTSIDE
+            arrays['labels'][400:403] = (OUTSIDE,) + NO_JAPAN
             np.savez(head, **arrays)
             audio = root / 'audio'; audio.mkdir()
-            sf.write(audio / '20240808_060000.wav', np.full(32000 * 20, .25), 32000)
+            sf.write(audio / '20240808_060000.wav', np.full(32000 * 30, .25), 32000)
             data = root / 'data'
             session = RollupSession('kinglet-xs', None)
             with TestClient(create_app(data, directory, 'test'), headers={'Authorization': 'Bearer test'}) as client, \
@@ -53,12 +57,24 @@ class RollupTest(unittest.TestCase):
                 with connect(data) as db:
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM rollup_scans').fetchone()[0], 1)
                 summary = client.get('/datasets/1/rollups').json()
-                self.assertEqual([(f['family']['scientific_name'], f['family']['common_names']['ja'], f['sounds'], f['left'])
-                                  for f in summary['families']], [('Picidae', 'キツツキ科', 2, 2)])
+                picidae, merged = summary['families']
+                self.assertEqual((picidae['family']['scientific_name'], picidae['family']['common_names']['ja'], picidae['sounds'], picidae['left']),
+                                 ('Picidae', 'キツツキ科', 2, 2))
+                # Families without a Japan species share one last row, opened with the reserved key.
+                self.assertEqual((merged['family'], merged['sounds'], merged['left'], merged['families']), (None, 2, 2, 2))
+                self.assertEqual([f['scientific_name'] for f in merged['examples']], ['Furnariidae', 'Thamnophilidae'])
+                self.assertEqual({g['scientific_name'] for g in merged['guesses']}, set(NO_JAPAN))
+                none = client.get('/datasets/1/rollups/_none').json()
+                self.assertEqual((none['family'], none['choices']), (None, []))
+                self.assertEqual([(s['start_s'], s['family']) for s in none['sounds']], [(25, 'Furnariidae'), (20, 'Thamnophilidae')])
+                response = client.post('/rollups/answers', json=dict(dataset_id=1, recording_id=1, family='Furnariidae', start_s=25, end_s=30, kind='not_bird'))
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual([s['answer'] and s['answer']['kind'] for s in client.get('/datasets/1/rollups/_none').json()['sounds']], ['not_bird', None])
+                self.assertEqual(client.get('/datasets/1/rollups').json()['families'][1]['left'], 1)
                 self.assertEqual(summary['families'][0]['family']['rank'], 'family')
                 family = client.get('/datasets/1/rollups/Picidae').json()
                 self.assertEqual([(s['start_s'], s['end_s'], s['guess']['scientific_name'], s['answer']) for s in family['sounds']],
-                                 [(0, 5, OUTSIDE, None), (15, 20, OUTSIDE, None)])
+                                 [(15, 20, OUTSIDE, None), (0, 5, OUTSIDE, None)])
                 names = {c['scientific_name'] for c in family['choices']}
                 self.assertIn('Yungipicus kizuki', names)
                 self.assertNotIn(OUTSIDE, names)
@@ -75,15 +91,15 @@ class RollupTest(unittest.TestCase):
                     return client.get('/datasets/1/rollups/Picidae').json()['sounds']
 
                 sounds = answer(0, 'species', kogera['id'])
-                # Sounds keep their recording order; the species heard is evidence like any other "heard".
-                self.assertEqual([(s['start_s'], s['answer'] and s['answer']['kind']) for s in sounds], [(0, 'species'), (15, None)])
-                self.assertEqual(sounds[0]['answer']['species']['id'], kogera['id'])
+                # Sounds stay in the AI's score order whatever was answered; the species heard is evidence like any other "heard".
+                self.assertEqual([(s['start_s'], s['answer'] and s['answer']['kind']) for s in sounds], [(15, None), (0, 'species')])
+                self.assertEqual(sounds[1]['answer']['species']['id'], kogera['id'])
                 self.assertEqual([s['scientific_name'] for s in client.get('/species?q=こげら').json()][:1], ['Yungipicus kizuki'])
                 overview = client.get('/datasets/1/overview').json()
                 row = next(s for s in overview['species'] if s['species']['id'] == kogera['id'])
                 self.assertEqual(row['presence']['status'], 'confirmed')
                 with connect(data) as db:
-                    label = db.execute("SELECT * FROM labels WHERE source='rollup_fix'").fetchone()
+                    label = db.execute("SELECT * FROM labels WHERE source='rollup_fix' ORDER BY id DESC").fetchone()
                     self.assertEqual((label['verdict'], label['taxon_id']), ('present', kogera['id']))
                     self.assertIn(OUTSIDE, label['source_ref'])
                 # An answer that stops at the family is kept on the family row and is evidence of no species.
@@ -94,7 +110,7 @@ class RollupTest(unittest.TestCase):
                 self.assertFalse(any(s['species'].get('rank') == 'family' for s in overview['species']))
                 self.assertEqual(client.get('/datasets/1/rollups').json()['families'][0]['left'], 0)
                 with connect(data) as db:
-                    self.assertEqual(db.execute("SELECT COUNT(*) FROM labels WHERE source='rollup_fix'").fetchone()[0], 2)
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM labels WHERE source='rollup_fix'").fetchone()[0], 3)
                 # Changing the answer replaces it; taking it back leaves the sound unanswered again.
                 sounds = answer(0, 'unknown')
                 self.assertFalse(any(s['species']['id'] == kogera['id'] and s['presence']['status'] == 'confirmed'

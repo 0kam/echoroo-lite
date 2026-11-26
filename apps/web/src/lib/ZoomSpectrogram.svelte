@@ -83,7 +83,7 @@
     </div>
     {#if loading||error}<div class="state" role="status">{t(error||'loadingSpectrogram')}</div>{/if}
   </div>
-  <span class="unit">{t('aFreqUnit')}</span><div class="time-axis" title={t('aAxisHelp')} use:wheelAction={'x'}>
+  <span class="unit" role="img" title={t('aFreqHelp')} aria-label={t('aFreqHelp')}>{t('aFreqUnit')}</span><div class="time-axis" title={t('aAxisHelp')} use:wheelAction={'x'}>
     <span>{(viewStart-start).toFixed(2)} s</span><span>{((viewStart+viewEnd)/2-start).toFixed(2)} s</span><span>{(viewEnd-start).toFixed(2)} s</span>
   </div>
 </div>
@@ -95,7 +95,7 @@
   /* In a narrow column the hint takes its own short line instead of pushing the buttons onto two rows. */
   @container (max-width:640px){.hint{order:-1;flex-basis:100%}}
   /* Play, zoom and mel|linear share one row, so the answer bar below never covers the figure (A6). */
-  .unit{align-self:center;padding-right:8px;text-align:right;font-size:11px;line-height:1.2;word-break:keep-all;color:rgb(var(--stone-600))}
+  .unit{align-self:center;padding-right:8px;text-align:right;font-size:11px;line-height:1.2;white-space:nowrap;color:rgb(var(--stone-600))}
   .grid{display:grid;grid-template-columns:56px minmax(0,1fr);gap:4px}
   .frequency{position:relative;cursor:ns-resize;font-size:12px;line-height:1;color:rgb(var(--stone-600));overflow:hidden}
   .frequency span{position:absolute;right:8px;transform:translateY(-50%);font-variant-numeric:tabular-nums}.frequency .edge-high{transform:none}.frequency .edge-low{transform:translateY(-100%)}

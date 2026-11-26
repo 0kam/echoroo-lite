@@ -11,7 +11,7 @@
   import Spinner from '$lib/ui/Spinner.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
   import { createTask } from '$lib/ui/task.svelte';
-  import { familyLabel,speciesName,type RollupSummary } from '$lib/rollups';
+  import { NO_JAPAN,familyName,rollupTitle,speciesName,type RollupSummary } from '$lib/rollups';
   const id=$derived(Number(page.params.id));
   const job=$derived(activeJob());
   const siteJobs=$derived(app.jobs.filter(j=>app.datasets.find(d=>d.id===j.dataset_id)?.site_id===app.datasets.find(d=>d.id===id)?.site_id));
@@ -41,6 +41,8 @@
   $effect(()=>{const current=id;heardTotal=0;api<{total:number}>(`/datasets/${current}/heard/records?limit=1`).then(value=>{if(current===id)heardTotal=value.total;},()=>{});});
   $effect(()=>{const current=id,scope=result?rangeQuery(result.start_date,result.end_date):'',revision=result?.analysed_recordings;void revision;if(!scope)return;
     api<RollupSummary>(`/datasets/${current}/rollups?${scope}`).then(value=>{if(current===id)rollups=value;},()=>{});});
+  const rollupTotal=$derived(rollups?.families.reduce((sum,row)=>sum+row.sounds,0)??0);
+  const listSep=$derived(app.locale==='ja'?'・':', ');
   const analyze=createTask(async()=>{await api('/jobs',{dataset_id:id,recording_id:null});await refreshCatalog();},{toast:true});
   const range=$derived(result?`?${rangeQuery(result.start_date,result.end_date)}`:'');
   type Row=Overview['species'][number];
@@ -64,7 +66,7 @@
   const estimate=$derived(result?analysisSeconds(result.pending_analysis):null);
   // Over 30 minutes, point to the faster Kinglet AIs unless one is already the main AI.
   const suggestFaster=$derived(estimate!=null&&estimate>1800&&!app.ai.main.startsWith('kinglet')&&app.ai.models.some(m=>m.id.startsWith('kinglet')&&m.available));
-  // Which folded groups ("few", "rare") were opened or closed, kept for going back to this page.
+  // Which folded parts ("few", "rare", the out-of-Japan answers) were opened or closed, kept for going back to this page.
   const foldKey=`echoroo-groups-${page.params.id}`;
   const folds:Record<string,boolean>=(()=>{try{return JSON.parse(sessionStorage.getItem(foldKey)||'{}');}catch{return {};}})();
   // Only a state that differs from the default is kept, so the opening's own toggle event changes nothing.
@@ -114,6 +116,9 @@
       {#if (result.mixed_models||unanalysed>0||redoLeft)&&!job&&estimate!=null}<p class="muted">{fill('analysisEstimate',{time:roughTime(estimate)})}
         {#if suggestFaster}{t('analysisFaster')} · <a href={`${resolve('/settings')}?return=${encodeURIComponent(`/datasets/${id}${range}`)}`}>{t('navSettings')}</a>{/if}</p>{/if}
     </section>
+    <!-- Ways into the sounds other than the species list. -->
+    <div class="entries"><a class="panel entry" href={resolve(`/datasets/${id}/explore`)}><strong>{t('eEntry')} ›</strong>{t('eEntryHint')}</a>
+      {#if heardTotal}<a class="panel entry" href={`${resolve(`/datasets/${id}/heard`)}${range}`}><strong>{fill('hdSiteLink',{n:heardTotal})} ›</strong>{t('hdSiteHint')}</a>{/if}</div>
     {#if result.models.length||result.species.length}<section class="panel"><div class="section-heading"><h2>{t('wSpecies')}</h2><Button href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindMissing')}</Button></div>
       <p class="muted">{t('wOverviewHint')}</p><p class="muted">{t('wDetectionCountHint')}</p>{#if aiNames}<p class="muted">{fill('wAINames',{list:aiNames})}</p>{/if}{#if result.species.length&&!anyActivity}<p class="muted">{t('wActivityNoneAll')}</p>{/if}
       {#if result.species.some(row=>activity(row.models)==='undecided')}<p class="muted">{t('wCutoffMeaning')}</p>{/if}
@@ -124,18 +129,21 @@
       {/if}{/each}
       {#if !result.species.length}<p>{t(result.models.length?'wNoSpecies':'wNoAnalysis')}</p>{/if}
     </section>
-    {#if rollups?.families.length}<section class="panel" aria-labelledby="rollup-title"><h2 id="rollup-title">{t('ruBoxTitle')}</h2><p class="muted">{t('ruBoxHint')}</p>
+    {#if rollups?.families.length}<section class="panel"><details class="rollup-box" open={folds.rollups??false} ontoggle={e=>fold('rollups',e.currentTarget.open)}>
+      <summary><h2>{fill('ruBoxOpen',{n:rollupTotal.toLocaleString(app.locale)})}</h2></summary>
+      <p>{t('ruBoxLead')} <strong>{t('ruBoxFamily')}</strong> {t('ruBoxHint')}</p>
       <div class="table-wrap"><table class="rollups"><thead><tr><th>{t('ruColFamily')}</th><th>{t('ruColSounds')}</th><th>{t('ruColGuess')}</th><th></th></tr></thead><tbody>
-        {#each rollups.families as row (row.family.id)}<tr><td><strong>{familyLabel(row.family)}</strong><i class="scientific-name">{row.family.scientific_name}</i></td>
+        {#each rollups.families as row (row.family?.id??NO_JAPAN)}<tr><td><strong>{rollupTitle(row.family)}</strong>{#if row.family}<i class="scientific-name">{row.family.scientific_name}</i>
+          {:else}{fill((row.families??0)>(row.examples?.length??0)?'ruNoneFamilies':'ruNoneFamiliesAll',{names:(row.examples??[]).map(familyName).join(listSep),n:row.families??0})}{/if}</td>
           <td>{row.sounds>row.left?fill('ruSoundsChecked',{n:row.sounds.toLocaleString(app.locale),checked:row.sounds-row.left}):fill('ruSounds',{n:row.sounds.toLocaleString(app.locale)})}</td>
-          <td>{row.guesses.map(speciesName).join(app.locale==='ja'?'・':', ')}</td>
-          <td><Button href={`${resolve(`/datasets/${id}/rollups/${row.family.scientific_name}`)}${range}`}>{t('ruListen')}</Button></td></tr>{/each}
-      </tbody></table></div></section>{/if}
+          <td>{row.guesses.map(speciesName).join(listSep)}</td>
+          <td><Button href={`${resolve(`/datasets/${id}/rollups/${row.family?.scientific_name??NO_JAPAN}`)}${range}`}>{t('ruListen')}</Button></td></tr>{/each}
+      </tbody></table></div></details></section>{/if}
     <section class="panel stack"><h2>{t('sFindMissing')}</h2><p>{t('sFindMissingHint')}</p>
       <div><Button variant={!result.species.length&&!unanalysed?'primary':'default'} href={`${resolve(`/datasets/${id}/search`)}${range}`}>{t('sFindByExample')}</Button></div></section>{:else}<p>{t('wNoAnalysis')}</p>{/if}
-    <!-- Off the main workflow: browsing sounds without the AI's species names. -->
-    {#if heardTotal}<section class="panel explore-entry"><Button href={`${resolve(`/datasets/${id}/heard`)}${range}`}>{fill('hdSiteLink',{n:heardTotal})} ›</Button><p class="muted">{t('hdIntro')}</p></section>{/if}
-    <section class="panel explore-entry"><Button href={resolve(`/datasets/${id}/explore`)}>{t('eEntry')} ›</Button><p class="muted">{t('eEntryHint')}</p></section>
   {:else if loading}<p role="status"><Spinner/> {t('wPreparing')}</p>{/if}
 </div>
-<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none}td a strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}table{table-layout:fixed}col.name{width:28%}col.state{width:22%}table.rollups{table-layout:auto}table.rollups td:last-child{text-align:right}td{overflow-wrap:break-word}.explore-entry p{margin-top:8px}</style>
+<style>.year{max-width:180px}td a{display:block;min-height:44px;text-decoration:none}td a strong{text-decoration:underline}.table-wrap{margin-top:8px}td{vertical-align:middle}.group{margin-top:24px}details.group>summary{cursor:pointer}details.group>summary h3{display:inline}.next-step p{margin:0 0 12px}table{table-layout:fixed}col.name{width:28%}col.state{width:22%}table.rollups{table-layout:auto}table.rollups td:last-child{text-align:right}td{overflow-wrap:break-word}
+  .entries{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.entry{display:block;padding:16px 20px;color:inherit;text-decoration:none}.entry:hover{background:rgb(var(--stone-200))}
+  .entry strong{display:block;font-size:18px;color:rgb(var(--primary-700));text-decoration:underline}
+  .rollup-box>summary{min-height:44px;padding:10px 0;cursor:pointer}.rollup-box>summary h2{display:inline}.rollup-box>p{margin:8px 0;font-size:16px}</style>

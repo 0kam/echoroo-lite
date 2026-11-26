@@ -4,7 +4,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t } from '$lib/app.svelte';
   import { fill,modelName,rangeQuery } from '$lib/workflow';
-  import { familyLabel,familyName,speciesName,type RollupAnswer,type RollupFamily,type RollupSound } from '$lib/rollups';
+  import { familyName,rollupTitle,speciesName,type RollupAnswer,type RollupFamily,type RollupSound } from '$lib/rollups';
   import type { Species } from '$lib/species';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import ReferencePanel from '$lib/ReferencePanel.svelte';
@@ -24,6 +24,8 @@
   const range=$derived(data?rangeQuery(data.start_date,data.end_date):dates);
   const back=$derived(`${resolve(`/datasets/${id}`)}?${range}`);
   const sound=$derived(data?.sounds[index]);
+  // Empty on the page of the families without a species in Japan, which has no family of its own (and no choices).
+  const familyText=$derived(data?.family?familyName(data.family):'');
   const left=$derived(data?.sounds.filter(item=>!item.answer).length??0);
   const listened=$derived(!!sound&&played.includes(key(sound)));
   // Species likely at this site are listed before "N more" (at least five); when none is known to be likely, up to twelve are listed.
@@ -36,11 +38,11 @@
   const nextOpen=$derived.by(()=>{if(!data)return -1;const n=data.sounds.length;for(let step=1;step<n;step++){const at=(index+step)%n;if(!data.sounds[at].answer)return at;}return -1;});
   const time=(item:RollupSound)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:data?.site.timezone}).format(new Date(item.local_time));
   const answerText=(answer:RollupAnswer)=>answer.kind==='species'&&answer.species?speciesName(answer.species)
-    :answer.kind==='family'?fill('ruAnsFamily',{family:familyName(data!.family)}):t(answer.kind==='not_bird'?'ruNotBird':'ruUnknown');
+    :answer.kind==='family'?fill('ruAnsFamily',{family:familyText}):t(answer.kind==='not_bird'?'ruNotBird':'ruUnknown');
   function go(to:number){savedNote='';index=Math.max(0,Math.min((data?.sounds.length??1)-1,to));picking=false;picked=null;}
   // After an answer the next sound without one comes up; on the last one the page says so and stays.
   const answer=createTask(async(kind:RollupAnswer['kind']|null,species:Species|null=null)=>{if(!data||!sound)return;
-    await api('/rollups/answers',{dataset_id:id,recording_id:sound.recording_id,start_s:sound.start_s,end_s:sound.end_s,family,kind,species_id:species?.id??null});
+    await api('/rollups/answers',{dataset_id:id,recording_id:sound.recording_id,start_s:sound.start_s,end_s:sound.end_s,family:sound.family,kind,species_id:species?.id??null});
     sound.answer=kind?{kind,species}:null;picking=false;picked=null;
     savedNote=kind?fill('ruSaved',{n:index+1,answer:answerText(sound.answer!)}):'';
     if(kind&&nextOpen>=0)index=nextOpen;
@@ -50,7 +52,7 @@
 </script>
 <div class="page wide">
   <div class="crumbs"><a href={back}>{t('ruBack')}</a></div>
-  <div class="page-header"><div>{#if data}<div class="site-name">{data.site.name}</div>{/if}<h1>{data?familyLabel(data.family):t('ruBoxTitle')}</h1><p>{t('ruCardHint')}</p></div></div>
+  <div class="page-header"><div>{#if data}<div class="site-name">{data.site.name}</div>{/if}<h1>{data?rollupTitle(data.family):t('ruBoxTitle')}</h1><p>{t('ruCardHint')}</p></div></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if data}
     {#if !sound}<section class="panel"><p>{t('ruNone')}</p><Button variant="primary" href={back}>{t('ruBack')}</Button></section>
@@ -65,8 +67,8 @@
           <Button pending={answer.pending} onclick={()=>answer.run(null)}>{t('ruUndo')}</Button></p>
         {:else if !listened}<p class="muted">{t('pPlayFirst')}</p>{/if}
         <p class="muted">{t('ruConfident')}</p>
-        {#if !data.choices.length}<p>{fill('ruNoJapan',{family:familyName(data.family)})}</p>{/if}
-        {#if data.choices.length}<h3>{fill('ruChoices',{family:familyName(data.family)})}</h3>
+        {#if !data.choices.length}<p>{data.family?fill('ruNoJapan',{family:familyText}):t('ruNoneNoJapan')}</p>{/if}
+        {#if data.choices.length}<h3>{fill('ruChoices',{family:familyText})}</h3>
         <div class="choices">{#each shown as choice (choice.id)}<Button active={sound.answer?.species?.id===choice.id} aria-pressed={sound.answer?.species?.id===choice.id}
             disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('species',choice)}>{speciesName(choice)}</Button>{/each}
           {#if data.choices.length>short}<button class="link" onclick={()=>all=!all}>{all?t('ruFewer'):fill('ruMore',{n:data.choices.length-short})}</button>{/if}</div>{/if}
@@ -74,7 +76,7 @@
           <Button active={sound.answer?.species?.id===guess.id} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('species',guess)}>{speciesName(guess)}</Button>{/if}
           {#if extra}<Button active aria-pressed={true} disabled>{speciesName(extra)}</Button>{/if}</div>{/if}
         <div class="choices other">
-          {#if data.choices.length}<Button active={sound.answer?.kind==='family'} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('family')}>{fill('ruFamilyOnly',{family:familyName(data.family)})}</Button>{/if}
+          {#if data.choices.length}<Button active={sound.answer?.kind==='family'} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('family')}>{fill('ruFamilyOnly',{family:familyText})}</Button>{/if}
           <Button active={picking} disabled={!listened&&!sound.answer} onclick={()=>picking=!picking}>{t('ruOther')}</Button>
           <Button active={sound.answer?.kind==='not_bird'} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('not_bird')}>{t('ruNotBird')}</Button>
           <Button active={sound.answer?.kind==='unknown'} disabled={!listened&&!sound.answer} pending={answer.pending} onclick={()=>answer.run('unknown')}>{t('ruUnknown')}</Button></div>
