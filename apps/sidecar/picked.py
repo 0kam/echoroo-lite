@@ -62,22 +62,29 @@ def _site(db, dataset_id):
 def _rows(db, dataset_id):
     """The site's picks, each with the species now recorded as heard in it on any screen (scientific names).
     The species heard first is the pick's species; the others are its background species. "No bird sound" is no species.
-    `complete`: nothing calls in the sound but those species (`labels.complete`)."""
+    `own`: those the sound map itself recorded, the only ones its form takes back. `complete`: nothing calls in the
+    sound but those species (`labels.complete`); `marked`: the map itself said so; `no_bird`: another screen
+    recorded "no bird sound"."""
     _site(db, dataset_id)
     rows = [dict(r) for r in db.execute('''SELECT p.*,r.path,r.recorded_at,r.timezone,r.seconds,r.sample_rate,
         r.size,r.mtime_ns FROM picked_sounds p JOIN site_recordings r ON r.id=p.recording_id
         WHERE r.scope_id=? ORDER BY r.recorded_at,p.start_s,p.end_s,p.recording_id''',
         (dataset_id,))]
     heard = {}
-    for label in db.execute(f'''SELECT l.recording_id,l.start_s,l.end_s,s.scientific_name FROM labels l
+    for label in db.execute(f'''SELECT l.recording_id,l.start_s,l.end_s,s.scientific_name,l.source FROM labels l
             JOIN species s ON s.id=l.taxon_id JOIN picked_sounds p USING(recording_id,start_s,end_s)
             WHERE l.verdict='present' AND s.rank<>'none' AND {labels.LATEST}
               AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?) ORDER BY l.id''', (dataset_id,)):
-        heard.setdefault((label['recording_id'], label['start_s'], label['end_s']), []).append(label['scientific_name'])
-    done = {(label['recording_id'], label['start_s'], label['end_s']) for label in labels.complete(db, dataset_id)}
+        heard.setdefault((label['recording_id'], label['start_s'], label['end_s']), []).append(label)
+    done = {(label['recording_id'], label['start_s'], label['end_s']): label for label in labels.complete(db, dataset_id)}
     for row in rows:
         found = heard.get((row['recording_id'], row['start_s'], row['end_s']), [])
-        row['complete'] = (row['recording_id'], row['start_s'], row['end_s']) in done
+        mark = done.get((row['recording_id'], row['start_s'], row['end_s']))
+        row['complete'] = mark is not None
+        row['marked'] = row['complete'] and mark['source'] == 'sound_map'
+        row['no_bird'] = row['complete'] and not row['marked'] and mark['verdict'] == 'present'
+        row['own'] = [label['scientific_name'] for label in found if label['source'] == 'sound_map']
+        found = [label['scientific_name'] for label in found]
         row['species'] = found[0] if found else None
         row['background'] = json.dumps(found[1:], ensure_ascii=False)
     return rows
@@ -103,12 +110,12 @@ def _clip(row):
 def _shape(row, species_ids):
     background = json.loads(row['background'])
     species = row['species']
+    named = lambda name: {'id': species_ids.get(name), 'scientific_name': name, 'own': name in row['own']}
     return {'recording_id': row['recording_id'], 'start_s': row['start_s'], 'end_s': row['end_s'],
             **_clip(row), 'path': row['path'], 'recorded_at': row['recorded_at'], 'timezone': row['timezone'],
-            'species': {'id': species_ids.get(species), 'scientific_name': species} if species else None,
-            'background': [{'id': species_ids.get(name), 'scientific_name': name} for name in background],
+            'species': named(species) if species else None, 'background': [named(name) for name in background],
             'sound_type': row['sound_type'], 'quality': row['quality'], 'others': bool(row['others']),
-            'complete': row['complete'], 'exported_at': row['exported_at'], 'updated_at': row['updated_at']}
+            'complete': row['marked'], 'no_bird': row['no_bird'], 'exported_at': row['exported_at'], 'updated_at': row['updated_at']}
 
 
 def list_picked(root, dataset_id):
@@ -163,9 +170,8 @@ def put(root, body):
 
 
 def delete(root, dataset_id, recording_id, start_s, end_s):
-    """Take a sound out of the picks, with what was recorded on it: every species heard there is withdrawn (as
-    'delete' on the list of checked sounds: never answered) and so is "nothing else calls" / "no bird sound".
-    Answers that a species was not heard there, given on other screens, stay."""
+    """Take a sound out of the picks, with what the sound map itself recorded on it: its species heard and its
+    "nothing else calls" / "no bird sound" (`labels.take_back`). The answers of every other screen stay."""
     from validation import refresh
     sound = (recording_id, start_s, end_s)
     with connect(root) as db:
@@ -175,12 +181,7 @@ def delete(root, dataset_id, recording_id, start_s, end_s):
             AND recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)''',
             (*sound, dataset_id))
         if cursor.rowcount:
-            none = labels.no_bird(db)
-            heard = [row[0] for row in db.execute(f"""SELECT l.taxon_id FROM labels l WHERE l.recording_id=? AND l.start_s=? AND l.end_s=?
-                AND l.verdict='present' AND l.taxon_id<>? AND {labels.LATEST}""", (*sound, none))]
-            db.execute('DELETE FROM labels WHERE recording_id=? AND start_s=? AND end_s=? AND taxon_id IN (SELECT value FROM json_each(?))',
-                       (*sound, json.dumps([*heard, none])))
-            for taxon in heard:
+            for taxon in labels.take_back(db, *sound, 'sound_map', marks=True):
                 refresh(root, db, taxon, *sound)
             db.execute('DELETE FROM workflow_cache')
     return {'deleted': cursor.rowcount > 0}

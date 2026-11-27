@@ -156,7 +156,7 @@
       if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
-  // Ticking a sound opens its form and collects it for the ZIP; unticking closes the form and takes back what was recorded on the sound, so the marks and lists follow.
+  // Ticking a sound opens its form and collects it for the ZIP; unticking closes the form and takes back what the map recorded on the sound (never another screen's answer), so the marks and lists follow.
   function pickSound(s:Segment,checked:boolean){
     if(!checked){void picks.remove(s).then(()=>{entries?.refresh();loadRecorded();});return;}
     void picks.save({recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,path:s.path,recorded_at:s.recorded_at,timezone:s.timezone,

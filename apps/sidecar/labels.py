@@ -12,6 +12,7 @@ it is a current answer for material and history, and the list of checked sounds 
 A sound is complete when nothing calls in it but the species heard there: every other species counts as "not heard"
 in it (`complete`). "No bird sound" is a complete sound with no species; with species heard the same taxon carries
 the mark instead, as 'absent' with `complete` in its `source_ref` (`set_complete`), so the two never hold together.
+The sound map's form writes and deletes only rows of its own source (`take_back`).
 """
 import json
 
@@ -89,24 +90,51 @@ def complete(db, scope_id):
     return [row for row in current(db, scope_id, no_bird(db)) if row['verdict'] == 'present' or ref(row).get('complete')]
 
 
-def set_complete(db, recording_id, start_s, end_s, source, on=True):
-    """Say that nothing calls in the sound but the species heard in it, or take that back. With no species heard
-    it is "no bird sound" itself."""
-    taxon, sound = no_bird(db), (recording_id, start_s, end_s)
+def _state(db, sound):
+    """The current row of "no bird sound" on a sound (or None), and how many species are heard in it now."""
+    taxon = no_bird(db)
     now = db.execute(f'SELECT l.* FROM labels l WHERE l.taxon_id=? AND l.recording_id=? AND l.start_s=? AND l.end_s=? AND {LATEST}',
                      (taxon, *sound)).fetchone()
-    none = now is not None and now['verdict'] == 'present'
-    marked = now is not None and not none and bool(ref(now).get('complete'))
     heard = db.execute(f"""SELECT COUNT(*) FROM labels l WHERE l.recording_id=? AND l.start_s=? AND l.end_s=? AND l.taxon_id<>?
         AND l.verdict='present' AND {LATEST}""", (*sound, taxon)).fetchone()[0]
-    if on and not heard:
-        if not none:
-            put_no_bird(db, *sound, source, {'answer': True})
-    elif on:
-        if not marked:
-            put(db, taxon, *sound, 'absent', source, {'auto': True, 'complete': True}, history=True)
-    elif none or marked:
-        put(db, taxon, *sound, 'absent', source, {'auto': True}, history=True)
+    return now, heard
+
+
+def set_complete(db, recording_id, start_s, end_s, source):
+    """`source` says that nothing calls in the sound but the species heard in it (on any screen): its own mark, or
+    with no species heard its own "no bird sound". Another screen's "no bird sound" there is left as it is."""
+    sound = (recording_id, start_s, end_s)
+    now, heard = _state(db, sound)
+    mine = now is not None and now['source'] == source
+    if heard and not (mine and ref(now).get('complete')):
+        put(db, no_bird(db), *sound, 'absent', source, {'auto': True, 'complete': True}, history=True)
+    elif not heard and not (mine and now['verdict'] == 'present'):
+        put_no_bird(db, *sound, source, {'answer': True})
+
+
+def take_back(db, recording_id, start_s, end_s, source, taxa=None, marks=False):
+    """Delete what `source` itself recorded on a sound, and nothing of another screen: its "heard" rows of `taxa`
+    (None: of every species) and, with `marks`, its complete mark / "no bird sound". Whatever was the answer before
+    becomes current again. Returns the species whose rows went."""
+    sound, none = (recording_id, start_s, end_s), no_bird(db)
+    gone = [row[0] for row in db.execute('''SELECT DISTINCT taxon_id FROM labels WHERE recording_id=? AND start_s=? AND end_s=?
+        AND source=? AND verdict='present' AND taxon_id<>?''', (*sound, source, none)) if taxa is None or row[0] in taxa]
+    db.execute('''DELETE FROM labels WHERE recording_id=? AND start_s=? AND end_s=? AND source=? AND verdict='present'
+        AND taxon_id IN (SELECT value FROM json_each(?))''', (*sound, source, json.dumps(gone)))
+    # A row that took "no bird sound" back for a species heard (`put`) names that species in `auto`; a mark does not.
+    took_back = "COALESCE(json_type(source_ref,'$.auto'),'')='text'"
+    if marks:
+        db.execute(f'DELETE FROM labels WHERE recording_id=? AND start_s=? AND end_s=? AND source=? AND taxon_id=? AND NOT {took_back}',
+                   (*sound, source, none))
+    now, heard = _state(db, sound)
+    if not heard:
+        # No species is heard here any more: a "no bird sound" this source's species took back holds again.
+        db.execute(f'DELETE FROM labels WHERE recording_id=? AND start_s=? AND end_s=? AND source=? AND taxon_id=? AND {took_back}',
+                   (*sound, source, none))
+        now = _state(db, sound)[0]
+        if now is not None and now['source'] == source and ref(now).get('complete'):
+            set_complete(db, *sound, source)  # its mark with no species left is "no bird sound"
+    return gone
 
 
 def remove(db, taxon_id, recording_id, start_s, end_s, source):
