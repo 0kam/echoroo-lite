@@ -200,6 +200,22 @@ def _labelled(db, ctx, species_id, pieces=None):
                  for segment, row in sorted(found.items(), key=lambda item: (item[1]['created_at'], item[1]['id']), reverse=True)}
 
 
+def _keys(root, material):
+    """{segment: (recording key, start)} of material keyed by segment, to tell the same sound apart across PCs (sharing.recording_key)."""
+    from sharing import recording_key
+    with connect(root) as db:
+        records = {r['id']: recording_key(r['path'], r['recorded_at']) for r in db.execute(
+            'SELECT id,path,recorded_at FROM recordings WHERE id IN (SELECT value FROM json_each(?))', (json.dumps(sorted({v['recording_id'] for v in material.values()})),))}
+        starts = {r[0]: r[1] for r in db.execute('SELECT id,start_s FROM segments WHERE id IN (SELECT value FROM json_each(?))', (json.dumps(list(material)),))}
+    return {segment: (records[value['recording_id']], starts[segment]) for segment, value in material.items()
+            if value['recording_id'] in records and segment in starts}
+
+
+def _site_names(root, site_ids):
+    with connect(root) as db:
+        return {r[0]: r[1] for r in db.execute('SELECT id,name FROM sites WHERE id IN (SELECT value FROM json_each(?))', (json.dumps(sorted(site_ids)),))}
+
+
 def material_status(root, ctx, species_ids):
     """Whether a species AI can be made, for many species at once: {species id: {'positive','negative','needed'}}."""
     with connect(root) as db:
@@ -372,6 +388,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
     source, picks = None, []
     import sharing
     shared = sharing.state(root, ctx, species_id)
+    taken = sharing.inherited(root, ctx, model, set(_keys(root, shared['material']).values()))[0] if model else []
     with connect(root) as db:
         import test_sounds
         pieces = _pieces(db, ctx)
@@ -395,7 +412,12 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
             leave = {**{r[0]: None for r in db.execute('''SELECT s.id FROM segments s JOIN analyses a ON a.id=s.analysis_id
                 WHERE a.recording_id IN (SELECT value FROM json_each(?))''', (json.dumps(sorted(set_aside)),))}, **leave}
         if batch:
-            if model and model['applicable']:
+            if collecting and model and model['applicable']:
+                # An AI brought from another site or a file: its test sounds here come from the three layers of its ranking.
+                source = 'custom'
+                ranked = sorted(((w['segment_id'], w['score']) for w in score_windows(root, model['id'])), key=lambda p: (-p[1], p[0]))
+                picks = layered_picks(ranked, leave, need_voice, need_silent, _rng(species_id, 'custom', model['id'], sorted(leave)))
+            elif model and model['applicable']:
                 source = 'custom'
                 scored = [(w['segment_id'], w['score']) for w in score_windows(root, model['id'])]
                 # A search's examples each bring one sound, whatever the AI makes of it: the AI may not know that call yet.
@@ -425,7 +447,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
     for row in rows + answered:
         row['local_time'] = window_key(row, row['start_s'], zone)[1]
     # With other sites' answers as material too (`sharing`), they count towards what an AI needs.
-    more = shared['material'].values()
+    more = [*shared['material'].values(), *taken]
     all_positive, all_negative = positive + sum(v['label'] == 'target' for v in more), negative + sum(v['label'] == 'other' for v in more)
     short = max(0, MIN_CLASS_EXAMPLES - all_positive) + max(0, MIN_CLASS_EXAMPLES - all_negative)
     needed = max(short, MIN_EXAMPLES - all_positive - all_negative)
@@ -445,6 +467,8 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
                          'no_bird_answers': sum(value['origin'] == 'no_bird' for value in labels.values())},
             'phase': stage, 'test': test,
             'sharing': {k: shared[k] for k in ('all_sites', 'positive_5s', 'negative_5s', 'sites')},
+            # The material of the AI it grows from (sharing.inherited): taken when the AI is made here.
+            'inherited': sharing._counts(taken) if taken else None,
             'requirements': {'positive_5s': MIN_CLASS_EXAMPLES, 'negative_5s': MIN_CLASS_EXAMPLES, 'total_5s': MIN_EXAMPLES},
             'can_train': not reasons, 'reasons': reasons}
 
@@ -494,10 +518,14 @@ def create(root, ctx, species_id, cancel=None):
     state = readiness(root, ctx, species_id)
     if not state['can_train']:
         raise CatalogError(state['reasons'][0])
-    # An AI taken in from a file is not made again in place: the one made here starts as a new AI beside it.
-    previous = None if state['model'] and state['model'].get('imported') else state['model']
+    # An AI copied here (from another site or a file) is not made again in place: the AI made from it is this site's own
+    # AI for the period made again (next round), or a new AI beside the copy when the site has none yet.
+    previous = state['model']
+    if previous and previous.get('imported'):
+        previous = next((m for m in list_models(root, ctx, species_id, every=True) if not m.get('imported')), None)
     import sharing
     shared = sharing.state(root, ctx, species_id)
+    taken, parent = sharing.inherited(root, ctx, state['model'], set(_keys(root, shared['material']).values()))
     with connect(root) as db:
         run, labels = _materials(db, ctx, species_id)
         analyses = _main_analyses(db, ctx)
@@ -526,7 +554,9 @@ def create(root, ctx, species_id, cancel=None):
                 examples.append({**row, **shared['material'][row['segment_id']]})
                 vectors.append(vector)
     elsewhere = [e for e in examples if 'site_id' in e]
-    y = np.array([row['label'] == 'target' for row in examples], dtype=np.float64)
+    # The material of the AI it grows from: sound descriptions kept with that AI, from this PC or another.
+    vectors += [e['vector'] for e in taken]
+    y = np.array([row['label'] == 'target' for row in examples] + [e['label'] == 'target' for e in taken], dtype=np.float64)
     if len(y) < MIN_EXAMPLES or y.sum() < MIN_CLASS_EXAMPLES or len(y) - y.sum() < MIN_CLASS_EXAMPLES:
         raise CatalogError('custom_more_answers_needed' if len(y) < MIN_EXAMPLES else
                            'custom_positive_examples_needed' if y.sum() < MIN_CLASS_EXAMPLES else 'custom_negative_examples_needed')
@@ -561,7 +591,9 @@ def create(root, ctx, species_id, cancel=None):
                      'positive_from_presence': sum(e['origin'] == 'presence' and e['label'] == 'target' for e in examples),
                      'other_sites': {'positive_5s': sum(e['label'] == 'target' for e in elsewhere), 'negative_5s': sum(e['label'] == 'other' for e in elsewhere),
                                      'sites': len({e['site_id'] for e in elsewhere})} if elsewhere else None,
+                     'inherited': sharing._counts(taken) if taken else None,
                      'examples': examples},
+        'parent': parent,
         'analysis_ids': ids, 'inference': {'scored_5s': len(scored)}}
     folder = Path(root) / 'custom-models'
     folder.mkdir(parents=True, exist_ok=True)
@@ -577,6 +609,12 @@ def create(root, ctx, species_id, cancel=None):
             start_s=np.asarray([r['start_s'] for r in rows]), end_s=np.asarray([r['end_s'] for r in rows]), scores=np.asarray(scored))
         test_sounds.keep_round(temporary, folder / str(previous['id']) if previous else None, snapshot['round'], weights, intercept,
                                 [e['recording_id'] for e in examples])
+        # What it was made from goes with it, so it can grow further at another site or on another PC.
+        keys = _keys(root, {e['segment_id']: e for e in examples})
+        names = _site_names(root, {e.get('site_id', ctx['site']['id']) for e in examples})
+        sharing.save_material(temporary / sharing.MATERIAL, [{'vector': v, 'label': e['label'], 'recording': keys[e['segment_id']][0], 'start_s': e['start_s'],
+                                                               'site': names.get(e.get('site_id', ctx['site']['id']))} for e, v in zip(examples, vectors)] + taken)
+        sharing.save_material(temporary / sharing.INHERITED, taken)
         artifact, scores = _digest(temporary / 'model.npz'), _digest(temporary / 'scores.npz')
         with connect(root) as db:
             model_id = previous['id'] if previous else db.execute('''INSERT INTO custom_models(dataset_id,species_id,run_id,snapshot,
@@ -591,6 +629,7 @@ def create(root, ctx, species_id, cancel=None):
             db.execute('''UPDATE custom_models SET dataset_id=?,run_id=?,snapshot=?,artifact_path=?,artifact_sha256=?,scores_path=?,scores_sha256=?,
                 created_at=CURRENT_TIMESTAMP WHERE id=?''', (ctx['dataset']['id'], run_id, json.dumps(snapshot, allow_nan=False),
                 str(final / 'model.npz'), artifact, str(final / 'scores.npz'), scores, model_id))
+            sharing.choose(db, ctx['site']['id'], species_id, model_id)
             db.execute('DELETE FROM workflow_cache')
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
@@ -622,7 +661,7 @@ def _public(root, row, current_fingerprint=None):
         'growth': {'rounds': snap.get('rounds', []), 'state': growth_state(snap.get('rounds', []), snap['training']['positive_5s'])},
         'species': names_for_id(root, row['species_id']), 'scope': snap['scope'], 'feature': snap['feature'],
         'training': {k: v for k, v in snap['training'].items() if k != 'examples'}, 'inference': snap['inference'],
-        'imported': snap.get('imported'), 'analysis_ids': snap['analysis_ids'], 'applicable': scope_ok and files_ok and feature_ok,
+        'imported': snap.get('imported'), 'parent': snap.get('parent'), 'analysis_ids': snap['analysis_ids'], 'applicable': scope_ok and files_ok and feature_ok,
         'reason': 'custom_model_scope_changed' if not feature_ok else None if scope_ok and files_ok else 'custom_model_scope_changed' if not scope_ok else 'custom_model_files_missing',
         'artifact_sha256': row['artifact_sha256'], 'scores_sha256': row['scores_sha256']}
 
@@ -645,10 +684,12 @@ def training_windows(root, model_id):
 
 
 def list_models(root, ctx, species_id=None, every=False):
-    """This site's models for the displayed period, newest first; by default the newest usable one per species."""
+    """This site's models for the displayed period, the chosen one then the newest first; by default the first usable one per species."""
     with connect(root) as db:
+        # The AI the site chose for the species comes first (sharing.choose), then the newest.
         rows = db.execute('''SELECT m.* FROM custom_models m JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=?
-            AND (? IS NULL OR m.species_id=?) ORDER BY m.id DESC''', (ctx['site']['id'], species_id, species_id)).fetchall()
+            AND (? IS NULL OR m.species_id=?) ORDER BY EXISTS(SELECT 1 FROM species_ai_choice c WHERE c.site_id=d.site_id
+            AND c.species_id=m.species_id AND c.model_id=m.id) DESC, m.id DESC''', (ctx['site']['id'], species_id, species_id)).fetchall()
     rows = [row for row in rows if [json.loads(row['snapshot'])['scope'][k] for k in ('start_date', 'end_date')] == [ctx['start_date'], ctx['end_date']]]
     rows = [row for row in rows if json.loads(row['snapshot'])['feature']['engine'] == main_engine(root)]
     models = [_public(root, row, ctx['fingerprint']) for row in rows]
@@ -671,6 +712,8 @@ def delete_model(root, model_id):
         sessions = [r[0] for r in db.execute('SELECT id FROM validation_sessions WHERE model=?', (f'custom:{model_id}',))]
         delete_sessions(db, sessions)
         db.execute('DELETE FROM custom_models WHERE id=?', (model_id,))
+        db.execute('DELETE FROM species_ai_choice WHERE model_id=?', (model_id,))
+        db.execute('DELETE FROM species_ai_seen WHERE model_id=?', (model_id,))
     # Only our own generated folder is removed, never a path read from the catalogue.
     shutil.rmtree(Path(root) / 'custom-models' / str(model_id), ignore_errors=True)
     return {'id': model_id, 'validations': len(sessions)}

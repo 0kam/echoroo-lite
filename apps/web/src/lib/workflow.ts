@@ -30,9 +30,18 @@ export type PresenceRow = {recording_id:number;start_s:number;end_s:number;score
 export type Region = 'usual'|'unusual'|null;
 export type PresenceList = {species:Species;source:'ai'|'search';run_id:number|null;rows:PresenceRow[];has_ai:boolean;ai_covers?:boolean;start_date:string;end_date:string;
   site:{id:number;name:string;timezone:string};presence:Presence;region?:Region};
-export type CustomModel = {imported?:{file:string;engine:string;warning:string|null;site:string|null}|null;id:number;round:number;created_at:string;dataset_id:number;run_id:number|null;species:Species;
+/** Where and in which round a species AI was made, and the AI it grew from (`parent`): its name as a version. */
+export type VersionName = {site:string|null;round:number;file?:string|null;parent?:{model_id?:number|null;site:string|null;round:number|null;file?:string|null}|null;made_at?:string|null};
+/** The test-sound report of a species (GET …/test-sounds), as far as pages read it. */
+export type TestReport = {state:'none'}|{state:'ready';sounds:{heard:number;not_heard:number};rounds:{round:number;found:number|null;false:number|null;current:boolean;made_from_test:boolean}[]};
+/** How an AI did on test sounds: `found` of `heard`, `false` of `not_heard`. */
+export type TestScore = {heard:number;not_heard:number;found:number;false:number};
+export type Material = {positive_5s:number;negative_5s:number;sites:string[]};
+/** A copy of an AI made elsewhere: from another site of this PC (`from_model`) or from a file (`file`). */
+export type Imported = VersionName&{file:string|null;from_model?:number|null;engine:string;warning:string|null;score?:TestScore|null};
+export type CustomModel = {imported?:Imported|null;parent?:VersionName['parent'];id:number;round:number;created_at:string;dataset_id:number;run_id:number|null;species:Species;
   scope:{site_id:number;start_date:string;end_date:string;recording_ids:number[]};
-  training:{other_sites?:{positive_5s:number;negative_5s:number;sites:number}|null;positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null;growth:Growth};
+  training:{other_sites?:{positive_5s:number;negative_5s:number;sites:number}|null;inherited?:Material|null;positive_5s:number;negative_5s:number};inference:{scored_5s:number};applicable:boolean;reason:string|null;growth:Growth};
 /** A 5-second sound to answer on the species-AI page; `score` is null in the list of answered sounds. */
 export type LabelRow = {test?:boolean;segment_id:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;
   score:number|null;label:'target'|'other'|null};
@@ -42,7 +51,20 @@ export type SpeciesAI = {species:Species;start_date:string;end_date:string;model
   by_example:boolean;search_examples:number;batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number;no_bird_answers:number};
   requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[];
   /** Test sounds come first: 'collecting' until they are frozen ('fixed'); 'skipped' is a species grown before that; `test` counts them and names the aims. */
-  phase:'collecting'|'fixed'|'skipped';test:{heard:number;not_heard:number;answered:number;aim_heard:number;aim_not_heard:number;ask_after:number;enough:number;complete:boolean};sharing?:{all_sites:boolean;positive_5s:number;negative_5s:number;sites:number}};
+  phase:'collecting'|'fixed'|'skipped';test:{heard:number;not_heard:number;answered:number;aim_heard:number;aim_not_heard:number;ask_after:number;enough:number;complete:boolean};sharing?:{all_sites:boolean;positive_5s:number;negative_5s:number;sites:number};
+  /** The material of the AI it grows from, taken when the AI is made here. */
+  inherited?:Material|null};
+/** The species' AIs on this PC as versions (GET …/ai-versions). */
+export type AIVersions = {current_id:number|null;
+  versions:(VersionName&{id:number;here:boolean;at_this_site:boolean;used:{site:string;site_id:number;round:number}[];engine:string;warning:boolean;score:TestScore|null})[];
+  others:(VersionName&{id:number;engine:string;warning:boolean;training:{positive_5s:number;negative_5s:number};score:TestScore|null})[];
+  newer:(VersionName&{id:number;training:{positive_5s:number;negative_5s:number;inherited?:Material|null};
+    tests:{heard:number;not_heard:number;now:{found:number;false:number};new:{found:number;false:number}}|null;
+    differ:{segment_id:number;recording_id:number;start_s:number;end_s:number;path:string;seconds:number;local_time:string;heard:boolean;now:boolean;new:boolean}[]})|null};
+/** A version's name: "North woods, round 3"; a file's AI without its site's name says so. */
+export const versionName = (v:{site:string|null;round:number|null}) => v.site?fill('vnName',{site:v.site,n:v.round??1}):fill('vnNoSite',{n:v.round??1});
+/** The name with what it grew from: "South woods, round 2 (grown from North woods, round 3)". */
+export const versionFull = (v:VersionName) => v.parent?fill('vnFrom',{name:versionName(v),parent:versionName(v.parent)}):versionName(v);
 export type ModelRow = {engine:string;key:string;model_id:number|null;created_at?:string;round?:number;candidate_windows?:number|null;candidate_days?:number|null;eligible_windows?:number|null;
   /** null: the applicable check ended undecided, so this AI's detections are not counted. */
   threshold?:number|null;validation:Validation|null};
@@ -119,6 +141,8 @@ export function presenceText(presence:Presence) {
   return `○ ${t('pUnchecked')}`;
 }
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
+/** A path with its query, without a bare `?` (the hash router does not find a path ending in one). */
+export const withQuery = (path:string,query:string) => query?`${path}?${query}`:path;
 // About 10 detected intervals in 30 hours of recording; below that a species is more likely an AI mistake than present (review A2, A5).
 export const fewBelow = (recordedSeconds:number) => recordedSeconds/3600/3;
 /** Site list sections: confirmed by listening, listened but not confirmed, worth checking, few detections and nothing done yet,

@@ -36,14 +36,15 @@ FOUND = 0.5      # a species AI's score from which it says the voice is there
 
 
 def phase(db, site_id, species_id):
-    """'collecting' (test sounds are being made; no AI yet), 'fixed' (growing, test recordings frozen) or 'skipped'
+    """'collecting' (test sounds are being made; no AI made here yet), 'fixed' (growing, test recordings frozen) or 'skipped'
     (growing without test sounds). Only the last two are stored. A species grown before phases existed has an AI and
     no stored phase: 'fixed' when recordings were set aside for it, else 'skipped'."""
     row = db.execute('SELECT state FROM test_phases WHERE site_id=? AND species_id=?', (site_id, species_id)).fetchone()
     if row:
         return row[0]
-    if not db.execute('SELECT 1 FROM custom_models m JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=? AND m.species_id=?',
-                      (site_id, species_id)).fetchone():
+    # An AI brought from another site or a file does not count: the test sounds here are still to be made with it.
+    if not db.execute('''SELECT 1 FROM custom_models m JOIN datasets d ON d.id=m.dataset_id WHERE d.site_id=? AND m.species_id=?
+                      AND json_extract(m.snapshot,'$.imported') IS NULL''', (site_id, species_id)).fetchone():
         return 'collecting'
     return 'fixed' if _stored(db, site_id, species_id) else 'skipped'
 
@@ -198,3 +199,29 @@ def report(root, ctx, species_id):
         result['false'] = [shape(s) for s in absent if now[s]]
         result['new'] = [shape(s) for s in heard if now[s] and before is not None and not before[s]]
     return result
+
+
+def judge(root, ctx, species_id, ais):
+    """How each of `ais` ((weights, intercept) pairs) does on the site's test sounds: None without test sounds, else
+    {'sounds': {'heard','not_heard'}, 'results': [{'found','false','said': {segment: says voice}}], 'rows': {segment: row}}.
+    Used to try an AI of another site or a file here."""
+    from custom_models import _labelled, _normalise
+    with connect(root) as db:
+        found = sounds(db, ctx['site']['id'], species_id, _labelled(db, ctx, species_id)[1])
+        rows = {r['segment_id']: dict(r) for r in db.execute('''SELECT s.id AS segment_id,s.start_s,s.end_s,r.id AS recording_id,r.path,r.seconds,
+            r.recorded_at,v.embedding FROM segments s JOIN analyses a ON a.id=s.analysis_id JOIN recordings r ON r.id=a.recording_id
+            JOIN vectors v ON v.rowid=s.id WHERE s.id IN (SELECT value FROM json_each(?))''', (json.dumps(list(found)),))}
+    heard = [s for s, v in found.items() if s in rows and v['label'] == 'target']
+    absent = [s for s, v in found.items() if s in rows and v['label'] == 'other']
+    if not heard and not absent:
+        return None
+    order = heard + absent
+    matrix = _normalise(np.stack([np.frombuffer(rows[s]['embedding'], dtype='<f4') for s in order]))
+    results = []
+    for weights, intercept in ais:
+        said = dict(zip(order, (expit(matrix @ np.asarray(weights, dtype=np.float64) + intercept) >= FOUND).tolist()))
+        results.append({'found': sum(said[s] for s in heard), 'false': sum(said[s] for s in absent), 'said': said})
+    zone = ZoneInfo(ctx['site']['timezone'])
+    shown = {s: {k: rows[s][k] for k in ('segment_id', 'recording_id', 'start_s', 'end_s', 'path', 'seconds')} | {
+        'local_time': window_key(rows[s], rows[s]['start_s'], zone)[1], 'heard': s in heard} for s in order}
+    return {'sounds': {'heard': len(heard), 'not_heard': len(absent)}, 'results': results, 'rows': shown}

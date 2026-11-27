@@ -6,12 +6,13 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { appHref,fill,listenLabel,modelIntro,modelName,pageQuery,returnPath,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
+  import { appHref,fill,listenLabel,modelIntro,modelName,pageQuery,returnPath,share,versionFull,versionName,withQuery,type AIVersions,type LabelRow,type SpeciesAI,type TestReport,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
   import TestSounds from '$lib/TestSounds.svelte';
   import HeardBox from '$lib/HeardBox.svelte';
   import AiSharing from '$lib/AiSharing.svelte';
+  import BorrowAI from '$lib/BorrowAI.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -40,6 +41,23 @@
   const next=createTask(async()=>{const value=await fetchState(`&batch=true${skipped.map(segment=>`&skip=${segment}`).join('')}`);
     info=value;batch=value.batch??[];answered=value.answered;source=value.source;answeredShown=10;selected=null;});
   onMount(async()=>{await next.run();if(next.error)error=next.error;});
+  // A newer version of this site's AI grown at another site (tried on the test sounds here), offered until chosen or set aside.
+  let newer=$state<AIVersions['newer']>(null),report=$state<TestReport|null>(null);
+  const lookNewer=()=>api<AIVersions>(`/datasets/${id}/species/${speciesId}/ai-versions?${range}`).then(value=>newer=value.newer,()=>newer=null);
+  // Looked up again only when the AI here changes, not on every answer.
+  const newerKey=$derived(info?.model&&info.phase!=='collecting'?`${info.model.id}:${info.model.round}`:'');
+  $effect(()=>{if(newerKey)void lookNewer();else newer=null;});
+  const switchTo=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/use`,{dataset_id:id,start_date:info!.start_date,end_date:info!.end_date});
+    newer=null;skipped=[];await next.run();},{toast:true});
+  let kept=$state('');
+  const keepNow=createTask(async(modelId:number)=>{const name=versionName(newer!);await api(`/datasets/${id}/species/${speciesId}/ai-versions/set-aside`,{model_id:modelId});
+    kept=fill('vnKept',{version:nowName,name});newer=null;},{toast:true});
+  // Switching is put forward only when the newer AI does better here on the test sounds.
+  const better=(tests:NonNullable<NonNullable<AIVersions['newer']>['tests']>)=>tests.new.found>=tests.now.found&&tests.new.false<=tests.now.false&&(tests.new.found>tests.now.found||tests.new.false<tests.now.false);
+  const ahead=$derived(!!newer?.tests&&better(newer.tests));
+  const said=(heard:boolean,yes:boolean)=>t(heard?(yes?'vnSaid_found':'vnSaid_missed'):(yes?'vnSaid_false':'vnSaid_right'));
+  // How an AI brought from elsewhere does here against where it was made: more, fewer or about as many misses and false "yes".
+  const compare=(here:number,there:number)=>t(Math.abs(here-there)<.05?'vbSame':here>there?'vbMore':'vbLess');
   const label=createTask(async(row:LabelRow,value:'target'|'other')=>{
     const saved=await api<{label:LabelRow['label']}>(`/datasets/${id}/species/${speciesId}/labels`,{segment_id:row.segment_id,label:row.label===value?null:value});
     row.label=saved.label;if(saved.label)unsure=unsure.filter(id=>id!==row.segment_id);info=await fetchState();
@@ -60,6 +78,9 @@
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   const remove=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/delete`,{});confirming=false;skipped=[];await next.run();},{toast:true});
   const model=$derived(info?.model??null);
+  // The name of the AI the site uses now, as a version: a copy is named for where it was made.
+  const nowName=$derived(model?model.imported?versionName(model.imported):versionName({site:site?.name??null,round:model.round}):'');
+  const listHref=withQuery(resolve(`/datasets/${id}/species/${speciesId}/ais`),range.toString());
   // Test sounds are made first; growing starts once they are frozen ('fixed'). 'skipped' is a species grown before that rule.
   const collecting=$derived(info?.phase==='collecting');
   const startGrowing=createTask(async()=>{await api(`/datasets/${id}/species/${speciesId}/test-phase`,{});skipped=[];await next.run();},{toast:true});
@@ -105,7 +126,7 @@
   const origin=returnPath(page.url,/^\/datasets\/\d+\/heard(\?[^#]*)?$/),here=`/datasets/${id}/species/${speciesId}/model?${range}${origin?`&return=${encodeURIComponent(origin)}`:''}`;
   const searchHref=`${resolve(`/datasets/${id}/search`)}?species=${speciesId}&${range}&return=${encodeURIComponent(here)}`;
   const back=$derived(`${resolve(`/datasets/${id}/species/${speciesId}`)}?${range}${model?.applicable?`&engine=custom&model_id=${model.id}`:''}`);
-  const time=(row:LabelRow)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(row.local_time));
+  const time=(row:{local_time:string})=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(row.local_time));
   const made=(value:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'short',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(`${value.replace(' ','T')}Z`));
   const score=(value:number)=>{const text=value.toFixed(2).replace('-0.00','0.00');
     return source==='custom'?fill('mdScoreCustom',{value:text}):source==='search'?fill('pSimilarity',{value:text}):fill('mdScoreBuiltin',{model:modelName(info!.engine),value:text});};
@@ -118,13 +139,32 @@
   {#if info}
     <ol class="steps" aria-label={t('tpSteps')}>{#each ['tpStep1','tpStep2','tpStep3'] as name,i}{@const stage=collecting?0:measured||model?.growth.state==='settled'?2:1}
       <li aria-current={i===stage?'step':undefined}>{t(name)}{i<stage||i===2&&measured?.stage==='complete'?' ✓':''}</li>{/each}</ol>
+    {#if newer}{@const name=versionName(newer)}<section class="panel newer" aria-labelledby="newer-title"><h2 id="newer-title">{fill('vnNewTitle',{site:newer.site??''})}</h2>
+      <p>{fill('vnNewText',{version:versionFull(newer),positive:newer.training.positive_5s,negative:newer.training.negative_5s})}{#if newer.round>1}{' '}{fill('vnLatest',{site:newer.site??'',n:newer.round})}{/if}</p>
+      {#if newer.tests}{@const tests=newer.tests}<h3>{t('vnCmpTitle')}</h3>
+        <div class="scroll"><table><thead><tr><th></th><th scope="col">{t('vnNow')}<br>{nowName}</th><th scope="col">{name}</th></tr></thead><tbody>
+          <tr><th scope="row">{t('tsFoundLabel')}</th><td class="big">{tests.now.found} / {tests.heard}</td><td class="big" class:good={tests.new.found>tests.now.found} class:bad={tests.new.found<tests.now.found}>{tests.new.found} / {tests.heard}</td></tr>
+          <tr><th scope="row">{t('tsFalseLabel')}</th><td class="big">{tests.now.false} / {tests.not_heard}</td><td class="big" class:good={tests.new.false<tests.now.false} class:bad={tests.new.false>tests.now.false}>{tests.new.false} / {tests.not_heard}</td></tr>
+        </tbody></table></div>
+        <p class="muted">{fill('vnSmall',{heard:tests.heard,not_heard:tests.not_heard})}</p>
+        {#if newer.differ.length}<details><summary>{fill('vnDiffer',{n:newer.differ.length})}</summary>{#each newer.differ as sound (sound.segment_id)}<div class="sound">
+          <span>{time(sound)}　{fill('vnDifferRow',{now:said(sound.heard,sound.now),version:name,new:said(sound.heard,sound.new)})}</span>
+          <AudioRegion source={{id:sound.recording_id,kind:'recording',path:sound.path,seconds:sound.seconds}} fixedRange compact start={sound.start_s} end={sound.end_s}/></div>{/each}</details>{/if}
+      {:else}<p class="muted">{t('vnNoTests')}</p>{/if}
+      <div class="actions"><Button variant={ahead?'primary':'default'} pending={switchTo.pending} disabled={keepNow.pending} onclick={()=>switchTo.run(newer!.id)}>{fill('vnSwitch',{version:name})}</Button>
+        <Button variant={ahead?'default':'primary'} pending={keepNow.pending} disabled={switchTo.pending} onclick={()=>keepNow.run(newer!.id)}>{fill('vnKeep',{version:nowName})}</Button></div>
+      <p class="muted">{t('vnAfter')}</p>
+    </section>{/if}
+    {#if kept}<p class="panel" role="status">{kept}</p>{/if}
+    {#if collecting&&!model}<BorrowAI datasetId={id} {speciesId} speciesName={commonName(info.species,app.locale)||info.species.scientific_name} range={range.toString()} ontaken={async()=>{skipped=[];await next.run();}}/>{/if}
     {#if collecting}{@const test=info.test}{@const few=test.heard<test.aim_heard}<section class="panel"><h2 id="test-title">{t('tpTitle')}</h2>
+      {#if model?.imported}<p class="info">{fill('vbTrying',{version:nowName})}</p>{/if}
       <p>{t('tpIntro')}</p>
       <div class="meter">{#each [['mdVoice',test.heard,test.aim_heard],['mdNoVoice',test.not_heard,test.aim_not_heard]] as [name,n,of]}
         <span>{t(name as string)}</span><progress max={of as number} value={Math.min(n as number,of as number)} aria-label={t(name as string)}></progress><span>{fill('tpCount',{n,of})}</span>{/each}</div>
       <p class="muted">{t('tpCountNote')}</p>
       <p class="muted">{t('tpWhy')}</p>
-      {#if chosen&&!test.complete}<p class="muted">{chosen}</p>{/if}
+      {#if model?.imported&&source==='custom'&&!test.complete}<p class="muted">{fill('vbLayers',{version:nowName})}</p>{:else if chosen&&!test.complete}<p class="muted">{chosen}</p>{/if}
       {#if test.complete}<div class="status-box" role="status"><strong>{t('tpReadyTitle')}</strong><p>{fill('tpReadyText',{heard:test.heard,not_heard:test.not_heard})}</p></div>
         <div class="actions"><Button variant="primary" pending={startGrowing.pending} onclick={()=>startGrowing.run()}>{t('tpStart')}</Button></div>
       <!-- Many answers and still short, or nothing left to offer: growing can start with the test sounds found so far. -->
@@ -143,8 +183,10 @@
     {#if !searchFirst&&!collecting}<section class="panel">
       {@render counts()}
       {#if info.phase==='fixed'}<p class="muted">{t('tpGrowNote')}</p>{/if}
-      {#if model?.imported}<p class="info">{fill(model.imported.site?'shImportedFrom':'shImported',{site:model.imported.site??'',file:model.imported.file,date:made(model.created_at)})}{#if model.imported.warning}{' '}{fill('shWarnText',{from:modelName(model.imported.engine),here:modelName(info.engine)})}{/if} {t('shImportedBack')}</p>
-      {:else}<p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}</p>{/if}
+      {#if model?.imported}<p class="info">{#if model.imported.file}{fill(model.imported.site?'shImportedFrom':'shImported',{site:model.imported.site??'',file:model.imported.file,date:made(model.created_at)})}{:else}{fill('vbBorrowed',{version:nowName,date:made(model.created_at)})}{/if}{#if model.imported.warning}{' '}{fill('shWarnText',{from:modelName(model.imported.engine),here:modelName(info.engine)})}{/if} {t('vbBack')}</p>
+      {:else}<p>{model?fill('mdRound',{n:model.round,date:made(model.created_at)}):t('mdNoAI')}{#if model?.parent}{' '}{fill('vbGrewFrom',{version:versionName(model.parent)})}{/if}</p>{/if}
+      {#if info.inherited}<p class="muted">{fill('vbInherited',{n:info.inherited.positive_5s+info.inherited.negative_5s,sites:info.inherited.sites.join('・')||'—'})}</p>{/if}
+      {#if model}<p><a href={listHref}>{t('vlLink')}</a></p>{/if}
       {#if model&&!model.imported&&model.training.other_sites}<p class="muted">{fill('shPooled',{n:model.training.other_sites.positive_5s+model.training.other_sites.negative_5s,sites:model.training.other_sites.sites})}</p>{/if}
       {#if model}<p class="muted">{t('mdStopRule')}</p>{/if}
       {#if model&&!model.applicable}<p class="info">{t(model.reason??'custom_model_scope_changed')}</p>{/if}
@@ -161,7 +203,20 @@
     </section>
     <TestSounds datasetId={id} {speciesId} query={range.toString()} timezone={site?.timezone}
       version={`${model?.id}:${model?.round}:${info.examples.positive_5s}:${info.examples.negative_5s}:${info.test?.heard}:${info.test?.not_heard}`}
-      check={model?info.check:null} oncontinue={()=>startCheck.run()} reveal={returned}/>
+      check={model?info.check:null} oncontinue={()=>startCheck.run()} reveal={returned}
+      title={model?.imported?fill('vbScoreTitle',{version:nowName}):''} onreport={value=>report=value}/>
+    <!-- An AI brought from elsewhere, now measured here: grow it further with this site's sounds, or use it as it is. -->
+    {#if model?.imported&&info.phase==='fixed'}{@const there=model.imported.score}{@const row=report?.state==='ready'?report.rounds.find(item=>item.current&&!item.made_from_test):null}
+      {@const own=report?.state==='ready'?report.sounds:null}{@const origin=model.imported.site??nowName}
+      <section class="panel"><h2>{t('vbNextTitle')}</h2>
+        {#if there&&model.imported.site}<p class="muted">{fill('vbThereWas',{site:model.imported.site,...there})}</p>
+          {#if row&&own&&own.heard&&own.not_heard&&there.heard&&there.not_heard}<p>{fill('vbCmp',{site:model.imported.site,miss:compare(1-(row.found??0)/own.heard,1-there.found/there.heard),false:compare((row.false??0)/own.not_heard,there.false/there.not_heard)})}</p>{/if}{/if}
+        <div class="choice"><strong>{t('vbGrowTitle')}</strong>{t('vbRecommended')}
+          <p>{info.inherited?fill('vbGrowText',{n:info.inherited.positive_5s+info.inherited.negative_5s,sites:info.inherited.sites.join('・')||origin,here:site?.name??'',version:nowName,origin}):fill('vbGrowTextNone',{here:site?.name??'',version:nowName,origin})}</p>
+          <Button variant="primary" onclick={toTop}>{t('vbGrowGo')}</Button><p class="muted">{fill('vbGrowHow',{button:t('mdRebuild')})}</p></div>
+        <div class="choice"><strong>{t('vbKeepTitle')}</strong><p>{fill('vbKeepText',{version:nowName})}</p>
+          <Button pending={startCheck.pending} onclick={()=>startCheck.run()}>{t('vbKeep')}</Button></div>
+      </section>{/if}
     <!-- Step 3, offered once an AI exists: the same check as "Check the AI's answers", told as adding test sounds. -->
     {#if model?.applicable}<section class="panel"><h2>{t('tpStep3')}</h2>
       <p>{t('s3Intro')}</p><p>{t('s3How')} {t('s3Material')}</p>
@@ -232,7 +287,11 @@
     </details>{/if}
   {:else if !error}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 </div>
-<style>.steps{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+<style>.choice{margin:0 0 12px;padding:14px 18px;border:1px solid rgb(var(--stone-300));border-radius:12px}.choice p{margin:8px 0}
+  .newer{border-color:rgb(var(--primary-700))}.newer table{border-collapse:collapse}.newer th,.newer td{padding:8px 12px;border-bottom:1px solid rgb(var(--stone-300));text-align:left;font-weight:400}
+  .newer thead th{font-weight:600}.newer td.big{font-size:22px;font-weight:700}.good{color:rgb(var(--color-success))}.bad{color:rgb(var(--color-danger))}.scroll{overflow-x:auto}
+  .newer details summary{min-height:44px;padding:10px 0;cursor:pointer}.newer .sound{display:flex;flex-direction:column;gap:6px;padding:12px 0;border-top:1px solid rgb(var(--stone-300))}
+  .steps{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
   .steps li{padding:4px 14px;border:1px solid rgb(var(--stone-300));border-radius:999px;font-size:14px}.steps li[aria-current]{border-color:rgb(var(--primary-700));color:rgb(var(--primary-700));font-weight:600}
   .meter{display:grid;grid-template-columns:auto minmax(0,320px) auto;gap:4px 12px;align-items:center;justify-content:start}.meter progress{width:100%;height:12px}
   .test{padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;font-weight:600}
