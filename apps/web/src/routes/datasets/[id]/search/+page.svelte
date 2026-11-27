@@ -8,7 +8,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,dayRange,fileName,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { appHref,fill,focusMissing,missingText,pageQuery,rangeQuery,returnPath } from '$lib/workflow';
+  import { appHref,fill,focusMissing,missingText,pageQuery,rangeQuery,returnPath,withQuery } from '$lib/workflow';
   import HeardBox from '$lib/HeardBox.svelte';
   import BorrowAI from '$lib/BorrowAI.svelte';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
@@ -106,7 +106,7 @@
   {#if species}
     <!-- An AI grown at another site (or from a file) can look for the species here instead of an example call. -->
     {#if !origin}<BorrowAI datasetId={id} speciesId={species.id} speciesName={commonName(species,app.locale)||species.scientific_name} range={first&&last?rangeQuery(first,last):''}
-      ontaken={async()=>{const found=species!;localStorage.removeItem(`echoroo-search-${id}`);await goto(`${resolve(`/datasets/${id}/species/${found.id}/model`)}?${first&&last?rangeQuery(first,last):''}`);}}/>{/if}
+      ontaken={async()=>{const found=species!;localStorage.removeItem(`echoroo-search-${id}`);await goto(withQuery(resolve(`/datasets/${id}/species/${found.id}/model`),first&&last?rangeQuery(first,last):''));}}/>{/if}
     <!-- Sounds of this species already checked by ear can be the examples, without choosing a file (its own search is for a species without one). -->
     {#if site&&!keptHere}{#key species.id}<HeardBox datasetId={id} speciesId={species.id} timezone={site.timezone} hasSearch={false} range={first&&last?rangeQuery(first,last):''} searchHref=""
       resultsHref={origin?appHref(origin):`${resolve(`/datasets/${id}/species/${species.id}/presence`)}?${first&&last?`${rangeQuery(first,last)}&`:''}source=search`}/>{/key}{/if}

@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { appHref,fill,listenLabel,modelIntro,modelName,pageQuery,returnPath,share,versionFull,versionName,type AIVersions,type LabelRow,type SpeciesAI,type TestReport,type Validation } from '$lib/workflow';
+  import { appHref,fill,listenLabel,modelIntro,modelName,pageQuery,returnPath,share,versionFull,versionName,withQuery,type AIVersions,type LabelRow,type SpeciesAI,type TestReport,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
   import TestSounds from '$lib/TestSounds.svelte';
@@ -44,7 +44,9 @@
   // A newer version of this site's AI grown at another site (tried on the test sounds here), offered until chosen or set aside.
   let newer=$state<AIVersions['newer']>(null),report=$state<TestReport|null>(null);
   const lookNewer=()=>api<AIVersions>(`/datasets/${id}/species/${speciesId}/ai-versions?${range}`).then(value=>newer=value.newer,()=>newer=null);
-  $effect(()=>{if(info?.model&&info.phase!=='collecting'){void info.model.id;void info.model.round;void lookNewer();}else newer=null;});
+  // Looked up again only when the AI here changes, not on every answer.
+  const newerKey=$derived(info?.model&&info.phase!=='collecting'?`${info.model.id}:${info.model.round}`:'');
+  $effect(()=>{if(newerKey)void lookNewer();else newer=null;});
   const switchTo=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/use`,{dataset_id:id,start_date:info!.start_date,end_date:info!.end_date});
     newer=null;skipped=[];await next.run();},{toast:true});
   const keepNow=createTask(async(modelId:number)=>{await api(`/datasets/${id}/species/${speciesId}/ai-versions/set-aside`,{model_id:modelId});newer=null;},{toast:true});
@@ -73,7 +75,7 @@
   const model=$derived(info?.model??null);
   // The name of the AI the site uses now, as a version: a copy is named for where it was made.
   const nowName=$derived(model?model.imported?versionName(model.imported):versionName({site:site?.name??null,round:model.round}):'');
-  const listHref=$derived(`${resolve(`/datasets/${id}/species/${speciesId}/ais`)}?${range}`);
+  const listHref=withQuery(resolve(`/datasets/${id}/species/${speciesId}/ais`),range.toString());
   // Test sounds are made first; growing starts once they are frozen ('fixed'). 'skipped' is a species grown before that rule.
   const collecting=$derived(info?.phase==='collecting');
   const startGrowing=createTask(async()=>{await api(`/datasets/${id}/species/${speciesId}/test-phase`,{});skipped=[];await next.run();},{toast:true});

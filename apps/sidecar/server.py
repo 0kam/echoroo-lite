@@ -813,8 +813,11 @@ def create_app(root, models, token):
         import sharing
         from results_workflow import context
         if body.inspect:
-            return sharing.inspect(root, body.path, context(root, body.dataset_id, body.start_date.isoformat() if body.start_date else None,
-                                                            body.end_date.isoformat() if body.end_date else None))
+            try:  # how the file's AI does on this site's test sounds, when the site has been analysed
+                here = context(root, body.dataset_id, body.start_date.isoformat() if body.start_date else None, body.end_date.isoformat() if body.end_date else None)
+            except CatalogError:
+                here = None
+            return sharing.inspect(root, body.path, here)
         with lock:
             if worker and worker.is_alive():
                 raise HTTPException(409, 'job_busy')

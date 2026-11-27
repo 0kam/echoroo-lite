@@ -141,6 +141,8 @@ export function presenceText(presence:Presence) {
   return `○ ${t('pUnchecked')}`;
 }
 export const rangeQuery = (first:string,last:string) => new URLSearchParams({start_date:first,end_date:last}).toString();
+/** A path with its query, without a bare `?` (the hash router does not find a path ending in one). */
+export const withQuery = (path:string,query:string) => query?`${path}?${query}`:path;
 // About 10 detected intervals in 30 hours of recording; below that a species is more likely an AI mistake than present (review A2, A5).
 export const fewBelow = (recordedSeconds:number) => recordedSeconds/3600/3;
 /** Site list sections: confirmed by listening, listened but not confirmed, worth checking, few detections and nothing done yet,

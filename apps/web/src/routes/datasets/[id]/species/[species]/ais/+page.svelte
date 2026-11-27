@@ -5,7 +5,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { fill,pageQuery,versionName,type AIVersions } from '$lib/workflow';
+  import { fill,pageQuery,versionName,withQuery,type AIVersions } from '$lib/workflow';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -19,7 +19,7 @@
   const load=createTask(async()=>{data=await api<AIVersions>(`/datasets/${id}/species/${speciesId}/ai-versions?${range}`);});
   onMount(async()=>{species=await api<Species>(`/species/${encodeURIComponent(speciesId)}`).catch(()=>null);await load.run();if(load.error)error=load.error;});
   const use=createTask(async(modelId:number)=>{const dates=Object.fromEntries(range);await api(`/custom-models/${modelId}/use`,{dataset_id:id,...dates});await load.run();},{toast:true});
-  const back=`${resolve(`/datasets/${id}/species/${speciesId}/model`)}?${range}`;
+  const back=withQuery(resolve(`/datasets/${id}/species/${speciesId}/model`),range.toString());
   const day=(value?:string|null)=>value?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium'}).format(new Date(`${value.replace(' ','T')}${value.includes('T')?'':'Z'}`)):'';
   // Children: the versions whose parent is this one (a file's AI has no link to a row of this PC).
   const roots=$derived(data?data.versions.filter(v=>!v.parent?.model_id||!data!.versions.some(w=>w.id===v.parent!.model_id)):[]);
