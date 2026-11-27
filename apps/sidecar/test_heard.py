@@ -254,7 +254,11 @@ class HeardTest(unittest.TestCase):
             item = pick()
             self.assertEqual(([(s['scientific_name'], s['own']) for s in [item['species'], *item['background']]], item['complete'], item['no_bird']),
                              ([('Parus cinereus', False)], False, False))
-            answer('present', tit); answer('present', warbler); answer('present', bulbul); answer('complete')
+            # A species chosen on the map is the pick's species, ahead of an earlier answer from another screen.
+            answer('present', bulbul)
+            item = pick()
+            self.assertEqual([s['scientific_name'] for s in [item['species'], *item['background']]], ['Hypsipetes amaurotis', 'Parus cinereus'])
+            answer('present', tit); answer('present', warbler); answer('complete')
             item = pick()
             self.assertEqual(([s['own'] for s in [item['species'], *item['background']]], item['complete']), ([True, True, True], True))
             # The newest answer is the current one, whatever its screen: the map's "heard" over the page's "not heard".
@@ -265,7 +269,7 @@ class HeardTest(unittest.TestCase):
                                         ('Parus cinereus', 'present', 'validation', 0), ('none', 'present', 'rollup_fix', 5)])
             item = pick()
             self.assertEqual(([(s['scientific_name'], s['own']) for s in [item['species'], *item['background']]], item['complete']),
-                             ([('Parus cinereus', False), ('Hypsipetes amaurotis', True)], True))
+                             ([('Hypsipetes amaurotis', True), ('Parus cinereus', False)], True))
             # A species the map hears where another screen recorded "no bird sound" takes that back, as on every screen;
             # the map's own "no bird sound" there is a row of its own.
             answer('present', bulbul, later)

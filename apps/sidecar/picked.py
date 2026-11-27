@@ -61,7 +61,8 @@ def _site(db, dataset_id):
 
 def _rows(db, dataset_id):
     """The site's picks, each with the species now recorded as heard in it on any screen (scientific names).
-    The species heard first is the pick's species; the others are its background species. "No bird sound" is no species.
+    The first species the sound map recorded (else the first heard on another screen) is the pick's species; the
+    others are its background species. "No bird sound" is no species.
     `own`: those the sound map itself recorded, the only ones its form takes back. `complete`: nothing calls in the
     sound but those species (`labels.complete`); `marked`: the map itself said so; `no_bird`: another screen
     recorded "no bird sound"."""
@@ -84,7 +85,8 @@ def _rows(db, dataset_id):
         row['marked'] = row['complete'] and mark['source'] == 'sound_map'
         row['no_bird'] = row['complete'] and not row['marked'] and mark['verdict'] == 'present'
         row['own'] = [label['scientific_name'] for label in found if label['source'] == 'sound_map']
-        found = [label['scientific_name'] for label in found]
+        # What the map itself recorded comes first: the pick's species is the one chosen here, not an earlier answer elsewhere.
+        found = [label['scientific_name'] for label in sorted(found, key=lambda label: label['source'] != 'sound_map')]
         row['species'] = found[0] if found else None
         row['background'] = json.dumps(found[1:], ensure_ascii=False)
     return rows
