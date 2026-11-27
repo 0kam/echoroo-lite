@@ -66,10 +66,17 @@ class PickedCheck(unittest.TestCase):
         self.temporary.cleanup()
 
     def put(self, start=0, end=5, **changes):
-        body = {'dataset_id': 1, 'recording_id': 1, 'start_s': start, 'end_s': end,
-                'species': None, 'background': [], 'sound_type': '', 'quality': '', 'others': False}
+        body = {'dataset_id': 1, 'recording_id': 1, 'start_s': start, 'end_s': end, 'sound_type': '', 'quality': '', 'others': False}
         body.update(changes)
         return self.client.put('/explore/picked', json=body)
+
+    def hear(self, name, start=0, end=5, verdict='present'):
+        """Answer on the sound map: `name` was heard in the sound (or not); None: no bird sound."""
+        with connect(self.root) as db:
+            taxon = name and db.execute('SELECT id FROM species WHERE scientific_name=?', (name,)).fetchone()[0]
+        response = self.client.post('/heard/map-answer', json={'dataset_id': 1, 'recording_id': 1, 'start_s': start, 'end_s': end,
+            **({'species_id': taxon, 'verdict': verdict} if name else {'verdict': 'no_bird'})})
+        self.assertEqual(response.status_code, 200, response.text)
 
     def test_v5_upgrade_keeps_explore_rows_and_files(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -105,41 +112,52 @@ class PickedCheck(unittest.TestCase):
         with connect(self.root) as db:
             known = dict(db.execute("SELECT scientific_name,id FROM species WHERE scientific_name IN "
                                     "('Horornis diphone','Parus cinereus')"))
-        response = self.put(species='Horornis diphone', background=['Parus cinereus', 'Unknown bird'],
-                            sound_type='song', quality='A', others=True)
+        # A ticked sound with no answer has no species, and ticking records no answer.
+        self.assertEqual((self.put().json()['species'], self.put().json()['background']), (None, []))
+        with connect(self.root) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], 0)
+        # Its species are the answers now recorded on the sound: the species heard first, then the others.
+        # "Not heard", an answer taken back and "no bird sound" name no species.
+        self.hear('Zosterops japonicus', verdict='absent')
+        self.hear('Horornis diphone'); self.hear('Parus cinereus')
+        response = self.put(sound_type='song', quality='A', others=True)
         self.assertEqual(response.status_code, 200, response.text)
         item = response.json()
-        self.assertEqual(item['species'], {'id': known['Horornis diphone'], 'scientific_name': 'Horornis diphone'})
-        # A name missing from the species list becomes a local species, so it can be a label like any other.
-        with connect(self.root) as db:
-            unknown = db.execute("SELECT id FROM species WHERE scientific_name='Unknown bird'").fetchone()[0]
-            saved = [tuple(r) for r in db.execute("SELECT taxon_id,verdict,json_extract(source_ref,'$.background') FROM labels "
-                                                  "WHERE source='sound_map' ORDER BY id")]
-        self.assertEqual(item['background'], [
-            {'id': known['Parus cinereus'], 'scientific_name': 'Parus cinereus'},
-            {'id': unknown, 'scientific_name': 'Unknown bird'}])
-        self.assertEqual(saved, [(known['Horornis diphone'], 'present', 0), (known['Parus cinereus'], 'present', 1),
-                                 (unknown, 'present', 1)])
+        self.assertEqual(item['species'], {'id': known['Horornis diphone'], 'scientific_name': 'Horornis diphone', 'own': True})
+        self.assertEqual(item['background'], [{'id': known['Parus cinereus'], 'scientific_name': 'Parus cinereus', 'own': True}])
         self.assertTrue(item['others'])
+        self.hear('Horornis diphone', verdict='absent')
+        self.assertEqual(self.put().json()['species']['scientific_name'], 'Parus cinereus')
+        self.hear(None)
+        self.assertEqual(self.put().json()['species'], None)
+        self.hear('Horornis diphone'); self.hear('Parus cinereus')
+        item = self.put(sound_type='song', quality='A', others=True).json()
+        self.assertEqual((item['species']['scientific_name'], [b['scientific_name'] for b in item['background']]),
+                         ('Horornis diphone', ['Parus cinereus']))
         # The range that will be exported comes with each sound, so the list page plays exactly that.
         self.assertEqual((item['clip_start_s'], item['clip_end_s']), (0, 7.5))
         self.assertEqual(self.client.get('/explore/picked', params={'dataset': 1}).json()['items'], [item])
         invalid = self.put(start=5, end=5)
         self.assertEqual((invalid.status_code, invalid.json()), (422, {'detail': 'invalid_input'}))
-        foreign = {**{'dataset_id': 1, 'recording_id': 2, 'start_s': 0, 'end_s': 5,
-                      'species': None, 'background': [], 'sound_type': '', 'quality': '', 'others': False}}
+        foreign = {'dataset_id': 1, 'recording_id': 2, 'start_s': 0, 'end_s': 5, 'sound_type': '', 'quality': '', 'others': False}
         missing = self.client.put('/explore/picked', json=foreign)
         self.assertEqual((missing.status_code, missing.json()), (404, {'detail': 'not_found'}))
+        answers = lambda: [r['species']['scientific_name'] for r in self.client.get('/datasets/1/heard/sound', params={
+            'recording_id': 1, 'start_s': 0, 'end_s': 5}).json()['now'] if r['verdict'] == 'present']
+        before = answers()
         deleted = self.client.delete('/explore/picked', params={
             'dataset': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5})
         self.assertEqual(deleted.json(), {'deleted': True})
         self.assertEqual(self.client.delete('/explore/picked', params={
             'dataset': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5}).json(), {'deleted': False})
+        # Unticking takes back the species heard in the sound.
+        self.assertEqual((len(before), answers()), (2, []))
 
     def test_search_examples_of_one_species(self):
-        for start, end, species in ((3, 8, 'Horornis diphone'), (0, 5, 'Horornis diphone'),
-                                    (5, 10, 'Testus novus'), (10, 12, None)):
-            self.assertEqual(self.put(start, end, species=species).status_code, 200)
+        for start, end, species in ((3, 8, 'Horornis diphone'), (0, 5, 'Horornis diphone'), (10, 12, None)):
+            self.assertEqual(self.put(start, end).status_code, 200)
+            if species:
+                self.hear(species, start, end)
         search = lambda name: self.client.post('/explore/picked/search', json={'dataset_id': 1, 'species': name})
         found = search('Horornis diphone').json()
         with connect(self.root) as db:
@@ -149,17 +167,13 @@ class PickedCheck(unittest.TestCase):
         # The interval heard on the map, not the exported margin, as a reference to the site's recording.
         self.assertEqual([(c['source']['kind'], c['source']['id'], c['source']['seconds'], c['start_s'], c['end_s'])
                           for c in found['clips']], [('recording', 1, 12, 0, 5), ('recording', 1, 12, 3, 8)])
-        # A name missing from the species list is added once, not again on the next visit.
-        added = search('Testus novus').json()['species']['id']
-        self.assertEqual(search(' Testus novus ').json()['species']['id'], added)
         with connect(self.root) as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM species WHERE scientific_name='Testus novus'").fetchone()[0], 1)
             engine, model_sha = main_identity(self.root)
             db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(1,?,?)',
                        (known, json.dumps({'engine': engine, 'model_sha256': model_sha})))
         self.assertTrue(search('Horornis diphone').json()['search_exists'])
         self.assertEqual(search('Zosterops japonicus').status_code, 404)
-        self.assertEqual(self.client.post('/explore/picked/search', json={'dataset_id': 2, 'species': 'Testus novus'}).status_code, 404)
+        self.assertEqual(self.client.post('/explore/picked/search', json={'dataset_id': 2, 'species': 'Horornis diphone'}).status_code, 404)
 
     def test_export_zip_metadata_audio_manifest_and_errors(self):
         output = Path(self.temporary.name) / 'output'; output.mkdir()
@@ -168,19 +182,35 @@ class PickedCheck(unittest.TestCase):
         absent = self.client.post('/explore/picked/export', json={
             'dataset_id': 1, 'folder': str(output / 'missing')})
         self.assertEqual((absent.status_code, absent.json()), (400, {'detail': 'folder_missing'}))
-        self.assertEqual(self.put(species='Horornis diphone', background=['Parus cinereus', 'Zosterops japonicus'],
-                                  sound_type='call', quality='B', others=True).status_code, 200)
+        for name in ('Horornis diphone', 'Parus cinereus', 'Zosterops japonicus'):
+            self.hear(name)
+        self.assertEqual(self.put(sound_type='call', quality='B', others=True).status_code, 200)
+        # A ticked sound with no answer is exported as "unknown"; so is one with no bird sound.
+        self.assertEqual(self.put(5, 10).status_code, 200)
+        self.assertEqual(self.put(10, 12).status_code, 200)
+        answer = lambda start, end: self.client.post('/heard/map-answer', json={
+            'dataset_id': 1, 'recording_id': 1, 'start_s': start, 'end_s': end, 'verdict': 'complete'})
+        self.assertEqual(answer(10, 12).status_code, 200)
         response = self.client.post('/explore/picked/export', json={'dataset_id': 1, 'folder': str(output)})
         self.assertEqual(response.status_code, 200, response.text)
         path = Path(response.json()['path'])
-        self.assertEqual(response.json()['count'], 1)
+        self.assertEqual(response.json()['count'], 3)
         self.assertEqual([item.resolve() for item in output.glob('*.zip')], [path.resolve()])
+        # Nothing but the species heard: said in the remarks of the next export, and the "other species" mark gives way.
+        self.assertEqual(answer(0, 5).status_code, 200)
+        with zipfile.ZipFile(self.client.post('/explore/picked/export', json={'dataset_id': 1, 'folder': str(output / '..')}).json()['path']) as archive:
+            self.assertTrue(next(csv.DictReader(io.StringIO(archive.read('metadata.csv').decode('utf-8-sig'))))['remarks'].endswith(
+                'unchecked context. Nothing else was heard in the checked part.'))
+            self.assertEqual([item['complete'] for item in json.loads(archive.read('manifest.json'))['items']], [True, False, True])
         with zipfile.ZipFile(path) as archive:
             metadata_bytes = archive.read('metadata.csv')
             self.assertTrue(metadata_bytes.startswith(b'\xef\xbb\xbf'))
             reader = csv.DictReader(io.StringIO(metadata_bytes.decode('utf-8-sig')))
             self.assertEqual(tuple(reader.fieldnames), XC_FIELDS)
-            row = next(reader)
+            row, blank, none = reader
+            self.assertTrue(row['filename'].endswith('_Horornis_diphone.wav') and blank['filename'].endswith('_unknown.wav') and none['filename'].endswith('_unknown.wav'))
+            self.assertEqual((blank['genus'], blank['species'], blank['background species']), ('', '', ''))
+            self.assertTrue(none['remarks'].endswith(' No bird sound was heard in the checked part.'))
             self.assertEqual((row['recording date'], row['time of day']), ('2024-01-02', '00:30'))
             self.assertEqual((row['latitude'], row['longitude'], row['country'], row['location name']),
                              ('35.1234', '138.9877', 'Japan', 'Fuji'))

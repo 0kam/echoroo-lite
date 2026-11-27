@@ -8,7 +8,8 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,dayRange,fileName,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { fill,focusMissing,missingText,rangeQuery } from '$lib/workflow';
+  import { appHref,fill,focusMissing,missingText,pageQuery,rangeQuery,returnPath } from '$lib/workflow';
+  import HeardBox from '$lib/HeardBox.svelte';
   import AudioRegion,{type AudioSource} from '$lib/AudioRegion.svelte';
   import SpeciesPicker from '$lib/SpeciesPicker.svelte';
   import XenoCantoSearch from '$lib/XenoCantoSearch.svelte';
@@ -16,7 +17,7 @@
   import { createTask } from '$lib/ui/task.svelte';
   type Reference=AudioSource&{attribution?:{id:number;recordist:string;license:string}};
   type Clip={source:Reference;start_s:number;end_s:number};
-  const id=Number(page.params.id),query=new URL(page.url.hash.slice(1),page.url).searchParams;
+  const id=Number(page.params.id),query=pageQuery(page.url).params;
   const site=$derived(siteOf(datasetOf(id)));
   // Example calls belong to one species; choosing another species starts a new list.
   let species=$state<Species|null>(null),source=$state<Reference|null>(null),clips=$state<Clip[]>([]),clipsFor=$state('');
@@ -24,15 +25,32 @@
   let ready=$state(false);
   // Three ways here: a species the AI list lacks (from site results), a species page, or one species' sounds on the picked-sounds page (`picked`: its scientific name).
   const fromSpecies=query.get('species'),fromPicked=query.get('picked'),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','model_id'].includes(key)));
-  const back=fromPicked?{href:resolve(`/datasets/${id}/explore/picked`),label:'sBackPicked'}
+  // The species-AI page sends people here and takes them back.
+  const origin=returnPath(page.url,/^\/datasets\/\d+\/species\/[^/?#]+\/model(\?[^#]*)?$/);
+  const back=origin?{href:appHref(origin),label:'wReturn'}:fromPicked?{href:resolve(`/datasets/${id}/explore/picked`),label:'sBackPicked'}
     :fromSpecies?{href:`${resolve(`/datasets/${id}/species/${fromSpecies}`)}?${speciesState}`,label:'wBackSpecies'}
     :{href:`${resolve(`/datasets/${id}`)}${first&&last?`?${rangeQuery(first,last)}`:''}`,label:'uBackResults'};
   let alive=true;
   let xc=$state(true);
   // What the picked-sounds page handed over, for the notice in the species step.
-  let handed=$state<{id:string;name:string;n:number;exists:boolean}|null>(null);
+  let handed=$state<{id:string;name:string;n:number}|null>(null);
+  // A species that already has a search at this site: its examples join the list, and the search is made again in its place with what the list then holds.
+  let kept=$state<{id:string;clips:Clip[];missing:number}|null>(null);
+  // With a search already made, a sound the user checked by ear can be added as one more example (another call of the species).
+  type Heard={id:number;local_time:string;start_s:number;end_s:number;source:AudioSource};
+  let heardRows=$state<Heard[]>([]),heardOpen=$state<number[]>([]);
+  $effect(()=>{const chosen=keptHere?.id;heardRows=[];heardOpen=[];if(!chosen)return;
+    api<{rows:Heard[]}>(`/datasets/${id}/heard/records?species_id=${encodeURIComponent(chosen)}&verdict=present&limit=100`).then(value=>{if(keptHere?.id===chosen)heardRows=value.rows;},()=>{});});
+  const heardClip=(row:Heard):Clip=>({source:row.source,start_s:row.start_s,end_s:row.end_s});
+  const heardTime=(row:Heard)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(row.local_time));
+  const keptHere=$derived(kept&&kept.id===species?.id?kept:null),keptCount=$derived(keptHere?clips.filter(c=>keptHere.clips.some(k=>same(k,c))).length:0);
+  async function keep(chosen:string){if(kept?.id===chosen)return;kept=null;
+    const got=await api<{exists:boolean;clips:Clip[];missing:number}>(`/datasets/${id}/species/${encodeURIComponent(chosen)}/search-examples`).catch(()=>null);
+    if(!got?.exists||species?.id!==chosen)return;
+    clips=[...got.clips,...clips.filter(c=>!got.clips.some(k=>same(k,c)))].slice(0,20);kept={id:chosen,clips:got.clips,missing:got.missing};}
   onDestroy(()=>{alive=false;});
   $effect(()=>{const chosen=species?.id??'';untrack(()=>{if(ready&&chosen!==clipsFor){clips=[];clipsFor=chosen;if(!chosen)source=null;}});});
+  $effect(()=>{const chosen=species?.id;if(ready&&chosen)untrack(()=>void keep(chosen));});
   $effect(()=>{if(ready)saveDraft();});
   const valid=$derived(!!source&&Number.isFinite(start)&&Number.isFinite(end)&&end-start>=.2-1e-9&&end-start<=30&&start>=0&&end<=source.seconds);
   // A press with missing input marks what is missing instead of running (no example yet, an unusable part, or no file path).
@@ -51,13 +69,15 @@
     chooseReference(await api<Reference>('/references',{path:referencePath}));xc=false;
   },{toast:true});
   const search=createTask(async()=>{addClip();if(!species||!clips.length)return;
-    await api('/search-runs',{dataset_id:id,species_id:species.id,start_date:first||null,end_date:last||null,
+    await api('/search-runs',{dataset_id:id,species_id:species.id,start_date:first||null,end_date:last||null,replace:!!keptHere,
       clips:clips.map(c=>({source_kind:c.source.kind,source_id:c.source.id,start_s:c.start_s,end_s:c.end_s}))});
     if(!alive)return;
     const found=species;
+    // The species-AI page says the examples were added and shows the next sounds.
+    if(origin)sessionStorage.setItem('echoroo-examples-added',found.id);
     clips=[];clipsFor='';species=null;source=null;localStorage.removeItem(`echoroo-search-${id}`);ready=false;
     // Next: listen to the search results and confirm the species.
-    await goto(`${resolve(`/datasets/${id}/species/${found.id}/presence`)}?${first&&last?`${rangeQuery(first,last)}&`:''}source=search`);
+    await goto(origin?appHref(origin):`${resolve(`/datasets/${id}/species/${found.id}/presence`)}?${first&&last?`${rangeQuery(first,last)}&`:''}source=search`);
   });
   const stopOperation=createTask(async()=>{await api('/operations/cancel',{});});
   onMount(()=>{void(async()=>{try{
@@ -72,7 +92,7 @@
     if(fromPicked){const got=await api<{species:Species;search_exists:boolean;clips:Clip[]}>('/explore/picked/search',{dataset_id:id,species:fromPicked});
       const kept=clipsFor===got.species.id?clips:[];
       clips=[...kept,...got.clips.filter(c=>!kept.some(k=>same(k,c)))].slice(0,20);species=got.species;clipsFor=got.species.id;source=null;
-      handed={id:got.species.id,name:commonName(got.species,app.locale)||got.species.scientific_name,n:got.clips.length,exists:got.search_exists};}
+      handed={id:got.species.id,name:commonName(got.species,app.locale)||got.species.scientific_name,n:got.clips.length};}
   }catch(e){error=e instanceof Error?e.message:'unknown_error';}})();});
 </script>
 <div class="page search-page"><div class="crumbs"><a href={back.href}>{t(back.label)}</a></div>
@@ -81,9 +101,17 @@
   <!-- Same numbered steps as adding recordings: species, example calls, search. -->
   <div class="steps">
   <section class="panel step-card"><h2>{t('sSearchStepSpecies')}</h2><SpeciesPicker bind:value={species} disabled={search.pending}/>
-    {#if handed&&species?.id===handed.id}{#if handed.exists}<p class="notice">{t('sPickedExists')} <a href={resolve(`/datasets/${id}/species/${handed.id}`)}>{t('wOpenSpecies')}</a></p>
-      {:else}<p class="info">{fill('sPickedAdded',{species:handed.name,n:handed.n})}</p>{/if}{/if}</section>
+    {#if handed&&species?.id===handed.id}<p class="info">{fill('sPickedAdded',{species:handed.name,n:handed.n})}</p>{/if}</section>
   {#if species}
+    <!-- Sounds of this species already checked by ear can be the examples, without choosing a file (its own search is for a species without one). -->
+    {#if site&&!keptHere}{#key species.id}<HeardBox datasetId={id} speciesId={species.id} timezone={site.timezone} hasSearch={false} range={first&&last?rangeQuery(first,last):''} searchHref=""
+      resultsHref={origin?appHref(origin):`${resolve(`/datasets/${id}/species/${species.id}/presence`)}?${first&&last?`${rangeQuery(first,last)}&`:''}source=search`}/>{/key}{/if}
+    {#if keptHere&&heardRows.length}<section class="panel step-card"><h2>{t('sHeardAddTitle')}</h2><p>{t('sHeardAddText')}</p>
+      <ul class="heard-add">{#each heardRows as row (row.id)}{@const clip=heardClip(row)}{@const inList=clips.some(c=>same(c,clip))}<li>
+        <div class="heard-add-head"><span>{heardTime(row)}</span>
+          <span class="actions"><Button size="sm" aria-expanded={heardOpen.includes(row.id)} onclick={()=>heardOpen=heardOpen.includes(row.id)?heardOpen.filter(n=>n!==row.id):[...heardOpen,row.id]}>{t('hdListen')}</Button>
+            <Button size="sm" disabled={search.pending||inList||clips.length>=20} onclick={()=>{clips=[...clips,clip];saveDraft();}}>{t(inList?'sHeardAdded':'sHeardAdd')}</Button></span></div>
+        {#if heardOpen.includes(row.id)}<AudioRegion source={row.source} fixedRange compact autoplay start={row.start_s} end={row.end_s}/>{/if}</li>{/each}</ul></section>{/if}
     <section class="panel step-card"><h2>{t('wSource')}</h2>{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
       <Button active={!xc&&!!source} pending={addReference.pending} disabled={search.pending} onclick={()=>{xc=false;if(!isTauri()&&!referencePath.trim())showMissing(true);else addReference.run();}}>{t('referenceFromFile')}</Button></div>
       {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending} aria-invalid={noPath||undefined} aria-describedby={noPath?'path-error':undefined}/></label>
@@ -94,7 +122,10 @@
         {#if source.attribution}<p class="muted">XC{source.attribution.id} · {source.attribution.recordist} · {source.attribution.license}</p>{/if}</div>{/key}
         <Button variant="primary" disabled={search.pending||clips.length>=20} onclick={()=>{if(!valid)showMissing();else{addClip();source=null;}}}>{t('addQueryClip')}</Button>
       {/if}
-      {#if clips.length}<h3>{t('wQueriesAdded')}</h3><div class="added-clips">{#each clips as clip,index}<div class="actions"><Button disabled={search.pending} onclick={()=>{source=clip.source;start=clip.start_s;end=clip.end_s;}}>{fileName(clip.source.path)} · {clip.start_s.toFixed(1)}–{clip.end_s.toFixed(1)} {t('seconds')}</Button><Button disabled={search.pending} aria-label={`${t('removeReference')}: ${fileName(clip.source.path)}`} onclick={()=>{clips.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div>{/each}</div>{/if}
+      {#if clips.length||keptHere?.missing}<h3>{t('wQueriesAdded')}</h3>
+        {#if keptCount}<p class="info" role="status">{fill('sKeptExamples',{n:keptCount})}</p>{/if}
+        {#if keptHere?.missing}<p class="muted">{fill('sKeptMissing',{n:keptHere.missing})}</p>{/if}
+        <div class="added-clips">{#each clips as clip,index}<div class="actions"><Button disabled={search.pending} onclick={()=>{source=clip.source;start=clip.start_s;end=clip.end_s;}}>{fileName(clip.source.path)} · {clip.start_s.toFixed(1)}–{clip.end_s.toFixed(1)} {t('seconds')}</Button><Button disabled={search.pending} aria-label={`${t('removeReference')}: ${fileName(clip.source.path)}`} onclick={()=>{clips.splice(index,1);saveDraft();}}>{t('removeReference')}</Button></div>{/each}</div>{/if}
     </section>
     <section class="panel step-card"><h2>{t('sSearchStepRun')}</h2><p class="muted">{#if first&&last}{dayRange(first,last)} · {/if} {t('wAutoSaved')}</p>
       {#if search.pending}<p class="muted" role="status">{t('searchingAudioStatus')}</p>{/if}
@@ -105,4 +136,5 @@
   {/if}
   </div>
 </div>
-<style>h2{margin-bottom:16px}h3{margin:24px 0 8px}.reference-player{margin:24px 0}.actions{margin-bottom:16px}</style>
+<style>h2{margin-bottom:16px}h3{margin:24px 0 8px}.reference-player{margin:24px 0}.actions{margin-bottom:16px}
+  .heard-add{margin:0;padding:0;list-style:none;max-height:420px;overflow-y:auto}.heard-add li{padding:8px 0;border-top:1px solid rgb(var(--stone-300))}.heard-add-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}</style>

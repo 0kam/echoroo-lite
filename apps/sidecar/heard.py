@@ -8,7 +8,8 @@ screen with `incidental` set.
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from labels import LATEST, no_bird, put, put_no_bird, ref
+import test_sounds
+from labels import LATEST, no_bird, put, put_no_bird, ref, set_complete, take_back
 from reports import window_key
 from species import list_species, names_for, _kana
 from storage import CatalogError, connect
@@ -83,12 +84,13 @@ def _ai(root, dataset_id, species_ids):
     models = {model['species']['id']: model for model in list_models(root, ctx)}
     status = material_status(root, ctx, [s for s in species_ids if s not in models])
     return {taxon: {'state': 'made', 'round': models[taxon]['round'], 'usable': models[taxon]['applicable']} if taxon in models
-            else {'state': 'ready' if not status[taxon]['needed'] else 'needed', 'needed': status[taxon]['needed']}
+            else {'state': 'ready' if not status[taxon]['needed'] else 'needed', 'needed': status[taxon]['needed'],
+                  'material': status[taxon]['positive'] + status[taxon]['negative']}
             for taxon in species_ids}
 
 
-def _public(row, taxa, zone, test=()):
-    return {'id': row['id'], 'test': (row['taxon_id'], row['recording_id']) in test, 'species': taxa[row['taxon_id']], 'verdict': row['verdict'], 'screen': row['source'],
+def _public(row, taxa, zone, test=lambda row: False):
+    return {'id': row['id'], 'test': test(row), 'species': taxa[row['taxon_id']], 'verdict': row['verdict'], 'screen': row['source'],
             'extra': bool(row['incidental']), 'recording_id': row['recording_id'], 'start_s': row['start_s'], 'end_s': row['end_s'],
             'created_at': row['created_at'], 'local_time': window_key(row, row['start_s'], zone)[1],
             'source': {'id': row['recording_id'], 'kind': 'recording', 'path': row['path'], 'seconds': row['seconds']}}
@@ -99,8 +101,7 @@ def records(root, dataset_id, species_id=None, verdict=None, screen=None, day=No
     with connect(root) as db:
         site = _site(db, dataset_id)
         zone, taxa = ZoneInfo(site['timezone']), _taxa(db)
-        # Test sounds (`test_sounds`): every answer of the species in a recording set aside for it.
-        test = {(r[0], r[1]) for r in db.execute('SELECT species_id,recording_id FROM test_recordings WHERE site_id=?', (site['id'],))}
+        test = test_sounds.marker(db, site['id'])
         rows = [_public(row, taxa, zone, test) for row in _current(db, dataset_id)]
     options = {'species': sorted({row['species']['id']: row['species'] for row in rows}.values(), key=lambda s: s['scientific_name']),
                'screens': sorted({row['screen'] for row in rows}), 'days': sorted({row['local_time'][:10] for row in rows})}
@@ -123,7 +124,7 @@ def sound(root, dataset_id, recording_id, start_s, end_s, blank=False):
         rows = [dict(r) for r in db.execute('''SELECT l.*,r.path,r.seconds,r.recorded_at FROM labels l JOIN recordings r ON r.id=l.recording_id
             WHERE l.recording_id=? AND l.start_s=? AND l.end_s=? AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
             ORDER BY l.id DESC''', (recording_id, start_s, end_s, dataset_id))]
-        test = {(r[0], r[1]) for r in db.execute('SELECT species_id,recording_id FROM test_recordings WHERE site_id=?', (site['id'],))}
+        test = test_sounds.marker(db, site['id'])
     if not rows:
         if blank:
             return {'now': [], 'history': []}
@@ -178,6 +179,9 @@ def fix(root, body):
                 _heard(db, other, piece, {'with': taxon}, True)
             elif body.action == 'no_bird':
                 checks += sum(refresh(root, db, heard, *piece) for heard in put_no_bird(db, *piece, 'review') if heard != taxon)
+                if row['verdict'] != 'present':
+                    # "Not heard" or "cannot tell" now follows from "no bird sound" too, as "heard" does: one row in the list.
+                    put(db, taxon, *piece, 'absent', 'review', {'was': row['verdict'], 'screen': row['source'], 'auto': no_bird(db)}, history=True)
             elif taxon == no_bird(db):
                 _heard(db, other, piece, {})  # `put` takes "no bird sound" back
             else:
@@ -247,9 +251,12 @@ def set_other(root, body):
 
 
 def map_answer(root, body):
-    """An answer given on the sound map about one sound: `species_id` was heard in it, was not, or cannot be told;
-    or (`verdict` 'no_bird', no species) there is no bird sound in it.
-    Kept beside the answers of other screens (newest wins), and apart from the sounds ticked for export."""
+    """What the sound map records on one sound. About `species_id`: it was heard in it, was not, cannot be told, or
+    ('withdraw') the map's own "heard" there is taken back. About the sound, with no species: 'complete' (nothing
+    calls in it but the species heard; "no bird sound" when none is), 'incomplete' (the map's own such mark is taken
+    back) or 'no_bird' (no bird sound: every species heard becomes "not heard"). Kept beside the answers of other
+    screens (newest wins) and taken back without touching them (`labels.take_back`), and apart from the sounds ticked
+    for export."""
     from validation import refresh
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
@@ -258,14 +265,21 @@ def map_answer(root, body):
         if body.verdict == 'no_bird':
             for heard in put_no_bird(db, *sound_, 'sound_map', {'answer': True}):
                 refresh(root, db, heard, *sound_)
+        elif body.verdict == 'complete':
+            set_complete(db, *sound_, 'sound_map')
+        elif body.species_id is None:
+            take_back(db, *sound_, 'sound_map', [], marks=True)
         else:
             found = db.execute("SELECT COALESCE(accepted_id,id) FROM species WHERE id=? AND rank<>'none'", (body.species_id,)).fetchone()
             if found is None:
                 raise CatalogError('invalid_input')
-            put(db, found[0], *sound_, body.verdict, 'sound_map', {'answer': True}, history=True)
+            if body.verdict == 'withdraw':
+                take_back(db, *sound_, 'sound_map', [found[0]])
+            else:
+                put(db, found[0], *sound_, body.verdict, 'sound_map', {'answer': True}, history=True)
             refresh(root, db, found[0], *sound_)
         db.execute('DELETE FROM workflow_cache')
-    return sound(root, body.dataset_id, body.recording_id, body.start_s, body.end_s)
+    return sound(root, body.dataset_id, body.recording_id, body.start_s, body.end_s, blank=True)
 
 
 def pick_species(root, query, dataset_id=None):

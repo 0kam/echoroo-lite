@@ -1,6 +1,7 @@
 import { resolve } from '$app/paths';
 import type { AudioSource } from './AudioRegion.svelte';
 import type { Species } from './species';
+import { pageQuery } from './workflow';
 export type QuizClip = { id: number; reference_id: number; species_id: string; species: Species; seconds: number;
   enabled: number; source: AudioSource; metadata: { audio_file?: string; note: string;
     source: string; sound_type: string; label_source: string; original_source?: AudioSource;
@@ -15,15 +16,13 @@ export type QuizSession = {id: number; count: number; answered: number; complete
   clip_ids: number[]; requested_count: number};
 
 export function quizContext(url: URL) {
-  const params = new URL(url.hash.slice(1) || url.pathname + url.search, url).searchParams;
-  const candidate = params.get('return') ?? '';
+  const { params, back: candidate } = pageQuery(url);
   const returnPath = /^\/datasets\/\d+\/(species\/[a-zA-Z0-9-]+(?:\/presence)?|validation\/\d+)(\?[^#]*)?$/.test(candidate) ? candidate : '';
   const species = params.get('species') ?? '';
-  const query = new URLSearchParams();
-  if (returnPath) query.set('return', returnPath);
-  if (species) query.set('species', species);
+  // `return` last (`pageQuery`).
+  const query = [species && `species=${encodeURIComponent(species)}`, returnPath && `return=${encodeURIComponent(returnPath)}`].filter(Boolean).join('&');
   // One link straight back to the work the quiz was opened from, named after it.
   const back = returnPath ? `${resolve('/datasets')}${returnPath.slice('/datasets'.length)}` : '';
   const backLabel = returnPath.includes('/validation/') ? 'qBackCheck' : returnPath.includes('/presence') ? 'qBackListen' : 'wBackSpecies';
-  return { returnPath, species, query: query.toString(), back, backLabel };
+  return { returnPath, species, query, back, backLabel };
 }

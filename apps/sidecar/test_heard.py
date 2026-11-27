@@ -163,6 +163,129 @@ class HeardTest(unittest.TestCase):
             self.assertEqual(client.post('/heard/fix', json=dict(dataset_id=1, ids=[none['id']], action='absent')).status_code, 400)
             client.post('/heard/fix', json=dict(dataset_id=1, ids=[none['id']], action='other', species_id=warbler))
             self.assertEqual(listed(), [('Horornis diphone', 'present', 'review', 0), ('Parus cinereus', 'absent', 'training', 0), ('Parus cinereus', 'present', 'sound_map', 5)])
+            # A "not heard" answer put right to "no bird sound" leaves the list too, as a "heard" one does: one row for the sound.
+            row = next(r for r in client.get('/datasets/1/heard/records', params={'species_id': tit}).json()['rows'] if r['verdict'] == 'absent')
+            client.post('/heard/fix', json=dict(dataset_id=1, ids=[row['id']], action='no_bird'))
+            self.assertEqual(listed(), [('Parus cinereus', 'present', 'sound_map', 5), ('none', 'present', 'review', 0)])
+            self.assertEqual(examples(tit), {'positive_5s': 1, 'negative_5s': 1, 'other_answers': 2, 'no_bird_answers': 0})
+
+    def test_a_complete_sound_is_no_call_for_every_species_not_heard_in_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            client = self.site(temp)
+            warbler, tit, bulbul = (self.species(client, name) for name in ('Horornis diphone', 'Parus cinereus', 'Hypsipetes amaurotis'))
+            at = dict(recording_id=1, start_s=0, end_s=5)
+            answer = lambda verdict, species=None: client.post('/heard/map-answer', json=dict(dataset_id=1, verdict=verdict, **at, **({'species_id': species} if species else {})))
+            examples = lambda species: client.get(f'/datasets/1/species/{species}/custom-model').json()['examples']
+            listed = lambda: sorted((r['species'].get('rank', r['species']['scientific_name']), r['verdict']) for r in client.get('/datasets/1/heard/records').json()['rows'])
+            pick = lambda: client.put('/explore/picked', json=dict(dataset_id=1, **at, sound_type='', quality='', others=False)).json()
+            shape = lambda: (lambda p: ([s['scientific_name'] for s in [p['species'], *p['background']] if s], p['complete']))(pick())
+            answer('present', warbler)
+            self.assertEqual((shape(), examples(tit)['negative_5s']), ((['Horornis diphone'], False), 0))
+            # Complete with one species: "no call" for another species, not for the one heard; one row in the list.
+            self.assertEqual(answer('complete').status_code, 200)
+            self.assertEqual(shape(), (['Horornis diphone'], True))
+            self.assertEqual(examples(tit), {'positive_5s': 0, 'negative_5s': 1, 'other_answers': 0, 'no_bird_answers': 1})
+            self.assertEqual(examples(warbler), {'positive_5s': 1, 'negative_5s': 0, 'other_answers': 1, 'no_bird_answers': 0})
+            self.assertEqual(listed(), [('Horornis diphone', 'present')])
+            # A species added later is heard there, not "no call"; the sound stays complete for the rest.
+            answer('present', tit)
+            self.assertEqual((shape(), examples(tit)['negative_5s'], examples(bulbul)['negative_5s']), ((['Horornis diphone', 'Parus cinereus'], True), 0, 1))
+            # Taken back: no "no call" from it any more.
+            answer('incomplete')
+            self.assertEqual((shape()[1], examples(bulbul)['negative_5s'], listed()), (False, 0, [('Horornis diphone', 'present'), ('Parus cinereus', 'present')]))
+            # The last species withdrawn from a complete sound leaves "no bird sound"; a species heard takes that back, as on every screen.
+            answer('complete'); answer('withdraw', warbler); answer('withdraw', tit)
+            self.assertEqual((shape(), listed(), examples(tit)['no_bird_answers']), (([], True), [('none', 'present')], 1))
+            answer('present', bulbul)
+            self.assertEqual((shape(), listed(), examples(tit)['negative_5s']), ((['Hypsipetes amaurotis'], False), [('Hypsipetes amaurotis', 'present')], 0))
+            # With nothing heard, "complete" is "no bird sound", and taking it back leaves nothing.
+            answer('withdraw', bulbul); answer('incomplete')
+            self.assertEqual((shape(), listed(), examples(tit)['negative_5s']), (([], False), [], 0))
+            answer('complete')
+            self.assertEqual((listed(), answer('complete', tit).status_code, answer('withdraw').status_code), ([('none', 'present')], 422, 422))
+            # Unticking the sound takes back what was recorded on it: the species heard, the mark and the pick. Another
+            # sound, and a "not heard" given on another screen, stay.
+            other = dict(dataset_id=1, recording_id=1, start_s=5, end_s=10)
+            client.put('/explore/picked', json=dict(**other, sound_type='', quality='', others=False))
+            client.post('/heard/map-answer', json=dict(**other, verdict='present', species_id=tit))
+            client.post('/heard/map-answer', json=dict(**other, verdict='complete'))
+            with connect(self.data) as db:
+                labels.put(db, bulbul, 1, 0, 5, 'absent', 'training')
+            answer('withdraw', tit); answer('present', warbler); answer('complete'); pick()
+            self.assertEqual((examples(tit)['negative_5s'], examples(warbler)['negative_5s'], examples(bulbul)['negative_5s']), (1, 1, 2))
+            self.assertEqual(client.delete('/explore/picked', params=dict(dataset=1, **at)).json(), {'deleted': True})
+            self.assertEqual(listed(), [('Hypsipetes amaurotis', 'absent'), ('Parus cinereus', 'present')])
+            self.assertEqual((examples(tit)['negative_5s'], examples(warbler), examples(bulbul)['negative_5s']),
+                             (0, {'positive_5s': 0, 'negative_5s': 1, 'other_answers': 0, 'no_bird_answers': 1}, 2))
+            with connect(self.data) as db:
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM labels WHERE start_s=0 AND taxon_id<>?', (bulbul,)).fetchone()[0], 0)
+            items = client.get('/explore/picked', params={'dataset': 1}).json()['items']
+            self.assertEqual([(i['start_s'], i['species']['scientific_name'], i['complete']) for i in items], [(5, 'Parus cinereus', True)])
+            self.assertEqual(shape(), ([], False))
+            answer('complete')
+            # The species entered last on the map come first.
+            answer('present', tit); answer('present', warbler)
+            self.assertEqual([s['scientific_name'] for s in client.get('/explore/picked', params={'dataset': 1}).json()['recent']], ['Horornis diphone', 'Parus cinereus'])
+
+    def test_the_sound_map_takes_back_only_what_it_recorded(self):
+        with tempfile.TemporaryDirectory() as temp:
+            client = self.site(temp)
+            warbler, tit, bulbul = (self.species(client, name) for name in ('Horornis diphone', 'Parus cinereus', 'Hypsipetes amaurotis'))
+            at, later = dict(recording_id=1, start_s=0, end_s=5), dict(recording_id=1, start_s=5, end_s=10)
+            answer = lambda verdict, species=None, where=at: self.assertEqual(client.post('/heard/map-answer', json=dict(
+                dataset_id=1, verdict=verdict, **where, **({'species_id': species} if species else {}))).status_code, 200)
+            pick = lambda where=at: client.put('/explore/picked', json=dict(dataset_id=1, **where, sound_type='', quality='B', others=False)).json()
+            unpick = lambda where=at: self.assertEqual(client.delete('/explore/picked', params=dict(dataset=1, **where)).json(), {'deleted': True})
+            listed = lambda: sorted((r['species'].get('rank', r['species']['scientific_name']), r['verdict'], r['screen'], r['start_s'])
+                                    for r in client.get('/datasets/1/heard/records').json()['rows'])
+            models = lambda: [client.get(f'/datasets/1/species/{s}/custom-model').json() for s in (warbler, tit, bulbul)]
+            with connect(self.data) as db:
+                # Other screens' answers: a check and the species-AI page (whose recording is a test recording), and "no bird sound".
+                labels.put(db, tit, 1, 0, 5, 'present', 'validation')
+                labels.put(db, warbler, 1, 0, 5, 'absent', 'training')
+                db.execute('INSERT INTO test_recordings(site_id,species_id,recording_id) VALUES(1,?,1)', (warbler,))
+                labels.put_no_bird(db, 1, 5, 10, 'rollup_fix')
+                rows = lambda: [tuple(r) for r in db.execute('SELECT * FROM labels ORDER BY id')]
+                tests = lambda: [tuple(r) for r in db.execute('SELECT * FROM test_recordings')]
+                before = (rows(), tests())
+            state = (listed(), models())
+            self.assertEqual(listed(), [('Horornis diphone', 'absent', 'training', 0), ('Parus cinereus', 'present', 'validation', 0), ('none', 'present', 'rollup_fix', 5)])
+            # The form shows another screen's species apart from its own; the same species pressed here is the map's own record.
+            item = pick()
+            self.assertEqual(([(s['scientific_name'], s['own']) for s in [item['species'], *item['background']]], item['complete'], item['no_bird']),
+                             ([('Parus cinereus', False)], False, False))
+            # A species chosen on the map is the pick's species, ahead of an earlier answer from another screen.
+            answer('present', bulbul)
+            item = pick()
+            self.assertEqual([s['scientific_name'] for s in [item['species'], *item['background']]], ['Hypsipetes amaurotis', 'Parus cinereus'])
+            answer('present', tit); answer('present', warbler); answer('complete')
+            item = pick()
+            self.assertEqual(([s['own'] for s in [item['species'], *item['background']]], item['complete']), ([True, True, True], True))
+            # The newest answer is the current one, whatever its screen: the map's "heard" over the page's "not heard".
+            self.assertEqual(listed()[:3], [('Horornis diphone', 'present', 'sound_map', 0), ('Hypsipetes amaurotis', 'present', 'sound_map', 0), ('Parus cinereus', 'present', 'sound_map', 0)])
+            # One chip taken back: the answer underneath is current again.
+            answer('withdraw', tit); answer('withdraw', warbler)
+            self.assertEqual(listed(), [('Horornis diphone', 'absent', 'training', 0), ('Hypsipetes amaurotis', 'present', 'sound_map', 0),
+                                        ('Parus cinereus', 'present', 'validation', 0), ('none', 'present', 'rollup_fix', 5)])
+            item = pick()
+            self.assertEqual(([(s['scientific_name'], s['own']) for s in [item['species'], *item['background']]], item['complete']),
+                             ([('Hypsipetes amaurotis', True), ('Parus cinereus', False)], True))
+            # A species the map hears where another screen recorded "no bird sound" takes that back, as on every screen;
+            # the map's own "no bird sound" there is a row of its own.
+            answer('present', bulbul, later)
+            self.assertNotIn(('none', 'present', 'rollup_fix', 5), listed())
+            answer('withdraw', bulbul, later)
+            self.assertEqual((pick(later)['no_bird'], pick(later)['complete']), (True, False))
+            answer('complete', where=later)
+            self.assertEqual((pick(later)['complete'], ('none', 'present', 'sound_map', 5) in listed()), (True, True))
+            answer('present', warbler, later)
+            # Unticking: the pick and the map's own records go; every other screen's answer, the test recordings and
+            # the material of each species are exactly as before the map touched the sounds.
+            unpick(); unpick(later)
+            with connect(self.data) as db:
+                self.assertEqual((rows(), tests()), before)
+            self.assertEqual((listed(), models()), state)
+            self.assertEqual(client.get('/explore/picked', params={'dataset': 1}).json()['items'], [])
 
     def test_another_species_is_added_on_a_question_card_and_taken_back(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -195,11 +318,13 @@ class HeardTest(unittest.TestCase):
             answer = lambda verdict: client.post('/heard/map-answer', json=dict(dataset_id=1, species_id=warbler, verdict=verdict, **at))
             self.assertEqual([(r['verdict'], r['screen']) for r in answer('absent').json()['now']], [('absent', 'sound_map')])
             self.assertEqual([r['verdict'] for r in answer('present').json()['now']], ['present'])
-            pick = dict(dataset_id=1, **at, species=None, background=[], sound_type='', quality='', others=False)
+            # The ticked sound takes its species from the answer; unticking takes the map's "heard" back with it, and the
+            # answer under it is current again.
+            pick = dict(dataset_id=1, **at, sound_type='', quality='', others=False)
             saved = client.put('/explore/picked', json=pick)
-            self.assertEqual((saved.status_code, saved.json()['species']), (200, None))
+            self.assertEqual((saved.status_code, saved.json()['species']['scientific_name']), (200, 'Horornis diphone'))
             self.assertEqual(client.request('DELETE', '/explore/picked', params=dict(dataset=1, **at)).status_code, 200)
-            self.assertEqual([r['verdict'] for r in client.get('/datasets/1/heard/sound', params=at).json()['now']], ['present'])
+            self.assertEqual([r['verdict'] for r in client.get('/datasets/1/heard/sound', params=at).json()['now']], ['absent'])
             self.assertEqual(answer('maybe').status_code, 422)
 
     def test_examples_for_a_search_avoid_mixed_sounds_and_spread_over_days(self):

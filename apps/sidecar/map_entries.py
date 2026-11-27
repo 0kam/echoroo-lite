@@ -111,8 +111,27 @@ def _found(points, nodes, answers, targets, species_id=None):
             'targets': np.flatnonzero(targets).tolist(), 'marks': marks}
 
 
+def _species_ai(root, dataset_id, points):
+    """The sounds each species AI grown at the site detected its species in, as the site page's table counts them
+    (the newest usable AI of a species, at the threshold decided by its check, else its default):
+    {scientific name: positions}."""
+    from custom_models import list_models, score_windows
+    from results_workflow import context, custom_snapshot
+    found, at = {}, {p['segment_id']: p['position'] for p in points}
+    try:
+        ctx = context(root, dataset_id)
+        for model in list_models(root, ctx):
+            threshold = custom_snapshot(root, ctx, model)['threshold'] if model['applicable'] else None
+            if threshold is not None:
+                found[model['species']['scientific_name']] = [at[w['segment_id']] for w in score_windows(root, model['id'])
+                                                              if w['score'] >= threshold and w['segment_id'] in at]
+    except CatalogError:
+        pass  # The main AI's detections still stand.
+    return found
+
+
 def by_species(root, dataset_id, species_id):
-    """Entry A: the groups where the AI detected the species."""
+    """Entry A: the groups where an AI (the main one, or a species AI grown at the site) detected the species."""
     _, _, _, run = _current_run(root, dataset_id)
     if run is None:
         raise CatalogError('not_found')
@@ -140,14 +159,17 @@ def by_species(root, dataset_id, species_id):
             position = at.get((row['analysis_id'], round(row['start_s'], 3)))
             if position is not None and mine(canonical_scientific_name(row['engine'], row['top_label']) or ''):
                 detected[position] = True
+    for grown, positions in _species_ai(root, dataset_id, points).items():
+        if mine(grown):
+            detected[positions] = True
     answers = {position: [(species_id if t == species_id or mine(names.get(t, '')) else t, verdict) for t, verdict in found]
                for position, found in answers.items()}
     return {'species': names_for(taxon), **_found(points, nodes, answers, detected, species_id)}
 
 
 def detections(root, dataset_id, taxa):
-    """How many of the map's sounds the AI detected each taxon in, by the rule of `by_species` (a point candidate or
-    a roll-up's first answer at the display threshold; a family counts its species): {scientific name: sounds}.
+    """How many of the map's sounds an AI detected each taxon in, by the rule of `by_species` (a point candidate or
+    a roll-up's first answer at the display threshold, or a species AI's detection; a family counts its species): {scientific name: sounds}.
     `taxa`: (scientific name, rank) pairs. Empty when the site has no map yet."""
     from taxa import family_of
     try:
@@ -173,6 +195,9 @@ def detections(root, dataset_id, taxa):
             position, name = at.get((row['analysis_id'], round(row['start_s'], 3))), canonical_scientific_name(row['engine'], row['top_label']) or ''
             if position is not None and hit(name):
                 found.setdefault(position, set()).update(hit(name))
+    for name, positions in _species_ai(root, dataset_id, points).items():
+        for position in positions if hit(name) else ():
+            found.setdefault(position, set()).update(hit(name))
     counts = dict.fromkeys(species | families, 0)
     for names in found.values():
         for name in names:

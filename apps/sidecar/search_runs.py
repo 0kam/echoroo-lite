@@ -1,6 +1,7 @@
 """One saved multi-reference search per species and site; deleting it removes what was built on it."""
 import json
 import secrets
+from datetime import date
 
 import numpy as np
 
@@ -30,10 +31,14 @@ def create_run(root, models, body, cancel=None):
         species = db.execute('SELECT * FROM species WHERE id=?', (body.species_id,)).fetchone()
         if dataset is None or species is None:
             raise CatalogError('not_found')
-        if site_run(db, dataset['site_id'], body.species_id):
+        old = site_run(db, dataset['site_id'], body.species_id)
+        if old and not body.replace:
             raise CatalogError('search_exists')
+        # A search made again (with more examples) covers the days the earlier one did, whatever the page shows now.
+        first, last = [date.fromisoformat(day) if day else None for day in (json.loads(old['snapshot']).get(key) for key in ('start_date', 'end_date'))] \
+            if old else (body.start_date, body.end_date)
         site = db.execute('SELECT * FROM sites WHERE id=?', (dataset['site_id'],)).fetchone()
-        compatible, total = search_context(db, body.dataset_id, loaded[1], body.start_date, body.end_date, engine)
+        compatible, total = search_context(db, body.dataset_id, loaded[1], first, last, engine)
         if not compatible:
             raise CatalogError('no_search_embeddings')
         for row in compatible:
@@ -56,8 +61,8 @@ def create_run(root, models, body, cancel=None):
         queries = np.stack(vectors)
         queries /= np.linalg.norm(queries, axis=1, keepdims=True)
         snapshot = {'group': secrets.token_hex(16), 'species': names_for(species), 'dataset': dict(dataset), 'site': dict(site),
-                    'start_date': body.start_date.isoformat() if body.start_date else None,
-                    'end_date': body.end_date.isoformat() if body.end_date else None, 'date_scope': 'recording_start_local',
+                    'start_date': first.isoformat() if first else None,
+                    'end_date': last.isoformat() if last else None, 'date_scope': 'recording_start_local',
                     'engine': engine, 'model_sha256': loaded[1], 'aggregation': 'maximum_cosine', 'references': references,
                     'analysis_ids': [r['analysis_id'] for r in compatible], **coverage}
         run_id = db.execute('INSERT INTO search_runs(dataset_id,species_id,snapshot) VALUES(?,?,?)',
@@ -84,7 +89,36 @@ def create_run(root, models, body, cancel=None):
             checked_source(row)
         for ref in references:
             checked_source(ref['source'])
+        if old:
+            # What was built on the earlier search moves to this one (its marks, the species AI last made with it),
+            # so no answer is lost; then the earlier search goes. A stopped or failed search leaves everything as it was.
+            db.execute("""UPDATE labels SET source_ref=json_set(source_ref,'$.run_id',?) WHERE source='species_mark'
+                AND json_extract(source_ref,'$.run_id')=?""", (run_id, old['id']))
+            db.execute("UPDATE custom_models SET run_id=?,snapshot=json_set(snapshot,'$.run_id',?) WHERE run_id=?", (run_id, run_id, old['id']))
+            db.execute('DELETE FROM search_hits WHERE run_id=?', (old['id'],))
+            db.execute('DELETE FROM search_runs WHERE id=?', (old['id'],))
+            db.execute('DELETE FROM workflow_cache')
     return get_run(root, run_id)
+
+
+def examples(root, dataset_id, species_id):
+    """The examples of the site's current search for a species, as the search page lists chosen examples, so a
+    search made again can keep them. `missing`: examples left out because their file is gone or has changed."""
+    with connect(root) as db:
+        dataset = db.execute('SELECT site_id FROM datasets WHERE id=?', (dataset_id,)).fetchone()
+        if dataset is None:
+            raise CatalogError('not_found')
+        run = site_run(db, dataset[0], species_id)
+    clips, missing = [], 0
+    for ref in json.loads(run['snapshot'])['references'] if run else []:
+        try:
+            row = source(root, ref['source']['kind'], ref['source']['id'])
+            checked_source(row)
+        except CatalogError:
+            missing += 1
+            continue
+        clips.append({'source': row, 'start_s': ref['query']['start_s'], 'end_s': ref['query']['end_s']})
+    return {'exists': run is not None, 'clips': clips, 'missing': missing}
 
 
 def get_run(root, run_id):

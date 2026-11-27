@@ -70,26 +70,40 @@ class TestSoundsCheck(unittest.TestCase):
             self.assertEqual((made['round'], made['training']['positive_5s'], made['training']['negative_5s']), (1, 6, 14))
             # The test sounds were there before the first AI, so every round has a score.
             report = client.get(url).json()
-            self.assertEqual((report['state'], report['sounds'], report['aim'], report['threshold'], len(report['recordings'])),
-                             ('ready', {'heard': 12, 'not_heard': 21}, 10, 0.5, 4))
+            self.assertEqual((report['state'], report['sounds'], report['fixed'], report['threshold'], len(report['recordings'])),
+                             ('ready', {'heard': 12, 'not_heard': 21}, True, 0.5, 4))
             self.assertEqual([(r['round'], r['found'], r['false'], r['current'], r['made_from_test']) for r in report['rounds']], [(1, 12, 0, True, False)])
             self.assertEqual((report['missed'], report['false'], report['new']), ([], [], []))
             now = state()
             self.assertTrue({row['recording_id'] for row in now['batch']} <= {5, 6})
             self.assertFalse(any(row['test'] for row in now['batch']))
-            # A later answer in a test recording is a test sound; one elsewhere is material. A wrong "heard" shows as missed.
+            # The set is closed: a later answer in a test recording is neither a test sound nor material; one elsewhere is material.
             with connect(root) as db:
                 labels.put(db, sid, 1, 45, 50, 'present', 'species_mark')
                 labels.put(db, sid, 5, 45, 50, 'absent', 'species_mark')
             report = client.get(url).json()
-            self.assertEqual((report['sounds'], [(m['recording_id'], m['start_s']) for m in report['missed']]), ({'heard': 13, 'not_heard': 21}, [(1, 45)]))
+            self.assertEqual((report['sounds'], report['missed'], state()['test']['heard']), ({'heard': 12, 'not_heard': 21}, [], 12))
             again = client.post('/custom-models', json=scope).json()
             self.assertEqual((again['round'], again['training']['positive_5s'], again['training']['negative_5s']), (2, 6, 15))
             self.assertEqual([r['round'] for r in client.get(url).json()['rounds']], [1, 2])
+            # A corrected test sound stays one, on the page (the answer replaced) or in the checked-sounds list (a correction added).
+            label(1, 0, 'other')
+            with connect(root) as db:
+                labels.put(db, sid, 1, 30, 35, 'absent', 'review', history=True)
+            self.assertEqual(client.get(url).json()['sounds'], {'heard': 10, 'not_heard': 23})
+            self.assertEqual({(row['recording_id'], row['start_s']) for row in state()['answered'] if not row['test']} & {(1, 0), (1, 30)}, set())
             # The list of checked sounds says which are test sounds.
             listed = client.get('/datasets/1/heard/records', params={'limit': 500}).json()['rows']
-            self.assertEqual({row['test'] for row in listed if row['recording_id'] <= 4}, {True})
+            self.assertEqual({(row['recording_id'], row['start_s']) for row in listed if not row['test'] and row['recording_id'] <= 4}, {(1, 45)})
             self.assertEqual({row['test'] for row in listed if row['recording_id'] > 4}, {False})
+            # A set frozen before the time was kept (the column is added to an older catalogue): later answers count, as they did.
+            from storage import initialize
+            with connect(root) as db:
+                db.execute('ALTER TABLE test_phases DROP COLUMN fixed_at')
+            self.assertTrue(initialize(root))
+            report = client.get(url).json()
+            self.assertEqual((report['sounds'], report['fixed']), ({'heard': 11, 'not_heard': 23}, False))
+            self.assertEqual({row['test'] for row in client.get('/datasets/1/heard/records', params={'limit': 500}).json()['rows'] if row['recording_id'] <= 4}, {True})
             # A species grown before the phases were stored: fixed when recordings were set aside for it, else without test sounds.
             with connect(root) as db:
                 db.execute('DELETE FROM test_phases')

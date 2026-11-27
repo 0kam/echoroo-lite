@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (proposal, not agreed, 2026-11-27): the sound list beside the sound map.
+     The current sound is the first row of the list; every row opens the same small form in place;
+     one switch "no other voices" covers both "no bird sound" and "that is all". All data are examples. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音の地図：行の中で記録する（見本）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.6 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 12px; } h2 { font-size: 17px; margin: 0 0 8px; }
+  p { margin: 0 0 10px; } .muted { color: #6e6a86; font-size: 14px; }
+  .mockbar { background: #efe7dc; border: 1px dashed #b9ab99; border-radius: 12px; padding: 10px 16px; margin: 0 0 20px; font-size: 14px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 820px) { .cols { grid-template-columns: 1fr; } }
+  .panel { background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 16px 20px; }
+  .map { position: relative; height: 560px; border: 1px solid #e6ddd3; border-radius: 12px; background: #fff; overflow: hidden; }
+  .blob { position: absolute; border-radius: 50%; opacity: .5; }
+  .ring { position: absolute; width: 16px; height: 16px; border: 3px solid #373450; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px #fff; }
+  .row { border-top: 1px solid #e6ddd3; padding: 12px 10px; }
+  .row.now { border: 2px solid #373450; border-radius: 12px; background: #fff; margin-bottom: 4px; }
+  .head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 14px; }
+  .tag { font-weight: 700; } .tag i { display: inline-block; width: 10px; height: 10px; border: 3px solid #373450; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .line { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
+  .spec { flex: 1; height: 64px; border-radius: 6px; background: linear-gradient(#2a1a5e, #6b2a8a 40%, #c8553d 75%, #f2a33a); }
+  button { white-space: nowrap; min-height: 44px; padding: 4px 14px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; }
+  button.play { min-width: 44px; padding: 4px; }
+  label.rec { display: inline-flex; gap: 8px; align-items: center; min-height: 44px; margin-top: 6px; cursor: pointer; }
+  input[type=checkbox] { width: 20px; height: 20px; accent-color: #9b4b4b; }
+  .form { background: #faece9; border-radius: 10px; padding: 12px 14px; margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip { min-height: 36px; border-radius: 999px; padding: 2px 14px; font-size: 15px; }
+  .chip[aria-pressed="true"] { background: #9b4b4b; border-color: #9b4b4b; color: #fff; }
+  .chip.find { border-style: dashed; }
+  .saved { color: #2f6f4f; font-size: 14px; margin: 8px 0 0; }
+  details { margin-top: 8px; font-size: 14px; } summary { cursor: pointer; min-height: 32px; }
+  .seg button { min-height: 36px; border-radius: 0; margin-left: -1px; padding: 2px 12px; }
+  .grid { display: grid; grid-template-columns: 7em 1fr; gap: 6px 10px; align-items: center; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mockbar">見本です。押して試せます（種の丸いボタン、「ほかに声はない」、記録するのチェック）。</div>
+  <h1>音の地図</h1>
+  <div class="cols">
+    <section class="panel">
+      <p class="muted">種から探す：エナガ</p>
+      <div class="map">
+        <div class="blob" style="left:6%;top:40%;width:120px;height:150px;background:#e8703a"></div>
+        <div class="blob" style="left:36%;top:18%;width:230px;height:180px;background:#3b82d6"></div>
+        <div class="blob" style="left:44%;top:68%;width:150px;height:110px;background:#2aa876"></div>
+        <div class="ring" style="left:47%;top:36%"></div>
+      </div>
+      <p class="muted" style="margin-top:8px">地図の下の再生欄はありません。押した点の音は、右の一覧の先頭に出ます。</p>
+    </section>
+    <section class="panel">
+      <h2>まとまり 1-2-1 の音</h2>
+      <div id="rows"></div>
+    </section>
+  </div>
+</main>
+<script>
+(function () {
+  // Candidates: the species searched for, then what the AI answered for this sound, then recent ones — six at most.
+  var rows = [
+    { now: true, time: '2025/07/12 18:00:00', ai: 'AI の候補：エナガ 62%', cand: ['エナガ', 'ヒガラ', 'キクイタダキ'], open: true, heard: ['エナガ'], all: false },
+    { time: '2025/07/12 17:30:05', ai: 'AI の候補：ヒガラ 13%', cand: ['エナガ', 'ヒガラ', 'コガラ'], open: true, heard: [], all: true },
+    { time: '2025/07/12 16:01:55', ai: 'AI の候補：セリン 11%', cand: ['エナガ', 'セリン'], open: false, heard: [], all: false }
+  ];
+  function form(r, i) {
+    var chips = r.cand.map(function (c) { return '<button type="button" class="chip" data-i="' + i + '" data-c="' + c + '" aria-pressed="' + (r.heard.indexOf(c) >= 0) + '">' + c + '</button>'; }).join('');
+    var saved = r.heard.length || r.all;
+    var summary = r.heard.length ? r.heard.join('・') + (r.all ? '（ほかに声はない）' : '') : (r.all ? '声はない' : '');
+    return '<div class="form"><div class="chips"><span>聞こえた声</span>' + chips + '<button type="button" class="chip find">ほかの種…</button></div>' +
+      '<label class="rec" style="margin-top:8px"><input type="checkbox" data-all="' + i + '"' + (r.all ? ' checked' : '') + '>' + (r.heard.length ? 'ほかに声はない' : '声はない') + '</label>' +
+      (saved ? '<p class="saved">✓ 保存済み：' + summary + '</p>' : '') +
+      '<details><summary>ZIP 用の情報（声の種類・録音の質）</summary><div class="grid"><span>声の種類</span><span class="seg"><button type="button">さえずり</button><button type="button">地鳴き</button><button type="button">わからない</button></span>' +
+      '<span>録音の質</span><span class="seg"><button type="button">A</button><button type="button">B</button><button type="button">C</button><button type="button">D</button><button type="button">E</button></span></div></details></div>';
+  }
+  function draw() {
+    document.getElementById('rows').innerHTML = rows.map(function (r, i) {
+      return '<div class="row' + (r.now ? ' now' : '') + '"><div class="head">' + (r.now ? '<span class="tag"><i></i>いまの音</span>' : '') + '<span>' + r.time + '</span><span class="muted">' + r.ai + '</span></div>' +
+        '<div class="line"><button type="button" class="play" aria-label="聞く">▶</button><div class="spec"></div></div>' +
+        '<label class="rec"><input type="checkbox" data-open="' + i + '"' + (r.open ? ' checked' : '') + '>記録する</label>' + (r.open ? form(r, i) : '') + '</div>';
+    }).join('') + '<p class="muted" style="margin-top:12px">「記録する」を付けた音は、下の「記録した音を保存する（ZIP）」に入ります。</p>';
+  }
+  document.addEventListener('click', function (e) {
+    var c = e.target.closest('[data-c]');
+    if (c) { var r = rows[+c.dataset.i], k = r.heard.indexOf(c.dataset.c); if (k >= 0) r.heard.splice(k, 1); else r.heard.push(c.dataset.c); draw(); }
+  });
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.dataset.open !== undefined) { rows[+t.dataset.open].open = t.checked; draw(); }
+    if (t.dataset.all !== undefined) { rows[+t.dataset.all].all = t.checked; draw(); }
+  });
+  draw();
+})();
+</script>
+</body>
+</html>

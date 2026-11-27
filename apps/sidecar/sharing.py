@@ -118,7 +118,8 @@ def export_model(root, model_id, folder, hide_site=False):
             'tests': tests,
             'site': None if hide_site else {'name': site['name'], 'latitude': site['latitude'], 'longitude': site['longitude']}}
     name = ''.join(c if c.isalnum() else '_' for c in species['scientific_name'])
-    destination = parent / f'echoroo-ai-{name}-{made:%Y%m%d-%H%M%S}.json'
+    # The site's time, as the checked-sounds file is named.
+    destination = parent / f"echoroo-ai-{name}-{made.astimezone(ZoneInfo(site['timezone'])):%Y%m%d-%H%M%S}.json"
     try:
         with open(destination, 'x', encoding='utf-8') as stream:
             json.dump(data, stream, ensure_ascii=False, indent=1)

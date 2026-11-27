@@ -82,8 +82,6 @@ class PickedEdit(BaseModel):
     recording_id: int = Field(ge=1)
     start_s: float = Field(ge=0, allow_inf_nan=False)
     end_s: float = Field(gt=0, allow_inf_nan=False)
-    species: ScientificName | None
-    background: list[ScientificName] = Field(max_length=20)
     sound_type: Literal['', 'song', 'call']
     quality: Literal['', 'A', 'B', 'C', 'D', 'E']
     others: bool
@@ -152,6 +150,8 @@ class SearchRunRequest(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
     clips: list[ClipRequest] = Field(min_length=1, max_length=20)
+    # Make the species' search at this site again, in place of the current one (examples added on the search page).
+    replace: bool = False
 
 
 class MapClip(ClipRequest):
@@ -258,12 +258,12 @@ class MapAnswer(BaseModel):
     start_s: float = Field(ge=0, allow_inf_nan=False)
     end_s: float = Field(gt=0, allow_inf_nan=False)
     species_id: str | None = None
-    verdict: Literal['present', 'absent', 'unknown', 'no_bird']
+    verdict: Literal['present', 'absent', 'unknown', 'withdraw', 'no_bird', 'complete', 'incomplete']
 
     @model_validator(mode='after')
     def species_named(self):
-        if (self.verdict == 'no_bird') != (self.species_id is None):
-            raise ValueError('species_id goes with every verdict but "no_bird"')
+        if (self.verdict in ('no_bird', 'complete', 'incomplete')) != (self.species_id is None):
+            raise ValueError('species_id goes with the verdicts about a species')
         return self
 
 
@@ -735,6 +735,11 @@ def create_app(root, models, token):
     def heard_examples(dataset_id: int, species_id: str):
         import heard
         return heard.search_examples(root, dataset_id, species_id)
+
+    @app.get('/datasets/{dataset_id}/species/{species_id}/search-examples')
+    def search_examples(dataset_id: int, species_id: str):
+        from search_runs import examples
+        return examples(root, dataset_id, species_id)
 
     @app.post('/presence/marks')
     def presence_mark(body: PresenceMark):

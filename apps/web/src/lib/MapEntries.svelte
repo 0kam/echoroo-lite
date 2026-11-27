@@ -35,8 +35,9 @@
   // Where the example sound comes from: sounds checked by ear (chosen by the app), Xeno-Canto, or an audio file on the PC.
   type From = 'heard' | 'xc' | 'file';
   type Clip = { source: AudioSource; start_s: number; end_s: number };
-  let { datasetId, node, go, onoverlay, onspecies }:
-    { datasetId: number; node: number; go: (node: number) => void; onoverlay: (overlay: MapOverlay) => void;
+  // `ai`: the name of the main AI, whose answers the map is made from.
+  let { datasetId, node, ai, go, onoverlay, onspecies }:
+    { datasetId: number; node: number; ai: string; go: (node: number) => void; onoverlay: (overlay: MapOverlay) => void;
       onspecies?: (species: Taxon | null) => void } = $props();
   const key = () => `echoroo-map-entry:${datasetId}`;
   // The page is made anew for every group opened, so the chosen way, species and example are kept for the session.
@@ -118,7 +119,7 @@
     {:else if outside}<p class="muted">{fill('meClipTotal', { n: found.targets.length })}</p>
     {:else if entry === 'examples' && !found.examples}<p class="notice">{found.mixed ? fill('meExMixed', { n: found.mixed }) : t('meExNone')}</p>
     {:else if entry === 'examples'}<p class="muted">{fill('meExTotal', { n: found.examples ?? 0 })}{#if found.mixed}{' '}{fill('meExLeftOut', { n: found.mixed })}{/if}</p>
-    {:else if found.targets.length}<p class="muted">{fill('meUnTotal', { n: found.targets.length })}</p>{/if}
+    {:else if found.targets.length}<p class="muted">{fill('meUnTotal', { ai, n: found.targets.length })}</p>{/if}
     {#if found.pending}<p class="notice" role="status">{fill('ruPending', { n: found.pending.toLocaleString() })}</p>{/if}
     {#if found.groups.length}<ol>{#each found.groups as group, index (group.node)}<li class:current={group.node === node}>
       <div><strong>{fill('meGroup', { n: 'ABCDEFGHIJ'[index], size: group.size })}</strong><span>{about(group)}</span>{#if answered(group)}<span class="muted">{answered(group)}</span>{/if}</div>

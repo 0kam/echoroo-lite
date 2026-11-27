@@ -159,14 +159,16 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual((ready['examples']['positive_5s'], ready['examples']['other_answers'], ready['batch'], ready['model']), (1, 1, None, None))
             self.assertEqual((ready['can_train'], ready['needed'], ready['reasons']),
                              (False, 19, ['custom_more_answers_needed', 'custom_positive_examples_needed', 'custom_negative_examples_needed']))
-            # Before a species AI: the batch comes from the search ranking, the top unanswered ranks first while voice is short.
+            # Before a species AI: the batch is drawn from the layers of the search ranking (107 hits: the best 30, the
+            # next 23, the lower half), 4 / 3 / 3 while both kinds are short; the same state draws the same batch.
             with connect(root) as db:
                 ranked = [r[0] for r in db.execute('SELECT segment_id FROM search_hits WHERE run_id=? ORDER BY similarity DESC,segment_id', (run['id'],))]
             first = client.get(url, params={**dates, 'batch': True}).json()
             picked = [row['segment_id'] for row in first['batch']]
             self.assertEqual((first['source'], len(set(picked))), ('search', 10))
             self.assertEqual(picked, [row['segment_id'] for row in client.get(url, params={**dates, 'batch': True}).json()['batch']])
-            self.assertEqual(picked[:3], ranked[1:4])  # rank 0 is the marked sound
+            ranks = [ranked.index(segment) for segment in picked]
+            self.assertEqual(([sum(low <= rank < high for rank in ranks) for low, high in ((1, 30), (30, 53), (53, 107))], ranks), ([4, 3, 3], sorted(ranks)))  # rank 0 is the marked sound
             self.assertTrue(all(row['label'] is None and row['local_time'] and row['score'] is not None for row in first['batch']))
             self.assertFalse(set(picked) & {row['segment_id'] for row in client.get(url, params={**dates, 'batch': True, 'skip': picked}).json()['batch']})
             self.assertEqual(label(ranked[0] + 10 ** 6, 'target').json()['detail'], 'not_found')
@@ -233,7 +235,8 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertGreater(perch_check['counts']['answered'], 0)
             client.post(f"/validations/{perch_check['id']}/delete")
             self.assertEqual(client.get(f"/validations/{check['id']}").json()['status'],check['status'])
-            # 5-second check answers are material: "heard" as voice, "not heard" as no voice; labels given here win.
+            # Answers given in the check of the species AI itself are test sounds, never material (2026-11-27); the
+            # page has the check as its third step.
             ready = client.get(url, params=dates).json()
             with connect(root) as db:
                 pieces = {(r[0], {'present': 'target', 'absent': 'other'}[r[1]]) for r in db.execute('''SELECT s.id,a.verdict FROM segments s
@@ -243,8 +246,8 @@ class SpeciesFlowCheck(unittest.TestCase):
                     AND a.verdict IN ('present','absent') AND NOT EXISTS (SELECT 1 FROM labels t WHERE t.source='training'
                     AND t.recording_id=a.recording_id AND t.start_s=a.start_s AND t.end_s=a.end_s)''', (check['id'],))}
             self.assertTrue({'target', 'other'} <= {verdict for _, verdict in pieces})
-            self.assertEqual(ready['examples']['other_answers'], len({segment for segment, _ in pieces} | {ranked[0]}))
-            self.assertEqual(ready['examples']['positive_5s'], 4 + len({segment for segment, verdict in pieces if verdict == 'target'} - {ranked[0]}))
+            self.assertEqual((ready['examples']['other_answers'], ready['examples']['positive_5s']), (1, 4))
+            self.assertEqual((ready['check']['id'], ready['check']['status']), (check['id'], check['status']))
             # Making it again replaces it in place; its finished check no longer applies and a new one starts.
             label(silent[1], 'target')
             again = client.post('/custom-models', json=scope)
@@ -252,7 +255,8 @@ class SpeciesFlowCheck(unittest.TestCase):
             again = again.json()
             self.assertEqual((again['id'], again['round'], again['applicable']), (model['id'], 2, True))
             self.assertNotEqual(again['artifact_sha256'], model['artifact_sha256'])
-            self.assertEqual(again['training']['positive_from_checks'], len({segment for segment, verdict in pieces if verdict == 'target'} - {ranked[0]}))
+            self.assertEqual((again['training']['positive_from_checks'], again['training']['negative_from_checks']), (0, 0))
+            self.assertEqual(client.get(url, params=dates).json()['check']['status'], 'stale')
             with connect(root) as db:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM custom_models').fetchone()[0], 1)
             self.assertEqual([p.name for p in (root / 'custom-models').iterdir()], [str(model['id'])])
@@ -261,8 +265,7 @@ class SpeciesFlowCheck(unittest.TestCase):
             detail = client.get(f'/datasets/1/species/{sid}', params={**scope, 'engine': 'custom', 'model_id': model['id']}).json()
             self.assertEqual(next(c for c in detail['checks'] if c['engine'] == 'custom')['validation']['model_reason'], 'custom_model_rebuilt')
             self.assertIn('check', {e['origin'] for e in detail['presence']['evidence']})  # its "heard" answers still count
-            # A new check starts with the two top groups first, or is refused when every high-scoring sound became training
-            # material. Which one happens depends on the first check's random draw, which fed the training material.
+            # A new check starts with the two top groups first, or is refused when every high-scoring sound is training material.
             fresh = client.post('/validations', json={**scope, 'model': 'custom', 'model_id': model['id']}).json()
             self.assertIn(fresh.get('detail') or fresh['method'], ('validation_no_top_group', 'detection_top_bin_v2'))
             with_model = client.get(url, params={**dates, 'batch': True}).json()
@@ -285,6 +288,60 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertEqual((presence['status'], [e['origin'] for e in presence['evidence']]), ('confirmed', ['label'] * 4))
             with patch('search_runs.load_perch', return_value=(Session(), 'perch-sha')), patch('search.load_perch', return_value=(Session(), 'perch-sha')):
                 self.assertEqual(client.post('/search-runs', json=search).status_code, 200)
+
+
+class AnotherCallCheck(unittest.TestCase):
+    def test_examples_join_batches_and_a_search_made_again_keeps_what_was_built(self):
+        with site() as (root, client, species):
+            sid = species['id']
+            no_tests(root, sid)
+            scope = {'dataset_id': 1, 'species_id': sid, 'start_date': '2024-08-01', 'end_date': '2024-08-06'}
+            clips = [{'source_kind': 'recording', 'source_id': rid, 'start_s': 0, 'end_s': 5} for rid in (1, 2, 3)]
+            search = {'dataset_id': 1, 'species_id': sid, 'clips': clips[:2]}
+            url = f'/datasets/1/species/{sid}/search-examples'
+            self.assertEqual(client.get(url).json(), {'exists': False, 'clips': [], 'missing': 0})
+            with patch('search_runs.load_perch', return_value=(Session(), 'perch-sha')), patch('search.load_perch', return_value=(Session(), 'perch-sha')):
+                run = client.post('/search-runs', json=search).json()
+                with connect(root) as db:
+                    # The stand-in session embeds every example alike; say the last recording's other sounds are nearest to the second example.
+                    db.execute('UPDATE search_hits SET reference_index=1 WHERE similarity<.5 AND segment_id>90')
+                    best = lambda taken: [db.execute('''SELECT segment_id FROM search_hits WHERE reference_index=? AND segment_id NOT IN (SELECT value FROM json_each(?))
+                        ORDER BY similarity DESC,segment_id''', (lane, json.dumps(taken))).fetchone()[0] for lane in (0, 1)]
+                    # 4 "voice" and 16 "no voice" answers: the AI scores the second example's sounds low.
+                    answers = {**dict.fromkeys((7, 13, 25, 31), 'target'), **dict.fromkeys(range(40, 56), 'other')}
+                    expected = best(list(answers))
+                self.assertEqual(client.post('/presence/marks', json={'dataset_id': 1, 'species_id': sid, 'recording_id': 4, 'start_s': 30, 'end_s': 35,
+                    'run_id': run['id'], 'marked': True}).json(), {'marked': True})
+                for segment, value in answers.items():
+                    client.post(f'/datasets/1/species/{sid}/labels', json={'segment_id': segment, 'label': value})
+                model = client.post('/custom-models', json=scope)
+                self.assertEqual(model.status_code, 200, model.text)
+                ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={'start_date': scope['start_date'], 'end_date': scope['end_date'], 'batch': True}).json()
+                rows = {row['segment_id']: row['score'] for row in ready['batch']}
+                self.assertEqual((ready['source'], ready['by_example'], len(rows), set(expected) <= set(rows)), ('custom', True, 10, True))
+                self.assertLess(rows[expected[1]], .5)  # shown with the AI's score, low as it is
+                # The search page lists the current examples as clips it can search with again.
+                kept = client.get(url).json()
+                self.assertEqual((kept['exists'], kept['missing'], [(c['source']['kind'], c['source']['id'], c['start_s'], c['end_s']) for c in kept['clips']]),
+                                 (True, 0, [('recording', 1, 0, 5), ('recording', 2, 0, 5)]))
+                self.assertTrue(all(c['source']['path'] and c['source']['seconds'] == 90 for c in kept['clips']))
+                # Made again with one more example: the marks and the species AI move to it, and the earlier search goes.
+                self.assertEqual(client.post('/search-runs', json={**search, 'clips': clips}).json()['detail'], 'search_exists')
+                again = client.post('/search-runs', json={**search, 'clips': clips, 'replace': True, 'start_date': '2024-08-02'})
+                self.assertEqual(again.status_code, 200, again.text)
+                again = again.json()
+            self.assertEqual((len(again['snapshot']['references']), again['snapshot']['start_date']), (3, None))  # the days of the earlier search
+            with connect(root) as db:
+                self.assertEqual([r[0] for r in db.execute('SELECT id FROM search_runs')], [again['id']])
+                self.assertEqual({r[0] for r in db.execute('SELECT run_id FROM search_hits')}, {again['id']})
+                self.assertEqual(db.execute("SELECT json_extract(source_ref,'$.run_id') FROM labels WHERE source='species_mark'").fetchone()[0], again['id'])
+                self.assertEqual(tuple(db.execute("SELECT run_id,json_extract(snapshot,'$.run_id') FROM custom_models").fetchone()), (again['id'],) * 2)
+            ready = client.get(f'/datasets/1/species/{sid}/custom-model', params={'start_date': scope['start_date'], 'end_date': scope['end_date'], 'batch': True}).json()
+            self.assertEqual((ready['examples']['positive_5s'], ready['model']['applicable'], ready['source']), (5, True, 'custom'))
+            # An example whose file is gone is left out and counted.
+            (root / 'audio' / '20240802_060000.wav').unlink()
+            kept = client.get(url).json()
+            self.assertEqual((kept['missing'], [c['source']['id'] for c in kept['clips']]), (1, [1, 3]))
 
 
 class GrowWithoutSearchCheck(unittest.TestCase):
@@ -323,14 +380,19 @@ class GrowWithoutSearchCheck(unittest.TestCase):
             scope = {'dataset_id': 1, 'species_id': sid, **dates}
             url = f'/datasets/1/species/{sid}/custom-model'
             label = lambda segment, value: client.post(f'/datasets/1/species/{sid}/labels', json={'segment_id': segment, 'label': value})
-            # No search: the main AI's score ranks the batch; the highest-scored come first while voice is short.
+            # No search: the main AI's score ranks the batch (36 sounds at 0.3, then 72 at 0.2): 4 of the best 30, 3 of the lower half.
             first = client.get(url, params={**dates, 'batch': True}).json()
             self.assertEqual((first['source'], first['engine'], len(first['batch'])), ('builtin', 'perch', 10))
             self.assertEqual(first['batch'], client.get(url, params={**dates, 'batch': True}).json()['batch'])
+            # A sound answered "cannot tell" is not offered again, though the page no longer passes it as skipped.
+            unsure = first['batch'][0]['segment_id']
+            label(unsure, 'unknown')
+            self.assertNotIn(unsure, [row['segment_id'] for row in client.get(url, params={**dates, 'batch': True}).json()['batch']])
+            label(unsure, None)
             # Without dates in the link, the page still learns the period to make the AI for.
             self.assertEqual({k: client.get(url).json()[k] for k in dates}, dates)
-            self.assertTrue(all(abs(row['score'] - .3) < 1e-6 for row in first['batch'][:3]))
-            self.assertLess(min(row['score'] for row in first['batch'][3:]), .25)  # boundary picks reach down the ranking
+            self.assertTrue(all(abs(row['score'] - .3) < 1e-6 for row in first['batch'][:4]))
+            self.assertGreaterEqual(sum(row['score'] < .25 for row in first['batch']), 3)
             # A species the built-in AIs do not list, without a search, has nothing to rank by.
             crow = client.get('/species?q=ハシブトガラス').json()[0]['id']
             none = client.get(f'/datasets/1/species/{crow}/custom-model', params={**dates, 'batch': True}).json()
@@ -475,26 +537,65 @@ class BatchChoiceCheck(unittest.TestCase):
                  by_score[3000][0]: 'target', by_score[20][0]: 'other', by_score[5][0]: None}
         cut = boundary_score([(dict(scored)[s], label) for s, label in known.items() if label])
         self.assertTrue(by_score[300][1] < cut < by_score[145][1] < .5)  # in the gap, ignoring the two wrong answers
-        picks = model_picks(scored, known)
-        self.assertEqual(picks, model_picks(reversed(scored), known))
+        rng = lambda seed=0: np.random.default_rng(seed)
+        picks = model_picks(scored, known, rng())
+        self.assertEqual(picks, model_picks(reversed(scored), known, rng()))  # the same state draws the same batch
         chosen = {segment for segment, _ in picks}
         self.assertEqual(len(chosen), 10)
         self.assertFalse(chosen & set(known))
         self.assertEqual([score for _, score in picks], sorted((score for _, score in picks), reverse=True))
         free = [p for p in by_score if p[0] not in known]
-        # The two highest and two lowest unanswered really are the extremes.
+        # The two highest unanswered, and two drawn from the lower half: not always the same extremes.
         self.assertEqual(set(picks[:2]), set(free[:2]))
-        self.assertEqual(set(picks[-2:]), set(free[-2:]))
+        self.assertTrue(set(picks[-2:]) <= set(free[len(free) // 2:]))
+        self.assertFalse(set(picks[:-2]) & set(free[len(free) // 2:]))
+        self.assertNotEqual(picks[-2:], model_picks(scored, known, rng(1))[-2:])
+        self.assertNotEqual(set(picks[-2:]), set(free[-2:]))
         # Six from the 24 ranks centred on the boundary rank, spread out rather than side by side.
-        rank = sum(score >= cut for _, score in free[2:-2])
+        rest = [p for p in free[2:] if p not in picks[-2:]]
+        rank = sum(score >= cut for _, score in rest)
         middle = sorted(picks[2:-2])
-        self.assertTrue(set(middle) <= set(free[2:-2][rank - 12:rank + 12]))
+        self.assertTrue(set(middle) <= set(rest[rank - 12:rank + 12]))
         self.assertGreater(middle[-1][0] - middle[0][0], 2500)
-        # The next round repeats nothing; a plateau of equal scores is still spread, deterministically.
-        self.assertFalse(chosen & {segment for segment, _ in model_picks(scored, {**known, **dict.fromkeys(chosen)})})
-        flat = [(segment, .5) for segment in range(1000)]
-        self.assertEqual([segment for segment, _ in model_picks(flat, {})], [0, 1, 85, 251, 417, 583, 749, 915, 998, 999])
-        self.assertEqual(model_picks(scored[:4], {}), sorted(scored[:4], key=lambda p: -p[1]))
+        # The next round repeats nothing; a plateau of equal scores is still spread.
+        self.assertFalse(chosen & {segment for segment, _ in model_picks(scored, {**known, **dict.fromkeys(chosen)}, rng())})
+        flat = [segment for segment, _ in model_picks([(segment, .5) for segment in range(1000)], {}, rng())]
+        self.assertEqual((flat[:5], len(set(flat)), sum(segment >= 500 for segment in flat)), ([0, 1, 85, 251, 417], 10, 5))
+        self.assertEqual(model_picks(scored[:4], {}, rng()), sorted(scored[:4], key=lambda p: -p[1]))
+
+    def test_examples_in_species_ai_batch(self):
+        from custom_models import example_picks, model_picks
+        rng = lambda: np.random.default_rng(0)
+        scored = [(segment, 1 - segment / 1000) for segment in range(1000)]
+        score = dict(scored)
+        # Two examples, most similar first: the AI scores the second one's sounds low (a rarer call of the species).
+        hits = [(segment, 0) for segment in range(50)] + [(segment, 1) for segment in range(900, 950)]
+        first = example_picks(hits, {}, score)
+        self.assertEqual(first, [0, 900])
+        picks = model_picks(scored, {}, rng(), first)
+        self.assertEqual(picks, model_picks(reversed(scored), {}, rng(), first))
+        chosen = [segment for segment, _ in picks]
+        # In the batch whatever their score, with the AI's score; beside them the two highest of the others.
+        self.assertEqual((len(set(chosen)), chosen, chosen[:3], score[900]), (10, sorted(chosen), [0, 1, 2], dict(picks)[900]))
+        self.assertNotIn(900, {s for s, _ in model_picks(scored, {}, rng())})
+        # Answered, passed over or in a test recording (None), or without a score: the example's next sound instead.
+        known = {0: 'target', 900: 'other', 901: None, 902: None}
+        self.assertEqual(example_picks(hits, known, {k: v for k, v in score.items() if k != 903}), [1, 904])
+        self.assertFalse(set(known) & {s for s, _ in model_picks(scored, known, rng(), [1, 904])})
+        # An example with nothing left gives nothing; no search gives the batch as before.
+        self.assertEqual(example_picks(hits, dict.fromkeys(range(900, 950)), score), [0])
+        self.assertEqual(model_picks(scored, known, rng(), example_picks([], known, score)), model_picks(scored, known, rng()))
+        # More examples than the batch has room for: the six with the fewest answered sounds, so the others come next.
+        many = [(lane * 100 + i, lane) for lane in range(8) for i in range(10)]
+        first = example_picks(many, {}, score)
+        self.assertEqual(first, [0, 100, 200, 300, 400, 500])
+        answered = dict.fromkeys(first, 'other')
+        turn = example_picks(many, answered, score)
+        self.assertEqual(turn, [600, 700, 1, 101, 201, 301])
+        picks = [s for s, _ in model_picks(scored, answered, rng(), turn)]
+        self.assertEqual((len(set(picks)), set(turn) <= set(picks), picks[:3]), (10, True, [1, 2, 3]))
+        # Few sounds left: all of them, once.
+        self.assertEqual([s for s, _ in model_picks(scored[:8], {}, rng(), [5])], list(range(8)))
 
     def test_calibration(self):
         import custom_models
@@ -553,68 +654,81 @@ class BatchChoiceCheck(unittest.TestCase):
         self.assertAlmostEqual(boundary_score([(.6, 'target'), (.62, 'target'), (.64, 'target'), (.63, 'other'), (.3, 'other'), (.31, 'other')]), .455)
 
     def test_batch_before_species_ai(self):
-        from custom_models import bracket_ranks
-        voice_short = bracket_ranks(1000, {0: 'target'}, True)
-        self.assertEqual(voice_short, bracket_ranks(1000, {0: 'target'}, True))
-        self.assertEqual((len(set(voice_short)), voice_short[:3]), (10, [1, 2, 3]))
-        self.assertEqual(bracket_ranks(1000, {0: 'target', 2: 'other'}, True)[:3], [1, 3, 4])
-        known = {0: 'target', 5: 'target', 900: 'other'}
-        enough = bracket_ranks(1000, known, False)
-        self.assertTrue(len(enough) == 10 and all(5 < r < 900 for r in enough))
-        # Sounds shown and passed over are left out like answered ones.
-        self.assertFalse(set(enough) & set(bracket_ranks(1000, {**known, **dict.fromkeys(enough)}, False)))
-        self.assertEqual(bracket_ranks(1000, {0: 'target', 1: None, 2: None, 3: None}, True)[:3], [4, 5, 6])
+        from custom_models import _rng, layered_picks
+        ranked = [(1000 + rank, 1 - rank / 10000) for rank in range(10000)]  # layers: ranks 0-99, 100-4999, 5000-9999
+        layers = lambda picks, edges=(0, 100, 5000, 10000): [sum(low <= segment - 1000 < high for segment, _ in picks) for low, high in zip(edges, edges[1:])]
+        draw = lambda known, voice, silent, seed=0, ranked=ranked: layered_picks(ranked, known, voice, silent, _rng(seed))
+        # The mix follows what is still short; the batch is listed best first.
+        for short, mix in (((True, True), [4, 3, 3]), ((True, False), [6, 4, 0]), ((False, True), [0, 4, 6]), ((False, False), [4, 3, 3])):
+            picks = draw({}, *short)
+            self.assertEqual((layers(picks), len(set(picks)), picks), (mix, 10, sorted(picks, key=lambda p: -p[1])))
+        # The same state draws the same batch, another state another, and not simply the best of each layer.
+        self.assertEqual(draw({}, True, True), draw({}, True, True))
+        self.assertNotEqual(draw({}, True, True), draw({}, True, True, seed=1))
+        self.assertEqual(_rng('a', [1, 2]).random(), _rng('a', [1, 2]).random())
+        self.assertNotEqual([segment for segment, _ in draw({}, True, True)[:4]], [1000, 1001, 1002, 1003])
+        # Answered sounds and sounds passed over (None) are never drawn.
+        known = {**{1000 + rank: 'target' for rank in range(0, 100, 2)}, **dict.fromkeys(range(1100, 3000)), **{1000 + rank: 'other' for rank in range(5000, 9000)}}
+        for seed in range(5):
+            picks = draw(known, True, True, seed)
+            self.assertEqual((layers(picks), {segment for segment, _ in picks} & set(known)), ([4, 3, 3], set()))
+        # A layer that runs out is filled from its neighbour, then from the third; the middle from the side asked more of.
+        no_top, no_upper = dict.fromkeys(range(1000, 1100)), dict.fromkeys(range(1000, 6000))
+        self.assertEqual(layers(draw(no_top, True, False)), [0, 10, 0])
+        self.assertEqual(layers(draw(no_upper, True, False)), [0, 0, 10])
+        self.assertEqual(layers(draw(dict.fromkeys(range(1004, 11000)), False, True)), [4, 0, 0])  # fewer than 10 left: all of them
+        self.assertEqual(draw(dict.fromkeys(range(1000, 11000)), True, True), [])
+        # The top layer holds at least 30 sounds, and never reaches into the lower half: 40 sounds are 20 top and 20 low.
+        self.assertEqual(layers(draw({}, True, False, ranked=ranked[:1000]), (0, 30, 500, 1000)), [6, 4, 0])
+        self.assertEqual(layers(draw({}, True, False, ranked=ranked[:40]), (0, 20, 20, 40)), [10, 0, 0])
+        self.assertEqual(layers(draw({}, False, True, ranked=ranked[:40]), (0, 20, 20, 40)), [0, 0, 10])
 
-    def test_builtin_batch_skips_scores_of_zero(self):
-        """With built-in scores most sounds score 0.00; the first batch is chosen among the scored ones."""
-        from custom_models import bracket_ranks, scored_span
-        scores = [.9 - i * .004 for i in range(200)] + [0.0] * 8000
-        span = scored_span(scores)
-        self.assertEqual(span, 210)
-        first = bracket_ranks(span, {}, True)
-        self.assertEqual(first[:3], [0, 1, 2])
-        self.assertGreaterEqual(sum(scores[r] > 0 for r in first), 9)
-        self.assertEqual(scored_span([.5] * 30), 30)
+    def test_batch_gives_each_search_example_its_share(self):
+        from custom_models import _rng, layered_picks
+        ranked = [(rank, 1 - rank / 10000) for rank in range(10000)]  # top layer: ranks 0-99
+        draw = lambda lanes, known=None, short=(True, False), seed=0: layered_picks(ranked, known or {}, *short, _rng(seed), lanes)
+        top = lambda picks, lanes, example: sum(segment < 100 and lanes[segment] == example for segment, _ in picks)
+        # Two examples, the second with only 10 of the 100 top sounds: each still gets half of the top quota (6, or 4).
+        two = {segment: int(segment % 10 == 0) for segment, _ in ranked}
+        for seed in range(5):
+            self.assertEqual([top(draw(two, seed=seed), two, example) for example in (0, 1)], [3, 3])
+            self.assertEqual([top(draw(two, short=(True, True), seed=seed), two, example) for example in (0, 1)], [2, 2])
+        self.assertEqual(draw(two), draw(two))
+        # Three examples and a quota of 4: the extra sound goes to the example with the fewest answers in the top layer.
+        three = {segment: segment % 3 for segment, _ in ranked}
+        self.assertEqual([top(draw(three, {1: 'target', 2: 'other'}, (True, True)), three, example) for example in range(3)], [2, 1, 1])
+        self.assertEqual([top(draw(three, {0: 'target', 1: 'target'}, (True, True)), three, example) for example in range(3)], [1, 1, 2])
+        # An example with nothing left in the top layer passes its share on.
+        self.assertEqual([top(draw(two, dict.fromkeys(range(0, 100, 10))), two, example) for example in (0, 1)], [6, 0])
+        # An example with no sound in the top layer at all (its hits rank lower) plays with its own best sounds.
+        minor = {segment: int(segment >= 2000 and segment % 2 == 0) for segment, _ in ranked}
+        picks = [segment for segment, _ in draw(minor)]
+        self.assertEqual((sum(segment < 100 for segment in picks), sorted(set(picks) & {2000, 2002, 2004, 2006, 2008, 2010}) != [], len(set(picks))), (3, True, 10))
+        self.assertEqual(sum(segment in (2000, 2002, 2004, 2006, 2008, 2010) for segment in picks), 3)
+        # One example is the plain draw.
+        self.assertEqual(draw(dict.fromkeys(range(10000), 0)), draw(None))
 
-    def test_first_twenty_answers_reach_both_kinds(self):
-        """Two sets of 10 before the first AI: a rare species still gets 3 "voice", a common one 3 "no voice"."""
-        from custom_models import MIN_CLASS_EXAMPLES, bracket_ranks
-        for name, voice in (('rare', {0, 2, 5, 9, 14}), ('common', set(range(1300)))):
-            with self.subTest(name):
-                known = {}
-                for _ in range(2):
-                    need_voice = sum(label == 'target' for label in known.values()) < MIN_CLASS_EXAMPLES
-                    for rank in bracket_ranks(8640, known, need_voice):
-                        known[rank] = 'target' if rank in voice else 'other'
-                labels = list(known.values())
-                self.assertEqual(len(labels), 20)
-                self.assertGreaterEqual(labels.count('target'), MIN_CLASS_EXAMPLES)
-                self.assertGreaterEqual(labels.count('other'), MIN_CLASS_EXAMPLES)
+    def test_builtin_batch_draws_from_scores_of_zero_too(self):
+        """With built-in scores most sounds score 0.00: they fill the middle and low layers, the scored ones the top."""
+        from custom_models import _rng, layered_picks
+        ranked = [(segment, score) for segment, score in enumerate([.9 - i * .004 for i in range(200)] + [0.0] * 8000)]
+        self.assertEqual([score > 0 for _, score in layered_picks(ranked, {}, True, False, _rng(0))], [True] * 6 + [False] * 4)
+        self.assertEqual({score for _, score in layered_picks(ranked, {}, False, True, _rng(0))}, {0.0})
 
-
-class BoundaryRanksCheck(unittest.TestCase):
-    def test_choice(self):
-        from custom_models import boundary_ranks
-        wide = boundary_ranks(10000, {}, 10, 0)
-        self.assertEqual(wide, boundary_ranks(10000, {}, 10, 0))
-        self.assertEqual(len(set(wide)), 10)
-        self.assertTrue(all(9 < r < 10000 for r in wide))
-        # Centre-weighted: more picks in the middle half than in the outer quarters together.
-        self.assertGreater(sum(2500 <= r < 7500 for r in wide), sum(r < 2500 or r >= 7500 for r in wide))
-        # Labels shrink the bracket; labelled and visible rows are never picked.
-        known = {100: 'target', 5: 'target', 300: 'other', 150: 'other', 120: 'target', 9000: 'other'}
-        narrow = boundary_ranks(10000, known, 10, 0)
-        self.assertTrue(all(120 < r < 150 for r in narrow) and len(set(narrow)) == 10)
-        self.assertEqual(boundary_ranks(10000, {**known, 125: 'other'}, 10, 0), [121, 122, 123, 124])
-        # Rounds differ while labels stay the same.
-        rounds = [tuple(boundary_ranks(10000, known, 10, k)) for k in range(5)]
-        self.assertTrue(all(a != b for a, b in zip(rounds, rounds[1:])))
-        self.assertEqual(set(boundary_ranks(30, {}, 10, 1)) & set(boundary_ranks(30, {}, 10, 0)), set())
-        # Small and empty brackets.
-        self.assertEqual(boundary_ranks(15, {}, 10, 0), [10, 11, 12, 13, 14])
-        self.assertEqual(boundary_ranks(40, {20: 'target', 21: 'other'}, 10, 0), [15, 16, 17, 18, 19, 22, 23, 24, 25, 26])
-        self.assertEqual(boundary_ranks(40, {20: 'target', 21: 'other'}, 10, 1), [10, 11, 12, 13, 14, 27, 28, 29, 30, 31])
-        self.assertEqual(boundary_ranks(10, {}, 10, 0), [])
+    def test_a_common_species_soon_brings_sounds_without_its_voice(self):
+        """The case that led to the layers: a voice in the best 3,000 of 8,700 sounds. The first ten hold both kinds,
+        and the test sounds (10 "voice", 20 "no voice") are complete within 60 answers."""
+        from custom_models import _rng, layered_picks
+        from test_sounds import HEARD, NOT_HEARD
+        ranked = [(rank, 1 - rank / 8700) for rank in range(8700)]
+        known = {}
+        count = lambda label: sum(value == label for value in known.values())
+        for batch in range(1, 7):
+            for segment, _ in layered_picks(ranked, known, count('target') < HEARD, count('other') < NOT_HEARD, _rng(sorted(known))):
+                known[segment] = 'target' if segment < 3000 else 'other'
+            if batch == 1:
+                self.assertTrue(count('target') >= 4 and count('other') >= 3)
+        self.assertTrue(count('target') >= HEARD and count('other') >= NOT_HEARD, (count('target'), count('other')))
 
 
 if __name__ == '__main__':

@@ -91,7 +91,7 @@ def initialize(root):
                 timezone TEXT NOT NULL, recorded_at TEXT NOT NULL,
                 seconds REAL NOT NULL, sample_rate INTEGER NOT NULL,
                 size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL);
-            -- A sound picked on the sound map, with what only its export needs; its species are labels (source sound_map).
+            -- A sound picked on the sound map, with what only its export needs; its species are the answers recorded on it (labels).
             CREATE TABLE IF NOT EXISTS picked_sounds (
                 recording_id INTEGER NOT NULL REFERENCES recordings ON DELETE CASCADE,
                 start_s REAL NOT NULL, end_s REAL NOT NULL,
@@ -225,6 +225,9 @@ def initialize(root):
             db.execute('ALTER TABLE rollup_scans ADD COLUMN basis TEXT')
         import test_sounds
         db.executescript(test_sounds.SCHEMA)
+        if 'fixed_at' not in columns(db, 'test_phases'):
+            # When the test sounds were frozen (test_sounds.sounds); NULL: frozen by an earlier version.
+            db.execute('ALTER TABLE test_phases ADD COLUMN fixed_at TEXT')
         import sharing
         db.executescript(sharing.SCHEMA)
         merge_labels(db)

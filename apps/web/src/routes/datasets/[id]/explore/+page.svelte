@@ -12,13 +12,12 @@
   import { api } from '$lib/api.svelte';
   import { app,t,activeJob,datasetOf,refreshCatalog,siteOf } from '$lib/app.svelte';
   import { commonName,type Species } from '$lib/species';
-  import { fill,modelIntro } from '$lib/workflow';
+  import { fill,modelIntro,modelName } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
   import MapEntries,{HEARD,NOT_HEARD,type MapOverlay} from '$lib/MapEntries.svelte';
-  import SpeciesChoice from '$lib/SpeciesChoice.svelte';
-  import {recordText,taxonName,type HeardRecord,type Taxon,type Verdict} from '$lib/heard';
-  import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
+  import {recordText,taxonName,type HeardRecord,type Taxon} from '$lib/heard';
+  import PickForm,{blanks,pickedSounds,pickKey,type Answer,type Item,type Named} from '$lib/PickForm.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -60,32 +59,17 @@
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   // Sounds collected to save as a ZIP, kept in the sidecar; the last section of the page counts them and what is still blank.
   const picks=pickedSounds(id);void picks.reload();
-  // The answer card under the map: what is recorded on the shown sound, and an answer about the species chosen in "where to look".
-  let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null),recorded=$state<HeardRecord[]>([]),answering=$state(false),choosing=$state(false),answerError=$state('');
+  // The species chosen in "where to look" is offered first in every sound's form.
+  let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null);
+  // What is heard in a ticked sound is saved at once; the map's marks and the numbers of the open way follow.
+  const record=(item:Item,verdict:Answer,species?:Named)=>void picks.answer(item,verdict,species).then(()=>{entries?.refresh();loadRecorded();});
   // Every answer given by ear on the sounds of the group being viewed, newest first, for the short list beside the map.
   let inGroup=$state<(HeardRecord&{position:number})[]>([]);
   const loadRecorded=()=>{const at=node?.node;if(at!==undefined)api<typeof inGroup>(`/explore/recorded?dataset=${id}&node=${at}`).then(value=>{if(node?.node===at)inGroup=value;},()=>{/* The list keeps what it showed. */});};
-  const at=(s:Segment)=>`recording_id=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
-  $effect(()=>{const s=pick;void picks.state.items;untrack(()=>{choosing=false;answerError='';if(!s){recorded=[];return;}
-    api<{now:HeardRecord[]}>(`/datasets/${id}/heard/sound?${at(s)}&blank=true`).then(value=>{if(pick===s)recorded=value.now;},()=>{/* The card still takes an answer. */});});});
-  // `species` null: "no bird sound". The mark on the map and the list beside it change at once; the numbers of the open way follow.
-  async function answer(s:Segment,species:Taxon|null,verdict:Verdict){answering=true;answerError='';const at=shownAt;
-    try{const value=await api<{now:HeardRecord[]}>('/heard/map-answer',{dataset_id:id,recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,...species?{species_id:species.id,verdict}:{verdict:'no_bird'}});
-      if(pick===s)recorded=value.now;choosing=false;
-      // The same rule as the sidecar's marks: the chosen species' answer, or without one any species heard, else "not heard" ("no bird sound" too).
-      const verdicts=value.now.filter(r=>wanted?r.species.id===wanted.id:r.species.rank!=='none'||r.verdict==='present').map(r=>r.species.rank==='none'?'absent':r.verdict);
-      if(verdicts.includes('present'))markAt.set(at,1);else if(verdicts.includes('absent'))markAt.set(at,2);else markAt.delete(at);
-      blit();loadRecorded();entries?.refresh();
-    }catch(e){answerError=e instanceof Error?e.message:'unknown_error';}finally{answering=false;}}
-  // Species entered on a ticked sound change the map's marks too.
-  let pickedNow='';
-  $effect(()=>{const now=JSON.stringify(Object.values(picks.state.items).map(i=>[i.recording_id,i.start_s,i.species?.id,i.background.map(b=>b.id)]));
-    untrack(()=>{if(pickedNow&&pickedNow!==now){entries?.refresh();loadRecorded();}pickedNow=now;});});
   // "Look here" and the map's flags go into a group. The map is brought into view before the move: the layout keeps
   // the scroll position over the page made anew for the group, so the map is in view there and stays.
   function enter(target:number){document.querySelector('.explore')?.scrollIntoView({block:'start'});void go(target);}
   const tally=$derived.by(()=>{const items=Object.values(picks.state.items);return {n:items.length,blanks:blanks(items)};});
-  const recent=$derived(recentSpecies(Object.values(picks.state.items)));
   const job=$derived(activeJob());
   const building=$derived(job?.stage.startsWith('explore_')&&datasetOf(job.dataset_id)?.site_id===datasetOf(id)?.site_id?job:null);
   const ended=$derived(app.jobs.find(j=>j.id===watched&&(j.status==='failed'||j.status==='cancelled')));
@@ -99,7 +83,7 @@
   // The catalogue poll refreshes jobs every 2 s; any job change or a move to another group reloads the map state.
   $effect(()=>{void signature;void nodeId;untrack(()=>void load());});
 
-  let request=0,quietUntil=0,lastClick=0;
+  let request=0,quietUntil=0,lastClick={at:0,x:0,y:0};
   async function load(){
     const version=++request,wanted=nodeId;
     try{const next=await api<Status>(`/explore?dataset=${id}&node=${wanted}`);
@@ -172,20 +156,20 @@
       if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
-  // Ticking a sound collects it with nothing filled in; unticking removes it and its labels.
+  // Ticking a sound opens its form and collects it for the ZIP; unticking closes the form and takes back what the map recorded on the sound (never another screen's answer), so the marks and lists follow.
   function pickSound(s:Segment,checked:boolean){
-    if(!checked){void picks.remove(s);return;}
+    if(!checked){void picks.remove(s).then(()=>{entries?.refresh();loadRecorded();});return;}
     void picks.save({recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,path:s.path,recorded_at:s.recorded_at,timezone:s.timezone,
-      species:null,background:[],sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
+      species:null,background:[],complete:false,sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
   }
   // Picking a sound opens its group's row; rows share one `name`, so the browser closes the row that was open.
-  // A newly opened row out of view is brought up after the double-click window, so a fast second click still lands on the same dot.
+  // The current sound is the first row of its group's list. A sound chosen by a press (not one restored on coming back) is
+  // brought into view after the double-click window, so a fast second click still lands on the same dot; a row played
+  // from the list moved up there, so the keyboard focus follows it.
   let scrollTimer:ReturnType<typeof setTimeout>|undefined;
-  function bringUp(at:number){clearTimeout(scrollTimer);
-    scrollTimer=setTimeout(()=>{const row=document.getElementById(`group-${at}`),main=row?.closest('main');if(!row||!main)return;
-      const top=row.getBoundingClientRect().top-main.getBoundingClientRect().top;
-      if(top<0||top>main.clientHeight*.6)row.scrollIntoView({block:'start',behavior:'smooth'});},360);}
-  function show(child:number){selected=child;const at=children[child].node;if(!open[at]){open[at]=true;bringUp(at);}}
+  $effect(()=>{const s=pick;untrack(()=>{clearTimeout(scrollTimer);if(s&&autoplayPick)scrollTimer=setTimeout(()=>{const row=document.getElementById('now');
+    row?.scrollIntoView({block:'nearest',behavior:'smooth'});if(document.activeElement===document.body)row?.focus({preventScroll:true});},360);});});
+  function show(child:number){selected=child;const at=children[child].node;open[at]=true;}
   function escape(event:KeyboardEvent){if(event.key==='Escape'&&!event.defaultPrevented&&parent!==undefined)void go(parent);}
   // One sound at a time: starting a player pauses every other one on the page.
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
@@ -193,16 +177,19 @@
   const sourceOf=(s:Segment)=>({id:s.recording_id,kind:'recording' as const,path:s.path,seconds:s.end_s});
   const heardAt=(local:string)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:site?.timezone}).format(new Date(local));
   const when=(s:Segment)=>new Intl.DateTimeFormat(app.locale,{dateStyle:'medium',timeStyle:'medium',hourCycle:'h23',timeZone:s.timezone}).format(new Date(Date.parse(s.recorded_at)+s.start_s*1000));
-  const pct=(share:number,digits=0)=>new Intl.NumberFormat(app.locale,{style:'percent',maximumFractionDigits:digits}).format(share);
+  // A share above zero never reads "0%": it reads "under 1%".
+  const pct=(share:number,digits=0)=>{const format=(value:number)=>new Intl.NumberFormat(app.locale,{style:'percent',maximumFractionDigits:digits}).format(value),least=10**-(2+digits);
+    return share>0&&share<least/2?fill('eUnder',{p:format(least)}):format(share);};
   const groupName=(g:{node:number;name:string})=>g.name?fill('eGroup',{n:g.name}):t('eWhole');
   // Common names in the UI language are fetched once per species; the scientific name is shown until then or when there is none.
   const asked=new Set<string>();
   function askNames(items:Named[]){for(const {id:sid} of items)if(sid&&!asked.has(sid)){asked.add(sid);
     api<Species>(`/species/${encodeURIComponent(sid)}`).then(row=>{names[sid]=row;},()=>{/* The scientific name stays as the fallback. */});}}
-  const speciesName=(s:Named)=>{const row=s.id?names[s.id]:undefined;return (row&&commonName(row,app.locale))||s.scientific_name;};
-  $effect(()=>{askNames(Object.values(picks.state.items).flatMap(i=>[...i.species?[i.species]:[],...i.background]));});
+  const speciesName=(s:Named)=>{const row=s.id?names[s.id]:undefined;return row?taxonName(row):s.scientific_name;};
+  $effect(()=>{askNames([...wanted?[wanted]:[],...picks.state.recent,...Object.values(picks.state.items).flatMap(i=>[...i.species?[i.species]:[],...i.background])]);});
   const listOf=<T extends Named>(items:T[],share:(item:T)=>number)=>items.map(item=>`${speciesName(item)} ${pct(share(item))}`).join(t('eSep'));
-  // Below one interval in five with any AI suggestion, the group is more likely silence or insects than a species.
+  // Below one sound in five with a bird named by the AI, the group is more likely silence or insects than a bird.
+  // The sidecar counts the AI's first answers, as the flags and the "AI answer" beside a sound do.
   const suggested=(g:Group)=>g.hint_rate<.2?[]:g.top_species;
   const aiHint=(g:Group)=>!suggested(g).length?fill('eNoAiHint',{rate:pct(g.hint_rate)})
     :fill('eAiHint',{list:listOf(g.top_species,s=>s.share),rate:pct(g.hint_rate)});
@@ -213,12 +200,13 @@
   // Scatter: every point is drawn once into an offscreen canvas; pan and zoom move that image and redraw sharply when the gesture pauses.
   let points:Points|null=null,canvas:HTMLCanvasElement|null=null,offscreen:HTMLCanvasElement|null=null,timer:ReturnType<typeof setTimeout>|undefined,animation=0;
   // Device pixels: screen = base * k + t, where base fits all points into the canvas.
-  let view={k:1,tx:0,ty:0},drawn={k:1,tx:0,ty:0},drag:{x:number;y:number;tx:number;ty:number;moved:boolean}|null=null;
+  // `fit`: the zoom at which the group being viewed fills the map; zooming in from there, dots grow (see `grow`).
+  let view={k:1,tx:0,ty:0},drawn={k:1,tx:0,ty:0},fit=1,drag:{x:number;y:number;tx:number;ty:number;moved:boolean}|null=null;
   // Where each child's numbered badge goes: the median of its points, in map coordinates.
   let marks:{x:number;y:number}[]=[];
   // From the ways into the map: answers given by ear, the sounds the open way points at (its targets) and the groups it suggests.
   let overlay=$state.raw<MapOverlay>({entry:'unsure',marks:[],targets:[],groups:[],guess:new Map()});
-  // The same, by position: the mark of each answered sound (changed at once by an answer on this page) and which sounds are targets.
+  // The same, by position: the mark of each answered sound and which sounds are targets.
   let markAt=new Map<number,1|2>();
   const targetAt=$derived(new Set(overlay.targets));
   const matching=(g:{lo:number;hi:number})=>overlay.targets.filter(i=>i>=g.lo&&i<g.hi);
@@ -227,7 +215,7 @@
   const inside=$derived(!!node&&(node.node!==0||overlay.groups.some(g=>g.node===0))&&matching(node).length>0);
   // Suggested groups get a flag, lettered as in the list; not the group being viewed or one around it: the user is there already.
   const offered=$derived(node?overlay.groups.map((g,index)=>({...g,letter:'ABCDEFGHIJ'[index]})).filter(g=>!(g.lo<=node.lo&&node.hi<=g.hi)):[]);
-  // What the open way says about a sound, shown beside it in the lists and under the map.
+  // What the open way says about a sound, shown beside it in the lists and in the current-sound card.
   const badge=(at:number|undefined)=>{if(at===undefined||!targetAt.has(at))return '';const guess=overlay.guess.get(at);
     return overlay.entry==='examples'?t('meBadge_examples'):overlay.entry==='species'?wanted?fill('meBadge_species',{name:taxonName(wanted)}):''
       :guess?fill('meBadge_unsure',{name:commonName(guess,app.locale)||guess.scientific_name}):'';};
@@ -236,11 +224,21 @@
   function plant(){const all=points;flags=!all?[]:offered.map(g=>{
     const span=(values:Float32Array)=>{const sorted=values.slice(g.lo,g.hi).sort(),a=sorted[Math.floor(sorted.length*.05)],b=sorted[Math.ceil(sorted.length*.95)-1];return [(a+b)/2,(b-a)/2];};
     const [x,rx]=span(all.x),[y,ry]=span(all.y);return {node:g.node,letter:g.letter,x,y,rx,ry};});}
-  // On the canvas: a dashed ring around the group and the lettered badge on its upper right.
-  const ring=(flag:typeof flags[number],{ratio,x0,y0,sx,sy,ox,oy}:ReturnType<typeof frame>)=>{
-    const cx=ox+(flag.x-x0)*sx,cy=oy-(flag.y-y0)*sy,rx=1.4*flag.rx*sx+12*ratio,ry=1.4*flag.ry*sy+12*ratio;const r=13*ratio,keep=(v:number,size:number)=>Math.min(Math.max(v,r+2*ratio),size-r-2*ratio);
-    // A group at the map's edge keeps its letter inside the picture.
-    return {cx,cy,rx,ry,bx:keep(cx+.7*rx,canvas!.width),by:keep(cy-.7*ry,canvas!.height),r};};
+  // Where a letter may move to when its place is taken: steps around it, nearest first.
+  const STEPS=[-3,-2,-1,0,1,2,3].flatMap(dx=>[-3,-2,-1,0,1,2,3].map(dy=>[dx,dy])).sort((a,b)=>Math.hypot(...a)-Math.hypot(...b));
+  // On the canvas: a dashed ring around each flagged group and its lettered badge on the upper right, kept inside the picture
+  // and clear of the group numbers and of the letters placed before it. Drawing and pressing use the same places.
+  function placed(){if(!canvas||!points)return [];
+    const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),{width,height}=canvas,r=13*ratio,edge=r+6*ratio;
+    const keep=(v:number,size:number)=>Math.min(Math.max(v,edge),size-edge);
+    const taken=marks.map(mark=>({x:ox+(mark.x-x0)*sx,y:oy-(mark.y-y0)*sy,r:11*ratio}));
+    return flags.flatMap(flag=>{const cx=ox+(flag.x-x0)*sx,cy=oy-(flag.y-y0)*sy,rx=1.4*flag.rx*sx+12*ratio,ry=1.4*flag.ry*sy+12*ratio;
+      if(cx<0||cx>width||cy<0||cy>height)return [];
+      const spots=STEPS.map(([dx,dy])=>({x:keep(cx+.7*rx+dx*2.2*r,width),y:keep(cy-.7*ry+dy*2.2*r,height),r}));
+      const spot=spots.find(a=>!taken.some(b=>Math.hypot(a.x-b.x,a.y-b.y)<a.r+b.r+2*ratio))??spots[0];taken.push(spot);
+      return [{flag,cx,cy,rx,ry,bx:spot.x,by:spot.y,r}];});}
+  // Zoomed in past the fitted view, dots and the reach of a press grow (up to twice), with the answers' marks and the current sound, so a sound stays easy to see and press.
+  const grow=()=>Math.min(2,Math.max(1,Math.sqrt(view.k/fit)));
   function overlayed(value:MapOverlay){const before=overlay.targets.join();overlay=value;markAt=new Map(value.marks);if(before!==value.targets.join())order++;plant();render();}
   async function loadPoints(status:Status){
     pointsError='';
@@ -255,7 +253,8 @@
     }catch(e){pointsError=e instanceof Error?e.message:'unknown_error';}
   }
   function frame(target:HTMLCanvasElement,{box:[x0,x1,y0,y1]}:Points,{k,tx,ty}=view){
-    const ratio=target.width/Math.max(1,target.clientWidth),pad=8*ratio,{width,height}=target;
+    // The padding leaves room for the ring and the letter of a flagged group at the map's edge.
+    const ratio=target.width/Math.max(1,target.clientWidth),pad=28*ratio,{width,height}=target;
     return {ratio,x0,y0,sx:(width-2*pad)/(x1-x0||1)*k,sy:(height-2*pad)/(y1-y0||1)*k,ox:pad*k+tx,oy:(height-pad)*k+ty};
   }
   const median=(values:Float32Array)=>values.slice().sort()[values.length>>1];
@@ -271,7 +270,7 @@
     [top,bottom]=[base.oy-(top-base.y0)*base.sy,base.oy-(bottom-base.y0)*base.sy];
     const k=Math.min(MAX_ZOOM,Math.max(1,.85*Math.min(width/(right-left),height/(bottom-top))));
     const target={k,tx:width/2-k*(left+right)/2,ty:height/2-k*(top+bottom)/2};
-    cancelAnimationFrame(animation);transformed=false;
+    cancelAnimationFrame(animation);transformed=false;fit=k;
     if(!animate||matchMedia('(prefers-reduced-motion: reduce)').matches){view=target;render();return;}
     // Zoom geometrically and move the centre linearly, as map apps do.
     const from=view,start=performance.now(),centre=(v:typeof view)=>[(width/2-v.tx)/v.k,(height/2-v.ty)/v.k];
@@ -282,15 +281,16 @@
     animation=requestAnimationFrame(step);
   }
   // The group being viewed is coloured by its smaller groups; every other point stays faint for context.
-  // Inside a group, the sounds the open way points at are a little larger, in their group's own colour with a thin white edge.
+  // Inside a group, the sounds the open way points at are larger round dots, in their group's own colour with a thin white edge.
   function render(){
     if(!points||!canvas||!offscreen||!node)return;
-    const {n,x,y}=points,{ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),context=offscreen.getContext('2d')!;
-    offscreen.width=canvas.width;offscreen.height=canvas.height;context.strokeStyle='#fff';context.lineWidth=ratio;
-    const dots=(lo:number,hi:number,size:number)=>{for(let i=lo;i<hi;i++)context.fillRect(ox+(x[i]-x0)*sx-size/2,oy-(y[i]-y0)*sy-size/2,size,size);};
-    const larger=(lo:number,hi:number)=>{if(inside)for(let i=lo;i<hi;i++)if(targetAt.has(i)){context.beginPath();context.arc(ox+(x[i]-x0)*sx,oy-(y[i]-y0)*sy,3.5*ratio,0,2*Math.PI);context.fill();context.stroke();}};
+    const {n,x,y}=points,{ratio:px,x0,y0,sx,sy,ox,oy}=frame(canvas,points),context=offscreen.getContext('2d')!,ratio=px*grow();
+    offscreen.width=canvas.width;offscreen.height=canvas.height;context.strokeStyle='#fff';context.lineWidth=1.5*px;
+    // Small squares; inside a group, the sounds the open way points at are left to `larger`, which draws them as round dots.
+    const dots=(lo:number,hi:number,size:number,own=inside)=>{for(let i=lo;i<hi;i++)if(!own||!targetAt.has(i))context.fillRect(ox+(x[i]-x0)*sx-size/2,oy-(y[i]-y0)*sy-size/2,size,size);};
+    const larger=(lo:number,hi:number)=>{if(inside)for(let i=lo;i<hi;i++)if(targetAt.has(i)){context.beginPath();context.arc(ox+(x[i]-x0)*sx,oy-(y[i]-y0)*sy,4.5*ratio,0,2*Math.PI);context.fill();context.stroke();}};
     const paint=(index:number,draw:(lo:number,hi:number)=>void)=>{context.globalAlpha=selected===null?.8:index===selected?.9:.15;context.fillStyle=palette[index%palette.length];draw(children[index].lo,children[index].hi);};
-    context.globalAlpha=.1;context.fillStyle=getComputedStyle(canvas).color;dots(0,node.lo,2*ratio);dots(node.hi,n,2*ratio);
+    context.globalAlpha=.1;context.fillStyle=getComputedStyle(canvas).color;dots(0,node.lo,2*ratio,false);dots(node.hi,n,2*ratio,false);
     if(!children.length){context.globalAlpha=.8;context.fillStyle=palette[0];dots(node.lo,node.hi,4*ratio);larger(node.lo,node.hi);}
     // The chosen smaller group is drawn last, and every larger dot over the small ones.
     const others=children.map((_,index)=>index).filter(index=>index!==selected),all=selected!==null&&children[selected]?[...others,selected]:others;
@@ -303,31 +303,35 @@
     const context=canvas.getContext('2d')!,r=view.k/drawn.k;
     context.setTransform(1,0,0,1,0,0);context.clearRect(0,0,canvas.width,canvas.height);
     context.setTransform(r,0,0,r,view.tx-drawn.tx*r,view.ty-drawn.ty*r);context.drawImage(offscreen,0,0);
-    // Numbered badges stay sharp and the same size at any zoom; the numbers match the list.
-    const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points);
-    context.setTransform(1,0,0,1,0,0);context.font=`700 ${12*ratio}px ${getComputedStyle(canvas).fontFamily}`;context.textAlign='center';context.textBaseline='middle';context.lineWidth=2*ratio;
-    marks.forEach((mark,index)=>{const cx=ox+(mark.x-x0)*sx,cy=oy-(mark.y-y0)*sy;
-      context.beginPath();context.arc(cx,cy,11*ratio,0,2*Math.PI);context.fillStyle=palette[index%palette.length];context.fill();
-      context.strokeStyle='#fff';context.stroke();context.fillStyle='#fff';context.fillText(String(index+1),cx,cy);});
+    const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),font=getComputedStyle(canvas).fontFamily;
+    context.setTransform(1,0,0,1,0,0);context.textAlign='center';context.textBaseline='middle';
     const at=(i:number)=>[ox+(points!.x[i]-x0)*sx,oy-(points!.y[i]-y0)*sy] as const,ink=getComputedStyle(canvas).color;
-    // The open way's flags: the letter matches the list of suggestions.
-    context.font=`700 ${14*ratio}px ${getComputedStyle(canvas).fontFamily}`;
-    for(const flag of flags){const {cx,cy,rx,ry,bx,by,r}=ring(flag,frame(canvas,points));
-      if(cx<0||cx>canvas.width||cy<0||cy>canvas.height)continue;
-      context.beginPath();context.ellipse(cx,cy,rx,ry,0,0,2*Math.PI);context.setLineDash([5*ratio,4*ratio]);context.lineWidth=1.5*ratio;context.strokeStyle=ink;context.stroke();context.setLineDash([]);
-      context.beginPath();context.arc(bx,by,r,0,2*Math.PI);context.fillStyle=ink;context.fill();context.fillStyle=getComputedStyle(canvas).backgroundColor;context.fillText(flag.letter,bx,by);}
-    // What was heard by ear: a blue dot with a tick (heard) or a grey one with a cross (not heard), told apart without colour.
+    // Lowest: what was heard by ear, a blue dot with a tick (heard) or a grey one with a cross (not heard), told apart without colour.
     const mark=(cx:number,cy:number,state:1|2,r:number)=>{context.beginPath();context.arc(cx,cy,r,0,2*Math.PI);context.fillStyle=state===1?HEARD:NOT_HEARD;context.fill();
       context.lineWidth=.25*r;context.strokeStyle='#fff';context.stroke();context.beginPath();
       if(state===1){context.moveTo(cx-.5*r,cy);context.lineTo(cx-.12*r,cy+.38*r);context.lineTo(cx+.5*r,cy-.32*r);}
       else{context.moveTo(cx-.38*r,cy-.38*r);context.lineTo(cx+.38*r,cy+.38*r);context.moveTo(cx+.38*r,cy-.38*r);context.lineTo(cx-.38*r,cy+.38*r);}
       context.stroke();};
-    for(const [i,state] of markAt)if(i<points.n)mark(...at(i),state,7*ratio);
-    // The sound shown under the map is the largest dot, with a dark outline on a white one so it stands out on any colour.
-    if(pickAt>=0&&pickAt<points.n){const [cx,cy]=at(pickAt),state=markAt.get(pickAt),r=9*ratio;
-      if(state)mark(cx,cy,state,r);
-      else{context.beginPath();context.arc(cx,cy,r,0,2*Math.PI);context.fillStyle=palette[Math.max(0,children.findIndex(c=>c.lo<=pickAt&&pickAt<c.hi))%palette.length];context.fill();}
-      for(const [width,colour] of [[5.5,'#fff'],[2.5,ink]] as const){context.beginPath();context.arc(cx,cy,r+2*ratio,0,2*Math.PI);context.lineWidth=width*ratio;context.strokeStyle=colour;context.stroke();}}
+    for(const [i,state] of markAt)if(i<points.n)mark(...at(i),state,7*ratio*grow());
+    // The current sound is the largest dot.
+    const now=pickAt>=0&&pickAt<points.n?at(pickAt):null,big=9*ratio*grow();
+    if(now){const state=markAt.get(pickAt);
+      if(state)mark(...now,state,big);
+      else{context.beginPath();context.arc(...now,big,0,2*Math.PI);context.fillStyle=palette[Math.max(0,children.findIndex(c=>c.lo<=pickAt&&pickAt<c.hi))%palette.length];context.fill();}}
+    // Over the answers, so many of them never bury the way around the map: the numbered badges (sharp and the same size at any
+    // zoom; the numbers match the list), then the open way's flags (the letter matches the list of suggestions).
+    context.font=`700 ${12*ratio}px ${font}`;context.lineWidth=2*ratio;
+    marks.forEach((mark,index)=>{const cx=ox+(mark.x-x0)*sx,cy=oy-(mark.y-y0)*sy;
+      context.beginPath();context.arc(cx,cy,11*ratio,0,2*Math.PI);context.fillStyle=palette[index%palette.length];context.fill();
+      context.strokeStyle='#fff';context.stroke();context.fillStyle='#fff';context.fillText(String(index+1),cx,cy);});
+    context.font=`700 ${14*ratio}px ${font}`;
+    const badges=placed();
+    for(const {cx,cy,rx,ry} of badges){context.beginPath();context.ellipse(cx,cy,rx,ry,0,0,2*Math.PI);context.setLineDash([5*ratio,4*ratio]);context.lineWidth=1.5*ratio;context.strokeStyle=ink;context.stroke();context.setLineDash([]);}
+    for(const {flag,bx,by,r} of badges){
+      context.beginPath();context.arc(bx,by,r,0,2*Math.PI);context.fillStyle=ink;context.fill();context.lineWidth=2*ratio;context.strokeStyle='#fff';context.stroke();
+      context.fillStyle=getComputedStyle(canvas).backgroundColor;context.fillText(flag.letter,bx,by);}
+    // Last, the outline of the current sound: dark on white, so it stands out on any colour and shows around a badge it lies under.
+    if(now)for(const [width,colour] of [[5.5,'#fff'],[2.5,ink]] as const){context.beginPath();context.arc(...now,big+2*ratio,0,2*Math.PI);context.lineWidth=width*ratio;context.strokeStyle=colour;context.stroke();}
   }
   function moved(){transformed=true;blit();clearTimeout(timer);timer=setTimeout(render,150);}
   $effect(()=>{void selected;void palette;untrack(render);});
@@ -350,18 +354,18 @@
     // Only a real drag stops a running zoom; a click right after going inside must not freeze it halfway.
     const r=canvas.width/Math.max(1,canvas.clientWidth);drag.moved=true;cancelAnimationFrame(animation);view={...view,tx:drag.tx+dx*r,ty:drag.ty+dy*r};moved();
   }
-  // A click on a flag goes into its group. Else it picks the nearest point (within 8 px), shows and plays its sound and highlights its smaller group without scrolling;
-  // a second click within 350 ms goes into it. A point outside the group being viewed moves to its group first.
+  // A click on a flag goes into its group. Else it picks the nearest point (within 8 px; more when zoomed in), shows and plays its sound and highlights its smaller group without scrolling;
+  // a second click at the same place within 350 ms goes into it: two sounds pressed one after the other are two picks. A point outside the group being viewed moves to its group first.
   function up(event:PointerEvent){
     const click=drag&&!drag.moved;drag=null;
     // Clicks right after going into a group are ignored, so a fast double click cannot go down two levels.
     if(!click||!points||!canvas||!node||performance.now()<quietUntil)return;
-    const now=performance.now(),double=now-lastClick<350;lastClick=now;
+    const now=performance.now(),double=now-lastClick.at<350&&Math.hypot(event.clientX-lastClick.x,event.clientY-lastClick.y)<6;lastClick={at:now,x:event.clientX,y:event.clientY};
     const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),bounds=canvas.getBoundingClientRect();
     const px=(event.clientX-bounds.left)*ratio,py=(event.clientY-bounds.top)*ratio;
-    const hit=flags.find(flag=>{const {cx,cy,bx,by,r}=ring(flag,frame(canvas!,points!));return cx>=0&&cx<=canvas!.width&&cy>=0&&cy<=canvas!.height&&Math.hypot(bx-px,by-py)<=r;});
-    if(hit){enter(hit.node);return;}
-    let best=-1,limit=(8*ratio)**2;
+    const hit=placed().find(({bx,by,r})=>Math.hypot(bx-px,by-py)<=r);
+    if(hit){enter(hit.flag.node);return;}
+    let best=-1,limit=(8*ratio*grow())**2;
     for(let i=0;i<points.n;i++){const dx=ox+(points.x[i]-x0)*sx-px,dy=oy-(points.y[i]-y0)*sy-py,d=dx*dx+dy*dy;if(d<limit){limit=d;best=i;}}
     const child=children.findIndex(c=>c.lo<=best&&best<c.hi);
     if(double&&child>=0){void go(children[child].node);return;}
@@ -372,18 +376,32 @@
     if(child>=0)show(child);
   }
 </script>
-<!-- In the list the line wraps, and the row of the current sound is marked. -->
-{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{' '}{/if}{when(s)}{#if candidates(s)} · <span class="muted">{candidates(s)}</span>{/if}{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
+<!-- In the list the line wraps. -->
+{#snippet about(s:Segment)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{when(s)}{#if candidates(s)} · <span class="muted">{candidates(s)}</span>{/if}{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
+<!-- One sound of a list. Ticking it opens its form in place, the same for every sound. The current sound (`current`) is
+     marked and plays on its own; playing another row makes that one the current sound: its own player stops, and the row
+     moves to the top of its group's list and plays there. -->
+{#snippet row(s:Segment,current:boolean)}{@const p=picks.state.items[pickKey(s)]}
+  <div class="member" class:now={current} id={current?'now':undefined} tabindex="-1"
+    onplaycapture={current?undefined:event=>{(event.target as HTMLAudioElement).pause();if(s.position!==undefined)void choose(s.position);}}>
+    <!-- The current row is mounted anew for every pick; the click that chose it is the gesture that lets it play on its own. -->
+    <AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={current&&autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if current}<strong class="current"><i class="ring" aria-hidden="true"></i>{t('meLegendNow')}</strong>{' '}{/if}{@render about(s)}{/snippet}</AudioRegion>
+    <label class="check"><input type="checkbox" aria-label={`${t('ePick')}: ${when(s)}`} checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
+    {#if p}<div class="labels"><PickForm value={p} datasetId={id} first={[...wanted?[wanted]:[],...s.candidates.slice(0,3)]} recent={picks.state.recent} name={speciesName}
+      onchange={label=>picks.save({...p,...label})} onanswer={(verdict,species)=>record(p,verdict,species)}/></div>{/if}
+  </div>
+{/snippet}
 {#snippet sounds(g:Group)}
   {@const at=g.node}
   {@const list=lists[at]}
   {@const first=matching(g).length}
+  {@const within=(i:number)=>i>=g.lo&&i<g.hi}
   {#if first}<p class="muted">{fill(`meFirst_${overlay.entry}`,{n:first})}</p>{/if}
-  {#each list?.segments??[] as s (s.segment_id)}{@const p=picks.state.items[pickKey(s)]}<div class="member" class:picked={!!p}>
-    <label class="check"><input type="checkbox" aria-label={`${t('ePick')}: ${when(s)}`} checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
-    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s,pick?.segment_id===s.segment_id)}{/snippet}</AudioRegion>
-    {#if p}<div class="labels"><PickForm value={p} {recent} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
-  </div>{/each}
+  <!-- The current sound comes first, whatever the order of the list; the last one stays shown until the next arrives. -->
+  {#if pickError&&within(pickAt)}<p class="error" role="alert">{t(pickError)}</p>{/if}
+  {#if pick&&within(shownAt)}{#key pick.segment_id}{@render row({...pick,position:shownAt},true)}{/key}
+  {:else if within(pickAt)&&!pickError}<p role="status"><Spinner/> {t('loading')}</p>{/if}
+  {#each (list?.segments??[]).filter(s=>s.segment_id!==pick?.segment_id) as s (s.segment_id)}{@render row(s,false)}{/each}
   {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
   {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
   {:else if !list||list.pending}<p role="status"><Spinner/> {t('loading')}</p>{/if}
@@ -414,7 +432,7 @@
       {#if build.error==='no_search_embeddings'}<Button href={resolve(`/datasets/${id}`)}>{t('eBackToAnalyse')}</Button>{/if}</section>{/if}
     {#if node}
       <p class="muted">{fill('eMadeFrom',{date:made(data.created_at),model:modelIntro(data.engine),n:data.segment_count.toLocaleString(app.locale)})}</p>
-      <MapEntries bind:this={entries} datasetId={id} node={node.node} go={enter} onoverlay={overlayed} onspecies={value=>wanted=value}/>
+      <MapEntries bind:this={entries} datasetId={id} node={node.node} ai={modelName(data.engine)} go={enter} onoverlay={overlayed} onspecies={value=>wanted=value}/>
       <div class="explore">
         <section class="panel stack map-panel" aria-label={t('eMapHeading')}>
           {#if pointsError}<p class="error" role="alert">{t(pointsError)}</p>{/if}
@@ -427,44 +445,15 @@
             <Button size="sm" disabled={!node.node&&!transformed} onclick={whole}>{t('eTop')}</Button>
           </div>
           <canvas use:scatter aria-label={t('eMapLabel')} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={()=>drag=null}></canvas>
-          <!-- One legend for the whole map: size and outline (and the tick and cross) carry the meaning, colour only helps. -->
+          <!-- One legend for the whole map: size and shape (and the tick and cross) carry the meaning. A dot's colour is its
+               smaller group's, so the samples of the two kinds of dot are grey, not one group's colour. -->
           <p class="legend">{#if offered.length}<span><i class="flag"></i>{t('meLegendFlag')}</span>{/if}
-            {#if inside}<span><i class="target" style:background={palette[0]}></i>{t(`meLegendTarget_${overlay.entry}`)}</span><span><i class="other" style:background={palette[0]}></i>{t('meLegendOther')}</span>{/if}
+            {#if children.length}<span><i style:background={palette[0]}>1</i>{t('meLegendNumber')}</span>{/if}
+            {#if inside}<span><i class="target"></i>{t(`meLegendTarget_${overlay.entry}`)}</span><span><i class="other"></i>{t('meLegendOther')}</span>{/if}
             {#if node.node}<span><i class="other"></i>{t('meLegendOutside')}</span>{/if}
             <span><i class="now"></i>{t('meLegendNow')}</span>
             <span><i class="mark" style:background={HEARD}>✓</i>{t(overlay.entry==='unsure'?'meLegendHeardAny':'hdV_present')}</span><span><i class="mark" style:background={NOT_HEARD}>×</i>{t('hdV_absent')}</span></p>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
-          <!-- Fixed text lines and a kept-up card: a new pick changes what the card shows, never how tall it is. -->
-          <div class="pick" aria-busy={pickAt>=0&&!pickError&&shownAt!==pickAt}>
-            {#if pickError}<p class="error" role="alert">{t(pickError)}</p>
-            {:else if !pick}{#if pickAt<0}<p class="muted">{t('ePickHint')}</p>{:else}<p role="status"><Spinner/> {t('loading')}</p>{/if}
-            {:else}
-              {@const s=pick}
-              {@const child=children.findIndex(c=>c.lo<=shownAt&&shownAt<c.hi)}
-              {@const tag=badge(shownAt)}
-              <!-- Its own line above the figure, free to wrap: when, which group, and what the open way says about the sound. -->
-              <h3 class="line"><strong>{t('ePicked')}</strong> {when(s)}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if tag}{' · '}{tag}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
-              <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
-              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if candidates(s)&&(s.candidates.length||!tag)}<span class="muted" title={candidates(s)}>{candidates(s)}</span>{/if}{/snippet}</AudioRegion>{/key}
-              <div class="answer">
-                {#if wanted}{@const mine=recorded.find(r=>r.species.id===wanted!.id)}
-                  <strong>{fill('maTitle',{species:taxonName(wanted)})}</strong>
-                  <div class="actions" role="group" aria-label={fill('maTitle',{species:taxonName(wanted)})}>{#each ['present','absent','unknown'] as const as verdict}
-                    <Button size="sm" active={mine?.verdict===verdict} aria-pressed={mine?.verdict===verdict} disabled={answering} onclick={()=>answer(s,wanted!,verdict)}>{t(`maV_${verdict}`)}</Button>{/each}</div>
-                {:else if choosing}
-                  <strong>{t('maTitleAny')}</strong>
-                  <SpeciesChoice datasetId={id} onchoose={taxon=>answer(s,taxon,'present')}/>
-                  <Button size="sm" onclick={()=>choosing=false}>{t('maCancel')}</Button>
-                {:else}{@const none=recorded.some(r=>r.species.rank==='none'&&r.verdict==='present')}
-                  <strong>{t('maTitleAny')}</strong>
-                  <div class="actions"><Button size="sm" disabled={answering} onclick={()=>choosing=true}>{t('maChoose')}</Button>
-                    <Button size="sm" active={none} aria-pressed={none} disabled={answering} onclick={()=>answer(s,null,'present')}>{t('ruNotBird')}</Button></div>
-                {/if}
-                <span class="muted">{recorded.length?fill('maNow',{list:recorded.map(recordText).join(t('eSep'))}):t('maNone')}</span>
-                {#if answerError}<span class="error" role="alert">{t(answerError)}</span>{/if}
-              </div>
-            {/if}
-          </div>
         </section>
         <section class="panel stack">
           <nav class="trail" aria-label={t('eTrail')}>
@@ -473,8 +462,8 @@
               {#if index<trail.length-1}<a href={here(step.node)} data-sveltekit-replacestate data-sveltekit-noscroll>{groupName(step)}</a>{:else}<strong aria-current="page">{groupName(step)}</strong>{/if}
             {/each}
           </nav>
-          <p>{fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/Math.max(1,data.segment_count),1)})}<br><span class="muted">{aiHint(node)}</span></p>
-          <!-- Answers given under the map show here at once; the newest five are enough to see that each one was kept. -->
+          <p>{node.size>=data.segment_count?fill('eSummaryAll',{n:node.size.toLocaleString(app.locale)}):fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/data.segment_count,1)})}<br><span class="muted">{aiHint(node)}</span></p>
+          <!-- What is recorded in the rows below shows here at once; the newest five are enough to see that each one was kept. -->
           <h2>{t('eRecorded')}</h2>
           {#if inGroup.length}<ul class="recorded">{#each inGroup.slice(0,5) as r (r.id)}<li>{heardAt(r.local_time)} · {recordText(r)}</li>{/each}</ul>
             {#if inGroup.length>5}<p class="muted">{fill('eRecordedMore',{shown:5,n:inGroup.length})}</p>{/if}{/if}
@@ -504,6 +493,7 @@
             {@render orderNote()}
             {@render sounds(node)}
           {/if}
+          <p class="muted">{fill('ePickNote',{section:t('eCollect')})}</p>
         </section>
       </div>
       {#if picks.state.error}<p class="error" role="alert">{t(picks.state.error)}</p>{/if}
@@ -524,19 +514,16 @@
   .explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   /* The map column stays in view and never runs past the window: 140px is the 76px top bar, the 32px page padding and 16px above and below. */
   .map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
-  /* The map shrinks in short windows so the current sound under it stays in view. */
   .map-nav{display:flex;gap:4px}
-  /* The map takes the height left over by the line about the coloured dots, its 44px controls, the legend, the hint and the current-sound card with their 12px gaps; in a short window it stays 320px and the column scrolls. */
-  canvas{display:block;flex:none;width:100%;height:clamp(320px,calc(100vh - 660px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
-  /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
-  .answer{display:flex;flex-direction:column;gap:4px;font-size:14px}.answer .actions{gap:6px}
-  /* `flex:none`: in the height-limited column the card must not be squeezed under its content, which pushed its first line onto the figure. */
-  .pick{display:flex;flex:none;flex-direction:column;gap:8px;min-height:300px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
-  .line{font-size:14px;font-weight:400;line-height:1.6}
+  /* The map takes the height left over by the line about the coloured dots, its 44px controls, the legend and the hint with their 12px gaps; in a short window it stays 320px and the column scrolls. */
+  canvas{display:block;flex:none;width:100%;height:clamp(320px,calc(100vh - 348px),720px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  /* The current sound's row: framed in ink and marked with the double ring that marks the sound on the map. */
+  .member.now{margin:0 -10px 4px;padding:8px;border:2px solid currentColor;border-radius:12px;scroll-margin-top:16px}
+  .ring{box-sizing:border-box;display:inline-block;width:12px;height:12px;margin:0 7px 0 3px;border:2px solid currentColor;border-radius:50%;outline:2px solid currentColor;outline-offset:1px;vertical-align:-1px}
   .explore{scroll-margin-top:16px}
   .legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px}.legend span{display:inline-flex;align-items:center;gap:6px}
   .legend i{box-sizing:border-box;display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;font-style:normal;font-size:10px;font-weight:700;line-height:1;color:#fff}
-  .legend .target{width:12px;height:12px;border:1px solid #fff}.legend .other{width:7px;height:7px;background:rgb(var(--stone-600)/.35)}
+  .legend .target{width:12px;height:12px;background:rgb(var(--stone-600))}.legend .other{width:7px;height:7px;border-radius:0;background:rgb(var(--stone-600)/.35)}
   .legend .flag{border:1.5px dashed currentColor;background:none;color:inherit}
   .legend .now{color:inherit;border:2px solid currentColor;outline:2px solid currentColor;outline-offset:1px;background:none}
   .recorded{margin:0;padding:0;list-style:none}.recorded li{padding:6px 0;border-top:1px solid rgb(var(--stone-300));font-size:14px}
@@ -551,19 +538,14 @@
   .group[open] .chevron{transform:rotate(90deg)}
   .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
-  /* A 56px first column holds the check, its label under the box, left of the play button; a ticked sound's labels sit under it. */
-  .member{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;align-items:center;padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
-  .member.picked{margin:0 -12px;padding:8px 12px 12px;background:rgb(var(--primary-500)/.12)}
-  /* The labels use the whole row width, from under the check, so their items stay on one line in a narrow column. */
-  .labels{grid-column:1/-1}
-  /* English labels wrap at the space; Japanese stays one word. */
-  .check{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;line-height:1.2;text-align:center;cursor:pointer}
+  .member{padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
+  .check{display:flex;flex:none;align-items:center;gap:8px;min-height:44px;font-weight:400;white-space:nowrap;cursor:pointer}
   .check input{width:24px;height:24px}
+  /* The form of a ticked sound, set off from the row. */
+  .labels{padding:10px 12px;border-radius:8px;background:rgb(var(--primary-500)/.12)}
   /* The date and AI suggestions of a listed sound wrap instead of being cut: English needs three lines or more for two or three suggestions. */
   .member .about{white-space:normal}
-  /* Outlined, so the mark stays visible on a ticked row's tint; the word, not the colour, carries the meaning. */
-  .current{display:inline-block;margin-right:6px;padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;background:rgb(var(--color-card-bg));color:rgb(var(--primary-700));font-size:13px;font-weight:600;line-height:1.5}
-  /* What the open way says about a listed sound: outlined words, as the current-sound mark. */
+  /* What the open way says about a listed sound: outlined words. */
   .tag{display:inline-block;padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;line-height:1.5}
   .empty :global(.button){align-self:center}
   @media(max-width:700px){.flow{grid-template-columns:minmax(0,1fr)}}

@@ -1,5 +1,6 @@
 """Precomputed PCA sound maps over the current main-engine embeddings."""
 import hashlib
+from collections import Counter
 from functools import lru_cache
 import heapq
 import json
@@ -919,16 +920,38 @@ def _species_ids(db, names):
         '(SELECT value FROM json_each(?))', (json.dumps(sorted(set(names))),))}
 
 
-def _node_shape(row, species_ids, child_count=0):
-    top_species = json.loads(row['top_species'])
+def _first_answers(db, run_id, lo, hi):
+    """The AI's first answer for each sound at the positions lo..hi-1 (None: no species named). The map keeps only
+    candidates of the Japan checklist; where the first answer over every class was a bird not usual here, a roll-up
+    keeps it (rollups.py), and that is what the flags and the "AI answer" beside a sound say. A group's summary
+    counts the same answers. A roll-up counts by either line it is shown on: the display threshold or AWAY_SCORE."""
+    from rollups import AWAY_SCORE
+    answers = []
+    # ponytail: reads every point of the group on each visit (the whole map at the top); keep it with the map if large sites make this slow.
+    for row in db.execute('''SELECT p.candidates,a.engine,u.top_label,u.top_score,u.score FROM explore_points p
+            JOIN segments s ON s.id=p.segment_id JOIN analyses a ON a.id=s.analysis_id
+            LEFT JOIN rollups u ON u.analysis_id=s.analysis_id AND ROUND(u.start_s,3)=ROUND(s.start_s,3)
+            WHERE p.run_id=? AND p.position>=? AND p.position<? ORDER BY p.position''', (run_id, lo, hi)):
+        if row['top_label'] is not None and (row['top_score'] >= SCORE_THRESHOLD or row['score'] >= AWAY_SCORE):
+            answers.append(canonical_scientific_name(row['engine'], row['top_label']) or row['top_label'].partition('_')[0])
+        else:
+            best = json.loads(row['candidates'])[:1]
+            answers.append(best[0][0] if best and best[0][1] >= SCORE_THRESHOLD else None)
+    return answers
+
+
+def _node_shape(row, species_ids, answers, child_count=0):
+    """`answers`: the first answers of the node's sounds (`_first_answers`); the summary kept with the map only
+    knew the Japan checklist."""
+    named = Counter(name for name in answers if name)
+    total = sum(named.values())
     return {'node': row['node'], 'name': row['name'], 'parent': row['parent'], 'depth': row['depth'],
             'size': row['hi'] - row['lo'], 'lo': row['lo'], 'hi': row['hi'], 'child_count': child_count,
             'rep': {key: row[key] for key in ('segment_id', 'recording_id', 'path', 'start_s', 'end_s',
                                                'recorded_at', 'timezone')},
-            'hint_rate': row['hint_rate'],
-            'top_species': [{'id': species_ids.get(item['scientific_name']),
-                             'scientific_name': item['scientific_name'], 'share': item['share']}
-                            for item in top_species]}
+            'hint_rate': total / max(1, len(answers)),
+            'top_species': [{'id': species_ids.get(name), 'scientific_name': name, 'share': count / total}
+                            for name, count in named.most_common(3)]}
 
 
 def status(root, dataset_id, node=0):
@@ -968,18 +991,18 @@ def status(root, dataset_id, node=0):
             WHERE n.run_id=? AND n.parent=? ORDER BY n.hi-n.lo DESC,n.node''', (run['id'], node)).fetchall()
         counts = dict(db.execute('''SELECT parent,COUNT(*) FROM explore_nodes WHERE run_id=? AND parent IN
             (SELECT value FROM json_each(?)) GROUP BY parent''', (run['id'], json.dumps([node] + [row['node'] for row in children]))))
-        node_rows = [selected, *children]
-        species_ids = _species_ids(db, [item['scientific_name'] for row in node_rows
-            for item in json.loads(row['top_species'])])
+        answers = _first_answers(db, run['id'], selected['lo'], selected['hi'])
+        species_ids = _species_ids(db, [name for name in answers if name])
+        of = lambda row: answers[row['lo'] - selected['lo']:row['hi'] - selected['lo']]
         path = []
         current = selected
         while current is not None:
             path.append({'node': current['node'], 'name': current['name'],
                          'size': current['hi'] - current['lo']})
             current = _node_row(db, run['id'], current['parent']) if current['parent'] is not None else None
-    result.update({'node': _node_shape(selected, species_ids, counts.get(node, 0)),
+    result.update({'node': _node_shape(selected, species_ids, answers, counts.get(node, 0)),
                    'path': list(reversed(path)),
-                   'children': [_node_shape(row, species_ids, counts.get(row['node'], 0)) for row in children]})
+                   'children': [_node_shape(row, species_ids, of(row), counts.get(row['node'], 0)) for row in children]})
     return result
 
 

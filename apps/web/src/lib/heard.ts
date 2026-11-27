@@ -7,7 +7,7 @@ import { fill } from './workflow';
 export type Verdict = 'present' | 'absent' | 'unknown';
 export type Taxon = Species & { rank?: 'family' | 'none' };
 export type Counts = Record<Verdict, number>;
-export type AiState = { state: 'made'; round: number; usable: boolean } | { state: 'ready' | 'needed'; needed: number } | { state: 'family' };
+export type AiState = { state: 'made'; round: number; usable: boolean } | { state: 'ready' | 'needed'; needed: number; material: number } | { state: 'family' };
 export type HeardSummary = { rows: { species: Taxon; site: Counts; all: Counts; ai: AiState | null }[]; no_bird: { site: number; all: number };
   total: { site: number; all: number }; requirements: { total: number; each: number } };
 export type HeardRecord = { id: number; test?: boolean; species: Taxon; verdict: Verdict; screen: string; extra: boolean; recording_id: number;
