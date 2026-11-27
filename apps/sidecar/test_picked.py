@@ -185,21 +185,32 @@ class PickedCheck(unittest.TestCase):
         for name in ('Horornis diphone', 'Parus cinereus', 'Zosterops japonicus'):
             self.hear(name)
         self.assertEqual(self.put(sound_type='call', quality='B', others=True).status_code, 200)
-        # A ticked sound with no answer is exported as "unknown".
+        # A ticked sound with no answer is exported as "unknown"; so is one with no bird sound.
         self.assertEqual(self.put(5, 10).status_code, 200)
+        self.assertEqual(self.put(10, 12).status_code, 200)
+        answer = lambda start, end: self.client.post('/heard/map-answer', json={
+            'dataset_id': 1, 'recording_id': 1, 'start_s': start, 'end_s': end, 'verdict': 'complete'})
+        self.assertEqual(answer(10, 12).status_code, 200)
         response = self.client.post('/explore/picked/export', json={'dataset_id': 1, 'folder': str(output)})
         self.assertEqual(response.status_code, 200, response.text)
         path = Path(response.json()['path'])
-        self.assertEqual(response.json()['count'], 2)
+        self.assertEqual(response.json()['count'], 3)
         self.assertEqual([item.resolve() for item in output.glob('*.zip')], [path.resolve()])
+        # Nothing but the species heard: said in the remarks of the next export, and the "other species" mark gives way.
+        self.assertEqual(answer(0, 5).status_code, 200)
+        with zipfile.ZipFile(self.client.post('/explore/picked/export', json={'dataset_id': 1, 'folder': str(output / '..')}).json()['path']) as archive:
+            self.assertTrue(next(csv.DictReader(io.StringIO(archive.read('metadata.csv').decode('utf-8-sig'))))['remarks'].endswith(
+                'unchecked context. Nothing else was heard in the checked part.'))
+            self.assertEqual([item['complete'] for item in json.loads(archive.read('manifest.json'))['items']], [True, False, True])
         with zipfile.ZipFile(path) as archive:
             metadata_bytes = archive.read('metadata.csv')
             self.assertTrue(metadata_bytes.startswith(b'\xef\xbb\xbf'))
             reader = csv.DictReader(io.StringIO(metadata_bytes.decode('utf-8-sig')))
             self.assertEqual(tuple(reader.fieldnames), XC_FIELDS)
-            row, blank = reader
-            self.assertTrue(row['filename'].endswith('_Horornis_diphone.wav') and blank['filename'].endswith('_unknown.wav'))
+            row, blank, none = reader
+            self.assertTrue(row['filename'].endswith('_Horornis_diphone.wav') and blank['filename'].endswith('_unknown.wav') and none['filename'].endswith('_unknown.wav'))
             self.assertEqual((blank['genus'], blank['species'], blank['background species']), ('', '', ''))
+            self.assertTrue(none['remarks'].endswith(' No bird sound was heard in the checked part.'))
             self.assertEqual((row['recording date'], row['time of day']), ('2024-01-02', '00:30'))
             self.assertEqual((row['latitude'], row['longitude'], row['country'], row['location name']),
                              ('35.1234', '138.9877', 'Japan', 'Fuji'))

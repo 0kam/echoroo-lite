@@ -16,9 +16,8 @@
   import AudioRegion from '$lib/AudioRegion.svelte';
   import JobStatus from '$lib/JobStatus.svelte';
   import MapEntries,{HEARD,NOT_HEARD,type MapOverlay} from '$lib/MapEntries.svelte';
-  import {recordText,taxonName,type HeardRecord,type Taxon,type Verdict} from '$lib/heard';
-  import PickForm,{blanks,pickedSounds,pickKey,type Named} from '$lib/PickForm.svelte';
-  import SpeciesChoice from '$lib/SpeciesChoice.svelte';
+  import {recordText,taxonName,type HeardRecord,type Taxon} from '$lib/heard';
+  import PickForm,{blanks,pickedSounds,pickKey,type Answer,type Item,type Named} from '$lib/PickForm.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -60,25 +59,13 @@
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   // Sounds collected to save as a ZIP, kept in the sidecar; the last section of the page counts them and what is still blank.
   const picks=pickedSounds(id);void picks.reload();
-  // The current-sound card: what is recorded on the shown sound, an answer about the species chosen in "where to look",
-  // and (`choosing`) the search for another species heard in it.
-  let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null),recorded=$state<HeardRecord[]>([]),answering=$state(false),choosing=$state(false),answerError=$state('');
+  // The species chosen in "where to look" is offered first in every sound's form.
+  let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null);
+  // What is heard in a ticked sound is saved at once; the map's marks and the numbers of the open way follow.
+  const record=(item:Item,verdict:Answer,species?:Named)=>void picks.answer(item,verdict,species).then(()=>{entries?.refresh();loadRecorded();});
   // Every answer given by ear on the sounds of the group being viewed, newest first, for the short list beside the map.
   let inGroup=$state<(HeardRecord&{position:number})[]>([]);
   const loadRecorded=()=>{const at=node?.node;if(at!==undefined)api<typeof inGroup>(`/explore/recorded?dataset=${id}&node=${at}`).then(value=>{if(node?.node===at)inGroup=value;},()=>{/* The list keeps what it showed. */});};
-  const at=(s:Segment)=>`recording_id=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
-  $effect(()=>{const s=pick;untrack(()=>{choosing=false;answerError='';if(!s){recorded=[];return;}
-    api<{now:HeardRecord[]}>(`/datasets/${id}/heard/sound?${at(s)}&blank=true`).then(value=>{if(pick===s)recorded=value.now;},()=>{/* The card still takes an answer. */});});});
-  // `species` null: "no bird sound". The mark on the map and the list beside it change at once; the numbers of the open way follow.
-  async function answer(s:Segment,species:Taxon|null,verdict:Verdict){answering=true;answerError='';const at=shownAt;
-    try{const value=await api<{now:HeardRecord[]}>('/heard/map-answer',{dataset_id:id,recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,...species?{species_id:species.id,verdict}:{verdict:'no_bird'}});
-      if(pick===s){recorded=value.now;choosing=false;}
-      // The same rule as the sidecar's marks: the chosen species' answer, or without one any species heard, else "not heard" ("no bird sound" too).
-      const verdicts=value.now.filter(r=>wanted?r.species.id===wanted.id:r.species.rank!=='none'||r.verdict==='present').map(r=>r.species.rank==='none'?'absent':r.verdict);
-      if(verdicts.includes('present'))markAt.set(at,1);else if(verdicts.includes('absent'))markAt.set(at,2);else markAt.delete(at);
-      // A ticked sound takes its species from the answers.
-      blit();loadRecorded();entries?.refresh();void picks.reload();
-    }catch(e){answerError=e instanceof Error?e.message:'unknown_error';}finally{answering=false;}}
   // "Look here" and the map's flags go into a group. The map is brought into view before the move: the layout keeps
   // the scroll position over the page made anew for the group, so the map is in view there and stays.
   function enter(target:number){document.querySelector('.explore')?.scrollIntoView({block:'start'});void go(target);}
@@ -131,7 +118,7 @@
       if(code==='not_found'&&wanted){void go(0);return;}
       error=code;}
   }
-  function go(target:number){quietUntil=performance.now()+400;return goto(here(target),{replaceState:true,noScroll:true});}
+  function go(target:number){clearTimeout(scrollTimer);quietUntil=performance.now()+400;return goto(here(target),{replaceState:true,noScroll:true});}
   function step(by:number){const visited=visits.get(id),target=visited?.stack[visited.index+by];if(visited&&target!==undefined){visited.index+=by;void go(target);}}
   // At the top already, the button only brings the whole map back into view.
   function whole(){if(node?.node)void go(0);else fly(true);}
@@ -169,14 +156,19 @@
       if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
-  // Ticking a sound collects it with nothing filled in; unticking takes it out. The answers recorded on it are not touched.
+  // Ticking a sound opens its form and collects it for the ZIP; unticking closes the form and takes it out. What was recorded on the sound stays.
   function pickSound(s:Segment,checked:boolean){
     if(!checked){void picks.remove(s);return;}
     void picks.save({recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,path:s.path,recorded_at:s.recorded_at,timezone:s.timezone,
-      species:null,background:[],sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
+      species:null,background:[],complete:false,sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
   }
   // Picking a sound opens its group's row; rows share one `name`, so the browser closes the row that was open.
-  // The page does not scroll to the row: the current sound's card above the list stays in view.
+  // The current sound is the first row of its group's list. A sound chosen by a press (not one restored on coming back) is
+  // brought into view after the double-click window, so a fast second click still lands on the same dot; a row played
+  // from the list moved up there, so the keyboard focus follows it.
+  let scrollTimer:ReturnType<typeof setTimeout>|undefined;
+  $effect(()=>{const s=pick;untrack(()=>{clearTimeout(scrollTimer);if(s&&autoplayPick)scrollTimer=setTimeout(()=>{const row=document.getElementById('now');
+    row?.scrollIntoView({block:'nearest',behavior:'smooth'});if(document.activeElement===document.body)row?.focus({preventScroll:true});},360);});});
   function show(child:number){selected=child;const at=children[child].node;open[at]=true;}
   function escape(event:KeyboardEvent){if(event.key==='Escape'&&!event.defaultPrevented&&parent!==undefined)void go(parent);}
   // One sound at a time: starting a player pauses every other one on the page.
@@ -193,8 +185,8 @@
   const asked=new Set<string>();
   function askNames(items:Named[]){for(const {id:sid} of items)if(sid&&!asked.has(sid)){asked.add(sid);
     api<Species>(`/species/${encodeURIComponent(sid)}`).then(row=>{names[sid]=row;},()=>{/* The scientific name stays as the fallback. */});}}
-  const speciesName=(s:Named)=>{const row=s.id?names[s.id]:undefined;return (row&&commonName(row,app.locale))||s.scientific_name;};
-  $effect(()=>{askNames(Object.values(picks.state.items).flatMap(i=>[...i.species?[i.species]:[],...i.background]));});
+  const speciesName=(s:Named)=>{const row=s.id?names[s.id]:undefined;return row?taxonName(row):s.scientific_name;};
+  $effect(()=>{askNames([...wanted?[wanted]:[],...picks.state.recent,...Object.values(picks.state.items).flatMap(i=>[...i.species?[i.species]:[],...i.background])]);});
   const listOf=<T extends Named>(items:T[],share:(item:T)=>number)=>items.map(item=>`${speciesName(item)} ${pct(share(item))}`).join(t('eSep'));
   // Below one sound in five with a bird named by the AI, the group is more likely silence or insects than a bird.
   // The sidecar counts the AI's first answers, as the flags and the "AI answer" beside a sound do.
@@ -214,7 +206,7 @@
   let marks:{x:number;y:number}[]=[];
   // From the ways into the map: answers given by ear, the sounds the open way points at (its targets) and the groups it suggests.
   let overlay=$state.raw<MapOverlay>({entry:'unsure',marks:[],targets:[],groups:[],guess:new Map()});
-  // The same, by position: the mark of each answered sound (changed at once by an answer on this page) and which sounds are targets.
+  // The same, by position: the mark of each answered sound and which sounds are targets.
   let markAt=new Map<number,1|2>();
   const targetAt=$derived(new Set(overlay.targets));
   const matching=(g:{lo:number;hi:number})=>overlay.targets.filter(i=>i>=g.lo&&i<g.hi);
@@ -386,24 +378,35 @@
 </script>
 <!-- In the list the line wraps. -->
 {#snippet about(s:Segment)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{when(s)}{#if candidates(s)} · <span class="muted">{candidates(s)}</span>{/if}{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
+<!-- One sound of a list. Ticking it opens its form in place, the same for every sound. The current sound (`current`) is
+     marked and plays on its own; playing another row makes that one the current sound: its own player stops, and the row
+     moves to the top of its group's list and plays there. -->
+{#snippet row(s:Segment,current:boolean)}{@const p=picks.state.items[pickKey(s)]}
+  <div class="member" class:now={current} id={current?'now':undefined} tabindex="-1"
+    onplaycapture={current?undefined:event=>{(event.target as HTMLAudioElement).pause();if(s.position!==undefined)void choose(s.position);}}>
+    <!-- The current row is mounted anew for every pick; the click that chose it is the gesture that lets it play on its own. -->
+    <AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={current&&autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if current}<strong class="current"><i class="ring" aria-hidden="true"></i>{t('meLegendNow')}</strong>{' '}{/if}{@render about(s)}{/snippet}</AudioRegion>
+    <label class="check"><input type="checkbox" aria-label={`${t('ePick')}: ${when(s)}`} checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
+    {#if p}<div class="labels"><PickForm value={p} datasetId={id} first={[...wanted?[wanted]:[],...s.candidates.slice(0,3)]} recent={picks.state.recent} name={speciesName}
+      onchange={label=>picks.save({...p,...label})} onanswer={(verdict,species)=>record(p,verdict,species)}/></div>{/if}
+  </div>
+{/snippet}
 {#snippet sounds(g:Group)}
   {@const at=g.node}
   {@const list=lists[at]}
   {@const first=matching(g).length}
+  {@const within=(i:number)=>i>=g.lo&&i<g.hi}
   {#if first}<p class="muted">{fill(`meFirst_${overlay.entry}`,{n:first})}</p>{/if}
-  <!-- The current sound is in its card, not here. Playing a listed sound makes it the current sound: its own player stops and the card's plays.
-       The row leaves the list, so the keyboard focus moves to the card with it. -->
-  {#each (list?.segments??[]).filter(s=>s.segment_id!==pick?.segment_id) as s (s.segment_id)}<div class="member" onplaycapture={event=>{(event.target as HTMLAudioElement).pause();
-      if(s.position!==undefined){void choose(s.position);const card=document.getElementById('now');card?.scrollIntoView({block:'start'});card?.focus({preventScroll:true});}}}>
-    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}
-      <!-- Ticking collects the sound for the ZIP without making it the current sound; its ZIP form is in the card only. -->
-      {#snippet actions()}<label class="check"><input type="checkbox" aria-label={`${t('eRowPick')}: ${when(s)}`} checked={!!picks.state.items[pickKey(s)]} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('eRowPick')}</label>{/snippet}</AudioRegion>
-  </div>{/each}
+  <!-- The current sound comes first, whatever the order of the list; the last one stays shown until the next arrives. -->
+  {#if pickError&&within(pickAt)}<p class="error" role="alert">{t(pickError)}</p>{/if}
+  {#if pick&&within(shownAt)}{#key pick.segment_id}{@render row({...pick,position:shownAt},true)}{/key}
+  {:else if within(pickAt)&&!pickError}<p role="status"><Spinner/> {t('loading')}</p>{/if}
+  {#each (list?.segments??[]).filter(s=>s.segment_id!==pick?.segment_id) as s (s.segment_id)}{@render row(s,false)}{/each}
   {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
   {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
   {:else if !list||list.pending}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 {/snippet}
-{#snippet orderNote()}<p class="muted">{t(pickAt<0?'eOrderNeedsPick':'eOrderNear')} {t('eRowHint')}<br>{t('localTime')}</p>{/snippet}
+{#snippet orderNote()}<p class="muted">{t(pickAt<0?'eOrderNeedsPick':'eOrderNear')}<br>{t('localTime')}</p>{/snippet}
 <svelte:window onkeydown={escape}/>
 <div class="page wide" onplaycapture={solo}>
   <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
@@ -453,43 +456,6 @@
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
         </section>
         <section class="panel stack">
-          <!-- The one place the current sound lives: heard, answered and ticked for the ZIP here. Answers are saved when pressed. -->
-          <section class="now-card stack" id="now" tabindex="-1" aria-labelledby="now-title" aria-busy={pickAt>=0&&!pickError&&shownAt!==pickAt}>
-            <h2 id="now-title"><i class="ring" aria-hidden="true"></i>{t('ePicked')}{#if pick&&shownAt!==pickAt} <Spinner/>{/if}</h2>
-            {#if pickError}<p class="error" role="alert">{t(pickError)}</p>
-            {:else if !pick}{#if pickAt<0}<p class="muted">{t('ePickHint')}</p>{:else}<p role="status"><Spinner/> {t('loading')}</p>{/if}
-            {:else}
-              {@const s=pick}
-              {@const child=children.findIndex(c=>c.lo<=shownAt&&shownAt<c.hi)}
-              {@const tag=badge(shownAt)}
-              {@const p=picks.state.items[pickKey(s)]}
-              <p>{when(s)}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if tag}{' '}<span class="tag">{tag}</span>{/if}{#if candidates(s)}<br><span class="muted">{candidates(s)}</span>{/if}</p>
-              <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
-              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact autoplay={autoplayPick} start={s.start_s} end={s.end_s}/>{/key}
-              <div class="answer">
-                {#if wanted}{@const mine=recorded.find(r=>r.species.id===wanted!.id)}
-                  <strong>{fill('maTitle',{species:taxonName(wanted)})}</strong>
-                  <div class="actions" role="group" aria-label={fill('maTitle',{species:taxonName(wanted)})}>{#each ['present','absent','unknown'] as const as verdict}
-                    <Button size="sm" active={mine?.verdict===verdict} aria-pressed={mine?.verdict===verdict} disabled={answering} onclick={()=>answer(s,wanted!,verdict)}>{t(`maV_${verdict}`)}</Button>{/each}
-                    <Button size="sm" active={choosing} aria-expanded={choosing} disabled={answering} onclick={()=>choosing=!choosing}>{t('hdOthersAdd')}</Button></div>
-                <!-- No species is asked about (the first way in): a species heard, or no bird sound. -->
-                {:else}{@const none=recorded.some(r=>r.species.rank==='none'&&r.verdict==='present')}
-                  <strong>{t('eStep3')}</strong>
-                  <div class="actions" role="group" aria-label={t('eStep3')}>
-                    <Button size="sm" active={choosing} aria-expanded={choosing} disabled={answering} onclick={()=>choosing=!choosing}>{t('hdNoBirdOther')}</Button>
-                    <Button size="sm" active={none} aria-pressed={none} disabled={answering} onclick={()=>answer(s,null,'present')}>{t('ruNotBird')}</Button></div>
-                {/if}
-                {#if choosing}<SpeciesChoice datasetId={id} exclude={wanted?[wanted.id]:[]} pending={answering} onchoose={taxon=>answer(s,taxon,'present')}/>{/if}
-                {#if answerError}<span class="error" role="alert">{t(answerError)}</span>{/if}
-                <!-- Answers are saved when pressed: the card says so, and where to find them. -->
-                {#if recorded.length}{@const [before,after]=t('eSaved').split('{page}')}<p class="saved" role="status">{before}<a href={resolve(`/datasets/${id}/heard`)}>{t('hdTitle')}</a>{after}<br>
-                  <span class="muted">{fill('maNow',{list:recorded.map(recordText).join(t('eSep'))})}</span></p>{/if}
-              </div>
-              <!-- Apart from the answers: the tick only chooses sounds for the ZIP, and the form under it fills the ZIP's table. -->
-              <label class="check"><input type="checkbox" checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
-              {#if p}<div class="labels"><p class="muted">{t('ePickNote')}</p><PickForm value={p} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
-            {/if}
-          </section>
           <nav class="trail" aria-label={t('eTrail')}>
             {#each trail as step,index (step.node)}
               {#if index}<span class="muted" aria-hidden="true">›</span>{/if}
@@ -497,7 +463,7 @@
             {/each}
           </nav>
           <p>{node.size>=data.segment_count?fill('eSummaryAll',{n:node.size.toLocaleString(app.locale)}):fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/data.segment_count,1)})}<br><span class="muted">{aiHint(node)}</span></p>
-          <!-- Answers given in the current-sound card show here at once; the newest five are enough to see that each one was kept. -->
+          <!-- What is recorded in the rows below shows here at once; the newest five are enough to see that each one was kept. -->
           <h2>{t('eRecorded')}</h2>
           {#if inGroup.length}<ul class="recorded">{#each inGroup.slice(0,5) as r (r.id)}<li>{heardAt(r.local_time)} · {recordText(r)}</li>{/each}</ul>
             {#if inGroup.length>5}<p class="muted">{fill('eRecordedMore',{shown:5,n:inGroup.length})}</p>{/if}{/if}
@@ -527,6 +493,7 @@
             {@render orderNote()}
             {@render sounds(node)}
           {/if}
+          <p class="muted">{fill('ePickNote',{section:t('eCollect')})}</p>
         </section>
       </div>
       {#if picks.state.error}<p class="error" role="alert">{t(picks.state.error)}</p>{/if}
@@ -550,11 +517,9 @@
   .map-nav{display:flex;gap:4px}
   /* The map takes the height left over by the line about the coloured dots, its 44px controls, the legend and the hint with their 12px gaps; in a short window it stays 320px and the column scrolls. */
   canvas{display:block;flex:none;width:100%;height:clamp(320px,calc(100vh - 348px),720px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
-  /* The current sound's card: framed in ink, like the double ring that marks the sound on the map. */
-  .now-card{padding:12px 16px;border:2px solid currentColor;border-radius:12px;scroll-margin-top:16px}.now-card h2{display:flex;align-items:center;gap:10px}
-  .ring{box-sizing:border-box;flex:none;width:14px;height:14px;margin-left:3px;border:2px solid currentColor;border-radius:50%;outline:2px solid currentColor;outline-offset:1px}
-  .answer{display:flex;flex-direction:column;gap:8px}.answer .actions{gap:6px}
-  .saved{color:rgb(var(--color-success))}
+  /* The current sound's row: framed in ink and marked with the double ring that marks the sound on the map. */
+  .member.now{margin:0 -10px 4px;padding:8px;border:2px solid currentColor;border-radius:12px;scroll-margin-top:16px}
+  .ring{box-sizing:border-box;display:inline-block;width:12px;height:12px;margin:0 7px 0 3px;border:2px solid currentColor;border-radius:50%;outline:2px solid currentColor;outline-offset:1px;vertical-align:-1px}
   .explore{scroll-margin-top:16px}
   .legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px}.legend span{display:inline-flex;align-items:center;gap:6px}
   .legend i{box-sizing:border-box;display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;font-style:normal;font-size:10px;font-weight:700;line-height:1;color:#fff}
@@ -575,10 +540,9 @@
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
   .member{padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
   .check{display:flex;flex:none;align-items:center;gap:8px;min-height:44px;font-weight:400;white-space:nowrap;cursor:pointer}
-  .member .check{font-size:14px}
   .check input{width:24px;height:24px}
-  /* The ZIP form of a ticked sound is set off from the answers above it. */
-  .labels{padding:8px 12px;border-radius:8px;background:rgb(var(--primary-500)/.12)}
+  /* The form of a ticked sound, set off from the row. */
+  .labels{padding:10px 12px;border-radius:8px;background:rgb(var(--primary-500)/.12)}
   /* The date and AI suggestions of a listed sound wrap instead of being cut: English needs three lines or more for two or three suggestions. */
   .member .about{white-space:normal}
   /* What the open way says about a listed sound: outlined words. */

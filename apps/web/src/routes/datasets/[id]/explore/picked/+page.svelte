@@ -30,7 +30,7 @@
   $effect(()=>{const failed=picks.state.error;if(failed&&picks.state.loaded)untrack(()=>notify(failed,'error'));});
   // Common names in the UI language are fetched once per species; the scientific name is shown until then or when there is none.
   let names=$state<Record<string,Species>>({});const asked=new Set<string>();
-  $effect(()=>{for(const {id:sid} of items.flatMap(i=>[...i.species?[i.species]:[],...i.background]))if(sid&&!asked.has(sid)){asked.add(sid);
+  $effect(()=>{for(const {id:sid} of [...picks.state.recent,...items.flatMap(i=>[...i.species?[i.species]:[],...i.background])])if(sid&&!asked.has(sid)){asked.add(sid);
     api<Species>(`/species/${encodeURIComponent(sid)}`).then(row=>{names[sid]=row;},()=>{/* The scientific name stays as the fallback. */});}});
   const speciesName=(s:Named)=>{const row=s.id?names[s.id]:undefined;return (row&&commonName(row,app.locale))||s.scientific_name;};
   // Recording times are shown in the site's timezone, whatever the PC's.
@@ -69,7 +69,7 @@
           {#snippet meta()}<span class="where">{where(item)}</span>{/snippet}
           {#snippet actions()}{#if item.exported_at}<span class="saved">{t('pkExported')}</span>{/if}<Button size="sm" onclick={()=>picks.remove(item)}>{t('pkRemove')}</Button>{/snippet}
         </AudioRegion>
-        <div class="labels"><PickForm value={item} name={speciesName} onchange={label=>picks.save({...item,...label})}/></div>
+        <div class="labels"><PickForm value={item} datasetId={id} recent={picks.state.recent} name={speciesName} onchange={label=>picks.save({...item,...label})} onanswer={(verdict,species)=>picks.answer(item,verdict,species)}/></div>
       </article>
       {:else}<p class="muted">{t('pkEmpty')}</p>{/each}
     </section>

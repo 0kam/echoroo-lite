@@ -61,7 +61,8 @@ def _site(db, dataset_id):
 
 def _rows(db, dataset_id):
     """The site's picks, each with the species now recorded as heard in it on any screen (scientific names).
-    The species heard first is the pick's species; the others are its background species. "No bird sound" is no species."""
+    The species heard first is the pick's species; the others are its background species. "No bird sound" is no species.
+    `complete`: nothing calls in the sound but those species (`labels.complete`)."""
     _site(db, dataset_id)
     rows = [dict(r) for r in db.execute('''SELECT p.*,r.path,r.recorded_at,r.timezone,r.seconds,r.sample_rate,
         r.size,r.mtime_ns FROM picked_sounds p JOIN site_recordings r ON r.id=p.recording_id
@@ -73,8 +74,10 @@ def _rows(db, dataset_id):
             WHERE l.verdict='present' AND s.rank<>'none' AND {labels.LATEST}
               AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?) ORDER BY l.id''', (dataset_id,)):
         heard.setdefault((label['recording_id'], label['start_s'], label['end_s']), []).append(label['scientific_name'])
+    done = {(label['recording_id'], label['start_s'], label['end_s']) for label in labels.complete(db, dataset_id)}
     for row in rows:
         found = heard.get((row['recording_id'], row['start_s'], row['end_s']), [])
+        row['complete'] = (row['recording_id'], row['start_s'], row['end_s']) in done
         row['species'] = found[0] if found else None
         row['background'] = json.dumps(found[1:], ensure_ascii=False)
     return rows
@@ -105,14 +108,19 @@ def _shape(row, species_ids):
             'species': {'id': species_ids.get(species), 'scientific_name': species} if species else None,
             'background': [{'id': species_ids.get(name), 'scientific_name': name} for name in background],
             'sound_type': row['sound_type'], 'quality': row['quality'], 'others': bool(row['others']),
-            'exported_at': row['exported_at'], 'updated_at': row['updated_at']}
+            'complete': row['complete'], 'exported_at': row['exported_at'], 'updated_at': row['updated_at']}
 
 
 def list_picked(root, dataset_id):
     with connect(root) as db:
         rows = _rows(db, dataset_id)
         species_ids = _species_ids(db, rows)
-    return {'items': [_shape(row, species_ids) for row in rows]}
+        # The species entered last on the sound map, to offer again on the next sound.
+        recent = [dict(row) for row in db.execute("""SELECT s.id,s.scientific_name FROM labels l JOIN species s ON s.id=l.taxon_id
+            WHERE l.source='sound_map' AND l.verdict='present' AND s.rank<>'none'
+              AND l.recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)
+            GROUP BY s.id ORDER BY MAX(l.id) DESC LIMIT 3""", (dataset_id,))]
+    return {'items': [_shape(row, species_ids) for row in rows], 'recent': recent}
 
 
 def search_examples(root, dataset_id, scientific_name):
@@ -202,7 +210,9 @@ def _metadata(row, filename, site, zone):
                f'This clip is {start}\u2013{end} s of the source recording; checked by listening: '
                f'{checked_start}\u2013{checked_end} s of this clip; the rest is unchecked context.')
     background = json.loads(row['background'])
-    if row['others'] and not background:
+    if row['complete']:
+        remarks += ' Nothing else was heard in the checked part.' if row['species'] else ' No bird sound was heard in the checked part.'
+    elif row['others'] and not background:
         remarks += ' Other species audible (not identified).'
     values = (filename, f"{site['latitude']:.4f}", f"{site['longitude']:.4f}", 'Japan', site['name'], '',
               f'{local:%Y-%m-%d}', f'{local:%H:%M}', '', '', '', '', 'single species', 'yes',
@@ -248,7 +258,7 @@ def export(root, body):
                     'start_s': row['start_s'], 'end_s': row['end_s'], **clip, 'recorded_at': row['recorded_at'],
                     'timezone': row['timezone'], 'species': row['species'],
                     'background': json.loads(row['background']), 'sound_type': row['sound_type'],
-                    'quality': row['quality'], 'others': bool(row['others'])})
+                    'quality': row['quality'], 'others': bool(row['others']), 'complete': row['complete']})
             with (folder / 'metadata.csv').open('w', encoding='utf-8-sig', newline='') as stream:
                 writer = csv.DictWriter(stream, fieldnames=XC_FIELDS)
                 writer.writeheader(); writer.writerows(metadata)

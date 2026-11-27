@@ -9,7 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import test_sounds
-from labels import LATEST, no_bird, put, put_no_bird, ref
+from labels import LATEST, no_bird, put, put_no_bird, ref, set_complete
 from reports import window_key
 from species import list_species, names_for, _kana
 from storage import CatalogError, connect
@@ -251,9 +251,11 @@ def set_other(root, body):
 
 
 def map_answer(root, body):
-    """An answer given on the sound map about one sound: `species_id` was heard in it, was not, or cannot be told;
-    or (`verdict` 'no_bird', no species) there is no bird sound in it.
-    Kept beside the answers of other screens (newest wins), and apart from the sounds ticked for export."""
+    """What the sound map records on one sound. About `species_id`: it was heard in it, was not, cannot be told, or
+    ('withdraw') its answers there are taken back, as 'delete' of `fix`. About the sound, with no species: 'complete'
+    (nothing calls in it but the species heard; "no bird sound" when none is), 'incomplete' (that is taken back) or
+    'no_bird' (no bird sound: every species heard becomes "not heard"). Kept beside the answers of other screens (newest wins), and apart from the sounds
+    ticked for export."""
     from validation import refresh
     with connect(root) as db:
         db.execute('BEGIN IMMEDIATE')
@@ -262,14 +264,23 @@ def map_answer(root, body):
         if body.verdict == 'no_bird':
             for heard in put_no_bird(db, *sound_, 'sound_map', {'answer': True}):
                 refresh(root, db, heard, *sound_)
+        elif body.species_id is None:
+            set_complete(db, *sound_, 'sound_map', body.verdict == 'complete')
         else:
             found = db.execute("SELECT COALESCE(accepted_id,id) FROM species WHERE id=? AND rank<>'none'", (body.species_id,)).fetchone()
             if found is None:
                 raise CatalogError('invalid_input')
-            put(db, found[0], *sound_, body.verdict, 'sound_map', {'answer': True}, history=True)
+            if body.verdict == 'withdraw':
+                db.execute('DELETE FROM labels WHERE taxon_id=? AND recording_id=? AND start_s=? AND end_s=?', (found[0], *sound_))
+                mark = db.execute(f'SELECT l.source_ref FROM labels l WHERE l.taxon_id=? AND l.recording_id=? AND l.start_s=? AND l.end_s=? AND {LATEST}',
+                                  (no_bird(db), *sound_)).fetchone()
+                if mark and ref(mark).get('complete'):
+                    set_complete(db, *sound_, 'sound_map')  # with no species left it becomes "no bird sound"
+            else:
+                put(db, found[0], *sound_, body.verdict, 'sound_map', {'answer': True}, history=True)
             refresh(root, db, found[0], *sound_)
         db.execute('DELETE FROM workflow_cache')
-    return sound(root, body.dataset_id, body.recording_id, body.start_s, body.end_s)
+    return sound(root, body.dataset_id, body.recording_id, body.start_s, body.end_s, blank=True)
 
 
 def pick_species(root, query, dataset_id=None):

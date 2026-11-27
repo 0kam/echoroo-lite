@@ -169,6 +169,44 @@ class HeardTest(unittest.TestCase):
             self.assertEqual(listed(), [('Parus cinereus', 'present', 'sound_map', 5), ('none', 'present', 'review', 0)])
             self.assertEqual(examples(tit), {'positive_5s': 1, 'negative_5s': 1, 'other_answers': 2, 'no_bird_answers': 0})
 
+    def test_a_complete_sound_is_no_call_for_every_species_not_heard_in_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            client = self.site(temp)
+            warbler, tit, bulbul = (self.species(client, name) for name in ('Horornis diphone', 'Parus cinereus', 'Hypsipetes amaurotis'))
+            at = dict(recording_id=1, start_s=0, end_s=5)
+            answer = lambda verdict, species=None: client.post('/heard/map-answer', json=dict(dataset_id=1, verdict=verdict, **at, **({'species_id': species} if species else {})))
+            examples = lambda species: client.get(f'/datasets/1/species/{species}/custom-model').json()['examples']
+            listed = lambda: sorted((r['species'].get('rank', r['species']['scientific_name']), r['verdict']) for r in client.get('/datasets/1/heard/records').json()['rows'])
+            pick = lambda: client.put('/explore/picked', json=dict(dataset_id=1, **at, sound_type='', quality='', others=False)).json()
+            shape = lambda: (lambda p: ([s['scientific_name'] for s in [p['species'], *p['background']] if s], p['complete']))(pick())
+            answer('present', warbler)
+            self.assertEqual((shape(), examples(tit)['negative_5s']), ((['Horornis diphone'], False), 0))
+            # Complete with one species: "no call" for another species, not for the one heard; one row in the list.
+            self.assertEqual(answer('complete').status_code, 200)
+            self.assertEqual(shape(), (['Horornis diphone'], True))
+            self.assertEqual(examples(tit), {'positive_5s': 0, 'negative_5s': 1, 'other_answers': 0, 'no_bird_answers': 1})
+            self.assertEqual(examples(warbler), {'positive_5s': 1, 'negative_5s': 0, 'other_answers': 1, 'no_bird_answers': 0})
+            self.assertEqual(listed(), [('Horornis diphone', 'present')])
+            # A species added later is heard there, not "no call"; the sound stays complete for the rest.
+            answer('present', tit)
+            self.assertEqual((shape(), examples(tit)['negative_5s'], examples(bulbul)['negative_5s']), ((['Horornis diphone', 'Parus cinereus'], True), 0, 1))
+            # Taken back: no "no call" from it any more.
+            answer('incomplete')
+            self.assertEqual((shape()[1], examples(bulbul)['negative_5s'], listed()), (False, 0, [('Horornis diphone', 'present'), ('Parus cinereus', 'present')]))
+            # The last species withdrawn from a complete sound leaves "no bird sound"; a species heard takes that back, as on every screen.
+            answer('complete'); answer('withdraw', warbler); answer('withdraw', tit)
+            self.assertEqual((shape(), listed(), examples(tit)['no_bird_answers']), (([], True), [('none', 'present')], 1))
+            answer('present', bulbul)
+            self.assertEqual((shape(), listed(), examples(tit)['negative_5s']), ((['Hypsipetes amaurotis'], False), [('Hypsipetes amaurotis', 'present')], 0))
+            # With nothing heard, "complete" is "no bird sound", and taking it back leaves nothing.
+            answer('withdraw', bulbul); answer('incomplete')
+            self.assertEqual((shape(), listed(), examples(tit)['negative_5s']), (([], False), [], 0))
+            answer('complete')
+            self.assertEqual((listed(), answer('complete', tit).status_code, answer('withdraw').status_code), ([('none', 'present')], 422, 422))
+            # The species entered last on the map come first.
+            answer('present', tit); answer('present', warbler)
+            self.assertEqual([s['scientific_name'] for s in client.get('/explore/picked', params={'dataset': 1}).json()['recent']], ['Horornis diphone', 'Parus cinereus'])
+
     def test_another_species_is_added_on_a_question_card_and_taken_back(self):
         with tempfile.TemporaryDirectory() as temp:
             client = self.site(temp)

@@ -258,12 +258,12 @@ class MapAnswer(BaseModel):
     start_s: float = Field(ge=0, allow_inf_nan=False)
     end_s: float = Field(gt=0, allow_inf_nan=False)
     species_id: str | None = None
-    verdict: Literal['present', 'absent', 'unknown', 'no_bird']
+    verdict: Literal['present', 'absent', 'unknown', 'withdraw', 'no_bird', 'complete', 'incomplete']
 
     @model_validator(mode='after')
     def species_named(self):
-        if (self.verdict == 'no_bird') != (self.species_id is None):
-            raise ValueError('species_id goes with every verdict but "no_bird"')
+        if (self.verdict in ('no_bird', 'complete', 'incomplete')) != (self.species_id is None):
+            raise ValueError('species_id goes with the verdicts about a species')
         return self
 
 
