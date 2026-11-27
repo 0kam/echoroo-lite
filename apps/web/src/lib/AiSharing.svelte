@@ -33,6 +33,7 @@
     <label><input type="radio" name="material" checked={sharing.all_sites} disabled={scope.pending} onchange={() => scope.run(true)} /> {fill('shAll', { n: here + sharing.positive_5s + sharing.negative_5s, sites: sharing.sites })}</label></div>
   <p class="muted">{fill('shMaterialNote', { positive: sharing.positive_5s, negative: sharing.negative_5s })}{#if info.test && info.test.heard + info.test.not_heard}{' '}{fill('shTestKept', { n: info.test.heard + info.test.not_heard })}{/if}</p>
   {#if sharing.all_sites}<p class="muted">{t('shAllNext')}</p>{/if}
+  {#if info.inherited}<p class="muted">{fill('shInheritedToo', { n: info.inherited.positive_5s + info.inherited.negative_5s, sites: info.inherited.sites.join('・') })}</p>{/if}
 </section>{/if}
 <details class="panel share"><summary>{t('shPass')}</summary>
   <p class="muted">{t('shPassNote')}</p>

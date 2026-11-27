@@ -49,7 +49,12 @@
   $effect(()=>{if(newerKey)void lookNewer();else newer=null;});
   const switchTo=createTask(async(modelId:number)=>{await api(`/custom-models/${modelId}/use`,{dataset_id:id,start_date:info!.start_date,end_date:info!.end_date});
     newer=null;skipped=[];await next.run();},{toast:true});
-  const keepNow=createTask(async(modelId:number)=>{await api(`/datasets/${id}/species/${speciesId}/ai-versions/set-aside`,{model_id:modelId});newer=null;},{toast:true});
+  let kept=$state('');
+  const keepNow=createTask(async(modelId:number)=>{const name=versionName(newer!);await api(`/datasets/${id}/species/${speciesId}/ai-versions/set-aside`,{model_id:modelId});
+    kept=fill('vnKept',{version:nowName,name});newer=null;},{toast:true});
+  // Switching is put forward only when the newer AI does better here on the test sounds.
+  const better=(tests:NonNullable<NonNullable<AIVersions['newer']>['tests']>)=>tests.new.found>=tests.now.found&&tests.new.false<=tests.now.false&&(tests.new.found>tests.now.found||tests.new.false<tests.now.false);
+  const ahead=$derived(!!newer?.tests&&better(newer.tests));
   const said=(heard:boolean,yes:boolean)=>t(heard?(yes?'vnSaid_found':'vnSaid_missed'):(yes?'vnSaid_false':'vnSaid_right'));
   // How an AI brought from elsewhere does here against where it was made: more, fewer or about as many misses and false "yes".
   const compare=(here:number,there:number)=>t(Math.abs(here-there)<.05?'vbSame':here>there?'vbMore':'vbLess');
@@ -146,10 +151,11 @@
           <span>{time(sound)}　{fill('vnDifferRow',{now:said(sound.heard,sound.now),version:name,new:said(sound.heard,sound.new)})}</span>
           <AudioRegion source={{id:sound.recording_id,kind:'recording',path:sound.path,seconds:sound.seconds}} fixedRange compact start={sound.start_s} end={sound.end_s}/></div>{/each}</details>{/if}
       {:else}<p class="muted">{t('vnNoTests')}</p>{/if}
-      <div class="actions"><Button variant="primary" pending={switchTo.pending} disabled={keepNow.pending} onclick={()=>switchTo.run(newer!.id)}>{fill('vnSwitch',{version:name})}</Button>
-        <Button pending={keepNow.pending} disabled={switchTo.pending} onclick={()=>keepNow.run(newer!.id)}>{fill('vnKeep',{version:nowName})}</Button></div>
+      <div class="actions"><Button variant={ahead?'primary':'default'} pending={switchTo.pending} disabled={keepNow.pending} onclick={()=>switchTo.run(newer!.id)}>{fill('vnSwitch',{version:name})}</Button>
+        <Button variant={ahead?'default':'primary'} pending={keepNow.pending} disabled={switchTo.pending} onclick={()=>keepNow.run(newer!.id)}>{fill('vnKeep',{version:nowName})}</Button></div>
       <p class="muted">{t('vnAfter')}</p>
     </section>{/if}
+    {#if kept}<p class="panel" role="status">{kept}</p>{/if}
     {#if collecting&&!model}<BorrowAI datasetId={id} {speciesId} speciesName={commonName(info.species,app.locale)||info.species.scientific_name} range={range.toString()} ontaken={async()=>{skipped=[];await next.run();}}/>{/if}
     {#if collecting}{@const test=info.test}{@const few=test.heard<test.aim_heard}<section class="panel"><h2 id="test-title">{t('tpTitle')}</h2>
       {#if model?.imported}<p class="info">{fill('vbTrying',{version:nowName})}</p>{/if}
@@ -207,7 +213,7 @@
           {#if row&&own&&own.heard&&own.not_heard&&there.heard&&there.not_heard}<p>{fill('vbCmp',{site:model.imported.site,miss:compare(1-(row.found??0)/own.heard,1-there.found/there.heard),false:compare((row.false??0)/own.not_heard,there.false/there.not_heard)})}</p>{/if}{/if}
         <div class="choice"><strong>{t('vbGrowTitle')}</strong>{t('vbRecommended')}
           <p>{info.inherited?fill('vbGrowText',{n:info.inherited.positive_5s+info.inherited.negative_5s,sites:info.inherited.sites.join('・')||origin,here:site?.name??'',version:nowName,origin}):fill('vbGrowTextNone',{here:site?.name??'',version:nowName,origin})}</p>
-          <Button variant="primary" onclick={toTop}>{t('tpStart')}</Button></div>
+          <Button variant="primary" onclick={toTop}>{t('vbGrowGo')}</Button><p class="muted">{fill('vbGrowHow',{button:t('mdRebuild')})}</p></div>
         <div class="choice"><strong>{t('vbKeepTitle')}</strong><p>{fill('vbKeepText',{version:nowName})}</p>
           <Button pending={startCheck.pending} onclick={()=>startCheck.run()}>{t('vbKeep')}</Button></div>
       </section>{/if}
