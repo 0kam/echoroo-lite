@@ -51,11 +51,14 @@
   // The sound picked on the map: its position in the point arrays, then its details and the position they belong to.
   // The last sound stays shown until the next one arrives, so the card never shrinks and the page never jumps.
   let pickAt=$state(-1),pick=$state<Segment|null>(null),shownAt=$state(-1),pickError=$state(''),autoplayPick=$state(true);
+  // The sound pressed on the map: the lists are sorted from it and show it first. A sound played from a list becomes the
+  // current sound where it is; the lists do not move.
+  let pinAt=$state(-1),pin=$state<Segment|null>(null);
   let watched=$state<number|null>(null),transformed=$state(false),canBack=$state(false),canForward=$state(false);
   // Sounds in a group are listed nearest to the current sound; until a dot is clicked, nearest to the group's centre.
   // The sounds the open way points at come first; `order` counts its changes, so the shown lists are sorted again.
   let order=$state(0);
-  const anchorOf=()=>`${pickAt}:${order}`;
+  const anchorOf=()=>`${pinAt}:${order}`;
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   // Sounds collected to save as a ZIP, kept in the sidecar; the last section of the page counts them and what is still blank.
   const picks=pickedSounds(id);void picks.reload();
@@ -99,7 +102,7 @@
       if(visited.stack[visited.index]!==next.node.node){visited.stack=[...visited.stack.slice(0,visited.index+1),next.node.node];visited.index=visited.stack.length-1;}
       canBack=visited.index>0;canForward=visited.index<visited.stack.length-1;
       if(fresh||moved){
-        selected=null;open={};pickAt=-1;pick=null;quietUntil=performance.now()+400;inGroup=[];loadRecorded();
+        selected=null;open={};pickAt=pinAt=-1;pick=pin=null;quietUntil=performance.now()+400;inGroup=[];loadRecorded();
         const kept=draft?.created_at===next.created_at?draft:null,saved=kept?.node===next.node.node?kept.loaded??{}:{};draft=null;
         // The sound chosen before going inside (or before leaving the page) stays chosen when it is in this group, without playing again;
         // a sound clicked outside the group that was viewed plays, as any clicked sound.
@@ -126,7 +129,7 @@
   const build=createTask(async()=>{watched=(await api<{id:number}>('/explore',{dataset_id:id})).id;await refreshCatalog();if(nodeId)void go(0);});
   // Loads a group's sounds in order until `count` are loaded or none are left.
   async function loadList(at:number,count=PAGE){
-    const anchor=anchorOf(),near=pickAt,group=[node,...children].find(g=>g?.node===at),first=group?matching(group):[];
+    const anchor=anchorOf(),near=pinAt,group=[node,...children].find(g=>g?.node===at),first=group?matching(group):[];
     lists[at]??={total:0,segments:[],pending:false,error:'',anchor};
     const list=lists[at],sorted=list.anchor!==anchor;
     if(list.pending||!sorted&&list.segments.length>=Math.max(1,Math.min(count,list.total)))return;
@@ -151,10 +154,15 @@
     const value=JSON.stringify({created_at:data.created_at,node:node.node,loaded:Object.fromEntries(shown.map(at=>[at,lists[at]?.segments.length||PAGE])),pick:pickAt});
     try{localStorage.setItem(draftKey,value);}catch{/* Private windows may refuse storage. */}});
   async function choose(at:number,play=true){
-    pickAt=at;pickError='';autoplayPick=play;
+    pickAt=pinAt=at;pickError='';autoplayPick=play;
     try{const next=await api<Segment>(`/explore/points/${at}?dataset=${id}`);
-      if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
-    }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
+      if(pinAt===at){pin={...next,position:at};if(pickAt===at){pick=next;shownAt=at;}askNames(next.candidates);}
+    }catch(e){if(pinAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
+  }
+  // A row played in a list: the other players stop and the row is the current sound, where it is.
+  function played(event:Event,s:Segment){
+    for(const audio of document.querySelectorAll<HTMLAudioElement>('.explore audio'))if(audio!==event.target)audio.pause();
+    if(s.position!==undefined&&s.segment_id!==pick?.segment_id){pickAt=shownAt=s.position;pick=s;}
   }
   // Ticking a sound opens its form and collects it for the ZIP; unticking closes the form and takes back what the map recorded on the sound (never another screen's answer), so the marks and lists follow.
   function pickSound(s:Segment,checked:boolean){
@@ -163,11 +171,10 @@
       species:null,background:[],complete:false,sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
   }
   // Picking a sound opens its group's row; rows share one `name`, so the browser closes the row that was open.
-  // The current sound is the first row of its group's list. A sound chosen by a press (not one restored on coming back) is
-  // brought into view after the double-click window, so a fast second click still lands on the same dot; a row played
-  // from the list moved up there, so the keyboard focus follows it.
+  // The sound pressed on the map is the first row of its group's list. Chosen by a press (not restored on coming back), it
+  // is brought into view after the double-click window, so a fast second click still lands on the same dot.
   let scrollTimer:ReturnType<typeof setTimeout>|undefined;
-  $effect(()=>{const s=pick;untrack(()=>{clearTimeout(scrollTimer);if(s&&autoplayPick)scrollTimer=setTimeout(()=>{const row=document.getElementById('now');
+  $effect(()=>{const s=pin;untrack(()=>{clearTimeout(scrollTimer);if(s&&autoplayPick)scrollTimer=setTimeout(()=>{const row=document.querySelector<HTMLElement>('.member.pinned');
     row?.scrollIntoView({block:'nearest',behavior:'smooth'});if(document.activeElement===document.body)row?.focus({preventScroll:true});},360);});});
   function show(child:number){selected=child;const at=children[child].node;open[at]=true;}
   function escape(event:KeyboardEvent){if(event.key==='Escape'&&!event.defaultPrevented&&parent!==undefined)void go(parent);}
@@ -239,7 +246,7 @@
       return [{flag,cx,cy,rx,ry,bx:spot.x,by:spot.y,r}];});}
   // Zoomed in past the fitted view, dots and the reach of a press grow (up to twice), with the answers' marks and the current sound, so a sound stays easy to see and press.
   const grow=()=>Math.min(2,Math.max(1,Math.sqrt(view.k/fit)));
-  function overlayed(value:MapOverlay){const before=overlay.targets.join();overlay=value;markAt=new Map(value.marks);if(before!==value.targets.join())order++;plant();render();}
+  function overlayed(value:MapOverlay){const before=overlay.targets.join();overlay=value;markAt=new Map(value.marks.filter(mark=>mark[1]===2));if(before!==value.targets.join())order++;plant();render();}
   async function loadPoints(status:Status){
     pointsError='';
     try{const buffer=await api<ArrayBuffer>(`/explore/points?dataset=${id}`,undefined,'GET',true);
@@ -306,7 +313,7 @@
     const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),font=getComputedStyle(canvas).fontFamily;
     context.setTransform(1,0,0,1,0,0);context.textAlign='center';context.textBaseline='middle';
     const at=(i:number)=>[ox+(points!.x[i]-x0)*sx,oy-(points!.y[i]-y0)*sy] as const,ink=getComputedStyle(canvas).color;
-    // Lowest: what was heard by ear, a blue dot with a tick (heard) or a grey one with a cross (not heard), told apart without colour.
+    // Lowest: sounds recorded as "no voice", a grey dot with a cross. Sounds where a species was heard are not marked on the map.
     const mark=(cx:number,cy:number,state:1|2,r:number)=>{context.beginPath();context.arc(cx,cy,r,0,2*Math.PI);context.fillStyle=state===1?HEARD:NOT_HEARD;context.fill();
       context.lineWidth=.25*r;context.strokeStyle='#fff';context.stroke();context.beginPath();
       if(state===1){context.moveTo(cx-.5*r,cy);context.lineTo(cx-.12*r,cy+.38*r);context.lineTo(cx+.5*r,cy-.32*r);}
@@ -370,7 +377,7 @@
     const child=children.findIndex(c=>c.lo<=best&&best<c.hi);
     if(double&&child>=0){void go(children[child].node);return;}
     // An empty spot clears the pick.
-    if(best<0){selected=null;pickAt=-1;pick=null;return;}
+    if(best<0){selected=null;pickAt=pinAt=-1;pick=pin=null;return;}
     if(best<node.lo||best>=node.hi){carry=best;api<{node:number}>(`/explore/points/${best}/group?dataset=${id}&node=${node.node}`).then(group=>go(group.node),()=>{carry=-1;});return;}
     if(best!==pickAt||pickError)void choose(best);
     if(child>=0)show(child);
@@ -379,13 +386,13 @@
 <!-- In the list the line wraps. -->
 {#snippet about(s:Segment)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{when(s)}{#if candidates(s)} · <span class="muted">{candidates(s)}</span>{/if}{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
 <!-- One sound of a list. Ticking it opens its form in place, the same for every sound. The current sound (`current`) is
-     marked and plays on its own; playing another row makes that one the current sound: its own player stops, and the row
-     moves to the top of its group's list and plays there. -->
-{#snippet row(s:Segment,current:boolean)}{@const p=picks.state.items[pickKey(s)]}
-  <div class="member" class:now={current} id={current?'now':undefined} tabindex="-1"
-    onplaycapture={current?undefined:event=>{(event.target as HTMLAudioElement).pause();if(s.position!==undefined)void choose(s.position);}}>
-    <!-- The current row is mounted anew for every pick; the click that chose it is the gesture that lets it play on its own. -->
-    <AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={current&&autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if current}<strong class="current"><i class="ring" aria-hidden="true"></i>{t('meLegendNow')}</strong>{' '}{/if}{@render about(s)}{/snippet}</AudioRegion>
+     marked; the one pressed on the map (`pinned`) plays on its own. Playing another row makes that one the current sound
+     where it is. -->
+{#snippet row(s:Segment,current:boolean,pinned=false)}{@const p=picks.state.items[pickKey(s)]}
+  <div class="member" class:now={current} class:pinned tabindex="-1"
+    onplaycapture={event=>played(event,s)}>
+    <!-- The pinned row is mounted anew for every press on the map; that click is the gesture that lets it play on its own. -->
+    <AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={pinned&&current&&autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if current}<strong class="current"><i class="ring" aria-hidden="true"></i>{t('meLegendNow')}</strong>{' '}{/if}{@render about(s)}{/snippet}</AudioRegion>
     <label class="check"><input type="checkbox" aria-label={`${t('ePick')}: ${when(s)}`} checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
     {#if p}<div class="labels"><PickForm value={p} datasetId={id} first={[...wanted?[wanted]:[],...s.candidates.slice(0,3)]} recent={picks.state.recent} name={speciesName}
       onchange={label=>picks.save({...p,...label})} onanswer={(verdict,species)=>record(p,verdict,species)}/></div>{/if}
@@ -397,16 +404,16 @@
   {@const first=matching(g).length}
   {@const within=(i:number)=>i>=g.lo&&i<g.hi}
   {#if first}<p class="muted">{fill(`meFirst_${overlay.entry}`,{n:first})}</p>{/if}
-  <!-- The current sound comes first, whatever the order of the list; the last one stays shown until the next arrives. -->
-  {#if pickError&&within(pickAt)}<p class="error" role="alert">{t(pickError)}</p>{/if}
-  {#if pick&&within(shownAt)}{#key pick.segment_id}{@render row({...pick,position:shownAt},true)}{/key}
-  {:else if within(pickAt)&&!pickError}<p role="status"><Spinner/> {t('loading')}</p>{/if}
-  {#each (list?.segments??[]).filter(s=>s.segment_id!==pick?.segment_id) as s (s.segment_id)}{@render row(s,false)}{/each}
+  <!-- The sound pressed on the map comes first, whatever the order of the list; the last one stays shown until the next arrives. -->
+  {#if pickError&&within(pinAt)}<p class="error" role="alert">{t(pickError)}</p>{/if}
+  {#if pin&&within(pin.position??-1)}{#key pin.segment_id}{@render row(pin,pin.segment_id===pick?.segment_id,true)}{/key}
+  {:else if within(pinAt)&&!pickError}<p role="status"><Spinner/> {t('loading')}</p>{/if}
+  {#each (list?.segments??[]).filter(s=>s.segment_id!==pin?.segment_id) as s (s.segment_id)}{@render row(s,s.segment_id===pick?.segment_id)}{/each}
   {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
   {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
   {:else if !list||list.pending}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 {/snippet}
-{#snippet orderNote()}<p class="muted">{t(pickAt<0?'eOrderNeedsPick':'eOrderNear')}<br>{t('localTime')}</p>{/snippet}
+{#snippet orderNote()}<p class="muted">{t(pinAt<0?'eOrderNeedsPick':'eOrderNear')}<br>{t('localTime')}</p>{/snippet}
 <svelte:window onkeydown={escape}/>
 <div class="page wide" onplaycapture={solo}>
   <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
@@ -452,7 +459,7 @@
             {#if inside}<span><i class="target"></i>{t(`meLegendTarget_${overlay.entry}`)}</span><span><i class="other"></i>{t('meLegendOther')}</span>{/if}
             {#if node.node}<span><i class="other"></i>{t('meLegendOutside')}</span>{/if}
             <span><i class="now"></i>{t('meLegendNow')}</span>
-            <span><i class="mark" style:background={HEARD}>✓</i>{t(overlay.entry==='unsure'?'meLegendHeardAny':'hdV_present')}</span><span><i class="mark" style:background={NOT_HEARD}>×</i>{t('hdV_absent')}</span></p>
+            <span><i class="mark" style:background={NOT_HEARD}>×</i>{t('pfNone')}</span></p>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
         </section>
         <section class="panel stack">

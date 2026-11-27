@@ -69,11 +69,13 @@ class MapEntryApi(ExploreCheck):
             labels.put(db, ids['Zosterops japonicus'], 1, 5, 10, 'present', 'species_mark')
             labels.put(db, ids['Zosterops japonicus'], 1, 0, 5, 'present', 'sound_map')
             labels.put(db, ids['Zosterops japonicus'], 1, 10, 15, 'absent', 'training')
+            labels.put_no_bird(db, 1, 15, 20, 'sound_map')
         at = {p['start_s']: p['position'] for p in points}
         found = self.client.get('/explore/entries/species', params={'dataset': 1, 'species_id': ids['Zosterops japonicus']}).json()
         self.assertEqual(found['species']['scientific_name'], 'Zosterops japonicus')
         self.assertGreater(len(found['targets']), 0)
-        self.assertEqual(sorted(found['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
+        # "Not heard" for the species (10-15 s) is not drawn; "no bird sound" (15-20 s) is, as no voice.
+        self.assertEqual(sorted(found['marks']), sorted([[at[0], 1], [at[5], 1], [at[15], 2]]))
         for group in found['groups']:
             self.assertGreaterEqual(group['targets'], map_entries.MIN_TARGETS)
             self.assertEqual(group['size'], group['hi'] - group['lo'])
@@ -89,7 +91,7 @@ class MapEntryApi(ExploreCheck):
         # The fixture's AI only answers birds of Japan: no sound is a target, and no group is flagged.
         unsure = self.client.get('/explore/entries/unsure', params={'dataset': 1}).json()
         self.assertEqual((unsure['targets'], unsure['groups'], unsure['scattered']), ([], [], 0))
-        self.assertEqual(sorted(unsure['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
+        self.assertEqual(sorted(unsure['marks']), sorted([[at[0], 1], [at[5], 1], [at[15], 2]]))
         # Sounds whose first answer was a bird not usual here are targets from a roll-up score of 0.5, as on the
         # site page's list: the one at 10 s stays out. Two targets are too few for a flag: both are scattered.
         with connect(self.root) as db:
@@ -135,7 +137,7 @@ class MapEntryApi(ExploreCheck):
         # What was answered in a group, newest first, with where each sound is on the map.
         recorded = self.client.get('/explore/recorded', params={'dataset': 1, 'node': 0}).json()
         self.assertEqual([(r['position'], r['verdict'], r['screen']) for r in recorded],
-                         [(at[10], 'absent', 'training'), (at[0], 'present', 'sound_map'), (at[5], 'present', 'species_mark')])
+                         [(at[15], 'present', 'sound_map'), (at[10], 'absent', 'training'), (at[0], 'present', 'sound_map'), (at[5], 'present', 'species_mark')])
         part = one
         inside = self.client.get('/explore/recorded', params={'dataset': 1, 'node': part['node']}).json()
         self.assertEqual({r['position'] for r in inside}, {r['position'] for r in recorded if part['lo'] <= r['position'] < part['hi']})
@@ -147,7 +149,7 @@ class MapEntryApi(ExploreCheck):
         with patch('search.query_embeddings', return_value=([vector.copy()], {})) as embedded:
             like = self.client.post('/explore/entries/clip', json=clip).json()
             self.assertEqual((7 in like['targets'], len(like['targets'])), (True, map_entries.CLIP_NEAR))
-            self.assertEqual(sorted(like['marks']), sorted([[at[0], 1], [at[5], 1], [at[10], 2]]))
+            self.assertEqual(sorted(like['marks']), sorted([[at[0], 1], [at[5], 1], [at[15], 2]]))
             # 30 of the fixture's 64 sounds: dense on the whole map, so it or some of its parts are flagged.
             self.assertTrue(like['groups'])
             # Asked again for the next group opened, the clip is not listened to again.
