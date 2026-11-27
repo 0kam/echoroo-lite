@@ -84,8 +84,11 @@ class SharingCheck(unittest.TestCase):
             path = client.post(f"/custom-models/{made['id']}/export", json={'folder': str(out), 'hide_site': True}).json()['path']
             data = json.loads(Path(path).read_text(encoding='utf-8'))
             self.assertEqual((data['format'], data['version'], data['species']['scientific_name'], data['site'], data['training']['positive_5s']),
-                             ('echoroo-species-ai', 1, 'Horornis diphone', None, 9))
-            self.assertLess(Path(path).stat().st_size, 20000)
+                             ('echoroo-species-ai', 2, 'Horornis diphone', None, 9))
+            # The material goes as sound descriptions (no audio, no file names): 24 sounds stay small.
+            self.assertEqual((len(data['material']['voice']), sum(data['material']['voice']), set(data['material']['sites'])), (24, 9, {None}))
+            self.assertNotIn('20240801', json.dumps(data['material']))
+            self.assertLess(Path(path).stat().st_size, 200000)
             seen = client.post('/custom-models/import', json={'dataset_id': 1, 'path': path, 'inspect': True}).json()
             self.assertEqual((seen['species']['id'], seen['warning'], seen['training'], seen['site']), (sid, None, {'positive_5s': 9, 'negative_5s': 15, 'other_sites': None}, None))
             taken = client.post('/custom-models/import', json={'dataset_id': 1, 'path': path, 'species_id': sid, **SCOPE}).json()
@@ -107,13 +110,71 @@ class SharingCheck(unittest.TestCase):
             other = {**data, 'feature': {**data['feature'], 'engine': 'kinglet-s', 'model_sha256': 'x', 'spec': 'kinglet-s_embedding_1536_l2_v1'}}
             (out / 'other.json').write_text(json.dumps(other), encoding='utf-8')
             self.assertEqual(client.post('/custom-models/import', json={'dataset_id': 1, 'path': str(out / 'other.json'), 'inspect': True}).json()['warning'], 'ai_file_other_engine')
-            for name, changed, error in (('newer', {**data, 'version': 2}, 'ai_file_newer'), ('engine', {**data, 'feature': {**data['feature'], 'engine': 'birdnet', 'spec': 'birdnet_embedding_1536_l2_v1'}}, 'ai_file_invalid'), ('short', {**data, 'weights': 'AAAA'}, 'ai_file_invalid'),
+            for name, changed, error in (('newer', {**data, 'version': 3}, 'ai_file_newer'), ('engine', {**data, 'feature': {**data['feature'], 'engine': 'birdnet', 'spec': 'birdnet_embedding_1536_l2_v1'}}, 'ai_file_invalid'), ('short', {**data, 'weights': 'AAAA'}, 'ai_file_invalid'),
                                          ('species', {**data, 'species': {'scientific_name': 'Nemo nemo'}}, 'ai_file_species_unknown')):
                 (out / f'{name}.json').write_text(json.dumps(changed), encoding='utf-8')
                 refused = client.post('/custom-models/import', json={'dataset_id': 1, 'path': str(out / f'{name}.json'), 'inspect': True})
                 self.assertEqual((refused.status_code, refused.json()['detail']), (400, error))
             (out / 'broken.json').write_text('{', encoding='utf-8')
             self.assertEqual(client.post('/custom-models/import', json={'dataset_id': 1, 'path': str(out / 'broken.json')}).json()['detail'], 'ai_file_invalid')
+
+    def test_an_ai_grows_at_another_site_and_comes_back_as_a_version(self):
+        with site() as (root, client, species):
+            sid = species['id']
+            # Site A: test sounds in recording 5, material in recordings 1-3, an AI made from them.
+            answer(root, sid, [5])
+            with connect(root) as db:
+                db.execute('INSERT INTO test_recordings(site_id,species_id,recording_id) VALUES(1,?,5)', (sid,))
+                db.execute("INSERT INTO test_phases(site_id,species_id,state) VALUES(1,?,'fixed')", (sid,))
+            answer(root, sid, [1, 2, 3])
+            a = client.post('/custom-models', json={'dataset_id': 1, 'species_id': sid, **SCOPE}).json()
+            self.assertEqual((a['training']['positive_5s'], a['training']['negative_5s']), (9, 15))
+            dataset, recordings = second_site(root, client)
+            other = client.get(f'/datasets/{dataset}/species/{sid}/ai-versions').json()
+            self.assertEqual([(o['id'], o['site'], o['round'], o['score']) for o in other['others']],
+                             [(a['id'], 'Site', 1, {'heard': 3, 'not_heard': 5, 'found': 3, 'false': 0})])
+            # Site B tries it: a copy, and the test sounds there are still to be made, drawn by the copy's score.
+            tried = client.post(f"/custom-models/{a['id']}/use", json={'dataset_id': dataset}).json()
+            self.assertEqual((tried['imported']['from_model'], tried['imported']['site'], tried['imported']['round'], tried['imported']['file']), (a['id'], 'Site', 1, None))
+            url = f'/datasets/{dataset}/species/{sid}/custom-model'
+            state = client.get(url, params={'batch': True}).json()
+            self.assertEqual((state['phase'], state['model']['id'], state['source'], state['inherited']['positive_5s'], state['can_train']), ('collecting', tried['id'], 'custom', 9, False))
+            self.assertEqual(client.post(f"/custom-models/{a['id']}/use", json={'dataset_id': dataset}).json()['id'], tried['id'])  # the same copy again
+            answer(root, sid, [recordings[0]])
+            with connect(root) as db:
+                db.execute('INSERT INTO test_recordings(site_id,species_id,recording_id) SELECT site_id,?,? FROM datasets WHERE id=?', (sid, recordings[0], dataset))
+            self.assertEqual(client.post(f'/datasets/{dataset}/species/{sid}/test-phase').json(), {'state': 'fixed'})
+            state = client.get(url).json()
+            # Growing from the copy takes A's material; nothing of B's yet, so nothing new to make it from.
+            self.assertEqual((state['inherited'], state['can_train'], state['reasons']),
+                             ({'positive_5s': 9, 'negative_5s': 15, 'sites': ['Site']}, False, ['custom_no_new_answers']))
+            answer(root, sid, [recordings[1]])
+            b = client.post('/custom-models', json={'dataset_id': dataset, 'species_id': sid, 'start_date': state['start_date'], 'end_date': state['end_date']}).json()
+            self.assertNotEqual(b['id'], tried['id'])
+            self.assertEqual((b['round'], b['training']['positive_5s'], b['training']['inherited']['positive_5s']), (1, 12, 9))
+            # Back at A: B's AI grew from A's, tried on A's test sounds beside A's own; set aside, it is not offered again.
+            here = client.get(f'/datasets/1/species/{sid}/ai-versions', params=SCOPE).json()
+            self.assertEqual((here['current_id'], here['newer']['id'], here['newer']['site'], here['newer']['parent']['model_id']), (a['id'], b['id'], 'Other', a['id']))
+            self.assertEqual(here['newer']['tests'], {'heard': 3, 'not_heard': 5, 'now': {'found': 3, 'false': 0}, 'new': {'found': 3, 'false': 0}})
+            self.assertEqual(sorted((v['id'], v['here'], [u['site'] for u in v['used']]) for v in here['versions']), [(a['id'], True, ['Site']), (b['id'], False, ['Other'])])
+            client.post(f'/datasets/1/species/{sid}/ai-versions/set-aside', json={'model_id': b['id']})
+            self.assertIsNone(client.get(f'/datasets/1/species/{sid}/ai-versions', params=SCOPE).json()['newer'])
+            # A uses B's AI (a copy here), then goes back to its own.
+            copy = client.post(f"/custom-models/{b['id']}/use", json={'dataset_id': 1, **SCOPE}).json()
+            self.assertEqual(client.get(f'/datasets/1/species/{sid}/custom-model', params=SCOPE).json()['model']['id'], copy['id'])
+            here = client.get(f'/datasets/1/species/{sid}/ai-versions', params=SCOPE).json()
+            self.assertEqual(sorted((v['id'], v['here']) for v in here['versions']), [(a['id'], False), (b['id'], True)])
+            client.post(f"/custom-models/{a['id']}/use", json={'dataset_id': 1, **SCOPE})
+            self.assertEqual(client.get(f'/datasets/1/species/{sid}/custom-model', params=SCOPE).json()['model']['id'], a['id'])
+            # B's AI as a file keeps all its material; grown from it at A, A's own sounds in it count as A's answers are now.
+            out = root / 'out'; out.mkdir()
+            path = client.post(f"/custom-models/{b['id']}/export", json={'folder': str(out)}).json()['path']
+            data = json.loads(Path(path).read_text(encoding='utf-8'))
+            self.assertEqual((len(data['material']['voice']), data['parent'], sorted(set(data['material']['sites']))), (32, {'round': 1, 'site': 'Site'}, ['Other', 'Site']))
+            seen = client.post('/custom-models/import', json={'dataset_id': 1, 'path': path, 'inspect': True, **SCOPE}).json()
+            self.assertEqual((seen['material'], seen['here']), (32, {'heard': 3, 'not_heard': 5, 'found': 3, 'false': 0}))
+            client.post('/custom-models/import', json={'dataset_id': 1, 'path': path, 'species_id': sid, **SCOPE})
+            self.assertEqual(client.get(f'/datasets/1/species/{sid}/custom-model', params=SCOPE).json()['inherited'], {'positive_5s': 3, 'negative_5s': 5, 'sites': ['Other']})
 
     def test_answers_go_out_and_come_in_as_a_table(self):
         with site() as (root, client, species):

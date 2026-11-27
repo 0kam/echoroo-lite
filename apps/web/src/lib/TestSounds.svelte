@@ -4,7 +4,7 @@
   import { app, t } from './app.svelte';
   import AudioRegion from './AudioRegion.svelte';
   import Button from './ui/Button.svelte';
-  import { checkProgress, checkText, fill, share, type Validation } from './workflow';
+  import { checkProgress, checkText, fill, share, type TestReport, type Validation } from './workflow';
   // How each round of a species AI did on the test sounds: answers in recordings set aside for the species, never
   // used as material. Two numbers to compare the rounds by; the rest is folded. A species grown without test sounds
   // only gets a line saying so. The third number is the species AI's own check (step 3 of its page), as that check
@@ -15,12 +15,14 @@
   type Report = { state: 'none' }
     | { state: 'ready'; sounds: { heard: number; not_heard: number }; fixed: boolean; threshold: number; recordings: string[]; rounds: Round[];
         missed: Sound[]; false: Sound[]; new: Sound[] };
-  let { datasetId, speciesId, query, version, timezone, check = null, oncontinue, reveal = false }:
-    { datasetId: number; speciesId: string; query: string; version: string; timezone?: string; check?: Validation | null; oncontinue?: () => void; reveal?: boolean } = $props();
+  // `title`: the heading in place of the usual one (an AI brought from elsewhere names itself); `onreport` hears each report.
+  let { datasetId, speciesId, query, version, timezone, check = null, oncontinue, reveal = false, title = '', onreport }:
+    { datasetId: number; speciesId: string; query: string; version: string; timezone?: string; check?: Validation | null; oncontinue?: () => void; reveal?: boolean;
+      title?: string; onreport?: (report: TestReport) => void } = $props();
   const precision = $derived(check?.status === 'decided' ? check.results[check.engine]?.precision : null);
   let report = $state<Report | null>(null), request = 0;
   $effect(() => { void version; untrack(() => { const current = ++request;
-    api<Report>(`/datasets/${datasetId}/species/${speciesId}/test-sounds?${query}`).then(async value => { if (current !== request) return; const first = !report; report = value;
+    api<Report>(`/datasets/${datasetId}/species/${speciesId}/test-sounds?${query}`).then(async value => { if (current !== request) return; const first = !report; report = value; onreport?.(value);
       // `reveal`: the page was come back to for these scores, so bring them into view once they are there.
       if (first && reveal) { await tick(); document.getElementById('tests-title')?.scrollIntoView({ block: 'start' }); } }, () => { /* The page works without this box. */ }); }); });
   const time = (sound: Sound) => new Intl.DateTimeFormat(app.locale, { dateStyle: 'medium', timeStyle: 'medium', hourCycle: 'h23', timeZone: timezone }).format(new Date(sound.local_time));
@@ -49,7 +51,7 @@
       <Button onclick={oncontinue}>{t('s3Continue')}</Button>
     {:else}<div class="muted">{check?.status === 'stale' ? t('s3Stale') : check?.stage === 'complete' ? checkText(check) : t('s3None')}</div>{/if}{/if}
 </div>{/snippet}
-{#if report}<section class="panel tests" aria-labelledby="tests-title"><h2 id="tests-title">{t('tsTitle')}</h2>
+{#if report}<section class="panel tests" aria-labelledby="tests-title"><h2 id="tests-title">{title || t('tsTitle')}</h2>
   {#if report.state === 'none'}
     <p>{t('tsNone')}</p>
     <div class="scores">{@render measured()}</div>

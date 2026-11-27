@@ -279,6 +279,16 @@ class ToFolder(BaseModel):
     hide_site: bool = False
 
 
+class ModelChoice(BaseModel):
+    model_id: int = Field(ge=1)
+
+
+class ModelUse(BaseModel):
+    dataset_id: int = Field(ge=1)
+    start_date: date | None = None
+    end_date: date | None = None
+
+
 class FromFile(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     dataset_id: int = Field(ge=1)
@@ -803,12 +813,35 @@ def create_app(root, models, token):
         import sharing
         from results_workflow import context
         if body.inspect:
-            return sharing.inspect(root, body.path)
+            return sharing.inspect(root, body.path, context(root, body.dataset_id, body.start_date.isoformat() if body.start_date else None,
+                                                            body.end_date.isoformat() if body.end_date else None))
         with lock:
             if worker and worker.is_alive():
                 raise HTTPException(409, 'job_busy')
             ctx = context(root, body.dataset_id, body.start_date.isoformat() if body.start_date else None, body.end_date.isoformat() if body.end_date else None)
             return sharing.import_model(root, ctx, body.path, body.species_id)
+
+    @app.get('/datasets/{dataset_id}/species/{species_id}/ai-versions')
+    def species_ai_versions(dataset_id: int, species_id: str, start_date: date | None = None, end_date: date | None = None):
+        import sharing
+        from results_workflow import context
+        return sharing.versions(root, context(root, dataset_id, start_date.isoformat() if start_date else None, end_date.isoformat() if end_date else None), species_id)
+
+    @app.post('/datasets/{dataset_id}/species/{species_id}/ai-versions/set-aside')
+    def species_ai_set_aside(dataset_id: int, species_id: str, body: ModelChoice):
+        import sharing
+        from results_workflow import context
+        return sharing.set_aside(root, context(root, dataset_id), species_id, body.model_id)
+
+    @app.post('/custom-models/{model_id}/use')
+    def custom_model_use(model_id: int, body: ModelUse):
+        import sharing
+        from results_workflow import context
+        with lock:
+            if worker and worker.is_alive():
+                raise HTTPException(409, 'job_busy')
+            return sharing.use(root, context(root, body.dataset_id, body.start_date.isoformat() if body.start_date else None,
+                                             body.end_date.isoformat() if body.end_date else None), model_id)
 
     @app.post('/custom-models/{model_id}/export')
     def custom_model_export(model_id: int, body: ToFolder):
