@@ -163,12 +163,26 @@ def put(root, body):
 
 
 def delete(root, dataset_id, recording_id, start_s, end_s):
-    """Take a sound out of the picks. The answers recorded on it stay."""
+    """Take a sound out of the picks, with what was recorded on it: every species heard there is withdrawn (as
+    'delete' on the list of checked sounds: never answered) and so is "nothing else calls" / "no bird sound".
+    Answers that a species was not heard there, given on other screens, stay."""
+    from validation import refresh
+    sound = (recording_id, start_s, end_s)
     with connect(root) as db:
+        db.execute('BEGIN IMMEDIATE')
         _site(db, dataset_id)
         cursor = db.execute('''DELETE FROM picked_sounds WHERE recording_id=? AND start_s=? AND end_s=?
             AND recording_id IN (SELECT id FROM site_recordings WHERE scope_id=?)''',
-            (recording_id, start_s, end_s, dataset_id))
+            (*sound, dataset_id))
+        if cursor.rowcount:
+            none = labels.no_bird(db)
+            heard = [row[0] for row in db.execute(f"""SELECT l.taxon_id FROM labels l WHERE l.recording_id=? AND l.start_s=? AND l.end_s=?
+                AND l.verdict='present' AND l.taxon_id<>? AND {labels.LATEST}""", (*sound, none))]
+            db.execute('DELETE FROM labels WHERE recording_id=? AND start_s=? AND end_s=? AND taxon_id IN (SELECT value FROM json_each(?))',
+                       (*sound, json.dumps([*heard, none])))
+            for taxon in heard:
+                refresh(root, db, taxon, *sound)
+            db.execute('DELETE FROM workflow_cache')
     return {'deleted': cursor.rowcount > 0}
 
 

@@ -150,8 +150,8 @@ class PickedCheck(unittest.TestCase):
         self.assertEqual(deleted.json(), {'deleted': True})
         self.assertEqual(self.client.delete('/explore/picked', params={
             'dataset': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5}).json(), {'deleted': False})
-        # Unticking leaves the answers.
-        self.assertEqual((len(before), answers()), (2, before))
+        # Unticking takes back the species heard in the sound.
+        self.assertEqual((len(before), answers()), (2, []))
 
     def test_search_examples_of_one_species(self):
         for start, end, species in ((3, 8, 'Horornis diphone'), (0, 5, 'Horornis diphone'), (10, 12, None)):

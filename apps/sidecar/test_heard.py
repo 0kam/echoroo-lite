@@ -203,6 +203,26 @@ class HeardTest(unittest.TestCase):
             self.assertEqual((shape(), listed(), examples(tit)['negative_5s']), (([], False), [], 0))
             answer('complete')
             self.assertEqual((listed(), answer('complete', tit).status_code, answer('withdraw').status_code), ([('none', 'present')], 422, 422))
+            # Unticking the sound takes back what was recorded on it: the species heard, the mark and the pick. Another
+            # sound, and a "not heard" given on another screen, stay.
+            other = dict(dataset_id=1, recording_id=1, start_s=5, end_s=10)
+            client.put('/explore/picked', json=dict(**other, sound_type='', quality='', others=False))
+            client.post('/heard/map-answer', json=dict(**other, verdict='present', species_id=tit))
+            client.post('/heard/map-answer', json=dict(**other, verdict='complete'))
+            with connect(self.data) as db:
+                labels.put(db, bulbul, 1, 0, 5, 'absent', 'training')
+            answer('withdraw', tit); answer('present', warbler); answer('complete'); pick()
+            self.assertEqual((examples(tit)['negative_5s'], examples(warbler)['negative_5s'], examples(bulbul)['negative_5s']), (1, 1, 2))
+            self.assertEqual(client.delete('/explore/picked', params=dict(dataset=1, **at)).json(), {'deleted': True})
+            self.assertEqual(listed(), [('Hypsipetes amaurotis', 'absent'), ('Parus cinereus', 'present')])
+            self.assertEqual((examples(tit)['negative_5s'], examples(warbler), examples(bulbul)['negative_5s']),
+                             (0, {'positive_5s': 0, 'negative_5s': 1, 'other_answers': 0, 'no_bird_answers': 1}, 2))
+            with connect(self.data) as db:
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM labels WHERE start_s=0 AND taxon_id<>?', (bulbul,)).fetchone()[0], 0)
+            items = client.get('/explore/picked', params={'dataset': 1}).json()['items']
+            self.assertEqual([(i['start_s'], i['species']['scientific_name'], i['complete']) for i in items], [(5, 'Parus cinereus', True)])
+            self.assertEqual(shape(), ([], False))
+            answer('complete')
             # The species entered last on the map come first.
             answer('present', tit); answer('present', warbler)
             self.assertEqual([s['scientific_name'] for s in client.get('/explore/picked', params={'dataset': 1}).json()['recent']], ['Horornis diphone', 'Parus cinereus'])
@@ -238,12 +258,12 @@ class HeardTest(unittest.TestCase):
             answer = lambda verdict: client.post('/heard/map-answer', json=dict(dataset_id=1, species_id=warbler, verdict=verdict, **at))
             self.assertEqual([(r['verdict'], r['screen']) for r in answer('absent').json()['now']], [('absent', 'sound_map')])
             self.assertEqual([r['verdict'] for r in answer('present').json()['now']], ['present'])
-            # The ticked sound takes its species from the answer; unticking leaves the answer.
+            # The ticked sound takes its species from the answer; unticking takes the answer back with it.
             pick = dict(dataset_id=1, **at, sound_type='', quality='', others=False)
             saved = client.put('/explore/picked', json=pick)
             self.assertEqual((saved.status_code, saved.json()['species']['scientific_name']), (200, 'Horornis diphone'))
             self.assertEqual(client.request('DELETE', '/explore/picked', params=dict(dataset=1, **at)).status_code, 200)
-            self.assertEqual([r['verdict'] for r in client.get('/datasets/1/heard/sound', params=at).json()['now']], ['present'])
+            self.assertEqual(client.get('/datasets/1/heard/sound', params={**at, 'blank': True}).json()['now'], [])
             self.assertEqual(answer('maybe').status_code, 422)
 
     def test_examples_for_a_search_avoid_mixed_sounds_and_spread_over_days(self):

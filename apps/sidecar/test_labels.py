@@ -98,7 +98,7 @@ class LabelStoreCheck(unittest.TestCase):
             self.assertEqual((ready['examples']['positive_5s'], ready['examples']['other_answers']), (1, 1))
             client.delete('/explore/picked', params={'dataset': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5})
             with connect(root) as db:
-                self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], 1)
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], 0)
 
     def test_answers_on_five_second_pieces(self):
         pieces = {1: [(0, 5, 'a'), (5, 10, 'b'), (10, 15, 'c')]}
