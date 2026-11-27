@@ -45,9 +45,9 @@ def _load(db, run):
     by_recording = {}
     for point in points:
         by_recording.setdefault(point['recording_id'], []).append(point)
-    answers = {}  # position -> [(taxon, verdict)]
+    answers = {}  # position -> [(taxon, verdict)]; "no bird sound" has the verdict 'none'
     # "No bird sound" is a sound listened to with no species heard; one taken back since is no answer.
-    for row in db.execute(f'''SELECT l.taxon_id,CASE WHEN s.rank='none' THEN 'absent' ELSE l.verdict END AS verdict,l.recording_id,l.start_s,l.end_s
+    for row in db.execute(f'''SELECT l.taxon_id,CASE WHEN s.rank='none' THEN 'none' ELSE l.verdict END AS verdict,l.recording_id,l.start_s,l.end_s
             FROM labels l JOIN species s ON s.id=l.taxon_id WHERE l.recording_id IN (SELECT value FROM json_each(?)) AND {LATEST}
             AND (s.rank<>'none' OR l.verdict='present')''', (json.dumps(list(by_recording)),)):
         for point in by_recording[row['recording_id']]:
@@ -88,24 +88,26 @@ def _species(db, species_id):
 
 
 def _marks(points, answers, species_id=None):
-    """What was answered by ear, to draw on the map: [position, 1 heard | 2 not heard]. With a species its answers;
-    without, any species heard (1) or only "not heard" answers (2)."""
+    """What was answered by ear, to draw on the map: [position, 1 heard | 2 no voice]. With a species its "heard";
+    without, any species heard. "Not heard" for one species is not drawn: it says nothing about the other voices in the
+    sound. Only "no bird sound" is drawn as no voice."""
     marks = []
     for position, found in answers.items():
-        verdicts = {verdict for taxon, verdict in found if species_id is None or taxon == species_id}
-        if 'present' in verdicts:
+        if any(verdict == 'present' and (species_id is None or taxon == species_id) for taxon, verdict in found):
             marks.append([position, 1])
-        elif 'absent' in verdicts:
+        elif any(verdict == 'none' for _, verdict in found):
             marks.append([position, 2])
     return sorted(marks)
 
 
 def _found(points, nodes, answers, targets, species_id=None):
     """What every way in gives the page: the flagged groups, how many targets lie outside them, the targets' positions
-    (map order) and the marks. A sound counts as listened to when it has a mark."""
+    (map order) and the marks. A sound counts as listened to when it has an answer for the species (any species
+    without one) or "no bird sound"."""
     marks = _marks(points, answers, species_id)
     listened = np.zeros(len(points), dtype=bool)
-    listened[[at for at, _ in marks]] = True
+    listened[[at for at, found in answers.items() if any(verdict in ('present', 'absent', 'none') and
+              (verdict == 'none' or species_id is None or taxon == species_id) for taxon, verdict in found)]] = True
     groups = flags(nodes, targets, listened)
     return {'groups': groups, 'scattered': int(targets.sum()) - sum(g['targets'] for g in groups),
             'targets': np.flatnonzero(targets).tolist(), 'marks': marks}
@@ -289,6 +291,9 @@ def recorded(root, dataset_id, node):
     for row in reversed(rows):
         # "No bird sound" taken back since is no answer, as on the map's marks.
         if taxa[row['taxon_id']].get('rank') == 'none' and row['verdict'] != 'present':
+            continue
+        # "Not heard" for one species is not listed on the map: it is not "nothing was heard".
+        if taxa[row['taxon_id']].get('rank') != 'none' and row['verdict'] == 'absent':
             continue
         at = next((p['position'] for p in by_recording.get(row['recording_id'], ()) if _same(p, row)), None)
         if at is not None:
