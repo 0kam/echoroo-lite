@@ -246,7 +246,7 @@
       return [{flag,cx,cy,rx,ry,bx:spot.x,by:spot.y,r}];});}
   // Zoomed in past the fitted view, dots and the reach of a press grow (up to twice), with the answers' marks and the current sound, so a sound stays easy to see and press.
   const grow=()=>Math.min(2,Math.max(1,Math.sqrt(view.k/fit)));
-  function overlayed(value:MapOverlay){const before=overlay.targets.join();overlay=value;markAt=new Map(value.marks);if(before!==value.targets.join())order++;plant();render();}
+  function overlayed(value:MapOverlay){const before=overlay.targets.join();overlay=value;markAt=new Map(value.marks.filter(mark=>mark[1]===2));if(before!==value.targets.join())order++;plant();render();}
   async function loadPoints(status:Status){
     pointsError='';
     try{const buffer=await api<ArrayBuffer>(`/explore/points?dataset=${id}`,undefined,'GET',true);
@@ -313,7 +313,7 @@
     const {ratio,x0,y0,sx,sy,ox,oy}=frame(canvas,points),font=getComputedStyle(canvas).fontFamily;
     context.setTransform(1,0,0,1,0,0);context.textAlign='center';context.textBaseline='middle';
     const at=(i:number)=>[ox+(points!.x[i]-x0)*sx,oy-(points!.y[i]-y0)*sy] as const,ink=getComputedStyle(canvas).color;
-    // Lowest: what was heard by ear, a blue dot with a tick (heard) or a grey one with a cross (no voice), told apart without colour.
+    // Lowest: sounds recorded as "no voice", a grey dot with a cross. Sounds where a species was heard are not marked on the map.
     const mark=(cx:number,cy:number,state:1|2,r:number)=>{context.beginPath();context.arc(cx,cy,r,0,2*Math.PI);context.fillStyle=state===1?HEARD:NOT_HEARD;context.fill();
       context.lineWidth=.25*r;context.strokeStyle='#fff';context.stroke();context.beginPath();
       if(state===1){context.moveTo(cx-.5*r,cy);context.lineTo(cx-.12*r,cy+.38*r);context.lineTo(cx+.5*r,cy-.32*r);}
@@ -459,7 +459,7 @@
             {#if inside}<span><i class="target"></i>{t(`meLegendTarget_${overlay.entry}`)}</span><span><i class="other"></i>{t('meLegendOther')}</span>{/if}
             {#if node.node}<span><i class="other"></i>{t('meLegendOutside')}</span>{/if}
             <span><i class="now"></i>{t('meLegendNow')}</span>
-            <span><i class="mark" style:background={HEARD}>✓</i>{t(overlay.entry==='unsure'?'meLegendHeardAny':'hdV_present')}</span><span><i class="mark" style:background={NOT_HEARD}>×</i>{t('pfNone')}</span></p>
+            <span><i class="mark" style:background={NOT_HEARD}>×</i>{t('pfNone')}</span></p>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
         </section>
         <section class="panel stack">

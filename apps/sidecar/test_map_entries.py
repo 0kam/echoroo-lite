@@ -137,7 +137,7 @@ class MapEntryApi(ExploreCheck):
         # What was answered in a group, newest first, with where each sound is on the map.
         recorded = self.client.get('/explore/recorded', params={'dataset': 1, 'node': 0}).json()
         self.assertEqual([(r['position'], r['verdict'], r['screen']) for r in recorded],
-                         [(at[15], 'present', 'sound_map'), (at[0], 'present', 'sound_map'), (at[5], 'present', 'species_mark')])
+                         [(at[15], 'present', 'sound_map'), (at[10], 'absent', 'training'), (at[0], 'present', 'sound_map'), (at[5], 'present', 'species_mark')])
         part = one
         inside = self.client.get('/explore/recorded', params={'dataset': 1, 'node': part['node']}).json()
         self.assertEqual({r['position'] for r in inside}, {r['position'] for r in recorded if part['lo'] <= r['position'] < part['hi']})

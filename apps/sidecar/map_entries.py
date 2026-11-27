@@ -292,9 +292,6 @@ def recorded(root, dataset_id, node):
         # "No bird sound" taken back since is no answer, as on the map's marks.
         if taxa[row['taxon_id']].get('rank') == 'none' and row['verdict'] != 'present':
             continue
-        # "Not heard" for one species is not listed on the map: it is not "nothing was heard".
-        if taxa[row['taxon_id']].get('rank') != 'none' and row['verdict'] == 'absent':
-            continue
         at = next((p['position'] for p in by_recording.get(row['recording_id'], ()) if _same(p, row)), None)
         if at is not None:
             found.append({**_public(row, taxa, zone), 'position': at})
