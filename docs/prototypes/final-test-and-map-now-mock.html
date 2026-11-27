@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+<!-- Mock (proposal, not agreed, 2026-11-27): (1) the accuracy check of a grown species AI becomes "add test sounds" inside the grow page;
+     (2) the sound map shows the current sound in one place only (top of the right column) and the map gets larger.
+     All numbers are examples. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>仕上げのテストと、地図の「いまの音」（見本）</title>
+<style>
+  body { margin: 0; padding: 24px 16px 48px; background: #f9f4ee; color: #373450; font: 16px/1.7 system-ui, "Hiragino Sans", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 0 0 8px; } h3 { font-size: 16px; margin: 0 0 4px; }
+  p { margin: 0 0 12px; } .muted { color: #6e6a86; font-size: 14px; }
+  .mockbar { background: #efe7dc; border: 1px dashed #b9ab99; border-radius: 12px; padding: 10px 16px; margin: 0 0 20px; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { white-space: nowrap; min-height: 44px; padding: 6px 16px; border: 1px solid #d9cfc4; border-radius: 10px; background: #fffaf3; color: inherit; font: inherit; cursor: pointer; }
+  button.primary { background: #9b4b4b; border-color: #9b4b4b; color: #fff; }
+  button[aria-pressed="true"] { background: #f6dede; border-color: #9b4b4b; color: #9b4b4b; font-weight: 600; }
+  .panel { background: #fffaf3; border: 1px solid #e6ddd3; border-radius: 16px; padding: 20px 24px; margin: 0 0 16px; }
+  .new { display: inline-block; font-size: 12px; background: #286983; color: #fff; border-radius: 6px; padding: 0 8px; margin-left: 8px; vertical-align: 2px; font-weight: 400; }
+  .steps span { border: 1px solid #d9cfc4; border-radius: 999px; padding: 2px 14px; font-size: 14px; background: #fffaf3; }
+  .steps span.on { border-color: #9b4b4b; color: #9b4b4b; font-weight: 600; }
+  .scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 0 0 12px; }
+  .score { border: 1px solid #e6ddd3; border-radius: 12px; padding: 14px 18px; background: #fff; }
+  .score.add { border-color: #286983; }
+  .score .label { font-size: 14px; color: #6e6a86; } .score .big { font-size: 32px; font-weight: 700; line-height: 1.2; } .score .of { font-size: 15px; }
+  .cols { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
+  @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+  .map { position: relative; height: 520px; border: 1px solid #e6ddd3; border-radius: 12px; background: #fff; overflow: hidden; }
+  .blob { position: absolute; border-radius: 50%; opacity: .5; }
+  .ring { position: absolute; width: 18px; height: 18px; border: 3px solid #373450; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px #fff; }
+  .now { border: 2px solid #373450; border-radius: 14px; padding: 14px 16px; background: #fff; margin: 0 0 16px; }
+  .now h3 .ringi { display: inline-block; width: 12px; height: 12px; border: 3px solid #373450; border-radius: 50%; vertical-align: -2px; margin-right: 6px; }
+  .spec { height: 110px; border-radius: 6px; margin: 8px 0; background: linear-gradient(#2a1a5e, #6b2a8a 40%, #c8553d 75%, #f2a33a); }
+  .spec.small { height: 60px; }
+  .item { border-top: 1px solid #e6ddd3; padding: 10px 0; }
+  .saved { color: #2f6f4f; font-size: 14px; }
+  label.zip { font-size: 14px; color: #6e6a86; display: inline-flex; gap: 6px; align-items: center; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mockbar">見本です（数字は例）。<div class="row" style="margin-top:8px" id="tabs"></div></div>
+  <div id="screen"></div>
+</main>
+<script>
+(function () {
+  var NEW = '<span class="new">新しい</span>';
+  // (1) Grow page after the AI has settled: the accuracy check is offered as "add test sounds", and its result joins the score panel.
+  function grow() {
+    return '<h1>エゾハルゼミ用のAIを育てる</h1>' +
+      '<p class="row steps"><span>1. テスト用の音を作る ✓</span><span>2. 育てる ✓</span><span class="on">3. テスト用の音を足して、正しさを測る' + '</span>' + NEW + '</p>' +
+      '<section class="panel"><h2>テスト用の音での成績</h2><div class="scores">' +
+        '<div class="score"><div class="label">声ありの音を、AI が見つけた割合</div><div class="big">100%</div><div class="of">17 音のうち 17 音</div></div>' +
+        '<div class="score"><div class="label">声なしの音を、AI が誤って「いる」とした割合</div><div class="big">0%</div><div class="of">20 音のうち 0 音</div></div>' +
+        '<div class="score add"><div class="label">AI が「いる」とした音のうち、本当に声があった割合' + NEW + '</div><div class="big">約 91%</div><div class="of">足した 60 音から（おそらく 82%〜96%）</div></div>' +
+      '</div>' +
+      '<p class="muted">左の 2 つは、はじめに作った 37 音での成績です。右は、育った AI が「いる」とした音から選んで足したテスト用の音での成績で、レポートに載ります。</p></section>' +
+      '<section class="panel"><h2>テスト用の音を足して、正しさを測る' + NEW + '</h2>' +
+      '<p>はじめのテスト用の音は 37 音だけで、AI が育つ前に選んだ音です。この地点の 8,700 音のうち、AI が「いる」とした音がどれだけ正しいかは、まだ分かりません。</p>' +
+      '<p>育った AI が「いる」とした音から、点数の高い音・低い音を混ぜて 20 音ずつ出します。答えた音はテスト用の音に足され、AI の材料にはなりません。</p>' +
+      '<div class="row"><button class="primary" type="button">テスト用の音を 20 音足す</button><span class="muted">20 音で終わることも、60 音まで続くこともあります</span></div>' +
+      '<p class="muted" style="margin-top:12px">今との違い：これは今の「AI の答えを確かめる」と同じ中身です。別の画面の別の作業に見えていたのを、育てる画面の 3 番目の手順にします。答えを材料に回すボタンはなくします。AI を作り直したら、もう一度ここで測ります。</p></section>';
+  }
+  // (2) Sound map: the current sound lives only at the top of the right column; nothing under the map.
+  function map() {
+    return '<h1>音の地図</h1><p class="muted">種から探す：エナガ</p><div class="cols">' +
+      '<section class="panel"><p class="muted">点を押すと、右の「いまの音」に出ます。</p>' +
+      '<div class="map"><div class="blob" style="left:8%;top:38%;width:120px;height:150px;background:#e8703a"></div>' +
+      '<div class="blob" style="left:38%;top:18%;width:220px;height:170px;background:#3b82d6"></div>' +
+      '<div class="blob" style="left:44%;top:66%;width:150px;height:110px;background:#2aa876"></div>' +
+      '<div class="ring" style="left:47%;top:36%"></div></div>' +
+      '<p class="muted" style="margin-top:8px">地図の下の再生欄はなくし、その分だけ地図を広げます。' + NEW + '</p></section>' +
+      '<section class="panel">' +
+      '<div class="now"><h3><span class="ringi"></span>いまの音（地図で二重丸の点）' + NEW + '</h3>' +
+        '<p class="muted">2025/07/12 22:31:35 ・ まとまり 1 ・ AI の候補：エナガ 62%</p>' +
+        '<div class="spec"></div>' +
+        '<div class="row"><button type="button">▶ 聞く</button></div>' +
+        '<p style="margin:12px 0 4px">この音に エナガ の声は聞こえましたか？</p>' +
+        '<div class="row"><button type="button" aria-pressed="true">聞こえた</button><button type="button">聞こえなかった</button><button type="button">わからない</button><button type="button">＋ ほかの種もいる</button></div>' +
+        '<p class="saved">✓ 記録しました。「聞いて確かめた音」に入っています。' + NEW + '</p>' +
+        '<label class="zip"><input type="checkbox"> この音を ZIP に入れる（音声ファイルを持ち出すとき用）' + NEW + '</label></div>' +
+      '<h3>いまの音に近い音</h3><p class="muted">押すと、その音が「いまの音」になります。</p>' +
+      '<div class="item">2025/07/13 4:33:35 ・ AI の候補：エナガ 79%<div class="spec small"></div></div>' +
+      '<div class="item">2025/07/12 23:00:55 ・ AI の候補：ヒガラ 28%<div class="spec small"></div></div>' +
+      '<p class="muted">今との違い：「いまの音」が地図の下と右の列の 2 か所にあったのを、右の列の 1 か所にします。答えは押した時点で保存され、その場に「記録しました」と出ます。「保存用に集める」は「ZIP に入れる」に変え、記録とは別のものだと分かるようにします。</p>' +
+      '</section></div>';
+  }
+  var screens = [['育てる：テスト用の音を足す', grow], ['地図：いまの音を 1 か所に', map]], current = 0;
+  function draw() {
+    document.getElementById('tabs').innerHTML = screens.map(function (x, i) { return '<button type="button" data-i="' + i + '" aria-pressed="' + (i === current) + '">' + x[0] + '</button>'; }).join('');
+    document.getElementById('screen').innerHTML = screens[current][1]();
+  }
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-i]'); if (b) { current = +b.dataset.i; draw(); } });
+  draw();
+})();
+</script>
+</body>
+</html>

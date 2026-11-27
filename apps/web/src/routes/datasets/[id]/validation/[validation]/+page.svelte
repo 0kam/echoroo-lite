@@ -75,20 +75,20 @@
       {#if site}<div class="site-name">{site.name}</div>{/if}
       {#if done||!started||found}<h1>{commonName(validation.species,app.locale)} <i class="sci">{validation.species.scientific_name}</i></h1>
       {:else}<h1>{fill('vQuestionNamed',{name:commonName(validation.species,app.locale)||validation.species.scientific_name})}</h1>{/if}
-      <p>{fill('vModelTitle',{model:modelIntro(validation.engine)})}</p></div></div>{/if}
+      <p>{validation.engine==='custom'?t('tpStep3'):fill('vModelTitle',{model:modelIntro(validation.engine)})}</p></div></div>{/if}
     {#if !validation.applicable}<p class="notice">{t(validation.model_reason??'wScopeChanged')}</p>{/if}
     {#if done}<section class="panel">{#if validation.early_stop}<h2>{t('vEarlyStopTitle')}</h2><p>{t('vEarlyStopText')}</p><p>{t('vEarlyStopUse')}</p>
       {:else}<h2>{t('vResultTitle')}</h2><QualityPanel {validation}/>{/if}
       {#if validation.can_extend}<p><strong>{t('vExtendWhy')}</strong></p>{/if}
-      <div class="actions">{#if validation.early_stop}{@const custom=validation.engine==='custom'}
-        {#if custom}<Button variant="primary" href={`${resolve(`/datasets/${id}/species/${validation.species.id}/model`)}?${range}`}>{t('vRebuildWithAnswers')}</Button>{/if}
-        <Button variant={custom?'default':'primary'} href={back}>{t('vFinishSpecies')}</Button>
+      <!-- A check started as step 3 of the species-AI page ends by going back there, where its result joins the scores. -->
+      <div class="actions">{#if origin}<Button variant="primary" href={appHref(origin)}>{t('wReturn')}</Button>
+        {:else if validation.early_stop}<Button variant="primary" href={back}>{t('vFinishSpecies')}</Button>
         {:else if validation.can_extend}<Button variant="primary" href={back}>{t('vFinishHere')}</Button><Button pending={extend.pending} disabled={busy||!validation.applicable} onclick={()=>extend.run()}>{t('vExtend')}</Button>
         {:else}<Button variant="primary" href={back}>{t('wBackSpecies')}</Button>{/if}
         {#if previous}<Button disabled={busy} onclick={()=>navigate.run(previous.id)}>{t('vReviewAnswers')}</Button>{/if}</div>
       {#if extend.error||navigate.error}<p class="error" role="alert">{t(extend.error||navigate.error)}</p>{/if}</section>
-    {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t('cStart')}</h2><p>{fill(first?'wValidationPlanFirst':'wValidationPlan',{first:firstTotal,total:validation.counts.total,time:effort.time})}</p>
-      <p>{t('vPurpose')}</p><p class="muted">{fill('wEveryNote',{n:validation.window_s})}</p>
+    {:else if !started}{@const effort=workload(validation.counts.total)}<div class="with-examples"><section class="panel stack"><h2>{t(validation.engine==='custom'?'tpStep3':'cStart')}</h2><p>{fill(first?'wValidationPlanFirst':'wValidationPlan',{first:firstTotal,total:validation.counts.total,time:effort.time})}</p>
+      <p>{t('vPurpose')}{#if validation.engine==='custom'} {t('s3Material')}{/if}</p><p class="muted">{fill('wEveryNote',{n:validation.window_s})}</p>
       {#if heard?.length}<p><strong>{t('refListenFirst')}</strong></p>{/if}<Button variant="primary" onclick={()=>started=true}>{t('wValidationStart')}</Button></section>{@render examples()}</div>
     {:else if found}<div class="with-examples"><section class="panel stack" role="status"><h2>{fill('vFoundTitle',{n:remaining})}</h2>
       <p>{fill('vFoundText',{m:firstTotal,k:firstHeard})}</p><p class="muted">{fill('vProgress',{answered:validation.counts.answered,total:validation.counts.total})}</p>

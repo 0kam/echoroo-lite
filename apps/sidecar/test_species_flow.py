@@ -235,7 +235,8 @@ class SpeciesFlowCheck(unittest.TestCase):
             self.assertGreater(perch_check['counts']['answered'], 0)
             client.post(f"/validations/{perch_check['id']}/delete")
             self.assertEqual(client.get(f"/validations/{check['id']}").json()['status'],check['status'])
-            # 5-second check answers are material: "heard" as voice, "not heard" as no voice; labels given here win.
+            # Answers given in the check of the species AI itself are test sounds, never material (2026-11-27); the
+            # page has the check as its third step.
             ready = client.get(url, params=dates).json()
             with connect(root) as db:
                 pieces = {(r[0], {'present': 'target', 'absent': 'other'}[r[1]]) for r in db.execute('''SELECT s.id,a.verdict FROM segments s
@@ -245,8 +246,8 @@ class SpeciesFlowCheck(unittest.TestCase):
                     AND a.verdict IN ('present','absent') AND NOT EXISTS (SELECT 1 FROM labels t WHERE t.source='training'
                     AND t.recording_id=a.recording_id AND t.start_s=a.start_s AND t.end_s=a.end_s)''', (check['id'],))}
             self.assertTrue({'target', 'other'} <= {verdict for _, verdict in pieces})
-            self.assertEqual(ready['examples']['other_answers'], len({segment for segment, _ in pieces} | {ranked[0]}))
-            self.assertEqual(ready['examples']['positive_5s'], 4 + len({segment for segment, verdict in pieces if verdict == 'target'} - {ranked[0]}))
+            self.assertEqual((ready['examples']['other_answers'], ready['examples']['positive_5s']), (1, 4))
+            self.assertEqual((ready['check']['id'], ready['check']['status']), (check['id'], check['status']))
             # Making it again replaces it in place; its finished check no longer applies and a new one starts.
             label(silent[1], 'target')
             again = client.post('/custom-models', json=scope)
@@ -254,7 +255,8 @@ class SpeciesFlowCheck(unittest.TestCase):
             again = again.json()
             self.assertEqual((again['id'], again['round'], again['applicable']), (model['id'], 2, True))
             self.assertNotEqual(again['artifact_sha256'], model['artifact_sha256'])
-            self.assertEqual(again['training']['positive_from_checks'], len({segment for segment, verdict in pieces if verdict == 'target'} - {ranked[0]}))
+            self.assertEqual((again['training']['positive_from_checks'], again['training']['negative_from_checks']), (0, 0))
+            self.assertEqual(client.get(url, params=dates).json()['check']['status'], 'stale')
             with connect(root) as db:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM custom_models').fetchone()[0], 1)
             self.assertEqual([p.name for p in (root / 'custom-models').iterdir()], [str(model['id'])])
@@ -263,8 +265,7 @@ class SpeciesFlowCheck(unittest.TestCase):
             detail = client.get(f'/datasets/1/species/{sid}', params={**scope, 'engine': 'custom', 'model_id': model['id']}).json()
             self.assertEqual(next(c for c in detail['checks'] if c['engine'] == 'custom')['validation']['model_reason'], 'custom_model_rebuilt')
             self.assertIn('check', {e['origin'] for e in detail['presence']['evidence']})  # its "heard" answers still count
-            # A new check starts with the two top groups first, or is refused when every high-scoring sound became training
-            # material. Which one happens depends on the first check's random draw, which fed the training material.
+            # A new check starts with the two top groups first, or is refused when every high-scoring sound is training material.
             fresh = client.post('/validations', json={**scope, 'model': 'custom', 'model_id': model['id']}).json()
             self.assertIn(fresh.get('detail') or fresh['method'], ('validation_no_top_group', 'detection_top_bin_v2'))
             with_model = client.get(url, params={**dates, 'batch': True}).json()

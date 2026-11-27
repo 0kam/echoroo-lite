@@ -91,6 +91,8 @@
     :activityLine(result.checks));
   const check=createTask(async(item:Check)=>{
     if(!result)return;
+    // A species AI's check starts on its own page, as the third step of growing it; a started one opens directly.
+    if(item.engine==='custom'&&!item.validation?.applicable){await goto(modelHref);return;}
     const validation=item.validation?.applicable?item.validation:await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
       start_date:result.start_date,end_date:result.end_date,model:item.engine,model_id:item.model_id});
     await goto(resolve(`/datasets/${id}/validation/${validation.id}`));
@@ -165,8 +167,7 @@
         <div class="step-head"><h2 id="q2">{t('sqQ2')}</h2><p class="status"><strong>{answer2}</strong></p></div>
         {#if mode==='growing'&&growing}<div class="check-row">
             <div class="check-name"><strong>{checkName(growing)}</strong><span>{t('mdGrow_growing')}</span></div>
-            <div class="actions"><Button variant="primary" href={modelHref}>{t('sqKeepGrowing')}</Button>
-              {#if !undetected(growing)}<Button pending={check.pending} onclick={()=>check.run(growing)}>{t('cStart')}</Button>{/if}</div></div>
+            <div class="actions"><Button variant="primary" href={modelHref}>{t('sqKeepGrowing')}</Button></div></div>
           <p class="muted">{t('sqGrowingNote')}</p>
         {:else if mode==='check'&&main}
           {#if remaining}<p>{fill('sqCheckHint',{n:remaining,time:effort.time})}</p>{/if}

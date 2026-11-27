@@ -165,16 +165,19 @@ def _pieces(db, ctx):
 
 
 def _materials(db, ctx, species_id, pieces=None):
-    """`_labelled` without the test sounds (`test_sounds`): what the species AI may be made from."""
+    """`_labelled` without the test sounds (`test_sounds`) and without the answers given when the species AI itself
+    was checked (origin 'test': they measure it; owner decision 2026-11-27): what the species AI may be made from."""
     import test_sounds
     run, found = _labelled(db, ctx, species_id, pieces)
     test = test_sounds.recordings(db, ctx['site']['id'], species_id)
-    return run, {segment: {k: v for k, v in value.items() if k != 'first'} for segment, value in found.items() if value['recording_id'] not in test}
+    return run, {segment: {k: v for k, v in value.items() if k != 'first'} for segment, value in found.items()
+                 if value['recording_id'] not in test and value['origin'] != 'test'}
 
 
 def _labelled(db, ctx, species_id, pieces=None):
     """Labelled 5-second pieces of the site's main analysis, from the species' current labels at the site
-    (`labels.on_pieces`). Origin: 'label' (the species-AI page), 'check' (a check answer), 'presence' (any other
+    (`labels.on_pieces`). Origin: 'label' (the species-AI page), 'check' (an answer in a built-in AI's check), 'test'
+    (an answer in a check of a species AI of this species, whenever it was given: never material), 'presence' (any other
     screen) or 'no_bird' (a "no bird sound" answer: "no call" for every species without its own answer there). A mark on a deleted or outdated search does not count, as on the species page.
     `first`: when its interval was first answered, however often the answer was changed since (`test_sounds.sounds`)."""
     from search_runs import site_run
@@ -189,8 +192,10 @@ def _labelled(db, ctx, species_id, pieces=None):
         found.setdefault(segment, row)
     first = {tuple(r)[:4]: r[4] for r in db.execute('SELECT taxon_id,recording_id,start_s,end_s,MIN(created_at) FROM labels WHERE taxon_id IN (?,?) GROUP BY 1,2,3,4',
                                                     (species_id, no_bird(db)))}
+    own = {r[0] for r in db.execute("SELECT id FROM validation_sessions WHERE species_id=? AND model LIKE 'custom:%'", (species_id,))}
+    origin = lambda row: 'test' if row['source'] == 'validation' and ref(row).get('session_id') in own else ORIGINS.get(row['source'], 'presence')
     # Newest first, as the species-AI page lists its answers.
-    return run, {segment: {'label': TO_ANSWER[row['verdict']], 'origin': ORIGINS.get(row['source'], 'presence'), 'recording_id': row['recording_id'],
+    return run, {segment: {'label': TO_ANSWER[row['verdict']], 'origin': origin(row), 'recording_id': row['recording_id'],
                            'first': first[row['taxon_id'], row['recording_id'], row['start_s'], row['end_s']]}
                  for segment, row in sorted(found.items(), key=lambda item: (item[1]['created_at'], item[1]['id']), reverse=True)}
 
@@ -359,7 +364,8 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
     and where they were chosen from (`source`): 'custom' (species AI scores), 'search' (similarity),
     'builtin' (the main AI's score) or None (nothing to rank by). `search_examples`: how many examples the species'
     search was made from. `by_example`: a 'custom' batch also has a sound
-    for each example of the species' search (`example_picks`).
+    for each example of the species' search (`example_picks`). `check`: the species AI's own check (step 3 of its
+    page), as the species page has it: 'stale' once the AI was made again; None when never started.
     """
     models = list_models(root, ctx, species_id, every=True)
     model = models[0] if models else None
@@ -374,7 +380,7 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
         # While the test sounds are being made, every sound may be offered: answering it makes its recording a test recording.
         stage = test_sounds.phase(db, ctx['site']['id'], species_id)
         collecting = stage == 'collecting'
-        labels = {segment: value for segment, value in every.items() if value['recording_id'] not in set_aside}
+        labels = {segment: value for segment, value in every.items() if value['recording_id'] not in set_aside and value['origin'] != 'test'}
         tests = test_sounds.sounds(db, ctx['site']['id'], species_id, every)
         test = test_sounds.progress(db, ctx, species_id, every)
         positive, negative = (sum(value['label'] == label for value in labels.values()) for label in ('target', 'other'))
@@ -423,13 +429,15 @@ def readiness(root, ctx, species_id, batch=False, skip=()):
     all_positive, all_negative = positive + sum(v['label'] == 'target' for v in more), negative + sum(v['label'] == 'other' for v in more)
     short = max(0, MIN_CLASS_EXAMPLES - all_positive) + max(0, MIN_CLASS_EXAMPLES - all_negative)
     needed = max(short, MIN_EXAMPLES - all_positive - all_negative)
+    from results_workflow import current_validations
+    check = current_validations(root, ctx).get((species_id, f"custom:{model['id']}")) if model else None
     reasons = [reason for reason, missing in [('custom_test_sounds_first', collecting),
                                               ('custom_more_answers_needed', all_positive + all_negative < MIN_EXAMPLES),
                                               ('custom_positive_examples_needed', all_positive < MIN_CLASS_EXAMPLES),
                                               ('custom_negative_examples_needed', all_negative < MIN_CLASS_EXAMPLES),
                                               ('custom_no_new_answers', unchanged)] if missing]
     return {'species': names_for_id(root, species_id), 'start_date': ctx['start_date'], 'end_date': ctx['end_date'],
-            'model': model, 'source': source, 'by_example': source == 'custom' and bool(run), 'engine': main_engine(root),
+            'model': model, 'check': check, 'source': source, 'by_example': source == 'custom' and bool(run), 'engine': main_engine(root),
             'search_examples': len(json.loads(run['snapshot'])['references']) if run else 0,
             'batch': rows if batch else None, 'answered': answered, 'needed': needed,
             'examples': {'positive_5s': positive, 'negative_5s': negative,

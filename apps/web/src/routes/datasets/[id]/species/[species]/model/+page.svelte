@@ -6,7 +6,7 @@
   import { api } from '$lib/api.svelte';
   import { app,t,datasetOf,siteOf } from '$lib/app.svelte';
   import { commonName } from '$lib/species';
-  import { appHref,fill,modelIntro,modelName,pageQuery,returnPath,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
+  import { appHref,fill,listenLabel,modelIntro,modelName,pageQuery,returnPath,share,type LabelRow,type SpeciesAI,type Validation } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
   import OtherSpecies from '$lib/OtherSpecies.svelte';
   import TestSounds from '$lib/TestSounds.svelte';
@@ -88,8 +88,15 @@
       if(fresh&&!open(row))to=batch.slice(at+1).find(open);}
     if(to){selected=to.segment_id;await tick();document.querySelector('.row[aria-current]')?.scrollIntoView({block:'nearest'});}
   }
-  // Opens this AI's accuracy check at once (an unfinished one with the same AI and period is reused).
-  const startCheck=createTask(async()=>{const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
+  // Step 3: this AI's accuracy check, shown here as adding test sounds (an unfinished one with the same AI and period is
+  // reused). `measured`: the check of the AI as it is now, with an answer in it; starting one asks first (`asking`),
+  // since making the AI again afterwards means measuring again.
+  const measured=$derived(info?.check?.applicable&&info.check.counts.answered?info.check:null);
+  let asking=$state(false);
+  // Back from the check page: the scores, where its result is, come into view.
+  const returned=sessionStorage.getItem('echoroo-measuring')===speciesId;
+  sessionStorage.removeItem('echoroo-measuring');
+  const startCheck=createTask(async()=>{sessionStorage.setItem('echoroo-measuring',speciesId);const validation=await api<Validation>('/validations',{dataset_id:id,species_id:speciesId,
     start_date:info!.start_date,end_date:info!.end_date,model:'custom',model_id:model!.id});await goto(`${resolve(`/datasets/${id}/validation/${validation.id}`)}?return=${encodeURIComponent(here)}`);},{toast:true});
   // Nothing to rank by and nothing to make an AI from yet: the page only points to the search.
   const chosen=$derived(source==='custom'?`${t('mdIntroCustom')}${info!.by_example?` ${t('mdIntroExamples')}`:''}`:source==='search'?t('mdIntroSearch'):source?fill('mdIntroBuiltin',{model:modelIntro(info!.engine)}):'');
@@ -109,8 +116,8 @@
   <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{info?fill('customModelTitleFor',{name:commonName(info.species,app.locale)||info.species.scientific_name}):t('customModelTitle')}</h1></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if info}
-    <ol class="steps" aria-label={t('tpSteps')}>{#each ['tpStep1','tpStep2'] as name,i}{@const stage=collecting?0:1}
-      <li aria-current={i===stage?'step':undefined}>{t(name)}{i<stage?' ✓':''}</li>{/each}</ol>
+    <ol class="steps" aria-label={t('tpSteps')}>{#each ['tpStep1','tpStep2','tpStep3'] as name,i}{@const stage=collecting?0:measured||model?.growth.state==='settled'?2:1}
+      <li aria-current={i===stage?'step':undefined}>{t(name)}{i<stage||i===2&&measured?.stage==='complete'?' ✓':''}</li>{/each}</ol>
     {#if collecting}{@const test=info.test}{@const few=test.heard<test.aim_heard}<section class="panel"><h2 id="test-title">{t('tpTitle')}</h2>
       <p>{t('tpIntro')}</p>
       <div class="meter">{#each [['mdVoice',test.heard,test.aim_heard],['mdNoVoice',test.not_heard,test.aim_not_heard]] as [name,n,of]}
@@ -146,15 +153,24 @@
         <ul class="rounds">{#each model.growth.rounds as item (item.round)}<li>{item.overlap==null?fill('mdGrowthRoundNone',{n:item.round}):fill('mdGrowthRound',{n:item.round,p:share(item.overlap)})}</li>{/each}</ul>
         {#if model.growth.rounds.some(item=>item.overlap!=null)}<p class="muted">{t('mdGrowthNote')}</p>{/if}
         <div class="status-box" role="status"><strong>{t(`mdGrow_${growText}`)}</strong><p>{fill(`mdGrowText_${growText}`,{n:info.examples.positive_5s})}</p></div>
-        <!-- The check opens directly; finishing returns to the species page. Once settled, the sounds below wait behind "Grow it a little more". -->
+        <!-- Once settled, the sounds below wait behind "Grow it a little more"; step 3 follows the scores. -->
         {#if grown!=='growing'}<div class="actions">
-          {#if grown!=='no_voice'&&model.applicable}<Button variant="primary" pending={startCheck.pending} onclick={()=>startCheck.run()}>{t('cStart')}</Button>{/if}
           {#if grown!=='settled'}<Button href={back}>{t('mdFinish')}</Button>{:else if !more}<Button onclick={async()=>{more=true;await tick();toTop();}}>{t('mdGrowMore')}</Button>{/if}
         </div>{/if}
       {/if}
     </section>
     <TestSounds datasetId={id} {speciesId} query={range.toString()} timezone={site?.timezone}
-      version={`${model?.id}:${model?.round}:${info.examples.positive_5s}:${info.examples.negative_5s}:${info.test?.heard}:${info.test?.not_heard}`}/>{/if}
+      version={`${model?.id}:${model?.round}:${info.examples.positive_5s}:${info.examples.negative_5s}:${info.test?.heard}:${info.test?.not_heard}`}
+      check={model?info.check:null} oncontinue={()=>startCheck.run()} reveal={returned}/>
+    <!-- Step 3, offered once an AI exists: the same check as "Check the AI's answers", told as adding test sounds. -->
+    {#if model?.applicable}<section class="panel"><h2>{t('tpStep3')}</h2>
+      <p>{t('s3Intro')}</p><p>{t('s3How')} {t('s3Material')}</p>
+      {#if measured}<div class="actions"><Button variant={measured.stage==='complete'?'default':'primary'} pending={startCheck.pending} onclick={()=>startCheck.run()}>{listenLabel(measured)}</Button></div>
+      {:else}<p class="info">{t(info.check?.status==='stale'?'s3Again':'s3First')}</p>
+        <div class="actions"><Button variant={model.growth.state==='settled'?'primary':'default'} disabled={asking} onclick={()=>asking=true}>{t('s3Start')}</Button></div>
+        {#if asking}<div class="confirm"><p>{t('s3Confirm')}</p><div class="actions"><Button disabled={startCheck.pending} onclick={()=>asking=false}>{t('s3Stop')}</Button>
+          <Button variant="primary" pending={startCheck.pending} onclick={()=>startCheck.run()}>{t('s3Go')}</Button></div></div>{/if}{/if}
+    </section>{/if}{/if}
     <!-- `keys`: a row of the next sounds, which can be the selected one; pressing or focusing anything in it selects it. -->
     {#snippet row(item:LabelRow,keys=false)}{@const on=keys&&item===current}<article class="row" class:on aria-current={on?'true':undefined}
       onpointerdown={keys?()=>selected=item.segment_id:undefined} onfocusin={keys?()=>selected=item.segment_id:undefined}>
@@ -187,7 +203,8 @@
       <!-- While the test sounds are made, the AI cannot be made yet: no counts and no button for it. -->
       {#if !searchFirst||collecting}<div class="footer">
         {#if !collecting}{@render counts()}
-          {#each info.reasons.filter(reason=>reason!=='custom_more_answers_needed') as reason}<p class="info">{t(reason)}</p>{/each}{/if}
+          {#each info.reasons.filter(reason=>reason!=='custom_more_answers_needed') as reason}<p class="info">{t(reason)}</p>{/each}
+          {#if measured&&info.can_train}<p class="info">{t('s3RebuildNote')}</p>{/if}{/if}
         <div class="actions">
           {#if !collecting}<Button variant="primary" disabled={!info.can_train} pending={build.pending} onclick={()=>build.run()}>{t(model?'mdRebuild':'customModelCreate')}</Button>{/if}
           {#if source}<Button disabled={build.pending} pending={next.pending} onclick={another}>{t('mdAnother')}</Button>{/if}

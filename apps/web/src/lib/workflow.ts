@@ -37,7 +37,7 @@ export type CustomModel = {imported?:{file:string;engine:string;warning:string|n
 export type LabelRow = {test?:boolean;segment_id:number;start_s:number;end_s:number;recording_id:number;path:string;seconds:number;local_time:string;
   score:number|null;label:'target'|'other'|null};
 /** The species-AI page. `batch` and `source` come only when a round is asked for; source null = nothing to choose sounds by. */
-export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;source:'custom'|'search'|'builtin'|null;engine:string;
+export type SpeciesAI = {species:Species;start_date:string;end_date:string;model:CustomModel|null;/** The species AI's own check (step 3 of its page); status 'stale' once the AI was made again. */check:Validation|null;source:'custom'|'search'|'builtin'|null;engine:string;
   /** A species-AI batch also has one sound for each example of the species' search. */
   by_example:boolean;search_examples:number;batch:LabelRow[]|null;answered:LabelRow[];needed:number;examples:{positive_5s:number;negative_5s:number;other_answers:number;no_bird_answers:number};
   requirements:{positive_5s:number;negative_5s:number;total_5s:number};can_train:boolean;reasons:string[];

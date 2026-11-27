@@ -1,23 +1,28 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { api } from './api.svelte';
   import { app, t } from './app.svelte';
   import AudioRegion from './AudioRegion.svelte';
-  import { fill } from './workflow';
+  import Button from './ui/Button.svelte';
+  import { checkProgress, checkText, fill, share, type Validation } from './workflow';
   // How each round of a species AI did on the test sounds: answers in recordings set aside for the species, never
   // used as material. Two numbers to compare the rounds by; the rest is folded. A species grown without test sounds
-  // only gets a line saying so.
+  // only gets a line saying so. The third number is the species AI's own check (step 3 of its page), as that check
+  // worked it out: shown for the current AI only, since making the AI again outdates it.
   type Sound = { segment_id: number; recording_id: number; start_s: number; end_s: number; path: string; seconds: number; local_time: string; score: number };
   type Round = { round: number; found: number | null; false: number | null; current: boolean; made_from_test: boolean };
   // `fixed`: the set is closed to later answers (not for a species whose test sounds were frozen by an earlier version).
   type Report = { state: 'none' }
     | { state: 'ready'; sounds: { heard: number; not_heard: number }; fixed: boolean; threshold: number; recordings: string[]; rounds: Round[];
         missed: Sound[]; false: Sound[]; new: Sound[] };
-  let { datasetId, speciesId, query, version, timezone }:
-    { datasetId: number; speciesId: string; query: string; version: string; timezone?: string } = $props();
+  let { datasetId, speciesId, query, version, timezone, check = null, oncontinue, reveal = false }:
+    { datasetId: number; speciesId: string; query: string; version: string; timezone?: string; check?: Validation | null; oncontinue?: () => void; reveal?: boolean } = $props();
+  const precision = $derived(check?.status === 'decided' ? check.results[check.engine]?.precision : null);
   let report = $state<Report | null>(null), request = 0;
   $effect(() => { void version; untrack(() => { const current = ++request;
-    api<Report>(`/datasets/${datasetId}/species/${speciesId}/test-sounds?${query}`).then(value => { if (current === request) report = value; }, () => { /* The page works without this box. */ }); }); });
+    api<Report>(`/datasets/${datasetId}/species/${speciesId}/test-sounds?${query}`).then(async value => { if (current !== request) return; const first = !report; report = value;
+      // `reveal`: the page was come back to for these scores, so bring them into view once they are there.
+      if (first && reveal) { await tick(); document.getElementById('tests-title')?.scrollIntoView({ block: 'start' }); } }, () => { /* The page works without this box. */ }); }); });
   const time = (sound: Sound) => new Intl.DateTimeFormat(app.locale, { dateStyle: 'medium', timeStyle: 'medium', hourCycle: 'h23', timeZone: timezone }).format(new Date(sound.local_time));
 </script>
 {#snippet list(title: string, sounds: Sound[])}{#if sounds.length}<details><summary>{fill(title, { n: sounds.length })}</summary>
@@ -36,14 +41,23 @@
     {:else}<div class="big">—</div><div class="muted">{t(none)}</div>{/if}
   </div>
 {/snippet}
+{#snippet measured()}<div class="score"><div class="muted">{t('s3Label')}</div>
+  {#if precision}<div class="big">{fill('s3Value', { p: share(precision.value) })}</div>
+    <div>{fill('s3Of', { n: check!.counts.answered, low: share(precision.low), high: share(precision.high) })}</div>
+  {:else}<div class="big">—</div>
+    {#if check?.status === 'in_progress' && check.counts.answered}<div class="muted">{fill('s3Progress', { answered: check.counts.answered, total: checkProgress(check).goal })}</div>
+      <Button onclick={oncontinue}>{t('s3Continue')}</Button>
+    {:else}<div class="muted">{check?.status === 'stale' ? t('s3Stale') : check?.stage === 'complete' ? checkText(check) : t('s3None')}</div>{/if}{/if}
+</div>{/snippet}
 {#if report}<section class="panel tests" aria-labelledby="tests-title"><h2 id="tests-title">{t('tsTitle')}</h2>
   {#if report.state === 'none'}
     <p>{t('tsNone')}</p>
+    <div class="scores">{@render measured()}</div>
   {:else}{@const sounds = report.sounds}{@const scored = report.rounds.filter(row => !row.made_from_test)}
     {#if scored.some(row => row.current)}
       <div class="scores">{@render card('tsFoundLabel', 'tsNoHeard', sounds.heard, row => row.found ?? 0, true, scored)}
-        {@render card('tsFalseLabel', 'tsNoNotHeard', sounds.not_heard, row => row.false ?? 0, false, scored)}</div>
-      <p>{t('tsBetter')}</p>
+        {@render card('tsFalseLabel', 'tsNoNotHeard', sounds.not_heard, row => row.false ?? 0, false, scored)}{@render measured()}</div>
+      <p>{t('tsBetter')}{#if precision} {t('s3Report')}{/if}</p>
       <p class="muted">{fill('tsCompare', { n: sounds.heard + sounds.not_heard })}</p>
     {:else}<p class="muted">{t(report.rounds.length ? 'tsMadeFromTest' : 'tsNoAI')}</p>{/if}
     <details><summary>{t('tsDetails')}</summary>

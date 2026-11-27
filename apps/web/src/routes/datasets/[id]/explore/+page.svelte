@@ -18,6 +18,7 @@
   import MapEntries,{HEARD,NOT_HEARD,type MapOverlay} from '$lib/MapEntries.svelte';
   import {recordText,taxonName,type HeardRecord,type Taxon,type Verdict} from '$lib/heard';
   import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
+  import SpeciesChoice from '$lib/SpeciesChoice.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -59,18 +60,19 @@
   const node=$derived(data?.node),children=$derived(data?.children??[]),trail=$derived(data?.path??[]),parent=$derived(trail.at(-2)?.node);
   // Sounds collected to save as a ZIP, kept in the sidecar; the last section of the page counts them and what is still blank.
   const picks=pickedSounds(id);void picks.reload();
-  // The answer card under the map: what is recorded on the shown sound, and an answer about the species chosen in "where to look".
-  let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null),recorded=$state<HeardRecord[]>([]),answering=$state(false),answerError=$state('');
+  // The current-sound card: what is recorded on the shown sound, an answer about the species chosen in "where to look",
+  // and (`choosing`) the search for another species heard in it.
+  let entries=$state<ReturnType<typeof MapEntries>|null>(null),wanted=$state<Taxon|null>(null),recorded=$state<HeardRecord[]>([]),answering=$state(false),choosing=$state(false),answerError=$state('');
   // Every answer given by ear on the sounds of the group being viewed, newest first, for the short list beside the map.
   let inGroup=$state<(HeardRecord&{position:number})[]>([]);
   const loadRecorded=()=>{const at=node?.node;if(at!==undefined)api<typeof inGroup>(`/explore/recorded?dataset=${id}&node=${at}`).then(value=>{if(node?.node===at)inGroup=value;},()=>{/* The list keeps what it showed. */});};
   const at=(s:Segment)=>`recording_id=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
-  $effect(()=>{const s=pick;void picks.state.items;untrack(()=>{answerError='';if(!s){recorded=[];return;}
+  $effect(()=>{const s=pick;void picks.state.items;untrack(()=>{choosing=false;answerError='';if(!s){recorded=[];return;}
     api<{now:HeardRecord[]}>(`/datasets/${id}/heard/sound?${at(s)}&blank=true`).then(value=>{if(pick===s)recorded=value.now;},()=>{/* The card still takes an answer. */});});});
   // `species` null: "no bird sound". The mark on the map and the list beside it change at once; the numbers of the open way follow.
   async function answer(s:Segment,species:Taxon|null,verdict:Verdict){answering=true;answerError='';const at=shownAt;
     try{const value=await api<{now:HeardRecord[]}>('/heard/map-answer',{dataset_id:id,recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,...species?{species_id:species.id,verdict}:{verdict:'no_bird'}});
-      if(pick===s)recorded=value.now;
+      if(pick===s){recorded=value.now;choosing=false;}
       // The same rule as the sidecar's marks: the chosen species' answer, or without one any species heard, else "not heard" ("no bird sound" too).
       const verdicts=value.now.filter(r=>wanted?r.species.id===wanted.id:r.species.rank!=='none'||r.verdict==='present').map(r=>r.species.rank==='none'?'absent':r.verdict);
       if(verdicts.includes('present'))markAt.set(at,1);else if(verdicts.includes('absent'))markAt.set(at,2);else markAt.delete(at);
@@ -133,7 +135,7 @@
       if(code==='not_found'&&wanted){void go(0);return;}
       error=code;}
   }
-  function go(target:number){clearTimeout(scrollTimer);quietUntil=performance.now()+400;return goto(here(target),{replaceState:true,noScroll:true});}
+  function go(target:number){quietUntil=performance.now()+400;return goto(here(target),{replaceState:true,noScroll:true});}
   function step(by:number){const visited=visits.get(id),target=visited?.stack[visited.index+by];if(visited&&target!==undefined){visited.index+=by;void go(target);}}
   // At the top already, the button only brings the whole map back into view.
   function whole(){if(node?.node)void go(0);else fly(true);}
@@ -178,13 +180,8 @@
       species:null,background:[],sound_type:'',quality:'',others:false,exported_at:null,updated_at:''});
   }
   // Picking a sound opens its group's row; rows share one `name`, so the browser closes the row that was open.
-  // A newly opened row out of view is brought up after the double-click window, so a fast second click still lands on the same dot.
-  let scrollTimer:ReturnType<typeof setTimeout>|undefined;
-  function bringUp(at:number){clearTimeout(scrollTimer);
-    scrollTimer=setTimeout(()=>{const row=document.getElementById(`group-${at}`),main=row?.closest('main');if(!row||!main)return;
-      const top=row.getBoundingClientRect().top-main.getBoundingClientRect().top;
-      if(top<0||top>main.clientHeight*.6)row.scrollIntoView({block:'start',behavior:'smooth'});},360);}
-  function show(child:number){selected=child;const at=children[child].node;if(!open[at]){open[at]=true;bringUp(at);}}
+  // The page does not scroll to the row: the current sound's card above the list stays in view.
+  function show(child:number){selected=child;const at=children[child].node;open[at]=true;}
   function escape(event:KeyboardEvent){if(event.key==='Escape'&&!event.defaultPrevented&&parent!==undefined)void go(parent);}
   // One sound at a time: starting a player pauses every other one on the page.
   function solo(event:Event){for(const audio of (event.currentTarget as HTMLElement).querySelectorAll('audio'))if(audio!==event.target)audio.pause();}
@@ -230,7 +227,7 @@
   const inside=$derived(!!node&&(node.node!==0||overlay.groups.some(g=>g.node===0))&&matching(node).length>0);
   // Suggested groups get a flag, lettered as in the list; not the group being viewed or one around it: the user is there already.
   const offered=$derived(node?overlay.groups.map((g,index)=>({...g,letter:'ABCDEFGHIJ'[index]})).filter(g=>!(g.lo<=node.lo&&node.hi<=g.hi)):[]);
-  // What the open way says about a sound, shown beside it in the lists and under the map.
+  // What the open way says about a sound, shown beside it in the lists and in the current-sound card.
   const badge=(at:number|undefined)=>{if(at===undefined||!targetAt.has(at))return '';const guess=overlay.guess.get(at);
     return overlay.entry==='examples'?t('meBadge_examples'):overlay.entry==='species'?wanted?fill('meBadge_species',{name:taxonName(wanted)}):''
       :guess?fill('meBadge_unsure',{name:commonName(guess,app.locale)||guess.scientific_name}):'';};
@@ -328,7 +325,7 @@
       else{context.moveTo(cx-.38*r,cy-.38*r);context.lineTo(cx+.38*r,cy+.38*r);context.moveTo(cx+.38*r,cy-.38*r);context.lineTo(cx-.38*r,cy+.38*r);}
       context.stroke();};
     for(const [i,state] of markAt)if(i<points.n)mark(...at(i),state,7*ratio*grow());
-    // The sound shown under the map is the largest dot.
+    // The current sound is the largest dot.
     const now=pickAt>=0&&pickAt<points.n?at(pickAt):null,big=9*ratio*grow();
     if(now){const state=markAt.get(pickAt);
       if(state)mark(...now,state,big);
@@ -391,30 +388,30 @@
     if(child>=0)show(child);
   }
 </script>
-<!-- In the list the line wraps, and the row of the current sound is marked. -->
-{#snippet about(s:Segment,current=false)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{#if current}<span class="current">{t('eCurrentMark')}</span>{' '}{/if}{when(s)}{#if candidates(s)} · <span class="muted">{candidates(s)}</span>{/if}{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
+<!-- In the list the line wraps. -->
+{#snippet about(s:Segment)}<span class="about" title={`${when(s)} · ${candidates(s)}`}>{when(s)}{#if candidates(s)} · <span class="muted">{candidates(s)}</span>{/if}{#if badge(s.position)}{' '}<span class="tag">{badge(s.position)}</span>{/if}</span>{/snippet}
 {#snippet sounds(g:Group)}
   {@const at=g.node}
   {@const list=lists[at]}
   {@const first=matching(g).length}
   {#if first}<p class="muted">{fill(`meFirst_${overlay.entry}`,{n:first})}</p>{/if}
-  {#each list?.segments??[] as s (s.segment_id)}{@const p=picks.state.items[pickKey(s)]}<div class="member" class:picked={!!p}>
-    <label class="check"><input type="checkbox" aria-label={`${t('ePick').replace('\n',' ')}: ${when(s)}`} checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
-    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s,pick?.segment_id===s.segment_id)}{/snippet}</AudioRegion>
-    {#if p}<div class="labels"><PickForm value={p} {recent} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
+  <!-- The current sound is in its card, not here. Playing a listed sound makes it the current sound: its own player stops and the card's plays.
+       The row leaves the list, so the keyboard focus moves to the card with it. -->
+  {#each (list?.segments??[]).filter(s=>s.segment_id!==pick?.segment_id) as s (s.segment_id)}<div class="member" onplaycapture={event=>{(event.target as HTMLAudioElement).pause();
+      if(s.position!==undefined){void choose(s.position);const card=document.getElementById('now');card?.scrollIntoView({block:'start'});card?.focus({preventScroll:true});}}}>
+    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>
   </div>{/each}
   {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
   {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
   {:else if !list||list.pending}<p role="status"><Spinner/> {t('loading')}</p>{/if}
 {/snippet}
-{#snippet orderNote()}<p class="muted">{t(pickAt<0?'eOrderNeedsPick':'eOrderNear')}<br>{t('localTime')}</p>{/snippet}
+{#snippet orderNote()}<p class="muted">{t(pickAt<0?'eOrderNeedsPick':'eOrderNear')} {t('eRowHint')}<br>{t('localTime')}</p>{/snippet}
 <svelte:window onkeydown={escape}/>
 <div class="page wide" onplaycapture={solo}>
   <div class="crumbs"><a href={resolve(`/datasets/${id}`)}>{t('uBackResults')}</a></div>
-  <!-- The three steps of the page; the list numbers them, so the drawn numbers are hidden from screen readers.
-       The first way in takes no answer on the map: its step 3 says where the answer is recorded. -->
+  <!-- The three steps of the page; the list numbers them, so the drawn numbers are hidden from screen readers. -->
   <div>{#if site}<div class="site-name">{site.name}</div>{/if}<h1>{t('eTitle')}</h1>
-    <ol class="flow">{#each [1,2,3] as n (n)}<li><span class="num" aria-hidden="true">{n}</span><strong>{t(`eStep${n}`)}</strong><p class="muted">{#if n===3&&overlay.entry==='unsure'}{t('eStep3Text_unsure')} <a href={resolve(`/datasets/${id}`)}>{t('eStep3Link')}</a>{:else}{t(`eStep${n}Text`)}{/if}</p></li>{/each}</ol></div>
+    <ol class="flow">{#each [1,2,3] as n (n)}<li><span class="num" aria-hidden="true">{n}</span><strong>{t(`eStep${n}`)}</strong><p class="muted">{t(`eStep${n}Text`)}</p></li>{/each}</ol></div>
   {#if error}<p class="error" role="alert">{t(error)}</p>{/if}
   {#if ended}<p class={ended.status==='failed'?'error':'notice'} role="status">{ended.status==='cancelled'?t('cancelled'):why(ended.error??'explore_failed')}</p>
   {:else if data?.last_error&&!building}<p class="error" role="alert">{why(data.last_error)}</p>{/if}
@@ -456,31 +453,45 @@
             <span><i class="now"></i>{t('meLegendNow')}</span>
             <span><i class="mark" style:background={HEARD}>✓</i>{t(overlay.entry==='unsure'?'meLegendHeardAny':'hdV_present')}</span><span><i class="mark" style:background={NOT_HEARD}>×</i>{t('hdV_absent')}</span></p>
           <p class="muted">{fill('eMapHint',{s:+(node.rep.end_s-node.rep.start_s).toFixed(1)})}</p>
-          <!-- Fixed text lines and a kept-up card: a new pick changes what the card shows, never how tall it is. -->
-          <div class="pick" aria-busy={pickAt>=0&&!pickError&&shownAt!==pickAt}>
+        </section>
+        <section class="panel stack">
+          <!-- The one place the current sound lives: heard, answered and ticked for the ZIP here. Answers are saved when pressed. -->
+          <section class="now-card stack" id="now" tabindex="-1" aria-labelledby="now-title" aria-busy={pickAt>=0&&!pickError&&shownAt!==pickAt}>
+            <h2 id="now-title"><i class="ring" aria-hidden="true"></i>{t('ePicked')}{#if pick&&shownAt!==pickAt} <Spinner/>{/if}</h2>
             {#if pickError}<p class="error" role="alert">{t(pickError)}</p>
             {:else if !pick}{#if pickAt<0}<p class="muted">{t('ePickHint')}</p>{:else}<p role="status"><Spinner/> {t('loading')}</p>{/if}
             {:else}
               {@const s=pick}
               {@const child=children.findIndex(c=>c.lo<=shownAt&&shownAt<c.hi)}
               {@const tag=badge(shownAt)}
-              <!-- Its own line above the figure, free to wrap: when, which group, and what the open way says about the sound. -->
-              <h3 class="line"><strong>{t('ePicked')}</strong> {when(s)}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if tag}{' · '}{tag}{/if}{#if shownAt!==pickAt} <Spinner/>{/if}</h3>
+              {@const p=picks.state.items[pickKey(s)]}
+              <p>{when(s)}{#if child>=0}{' · '}{groupName(children[child])}{/if}{#if tag}{' '}<span class="tag">{tag}</span>{/if}{#if candidates(s)}<br><span class="muted">{candidates(s)}</span>{/if}</p>
               <!-- A new pick mounts a new player; the click on the map is the gesture that lets it start on its own. -->
-              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact dense autoplay={autoplayPick} start={s.start_s} end={s.end_s}>{#snippet meta()}{#if candidates(s)&&(s.candidates.length||!tag)}<span class="muted" title={candidates(s)}>{candidates(s)}</span>{/if}{/snippet}</AudioRegion>{/key}
+              {#key s.segment_id}<AudioRegion source={sourceOf(s)} fixedRange compact autoplay={autoplayPick} start={s.start_s} end={s.end_s}/>{/key}
               <div class="answer">
                 {#if wanted}{@const mine=recorded.find(r=>r.species.id===wanted!.id)}
                   <strong>{fill('maTitle',{species:taxonName(wanted)})}</strong>
                   <div class="actions" role="group" aria-label={fill('maTitle',{species:taxonName(wanted)})}>{#each ['present','absent','unknown'] as const as verdict}
-                    <Button size="sm" active={mine?.verdict===verdict} aria-pressed={mine?.verdict===verdict} disabled={answering} onclick={()=>answer(s,wanted!,verdict)}>{t(`maV_${verdict}`)}</Button>{/each}</div>
+                    <Button size="sm" active={mine?.verdict===verdict} aria-pressed={mine?.verdict===verdict} disabled={answering} onclick={()=>answer(s,wanted!,verdict)}>{t(`maV_${verdict}`)}</Button>{/each}
+                    <Button size="sm" active={choosing} aria-expanded={choosing} disabled={answering} onclick={()=>choosing=!choosing}>{t('hdOthersAdd')}</Button></div>
+                <!-- No species is asked about (the first way in): a species heard, or no bird sound. -->
+                {:else}{@const none=recorded.some(r=>r.species.rank==='none'&&r.verdict==='present')}
+                  <strong>{t('eStep3')}</strong>
+                  <div class="actions" role="group" aria-label={t('eStep3')}>
+                    <Button size="sm" active={choosing} aria-expanded={choosing} disabled={answering} onclick={()=>choosing=!choosing}>{t('hdNoBirdOther')}</Button>
+                    <Button size="sm" active={none} aria-pressed={none} disabled={answering} onclick={()=>answer(s,null,'present')}>{t('ruNotBird')}</Button></div>
                 {/if}
-                {#if recorded.length}<span class="muted">{fill('maNow',{list:recorded.map(recordText).join(t('eSep'))})}</span>{/if}
+                {#if choosing}<SpeciesChoice datasetId={id} exclude={wanted?[wanted.id]:[]} pending={answering} onchoose={taxon=>answer(s,taxon,'present')}/>{/if}
                 {#if answerError}<span class="error" role="alert">{t(answerError)}</span>{/if}
+                <!-- Answers are saved when pressed: the card says so, and where to find them. -->
+                {#if recorded.length}{@const [before,after]=t('eSaved').split('{page}')}<p class="saved" role="status">{before}<a href={resolve(`/datasets/${id}/heard`)}>{t('hdTitle')}</a>{after}<br>
+                  <span class="muted">{fill('maNow',{list:recorded.map(recordText).join(t('eSep'))})}</span></p>{/if}
               </div>
+              <!-- Apart from the answers: the tick only chooses sounds for the ZIP, and the form under it fills the ZIP's table. -->
+              <label class="check"><input type="checkbox" checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
+              {#if p}<div class="labels"><p class="muted">{t('ePickNote')}</p><PickForm value={p} {recent} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
             {/if}
-          </div>
-        </section>
-        <section class="panel stack">
+          </section>
           <nav class="trail" aria-label={t('eTrail')}>
             {#each trail as step,index (step.node)}
               {#if index}<span class="muted" aria-hidden="true">›</span>{/if}
@@ -488,7 +499,7 @@
             {/each}
           </nav>
           <p>{node.size>=data.segment_count?fill('eSummaryAll',{n:node.size.toLocaleString(app.locale)}):fill('eSummary',{n:node.size.toLocaleString(app.locale),share:pct(node.size/data.segment_count,1)})}<br><span class="muted">{aiHint(node)}</span></p>
-          <!-- Answers given under the map show here at once; the newest five are enough to see that each one was kept. -->
+          <!-- Answers given in the current-sound card show here at once; the newest five are enough to see that each one was kept. -->
           <h2>{t('eRecorded')}</h2>
           {#if inGroup.length}<ul class="recorded">{#each inGroup.slice(0,5) as r (r.id)}<li>{heardAt(r.local_time)} · {recordText(r)}</li>{/each}</ul>
             {#if inGroup.length>5}<p class="muted">{fill('eRecordedMore',{shown:5,n:inGroup.length})}</p>{/if}{/if}
@@ -538,15 +549,14 @@
   .explore{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   /* The map column stays in view and never runs past the window: 140px is the 76px top bar, the 32px page padding and 16px above and below. */
   .map-panel{position:sticky;top:16px;max-height:calc(100vh - 140px);overflow-y:auto}
-  /* The map shrinks in short windows so the current sound under it stays in view. */
   .map-nav{display:flex;gap:4px}
-  /* The map takes the height left over by the line about the coloured dots, its 44px controls, the legend, the hint and the current-sound card with their 12px gaps; in a short window it stays 320px and the column scrolls. */
-  canvas{display:block;flex:none;width:100%;height:clamp(320px,calc(100vh - 660px),560px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
-  /* As tall as a shown sound, so showing, changing or clearing one never changes the page height. */
-  .answer{display:flex;flex-direction:column;gap:4px;font-size:14px}.answer .actions{gap:6px}
-  /* `flex:none`: in the height-limited column the card must not be squeezed under its content, which pushed its first line onto the figure. */
-  .pick{display:flex;flex:none;flex-direction:column;gap:8px;min-height:300px;padding-top:12px;border-top:1px solid rgb(var(--stone-300))}
-  .line{font-size:14px;font-weight:400;line-height:1.6}
+  /* The map takes the height left over by the line about the coloured dots, its 44px controls, the legend and the hint with their 12px gaps; in a short window it stays 320px and the column scrolls. */
+  canvas{display:block;flex:none;width:100%;height:clamp(320px,calc(100vh - 348px),720px);border:1px solid rgb(var(--color-card-border));border-radius:8px;background:rgb(var(--stone-50));touch-action:none;cursor:pointer}
+  /* The current sound's card: framed in ink, like the double ring that marks the sound on the map. */
+  .now-card{padding:12px 16px;border:2px solid currentColor;border-radius:12px;scroll-margin-top:16px}.now-card h2{display:flex;align-items:center;gap:10px}
+  .ring{box-sizing:border-box;flex:none;width:14px;height:14px;margin-left:3px;border:2px solid currentColor;border-radius:50%;outline:2px solid currentColor;outline-offset:1px}
+  .answer{display:flex;flex-direction:column;gap:8px}.answer .actions{gap:6px}
+  .saved{color:rgb(var(--color-success))}
   .explore{scroll-margin-top:16px}
   .legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px}.legend span{display:inline-flex;align-items:center;gap:6px}
   .legend i{box-sizing:border-box;display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;font-style:normal;font-size:10px;font-weight:700;line-height:1;color:#fff}
@@ -565,19 +575,14 @@
   .group[open] .chevron{transform:rotate(90deg)}
   .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
-  /* A 56px first column holds the check, its label under the box, left of the play button; a ticked sound's labels sit under it. */
-  .member{display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px;align-items:center;padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
-  .member.picked{margin:0 -12px;padding:8px 12px 12px;background:rgb(var(--primary-500)/.12)}
-  /* The labels use the whole row width, from under the check, so their items stay on one line in a narrow column. */
-  .labels{grid-column:1/-1}
-  /* The label names what ticking is for; it breaks where its message says, in two lines under the box. */
-  .check{white-space:pre-line;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:44px;font-size:14px;font-weight:400;line-height:1.2;text-align:center;cursor:pointer}
+  .member{padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
+  .check{display:flex;align-items:center;gap:8px;min-height:44px;font-weight:400;cursor:pointer}
   .check input{width:24px;height:24px}
+  /* The ZIP form of a ticked sound is set off from the answers above it. */
+  .labels{padding:8px 12px;border-radius:8px;background:rgb(var(--primary-500)/.12)}
   /* The date and AI suggestions of a listed sound wrap instead of being cut: English needs three lines or more for two or three suggestions. */
   .member .about{white-space:normal}
-  /* Outlined, so the mark stays visible on a ticked row's tint; the word, not the colour, carries the meaning. */
-  .current{display:inline-block;margin-right:6px;padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;background:rgb(var(--color-card-bg));color:rgb(var(--primary-700));font-size:13px;font-weight:600;line-height:1.5}
-  /* What the open way says about a listed sound: outlined words, as the current-sound mark. */
+  /* What the open way says about a listed sound: outlined words. */
   .tag{display:inline-block;padding:0 8px;border:1px solid rgb(var(--primary-700));border-radius:999px;color:rgb(var(--primary-700));font-size:13px;line-height:1.5}
   .empty :global(.button){align-self:center}
   @media(max-width:700px){.flow{grid-template-columns:minmax(0,1fr)}}
