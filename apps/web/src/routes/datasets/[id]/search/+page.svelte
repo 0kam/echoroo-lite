@@ -23,7 +23,7 @@
   // Example calls belong to one species; choosing another species starts a new list.
   let species=$state<Species|null>(null),source=$state<Reference|null>(null),clips=$state<Clip[]>([]),clipsFor=$state('');
   let first=$state(query.get('start_date')||''),last=$state(query.get('end_date')||''),start=$state(0),end=$state(5),referencePath=$state(''),error=$state('');
-  let ready=$state(false);
+  let ready=$state(false),borrowing=$state(false);
   // Three ways here: a species the AI list lacks (from site results), a species page, or one species' sounds on the picked-sounds page (`picked`: its scientific name).
   const fromSpecies=query.get('species'),fromPicked=query.get('picked'),speciesState=new URLSearchParams([...query].filter(([key])=>['start_date','end_date','engine','model_id'].includes(key)));
   // The species-AI page sends people here and takes them back.
@@ -105,7 +105,7 @@
     {#if handed&&species?.id===handed.id}<p class="info">{fill('sPickedAdded',{species:handed.name,n:handed.n})}</p>{/if}</section>
   {#if species}
     <!-- An AI grown at another site (or from a file) can look for the species here instead of an example call. -->
-    {#if !origin}<BorrowAI datasetId={id} speciesId={species.id} speciesName={commonName(species,app.locale)||species.scientific_name} range={first&&last?rangeQuery(first,last):''}
+    {#if !origin}<BorrowAI bind:shown={borrowing} datasetId={id} speciesId={species.id} speciesName={commonName(species,app.locale)||species.scientific_name} range={first&&last?rangeQuery(first,last):''}
       ontaken={async()=>{const found=species!;localStorage.removeItem(`echoroo-search-${id}`);await goto(withQuery(resolve(`/datasets/${id}/species/${found.id}/model`),first&&last?rangeQuery(first,last):''));}}/>{/if}
     <!-- Sounds of this species already checked by ear can be the examples, without choosing a file (its own search is for a species without one). -->
     {#if site&&!keptHere}{#key species.id}<HeardBox datasetId={id} speciesId={species.id} timezone={site.timezone} hasSearch={false} range={first&&last?rangeQuery(first,last):''} searchHref=""
@@ -116,7 +116,7 @@
           <span class="actions"><Button size="sm" aria-expanded={heardOpen.includes(row.id)} onclick={()=>heardOpen=heardOpen.includes(row.id)?heardOpen.filter(n=>n!==row.id):[...heardOpen,row.id]}>{t('hdListen')}</Button>
             <Button size="sm" disabled={search.pending||inList||clips.length>=20} onclick={()=>{clips=[...clips,clip];saveDraft();}}>{t(inList?'sHeardAdded':'sHeardAdd')}</Button></span></div>
         {#if heardOpen.includes(row.id)}<AudioRegion source={row.source} fixedRange compact autoplay start={row.start_s} end={row.end_s}/>{/if}</li>{/each}</ul></section>{/if}
-    <section class="panel step-card"><h2>{t('wSource')}</h2>{#if !origin}<p class="muted">{t('vbOrExample')}</p>{/if}{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
+    <section class="panel step-card"><h2>{t('wSource')}</h2>{#if !origin&&borrowing}<p class="muted">{t('vbOrExample')}</p>{/if}{#if noExample}<p class="field-error" id="example-error" tabindex="-1">{t('uChooseExample')}</p>{/if}<div class="actions"><Button active={xc} disabled={search.pending} onclick={()=>{xc=true;source=null;}}>{t('xcFind')}</Button>
       <Button active={!xc&&!!source} pending={addReference.pending} disabled={search.pending} onclick={()=>{xc=false;if(!isTauri()&&!referencePath.trim())showMissing(true);else addReference.run();}}>{t('referenceFromFile')}</Button></div>
       {#if !isTauri()}<label>{t('referencePath')}<input bind:value={referencePath} disabled={search.pending} aria-invalid={noPath||undefined} aria-describedby={noPath?'path-error':undefined}/></label>
         {#if noPath}<p class="field-error" id="path-error">{t('uEnterAudioPath')}</p>{/if}{/if}

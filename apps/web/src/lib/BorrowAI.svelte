@@ -12,10 +12,13 @@
   type Seen = { species: Species; engine: string; main_engine: string; warning: string | null; round: number; site: string | null;
     training: { positive_5s: number; negative_5s: number; other_sites: { positive_5s: number; negative_5s: number } | null };
     tests: { sounds: { heard: number; not_heard: number }; rounds: { found: number | null; false: number | null; current: boolean }[] } | null };
-  let { datasetId, speciesId, speciesName, range = '', ontaken }: { datasetId: number; speciesId: string; speciesName: string; range?: string; ontaken: (model: CustomModel) => void | Promise<void> } = $props();
-  let others = $state<AIVersions['others']>([]), file = $state(''), seen = $state<Seen | null>(null);
-  $effect(() => { const chosen = speciesId; others = []; seen = null;
-    api<AIVersions>(`/datasets/${datasetId}/species/${encodeURIComponent(chosen)}/ai-versions?${range}`).then(value => { if (chosen === speciesId) others = value.others; }, () => { /* Without the list the file import still works. */ }); });
+  let { datasetId, speciesId, speciesName, range = '', ontaken, shown = $bindable(false) }: { datasetId: number; speciesId: string; speciesName: string; range?: string; ontaken: (model: CustomModel) => void | Promise<void>; shown?: boolean } = $props();
+  // Offered only while the site has no AI for the species: a site's AI is changed from its list of AIs, never here.
+  let others = $state<AIVersions['others']>([]), file = $state(''), seen = $state<Seen | null>(null), ready = $state(false), owned = $state(false);
+  $effect(() => { const chosen = speciesId; others = []; seen = null; ready = false; owned = false;
+    api<AIVersions>(`/datasets/${datasetId}/species/${encodeURIComponent(chosen)}/ai-versions?${range}`).then(value => { if (chosen === speciesId) { others = value.others; owned = value.current_id != null; ready = true; } },
+      () => { if (chosen === speciesId) ready = true; /* Without the list the file import still works. */ }); });
+  $effect(() => { shown = ready && !owned; });
   const dates = () => Object.fromEntries(new URLSearchParams(range));
   const tryIt = createTask(async (id: number) => { await ontaken(await api<CustomModel>(`/custom-models/${id}/use`, { dataset_id: datasetId, ...dates() })); });
   const look = createTask(async () => { seen = null;
@@ -42,7 +45,7 @@
       {#if take.error}<p class="error" role="alert">{t(take.error)}</p>{/if}
     {/if}</div>{/if}
 </details>{/snippet}
-{#if others.length}<section class="panel borrow" aria-labelledby="borrow-title"><h2 id="borrow-title">{t('vbTitle')}</h2>
+{#if !ready || owned}{:else if others.length}<section class="panel borrow" aria-labelledby="borrow-title"><h2 id="borrow-title">{t('vbTitle')}</h2>
   <p>{fill('vbText', { name: speciesName })}</p>
   {#each others as other (other.id)}<div class="ai"><div><strong>{fill('vbAI', { version: versionName(other) })}</strong><br>
       <span class="muted">{fill('vbFacts', { positive: other.training.positive_5s, negative: other.training.negative_5s })}

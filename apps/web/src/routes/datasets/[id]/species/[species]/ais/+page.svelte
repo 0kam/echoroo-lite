@@ -21,9 +21,16 @@
   const use=createTask(async(modelId:number)=>{const dates=Object.fromEntries(range);await api(`/custom-models/${modelId}/use`,{dataset_id:id,...dates});await load.run();},{toast:true});
   const back=withQuery(resolve(`/datasets/${id}/species/${speciesId}/model`),range.toString());
   const day=(value?:string|null)=>value?new Intl.DateTimeFormat(app.locale,{dateStyle:'medium'}).format(new Date(`${value.replace(' ','T')}${value.includes('T')?'':'Z'}`)):'';
-  // Children: the versions whose parent is this one (a file's AI has no link to a row of this PC).
-  const roots=$derived(data?data.versions.filter(v=>!v.parent?.model_id||!data!.versions.some(w=>w.id===v.parent!.model_id)):[]);
-  const children=(v:Version)=>data!.versions.filter(w=>w.parent?.model_id===v.id);
+  // Children: the versions whose parent is this one (a file's AI has no link to a row of this PC). An AI made again
+  // from a version that grew from it (A grew B, then A grew again from B) would loop: a version sits under one made
+  // before it only, and any version still not reached starts a branch of its own.
+  const under=(v:Version)=>{const parent=data!.versions.find(w=>w.id===v.parent?.model_id);
+    const before=(a:Version,b:Version)=>(a.made_at??'')<(b.made_at??'')||(a.made_at??'')===(b.made_at??'')&&a.id<b.id;
+    return parent&&before(parent,v)?parent.id:null;};
+  const children=(v:Version)=>data!.versions.filter(w=>under(w)===v.id);
+  const roots=$derived.by(()=>{if(!data)return [];const top=data.versions.filter(v=>under(v)==null),seen=new Set<number>();
+    const walk=(v:Version)=>{if(seen.has(v.id))return;seen.add(v.id);children(v).forEach(walk);};top.forEach(walk);
+    return [...top,...data.versions.filter(v=>!seen.has(v.id))];});
 </script>
 {#snippet version(v:Version)}<li>
   {#if v.file}<strong>{t('vlFile')}</strong> {fill(v.site?'vlFileFrom':'vlFileNoSite',{date:day(v.made_at),site:v.site??''})}

@@ -176,6 +176,41 @@ class SharingCheck(unittest.TestCase):
             client.post('/custom-models/import', json={'dataset_id': 1, 'path': path, 'species_id': sid, **SCOPE})
             self.assertEqual(client.get(f'/datasets/1/species/{sid}/custom-model', params=SCOPE).json()['inherited'], {'positive_5s': 3, 'negative_5s': 5, 'sites': ['Other']})
 
+    def test_an_ai_made_again_from_the_version_it_grew_stays_one_ai(self):
+        with site() as (root, client, species):
+            sid = species['id']
+            answer(root, sid, [5])
+            with connect(root) as db:
+                db.execute('INSERT INTO test_recordings(site_id,species_id,recording_id) VALUES(1,?,5)', (sid,))
+                db.execute("INSERT INTO test_phases(site_id,species_id,state) VALUES(1,?,'fixed')", (sid,))
+            answer(root, sid, [1, 2, 3])
+            a = client.post('/custom-models', json={'dataset_id': 1, 'species_id': sid, **SCOPE}).json()
+            dataset, recordings = second_site(root, client)
+            client.post(f"/custom-models/{a['id']}/use", json={'dataset_id': dataset})
+            answer(root, sid, [recordings[0]])
+            with connect(root) as db:
+                db.execute('INSERT INTO test_recordings(site_id,species_id,recording_id) SELECT site_id,?,? FROM datasets WHERE id=?', (sid, recordings[0], dataset))
+            client.post(f'/datasets/{dataset}/species/{sid}/test-phase')
+            answer(root, sid, [recordings[1]])
+            there = client.get(f'/datasets/{dataset}/species/{sid}/custom-model').json()
+            period = {'start_date': there['start_date'], 'end_date': there['end_date']}
+            b = client.post('/custom-models', json={'dataset_id': dataset, 'species_id': sid, **period}).json()
+            # A uses B's AI, answers more and makes the AI again: A's own AI, next round, grown from B's.
+            client.post(f"/custom-models/{b['id']}/use", json={'dataset_id': 1, **SCOPE})
+            answer(root, sid, [4])
+            again = client.post('/custom-models', json={'dataset_id': 1, 'species_id': sid, **SCOPE}).json()
+            self.assertEqual((again['id'], again['round'], again['parent']['model_id'], again['parent']['round']), (a['id'], 2, b['id'], 1))
+            self.assertEqual(client.get(f'/datasets/1/species/{sid}/custom-model', params=SCOPE).json()['model']['id'], a['id'])
+            # B's round it grew from is not offered back; B made again is.
+            self.assertIsNone(client.get(f'/datasets/1/species/{sid}/ai-versions', params=SCOPE).json()['newer'])
+            with connect(root) as db:
+                for start in (35, 40):
+                    labels.put(db, sid, recordings[1], start, start + 5, 'absent', 'training')
+            b2 = client.post('/custom-models', json={'dataset_id': dataset, 'species_id': sid, **period}).json()
+            self.assertEqual((b2['id'], b2['round']), (b['id'], 2))
+            newer = client.get(f'/datasets/1/species/{sid}/ai-versions', params=SCOPE).json()['newer']
+            self.assertEqual((newer['id'], newer['round']), (b['id'], 2))
+
     def test_answers_go_out_and_come_in_as_a_table(self):
         with site() as (root, client, species):
             sid = species['id']

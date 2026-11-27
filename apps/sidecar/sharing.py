@@ -471,12 +471,16 @@ def _newer(root, ctx, species_id, rows, here, current):
         return parent == key or parent in by_id and parent not in seen and grew_from(by_id[parent], (*seen, parent))
     with connect(root) as db:
         aside = {tuple(r) for r in db.execute('SELECT model_id,round FROM species_ai_seen WHERE site_id=? AND species_id=?', (ctx['site']['id'], species_id))}
+    # The round of another site's AI that the AI here grew from is not offered back; a later round of it is.
+    basis = snap.get('parent') or {}
     found = []
     for site_id, row in current.items():
         own = json.loads(row['snapshot'])
         if site_id == ctx['site']['id'] or own.get('imported'):
             continue
         number = own.get('round', 1)
+        if row['id'] == basis.get('model_id') and number <= (basis.get('round') or 0):
+            continue
         if (row['id'] == key and number > have or row['id'] != key and grew_from(row)) and (row['id'], number) not in aside:
             found.append(row)
     if not found:

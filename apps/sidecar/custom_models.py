@@ -518,8 +518,11 @@ def create(root, ctx, species_id, cancel=None):
     state = readiness(root, ctx, species_id)
     if not state['can_train']:
         raise CatalogError(state['reasons'][0])
-    # An AI taken in from a file is not made again in place: the one made here starts as a new AI beside it.
-    previous = None if state['model'] and state['model'].get('imported') else state['model']
+    # An AI copied here (from another site or a file) is not made again in place: the AI made from it is this site's own
+    # AI for the period made again (next round), or a new AI beside the copy when the site has none yet.
+    previous = state['model']
+    if previous and previous.get('imported'):
+        previous = next((m for m in list_models(root, ctx, species_id, every=True) if not m.get('imported')), None)
     import sharing
     shared = sharing.state(root, ctx, species_id)
     taken, parent = sharing.inherited(root, ctx, state['model'], set(_keys(root, shared['material']).values()))
