@@ -200,9 +200,10 @@ class HeardTest(unittest.TestCase):
             answer = lambda verdict: client.post('/heard/map-answer', json=dict(dataset_id=1, species_id=warbler, verdict=verdict, **at))
             self.assertEqual([(r['verdict'], r['screen']) for r in answer('absent').json()['now']], [('absent', 'sound_map')])
             self.assertEqual([r['verdict'] for r in answer('present').json()['now']], ['present'])
-            pick = dict(dataset_id=1, **at, species=None, background=[], sound_type='', quality='', others=False)
+            # The ticked sound takes its species from the answer; unticking leaves the answer.
+            pick = dict(dataset_id=1, **at, sound_type='', quality='', others=False)
             saved = client.put('/explore/picked', json=pick)
-            self.assertEqual((saved.status_code, saved.json()['species']), (200, None))
+            self.assertEqual((saved.status_code, saved.json()['species']['scientific_name']), (200, 'Horornis diphone'))
             self.assertEqual(client.request('DELETE', '/explore/picked', params=dict(dataset=1, **at)).status_code, 200)
             self.assertEqual([r['verdict'] for r in client.get('/datasets/1/heard/sound', params=at).json()['now']], ['present'])
             self.assertEqual(answer('maybe').status_code, 422)

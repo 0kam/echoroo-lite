@@ -10,7 +10,7 @@
   import { commonName,type Species } from '$lib/species';
   import { fill } from '$lib/workflow';
   import AudioRegion from '$lib/AudioRegion.svelte';
-  import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Item,type Named} from '$lib/PickForm.svelte';
+  import PickForm,{blanks,pickedSounds,pickKey,type Item,type Named} from '$lib/PickForm.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
   import { createTask } from '$lib/ui/task.svelte';
@@ -19,7 +19,7 @@
   const site=$derived(siteOf(datasetOf(id)));
   void picks.reload();
   const items=$derived(Object.values(picks.state.items));
-  const missing=$derived(blanks(items)),recent=$derived(recentSpecies(items));
+  const missing=$derived(blanks(items));
   // Sounds with a species name, one entry per species, to hand to that species' search (which takes at most 20 example calls).
   const named=$derived(items.flatMap(i=>i.species?[i.species]:[]));
   const groups=$derived([...new Map(named.map(s=>[s.scientific_name,s])).values()]
@@ -69,7 +69,7 @@
           {#snippet meta()}<span class="where">{where(item)}</span>{/snippet}
           {#snippet actions()}{#if item.exported_at}<span class="saved">{t('pkExported')}</span>{/if}<Button size="sm" onclick={()=>picks.remove(item)}>{t('pkRemove')}</Button>{/snippet}
         </AudioRegion>
-        <div class="labels"><PickForm value={item} {recent} name={speciesName} onchange={label=>picks.save({...item,...label})}/></div>
+        <div class="labels"><PickForm value={item} name={speciesName} onchange={label=>picks.save({...item,...label})}/></div>
       </article>
       {:else}<p class="muted">{t('pkEmpty')}</p>{/each}
     </section>

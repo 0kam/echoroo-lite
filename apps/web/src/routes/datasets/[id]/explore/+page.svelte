@@ -17,7 +17,7 @@
   import JobStatus from '$lib/JobStatus.svelte';
   import MapEntries,{HEARD,NOT_HEARD,type MapOverlay} from '$lib/MapEntries.svelte';
   import {recordText,taxonName,type HeardRecord,type Taxon,type Verdict} from '$lib/heard';
-  import PickForm,{blanks,pickedSounds,pickKey,recentSpecies,type Named} from '$lib/PickForm.svelte';
+  import PickForm,{blanks,pickedSounds,pickKey,type Named} from '$lib/PickForm.svelte';
   import SpeciesChoice from '$lib/SpeciesChoice.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Spinner from '$lib/ui/Spinner.svelte';
@@ -67,7 +67,7 @@
   let inGroup=$state<(HeardRecord&{position:number})[]>([]);
   const loadRecorded=()=>{const at=node?.node;if(at!==undefined)api<typeof inGroup>(`/explore/recorded?dataset=${id}&node=${at}`).then(value=>{if(node?.node===at)inGroup=value;},()=>{/* The list keeps what it showed. */});};
   const at=(s:Segment)=>`recording_id=${s.recording_id}&start_s=${s.start_s}&end_s=${s.end_s}`;
-  $effect(()=>{const s=pick;void picks.state.items;untrack(()=>{choosing=false;answerError='';if(!s){recorded=[];return;}
+  $effect(()=>{const s=pick;untrack(()=>{choosing=false;answerError='';if(!s){recorded=[];return;}
     api<{now:HeardRecord[]}>(`/datasets/${id}/heard/sound?${at(s)}&blank=true`).then(value=>{if(pick===s)recorded=value.now;},()=>{/* The card still takes an answer. */});});});
   // `species` null: "no bird sound". The mark on the map and the list beside it change at once; the numbers of the open way follow.
   async function answer(s:Segment,species:Taxon|null,verdict:Verdict){answering=true;answerError='';const at=shownAt;
@@ -76,17 +76,13 @@
       // The same rule as the sidecar's marks: the chosen species' answer, or without one any species heard, else "not heard" ("no bird sound" too).
       const verdicts=value.now.filter(r=>wanted?r.species.id===wanted.id:r.species.rank!=='none'||r.verdict==='present').map(r=>r.species.rank==='none'?'absent':r.verdict);
       if(verdicts.includes('present'))markAt.set(at,1);else if(verdicts.includes('absent'))markAt.set(at,2);else markAt.delete(at);
-      blit();loadRecorded();entries?.refresh();
+      // A ticked sound takes its species from the answers.
+      blit();loadRecorded();entries?.refresh();void picks.reload();
     }catch(e){answerError=e instanceof Error?e.message:'unknown_error';}finally{answering=false;}}
-  // Species entered on a ticked sound change the map's marks too.
-  let pickedNow='';
-  $effect(()=>{const now=JSON.stringify(Object.values(picks.state.items).map(i=>[i.recording_id,i.start_s,i.species?.id,i.background.map(b=>b.id)]));
-    untrack(()=>{if(pickedNow&&pickedNow!==now){entries?.refresh();loadRecorded();}pickedNow=now;});});
   // "Look here" and the map's flags go into a group. The map is brought into view before the move: the layout keeps
   // the scroll position over the page made anew for the group, so the map is in view there and stays.
   function enter(target:number){document.querySelector('.explore')?.scrollIntoView({block:'start'});void go(target);}
   const tally=$derived.by(()=>{const items=Object.values(picks.state.items);return {n:items.length,blanks:blanks(items)};});
-  const recent=$derived(recentSpecies(Object.values(picks.state.items)));
   const job=$derived(activeJob());
   const building=$derived(job?.stage.startsWith('explore_')&&datasetOf(job.dataset_id)?.site_id===datasetOf(id)?.site_id?job:null);
   const ended=$derived(app.jobs.find(j=>j.id===watched&&(j.status==='failed'||j.status==='cancelled')));
@@ -173,7 +169,7 @@
       if(pickAt===at){pick=next;shownAt=at;askNames(next.candidates);}
     }catch(e){if(pickAt===at)pickError=e instanceof Error?e.message:'unknown_error';}
   }
-  // Ticking a sound collects it with nothing filled in; unticking removes it and its labels.
+  // Ticking a sound collects it with nothing filled in; unticking takes it out. The answers recorded on it are not touched.
   function pickSound(s:Segment,checked:boolean){
     if(!checked){void picks.remove(s);return;}
     void picks.save({recording_id:s.recording_id,start_s:s.start_s,end_s:s.end_s,path:s.path,recorded_at:s.recorded_at,timezone:s.timezone,
@@ -399,7 +395,9 @@
        The row leaves the list, so the keyboard focus moves to the card with it. -->
   {#each (list?.segments??[]).filter(s=>s.segment_id!==pick?.segment_id) as s (s.segment_id)}<div class="member" onplaycapture={event=>{(event.target as HTMLAudioElement).pause();
       if(s.position!==undefined){void choose(s.position);const card=document.getElementById('now');card?.scrollIntoView({block:'start'});card?.focus({preventScroll:true});}}}>
-    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}</AudioRegion>
+    <AudioRegion source={sourceOf(s)} fixedRange compact dense start={s.start_s} end={s.end_s}>{#snippet meta()}{@render about(s)}{/snippet}
+      <!-- Ticking collects the sound for the ZIP without making it the current sound; its ZIP form is in the card only. -->
+      {#snippet actions()}<label class="check"><input type="checkbox" aria-label={`${t('eRowPick')}: ${when(s)}`} checked={!!picks.state.items[pickKey(s)]} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('eRowPick')}</label>{/snippet}</AudioRegion>
   </div>{/each}
   {#if list?.error}<p class="error" role="alert">{t(list.error)}</p>{/if}
   {#if list?.segments.length&&list.segments.length<list.total}<Button pending={list.pending} onclick={()=>loadList(at,list.segments.length+PAGE)}>{t('eMore')}</Button>
@@ -489,7 +487,7 @@
               </div>
               <!-- Apart from the answers: the tick only chooses sounds for the ZIP, and the form under it fills the ZIP's table. -->
               <label class="check"><input type="checkbox" checked={!!p} onchange={event=>pickSound(s,event.currentTarget.checked)}/>{t('ePick')}</label>
-              {#if p}<div class="labels"><p class="muted">{t('ePickNote')}</p><PickForm value={p} {recent} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
+              {#if p}<div class="labels"><p class="muted">{t('ePickNote')}</p><PickForm value={p} name={speciesName} onchange={label=>picks.save({...p,...label})}/></div>{/if}
             {/if}
           </section>
           <nav class="trail" aria-label={t('eTrail')}>
@@ -576,7 +574,8 @@
   .body{padding:12px;border-top:1px solid rgb(var(--color-card-border))}
   .badge{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;color:#fff;font-size:14px;font-weight:700}
   .member{padding-top:8px;border-top:1px solid rgb(var(--stone-300))}
-  .check{display:flex;align-items:center;gap:8px;min-height:44px;font-weight:400;cursor:pointer}
+  .check{display:flex;flex:none;align-items:center;gap:8px;min-height:44px;font-weight:400;white-space:nowrap;cursor:pointer}
+  .member .check{font-size:14px}
   .check input{width:24px;height:24px}
   /* The ZIP form of a ticked sound is set off from the answers above it. */
   .labels{padding:8px 12px;border-radius:8px;background:rgb(var(--primary-500)/.12)}

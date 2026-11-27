@@ -82,8 +82,6 @@ class PickedEdit(BaseModel):
     recording_id: int = Field(ge=1)
     start_s: float = Field(ge=0, allow_inf_nan=False)
     end_s: float = Field(gt=0, allow_inf_nan=False)
-    species: ScientificName | None
-    background: list[ScientificName] = Field(max_length=20)
     sound_type: Literal['', 'song', 'call']
     quality: Literal['', 'A', 'B', 'C', 'D', 'E']
     others: bool

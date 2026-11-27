@@ -82,20 +82,23 @@ class LabelStoreCheck(unittest.TestCase):
             tit = client.get('/species', params={'q': 'Parus cinereus'}).json()[0]
             self.assertEqual(tit['common_names']['ja'], '試験の名前')
 
-    def test_a_sound_map_pick_is_evidence_and_material(self):
+    def test_a_sound_map_answer_is_evidence_and_material_and_a_pick_records_nothing(self):
         with site() as (root, client, species):
             sid = species['id']
             dates = {'start_date': '2024-08-01', 'end_date': '2024-08-06'}
-            response = client.put('/explore/picked', json={'dataset_id': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5, 'species': 'Horornis diphone',
-                                                   'background': [], 'sound_type': '', 'quality': '', 'others': False})
-            self.assertEqual(response.status_code, 200, response.text)
+            response = client.put('/explore/picked', json={'dataset_id': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5,
+                                                   'sound_type': '', 'quality': '', 'others': False})
+            self.assertEqual((response.status_code, response.json()['species']), (200, None), response.text)
+            with connect(root) as db:
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], 0)
+            client.post('/heard/map-answer', json={'dataset_id': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5, 'species_id': sid, 'verdict': 'present'})
             presence = client.get(f'/datasets/1/species/{sid}', params=dates).json()['presence']
             self.assertEqual((presence['status'], [e['origin'] for e in presence['evidence']]), ('confirmed', ['map']))
             ready = client.get(f'/datasets/1/species/{sid}/custom-model', params=dates).json()
             self.assertEqual((ready['examples']['positive_5s'], ready['examples']['other_answers']), (1, 1))
             client.delete('/explore/picked', params={'dataset': 1, 'recording_id': 1, 'start_s': 0, 'end_s': 5})
             with connect(root) as db:
-                self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], 0)
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM labels').fetchone()[0], 1)
 
     def test_answers_on_five_second_pieces(self):
         pieces = {1: [(0, 5, 'a'), (5, 10, 'b'), (10, 15, 'c')]}
