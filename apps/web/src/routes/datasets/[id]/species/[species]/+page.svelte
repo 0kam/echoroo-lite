@@ -187,6 +187,7 @@
           {#if !searchFirst&&required}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqCheckAnswers')}</Button>{/if}
         {:else if step===0&&settled==='not_started'}<p class="muted">{t('sqSkippedNote')}</p>
           {#if required&&!undetected(required)}<Button pending={check.pending} onclick={()=>check.run(required)}>{t('sqCheckAnyway')}</Button>{/if}{/if}
+        {#if !['growing','undecided','grow'].includes(mode)&&result.checks.some(item=>item.engine==='custom')}<p><a href={modelHref}>{t('sqSeeGrown')}</a></p>{/if}
         {#if step===2&&others.length}<details class="more"><summary>{t('sqOtherAIs')}</summary><p class="muted">{t('sqOtherAIsHint')}</p>{#each others as item (item.key)}{@render checkRow(item)}{/each}</details>{/if}
         <!-- The chart is the answer to ② once a cut-off is decided; before that it is only for reference. -->
         {#if settled==='decided'}{@render figure(result)}
